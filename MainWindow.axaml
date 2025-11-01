@@ -1,0 +1,65 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:sc="clr-namespace:ScottPlot.Avalonia;assembly=ScottPlot.Avalonia"
+        mc:Ignorable="d" Width="800" Height="450"
+        x:Class="Gated.MainWindow" FontSize="{StaticResource SemiFontSizeRegular}"
+        FontFamily="{StaticResource SemiFontFamilyRegular}"
+        Title="Gated">
+    
+    <DockPanel>
+        <Menu DockPanel.Dock="Top" Background="{StaticResource SemiBackground1}">
+            <MenuItem Header="File">
+                <MenuItem Header="Open ..." InputGesture="Ctrl + O"/>
+                <Separator/>
+                <MenuItem Header="Exit"/>
+            </MenuItem>
+            <MenuItem Header="Samples">
+                <MenuItem Header="Create group ..." InputGesture="Ctrl + G"/>
+                <MenuItem Header="Rename group ..."/>
+                <MenuItem Header="Delete group"/>
+                <Separator/>
+                <MenuItem Header="Append samples to group ..."/>
+                <MenuItem Header="Delete samples"/>
+                <Separator/>
+                <MenuItem Header="Assign technical controls ..." InputGesture="Ctrl + Shift + A"/>
+                <Separator/>
+                <MenuItem Header="Channel settings ..." InputGesture="Ctrl + Q"/>
+                <MenuItem Header="FCS metadata table ..."/>
+            </MenuItem>
+            <MenuItem Header="Plotting">
+                <MenuItem Header="Add scatter plot"/>
+                <MenuItem Header="Add histogram"/>
+                <Separator/>
+                <MenuItem Header="Display">
+                    <MenuItem Header="Scatter"/>
+                    <MenuItem Header="Kernel density pseudocolor"/>
+                    <MenuItem Header="Isoheight contour"/>
+                    <MenuItem IsChecked="True" Header="Show outliers as scatter"/>
+                </MenuItem>
+                <MenuItem Header="Axes">
+                    <MenuItem Header="Linear"/>
+                    <MenuItem Header="Logarithm"/>
+                    <MenuItem Header="Arctanh"/>
+                    <MenuItem Header="Biexponential (Logicle)"/>
+                    <Separator/>
+                    <MenuItem Header="Axis settings ..."/>
+                </MenuItem>
+                <MenuItem Header="Graphics settings ..."/>
+            </MenuItem>
+            <MenuItem Header="Gating">
+            </MenuItem>
+            <MenuItem Header="Compensation">
+            </MenuItem>
+            <MenuItem Header="Statistics">
+            </MenuItem>
+            <MenuItem Header="Help">
+                <MenuItem Header="About Gated ..."/>
+                <MenuItem Header="Project website ..."/>
+            </MenuItem>
+        </Menu>
+        
+        <sc:AvaPlot Name="AvaPlot1"/>
+    </DockPanel>
+</Window>

@@ -1,0 +1,78 @@
+<ResourceDictionary
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    x:CompileBindings="True">
+    <Design.PreviewWith>
+        <StackPanel Spacing="20">
+            <TextBlock Text="Test" Theme="{StaticResource TitleTextBlock}" />
+        </StackPanel>
+    </Design.PreviewWith>
+    <ControlTheme x:Key="{x:Type TextBlock}" TargetType="TextBlock">
+        <!--<Setter Property="TextBlock.Foreground" Value="{DynamicResource TextBlockDefaultForeground}" />-->
+        <Style Selector="^.Secondary">
+            <Setter Property="Foreground" Value="{DynamicResource TextBlockSecondaryForeground}" />
+        </Style>
+        <Style Selector="^.Tertiary">
+            <Setter Property="Foreground" Value="{DynamicResource TextBlockTertiaryForeground}" />
+        </Style>
+        <Style Selector="^.Quaternary">
+            <Setter Property="Foreground" Value="{DynamicResource TextBlockQuaternaryForeground}" />
+        </Style>
+        <Style Selector="^.Success">
+            <Setter Property="Foreground" Value="{DynamicResource TextBlockSuccessForeground}" />
+        </Style>
+        <Style Selector="^.Warning">
+            <Setter Property="Foreground" Value="{DynamicResource TextBlockWarningForeground}" />
+        </Style>
+        <Style Selector="^.Danger">
+            <Setter Property="Foreground" Value="{DynamicResource TextBlockDangerForeground}" />
+        </Style>
+        <Style Selector="^.Mark">
+            <Setter Property="Background" Value="{DynamicResource TextBlockMarkBackground}" />
+        </Style>
+        <Style Selector="^.Underline">
+            <Setter Property="TextDecorations" Value="Underline" />
+        </Style>
+        <Style Selector="^.Delete">
+            <Setter Property="TextDecorations" Value="StrikeThrough" />
+        </Style>
+        <Style Selector="^.Underline.Delete">
+            <Setter Property="TextDecorations">
+                <TextDecorationCollection>
+                    <TextDecoration Location="Underline" />
+                    <TextDecoration Location="Strikethrough" />
+                </TextDecorationCollection>
+            </Setter>
+        </Style>
+        <Style Selector="^:disabled">
+            <Setter Property="Foreground" Value="{DynamicResource TextBlockDisabledForeground}" />
+        </Style>
+    </ControlTheme>
+    <ControlTheme
+        x:Key="TitleTextBlock"
+        BasedOn="{StaticResource {x:Type TextBlock}}"
+        TargetType="TextBlock">
+        <Setter Property="FontWeight" Value="{DynamicResource TextBlockTitleFontWeight}" />
+        <Style Selector="^.H1">
+            <Setter Property="FontSize" Value="{DynamicResource TextBlockTitleH1FontSize}" />
+        </Style>
+        <Style Selector="^.H2">
+            <Setter Property="FontSize" Value="{DynamicResource TextBlockTitleH2FontSize}" />
+        </Style>
+        <Style Selector="^.H3">
+            <Setter Property="FontSize" Value="{DynamicResource TextBlockTitleH3FontSize}" />
+        </Style>
+        <Style Selector="^.H4">
+            <Setter Property="FontSize" Value="{DynamicResource TextBlockTitleH4FontSize}" />
+        </Style>
+        <Style Selector="^.H5">
+            <Setter Property="FontSize" Value="{DynamicResource TextBlockTitleH5FontSize}" />
+        </Style>
+        <Style Selector="^.H6">
+            <Setter Property="FontSize" Value="{DynamicResource TextBlockTitleH6FontSize}" />
+        </Style>
+        <Style Selector="^:disabled">
+            <Setter Property="Foreground" Value="{DynamicResource TextBlockDisabledForeground}" />
+        </Style>
+    </ControlTheme>
+</ResourceDictionary>

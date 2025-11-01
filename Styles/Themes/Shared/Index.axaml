@@ -1,0 +1,9 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui" 
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ResourceDictionary.MergedDictionaries>
+        <ResourceInclude Source="avares://gated/Styles/Themes/Shared/Menu.axaml" />
+        <ResourceInclude Source="avares://gated/Styles/Themes/Dark/ScrollViewer.axaml" />
+        <ResourceInclude Source="avares://gated/Styles/Themes/Dark/Window.axaml" />
+        <ResourceInclude Source="avares://gated/Styles/Themes/Dark/TextBlock.axaml" />
+    </ResourceDictionary.MergedDictionaries>
+</ResourceDictionary>

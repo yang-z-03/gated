@@ -1,0 +1,25 @@
+<Styles x:Class="Gated.Theme"
+        xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:semi="https://irihi.tech/semi">
+    <Styles.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <!-- shared components -->
+                <ResourceInclude Source="avares://gated/Styles/Themes/Variables.axaml" />
+                <ResourceInclude Source="avares://gated/Styles/Themes/Dark.axaml" /> <!-- themes -->
+                <ResourceInclude Source="avares://gated/Styles/Icons/Icons.axaml" /> <!-- icons -->
+                <ResourceInclude Source="avares://gated/Styles/Locales/English.axaml" /> <!-- locales -->
+                
+                <!-- core styling components based on the tokens included above -->
+                <ResourceInclude Source="avares://gated/Styles/TextBlock.axaml" />
+                <ResourceInclude Source="avares://gated/Styles/Window.axaml" />
+                <ResourceInclude Source="avares://gated/Styles/Popup.axaml" />
+                <ResourceInclude Source="avares://gated/Styles/Menu.axaml" />
+                <ResourceInclude Source="avares://gated/Styles/MenuFlyoutPresenter.axaml" />
+                <ResourceInclude Source="avares://gated/Styles/PathIcon.axaml" />
+                <ResourceInclude Source="avares://gated/Styles/ScrollViewer.axaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Styles.Resources>
+</Styles>

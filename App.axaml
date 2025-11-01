@@ -1,0 +1,9 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Gated.App" xmlns:local="using:Gated"
+             RequestedThemeVariant="Default">
+    
+    <Application.Styles>
+        <local:Theme Locale="en-us" />
+    </Application.Styles>
+</Application>

@@ -1,0 +1,79 @@
+<ResourceDictionary
+    x:Class="Gated.Styles.Themes.Variables"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    
+    <!-- control height / condense -->
+    <x:Double x:Key="SemiHeightControlSmall">22</x:Double> 
+    <x:Double x:Key="SemiHeightControlDefault">32</x:Double> 
+    <x:Double x:Key="SemiHeightControlLarge">40</x:Double> 
+    
+    <!-- icon size -->
+    <x:Double x:Key="SemiWidthIconExtraSmall">8</x:Double> 
+    <x:Double x:Key="SemiWidthIconSmall">12</x:Double> 
+    <x:Double x:Key="SemiWidthIconMedium">16</x:Double> 
+    <x:Double x:Key="SemiWidthIconLarge">20</x:Double> 
+    <x:Double x:Key="SemiWidthIconExtraLarge">24</x:Double> 
+
+    <!-- border margin -->
+    <x:Double x:Key="SemiBorderSpacing">0</x:Double> 
+    <x:Double x:Key="SemiBorderSpacingControl">1</x:Double> 
+    <x:Double x:Key="SemiBorderSpacingControlFocus">1</x:Double> 
+    <Thickness x:Key="SemiBorderThickness">0</Thickness> 
+    <Thickness x:Key="SemiBorderThicknessControl">1</Thickness> 
+    <Thickness x:Key="SemiBorderThicknessControlFocus">1</Thickness> 
+    
+    <!-- border radius -->
+    <x:Double x:Key="SemiBorderRadiusSpacingSmall">3</x:Double> 
+    <x:Double x:Key="SemiBorderRadiusSpacingMedium">6</x:Double> 
+    <x:Double x:Key="SemiBorderRadiusSpacingLarge">12</x:Double> 
+    <x:Double x:Key="SemiBorderRadiusSpacingFull">9999</x:Double> 
+    <CornerRadius x:Key="SemiBorderRadiusExtraSmall">4</CornerRadius> 
+    <CornerRadius x:Key="SemiBorderRadiusSmall">4</CornerRadius> 
+    <CornerRadius x:Key="SemiBorderRadiusMedium">6</CornerRadius> 
+    <CornerRadius x:Key="SemiBorderRadiusLarge">12</CornerRadius> 
+    <CornerRadius x:Key="SemiBorderRadiusFull">9999</CornerRadius> 
+
+    <!-- spacing -->
+    <x:Double x:Key="SemiSpacingNone">0</x:Double> 
+    <x:Double x:Key="SemiSpacingSuperTight">2</x:Double> 
+    <x:Double x:Key="SemiSpacingExtraTight">4</x:Double> 
+    <x:Double x:Key="SemiSpacingTight">8</x:Double> 
+    <x:Double x:Key="SemiSpacingBaseTight">12</x:Double> 
+    <x:Double x:Key="SemiSpacingBase">16</x:Double> 
+    <x:Double x:Key="SemiSpacingBaseLoose">20</x:Double> 
+    <x:Double x:Key="SemiSpacingLoose">24</x:Double> 
+    <x:Double x:Key="SemiSpacingExtraLoose">32</x:Double> 
+    <x:Double x:Key="SemiSpacingSuperLoose">40</x:Double> 
+
+    <!-- thickness -->
+    <Thickness x:Key="SemiThicknessNone">0</Thickness> 
+    <Thickness x:Key="SemiThicknessSuperTight">2</Thickness> 
+    <Thickness x:Key="SemiThicknessExtraTight">4</Thickness> 
+    <Thickness x:Key="SemiThicknessTight">8</Thickness> 
+    <Thickness x:Key="SemiThicknessBaseTight">12</Thickness> 
+    <Thickness x:Key="SemiThicknessBase">16</Thickness> 
+    <Thickness x:Key="SemiThicknessBaseLoose">20</Thickness> 
+    <Thickness x:Key="SemiThicknessLoose">24</Thickness> 
+    <Thickness x:Key="SemiThicknessExtraLoose">32</Thickness> 
+    <Thickness x:Key="SemiThicknessSuperLoose">40</Thickness> 
+
+    <!-- font size -->
+    <x:Double x:Key="SemiFontSizeSmall">12</x:Double> 
+    <x:Double x:Key="SemiFontSizeRegular">13</x:Double> 
+    <x:Double x:Key="SemiFontSizeHeader6">16</x:Double> 
+    <x:Double x:Key="SemiFontSizeHeader5">18</x:Double> 
+    <x:Double x:Key="SemiFontSizeHeader4">20</x:Double> 
+    <x:Double x:Key="SemiFontSizeHeader3">24</x:Double> 
+    <x:Double x:Key="SemiFontSizeHeader2">28</x:Double> 
+    <x:Double x:Key="SemiFontSizeHeader1">32</x:Double> 
+    <FontWeight x:Key="SemiFontWeightLight">200</FontWeight> 
+    <FontWeight x:Key="SemiFontWeightRegular">400</FontWeight> 
+    <FontWeight x:Key="SemiFontWeightBold">600</FontWeight> 
+    
+    <!-- default font family -->
+    <FontFamily x:Key="SemiFontFamilyRegular">
+        Inter, Adwaita Sans, Helvetica Neue Std, Helvetica Neue, Helvetica, Arial, Simsun
+    </FontFamily>
+    
+</ResourceDictionary>
