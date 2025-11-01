@@ -129,7 +129,7 @@
         <Grid Height="2" DockPanel.Dock="Top" Background="#50000000"></Grid>
         <Grid ColumnDefinitions="350, 0, *, 0, 350" x:Name="Main">
             <Grid Grid.Column="0">
-                
+                <TreeDataGrid></TreeDataGrid>
             </Grid>
             <GridSplitter Grid.Column="1" ShowsPreview="True" />
             <Canvas Grid.Column="2">

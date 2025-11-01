@@ -6,5 +6,6 @@
         <ResourceInclude Source="avares://gated/Styles/Themes/Dark/ScrollViewer.axaml" />
         <ResourceInclude Source="avares://gated/Styles/Themes/Dark/Window.axaml" />
         <ResourceInclude Source="avares://gated/Styles/Themes/Dark/GridSplitter.axaml"/>
+        <ResourceInclude Source="avares://gated/Styles/Themes/Dark/TreeDataGrid.axaml" />
     </ResourceDictionary.MergedDictionaries>
 </ResourceDictionary>

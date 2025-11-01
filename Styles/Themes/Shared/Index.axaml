@@ -2,8 +2,9 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <ResourceDictionary.MergedDictionaries>
         <ResourceInclude Source="avares://gated/Styles/Themes/Shared/Menu.axaml" />
-        <ResourceInclude Source="avares://gated/Styles/Themes/Dark/ScrollViewer.axaml" />
-        <ResourceInclude Source="avares://gated/Styles/Themes/Dark/Window.axaml" />
-        <ResourceInclude Source="avares://gated/Styles/Themes/Dark/TextBlock.axaml" />
+        <ResourceInclude Source="avares://gated/Styles/Themes/Shared/ScrollViewer.axaml" />
+        <ResourceInclude Source="avares://gated/Styles/Themes/Shared/Window.axaml" />
+        <ResourceInclude Source="avares://gated/Styles/Themes/Shared/TextBlock.axaml" />
+        <ResourceInclude Source="avares://gated/Styles/Themes/Shared/TreeDataGrid.axaml" />
     </ResourceDictionary.MergedDictionaries>
 </ResourceDictionary>
