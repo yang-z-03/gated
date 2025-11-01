@@ -456,8 +456,8 @@
     <SolidColorBrush x:Key="SemiColorFill2" Opacity="0.20" Color="{StaticResource SemiWhiteColor}" />
 
     <!--  borders  -->
-    <SolidColorBrush x:Key="SemiColorBorder" Opacity="0.25" Color="{StaticResource SemiWhiteColor}" />
-    <SolidColorBrush x:Key="SemiColorBorderInline" Opacity="0.25" Color="{StaticResource SemiBlackColor}" />
+    <SolidColorBrush x:Key="SemiColorBorder" Opacity="0.05" Color="{StaticResource SemiWhiteColor}" />
+    <SolidColorBrush x:Key="SemiColorBorderInline" Opacity="0.05" Color="{StaticResource SemiBlackColor}" />
     <SolidColorBrush x:Key="SemiColorFocusBorder" Color="{StaticResource SemiBlue5Color}" />
 
     <!--  disabled  -->
@@ -475,5 +475,7 @@
     <!--  shadowing  -->
     <BoxShadows x:Key="SemiColorShadow">0 0 #0A000000</BoxShadows>
     <BoxShadows x:Key="SemiShadowElevated">inset 0 0 0 1 #1AFFFFFF, 0 4 14 #40000000</BoxShadows>
+    
+    <SolidColorBrush x:Key="SemiColorSplits" Opacity="0.25" Color="{StaticResource SemiBlackColor}" />
 
 </ResourceDictionary>

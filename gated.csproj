@@ -12,6 +12,19 @@
     <Authors>Zheng Yang</Authors>
     <Company>Zheng Yang</Company>
     <Product>gated</Product>
+    <ApplicationIcon>app.ico</ApplicationIcon>
+    <Version>0.3.0</Version>
+    <Title>Gated</Title>
+    <Description>A graphical tool for low-dimensional feature matrix manipulation</Description>
+    <Copyright>Copyright © Zheng Yang, 2025</Copyright>
+    <PackageProjectUrl>https://github.com/yang-z-03/gated</PackageProjectUrl>
+    <PackageLicenseUrl>https://www.gnu.org/licenses/gpl-3.0.html</PackageLicenseUrl>
+    <RepositoryUrl>https://github.com/yang-z-03/gated</RepositoryUrl>
+    <RepositoryType>Source</RepositoryType>
+    <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
+    <AssemblyVersion>0.3.0</AssemblyVersion>
+    <FileVersion>0.3.0</FileVersion>
+    <NeutralLanguage>en</NeutralLanguage>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
     <OutputPath>bin/debug/</OutputPath>

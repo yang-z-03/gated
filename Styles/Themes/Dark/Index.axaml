@@ -5,5 +5,6 @@
         <ResourceInclude Source="avares://gated/Styles/Themes/Dark/Menu.axaml" />
         <ResourceInclude Source="avares://gated/Styles/Themes/Dark/ScrollViewer.axaml" />
         <ResourceInclude Source="avares://gated/Styles/Themes/Dark/Window.axaml" />
+        <ResourceInclude Source="avares://gated/Styles/Themes/Dark/GridSplitter.axaml"/>
     </ResourceDictionary.MergedDictionaries>
 </ResourceDictionary>

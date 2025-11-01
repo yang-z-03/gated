@@ -3,9 +3,10 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:sc="clr-namespace:ScottPlot.Avalonia;assembly=ScottPlot.Avalonia"
-        mc:Ignorable="d" Width="800" Height="450"
+        mc:Ignorable="d" Width="1200" Height="750"
         x:Class="Gated.MainWindow" FontSize="{StaticResource SemiFontSizeRegular}"
         FontFamily="{StaticResource SemiFontFamilyRegular}"
+        WindowStartupLocation="CenterScreen"
         Title="Gated">
     
     <DockPanel>
@@ -13,53 +14,135 @@
             <MenuItem Header="File">
                 <MenuItem Header="Open ..." InputGesture="Ctrl + O"/>
                 <Separator/>
+                <MenuItem Header="Replace FCS file ..."/>
+                <MenuItem Header="Save Workspace ..." InputGesture="Ctrl + S"/>
+                <Separator/>
                 <MenuItem Header="Exit"/>
             </MenuItem>
             <MenuItem Header="Samples">
-                <MenuItem Header="Create group ..." InputGesture="Ctrl + G"/>
-                <MenuItem Header="Rename group ..."/>
-                <MenuItem Header="Delete group"/>
+                <MenuItem Header="Create Group ..." InputGesture="Ctrl + G"/>
+                <MenuItem Header="Rename Group ..."/>
+                <MenuItem Header="Delete Group"/>
                 <Separator/>
-                <MenuItem Header="Append samples to group ..."/>
-                <MenuItem Header="Delete samples"/>
+                <MenuItem Header="Append Samples to Group ..."/>
+                <MenuItem Header="Delete Samples" InputGesture="Delete"/>
                 <Separator/>
-                <MenuItem Header="Assign technical controls ..." InputGesture="Ctrl + Shift + A"/>
+                <MenuItem Header="Assign Technical Controls ..." InputGesture="Ctrl + Shift + A"/>
                 <Separator/>
-                <MenuItem Header="Channel settings ..." InputGesture="Ctrl + Q"/>
-                <MenuItem Header="FCS metadata table ..."/>
+                <MenuItem Header="Concatenate"/>
+                <MenuItem Header="Export ..." InputGesture="Ctrl + E"/>
+                <Separator/>
+                <MenuItem Header="Select Equivalent Nodes" InputGesture="Ctrl + Shift + E"/>
+                <MenuItem Header="Expand"/>
+                <MenuItem Header="Collapse"/>
+                <Separator/>
+                <MenuItem Header="Channel Settings ..." InputGesture="Ctrl + Q"/>
+                <MenuItem Header="FCS Metadata Table ..."/>
             </MenuItem>
             <MenuItem Header="Plotting">
-                <MenuItem Header="Add scatter plot"/>
-                <MenuItem Header="Add histogram"/>
+                <MenuItem Header="Add Scatter Plot"/>
+                <MenuItem Header="Add Histogram"/>
                 <Separator/>
                 <MenuItem Header="Display">
-                    <MenuItem Header="Scatter"/>
-                    <MenuItem Header="Kernel density pseudocolor"/>
-                    <MenuItem Header="Isoheight contour"/>
-                    <MenuItem IsChecked="True" Header="Show outliers as scatter"/>
+                    <MenuItem ToggleType="Radio" Header="Scatter"/>
+                    <MenuItem ToggleType="Radio" IsChecked="True" Header="Kernel Density Pseudocolor"/>
                 </MenuItem>
-                <MenuItem Header="Axes">
-                    <MenuItem Header="Linear"/>
-                    <MenuItem Header="Logarithm"/>
-                    <MenuItem Header="Arctanh"/>
-                    <MenuItem Header="Biexponential (Logicle)"/>
+                <MenuItem ToggleType="CheckBox" IsChecked="True" Header="Show Outliers as Scatter"/>
+                <MenuItem ToggleType="CheckBox" IsChecked="True" Header="Show Grid"/>
+                <MenuItem ToggleType="CheckBox" IsChecked="True" Header="Draw Large Dots"/>
+                <MenuItem ToggleType="CheckBox" IsChecked="True" Header="Show Gate Frequencies"/>
+                <MenuItem ToggleType="CheckBox" IsChecked="True" Header="Show Gate Annotation"/>
+                <MenuItem ToggleType="CheckBox" IsChecked="True" Header="Show Number of Events"/>
+                <Separator/>
+                <MenuItem Header="Axis X">
+                    <MenuItem ToggleType="Radio" Header="Linear"/>
+                    <MenuItem ToggleType="Radio" Header="Logarithm"/>
+                    <MenuItem ToggleType="Radio" Header="Arctanh"/>
+                    <MenuItem ToggleType="Radio" IsChecked="True" Header="Biexponential (Logicle)"/>
                     <Separator/>
-                    <MenuItem Header="Axis settings ..."/>
+                    <MenuItem Header="Axis Settings ..."/>
                 </MenuItem>
-                <MenuItem Header="Graphics settings ..."/>
+                <MenuItem Header="Axis Y">
+                    <MenuItem ToggleType="Radio" Header="Linear"/>
+                    <MenuItem ToggleType="Radio" Header="Logarithm"/>
+                    <MenuItem ToggleType="Radio" Header="Arctanh"/>
+                    <MenuItem ToggleType="Radio" IsChecked="True" Header="Biexponential (Logicle)"/>
+                    <Separator/>
+                    <MenuItem Header="Axis Settings ..."/>
+                </MenuItem>
+                <MenuItem Header="Gate">
+                    <MenuItem IsEnabled="False" Header="All Samples"></MenuItem>
+                </MenuItem>
+                <MenuItem Header="Graphics Settings ..."/>
+                <Separator/>
+                <MenuItem Header="Parent Population"/>
+                <MenuItem Header="Child Populations">
+                    <MenuItem IsEnabled="False" Header="No Children"></MenuItem>
+                </MenuItem>
+                <MenuItem Header="Previous Equivalent Population"/>
+                <MenuItem Header="Next Equivalent Population"/>
+                <Separator/>
+                <MenuItem Header="Copy Image"/>
+                <MenuItem Header="Export Graphics ..."/>
             </MenuItem>
             <MenuItem Header="Gating">
+                <MenuItem ToggleType="Radio" IsChecked="True" Header="Pan"/>
+                <MenuItem ToggleType="Radio" IsChecked="False" Header="Binary Gate"/>
+                <MenuItem ToggleType="Radio" IsChecked="False" Header="Range Gate"/>
+                <MenuItem ToggleType="Radio" IsChecked="False" Header="Polygonal Gate"/>
+                <MenuItem ToggleType="Radio" IsChecked="False" Header="Quad Gate"/>
+                <MenuItem ToggleType="Radio" IsChecked="False" Header="Curly Quad Gate"/>
+                <Separator/>
+                <MenuItem Header="Merge (Logic OR)"/>
+                <MenuItem Header="Exclude (Logic NOT)"/>
+                <MenuItem Header="Overlap (Logic AND)"/>
+                <Separator/>
+                <MenuItem Header="Rename Gate ..."/>
+                <MenuItem Header="Delete Gate and All Sub-population"/>
             </MenuItem>
             <MenuItem Header="Compensation">
+                <MenuItem Header="Auto-compensation ..."/>
+                <MenuItem Header="Compensation Table Editor ..."/>
             </MenuItem>
             <MenuItem Header="Statistics">
+                <MenuItem Header="Mean"/>
+                <MenuItem Header="Median"/>
+                <MenuItem Header="Geometric Mean"/>
+                <MenuItem Header="Coefficient of Variation"/>
+                <MenuItem Header="Standard Deviance"/>
+                <MenuItem Header="Frequency of ..."/>
+                <MenuItem Header="Frequency of Parent Population"/>
+                <MenuItem Header="Frequency of All"/>
+                <MenuItem Header="Number of Events"/>
+                <Separator/>
+                <MenuItem Header="Leiden Community ..."/>
+                <MenuItem Header="UMAP ..."/>
+                <Separator/>
+                <MenuItem Header="Export Statistics ..."/>
             </MenuItem>
             <MenuItem Header="Help">
                 <MenuItem Header="About Gated ..."/>
-                <MenuItem Header="Project website ..."/>
+                <MenuItem Header="Project Website ..."/>
             </MenuItem>
         </Menu>
         
-        <sc:AvaPlot Name="AvaPlot1"/>
+        <Grid Height="2" DockPanel.Dock="Top" Background="#50000000"></Grid>
+        <Grid ColumnDefinitions="350, 0, *, 0, 350" x:Name="Main">
+            <Grid Grid.Column="0">
+                
+            </Grid>
+            <GridSplitter Grid.Column="1" ShowsPreview="True" />
+            <Canvas Grid.Column="2">
+                <sc:AvaPlot Width="240" Height="240" Canvas.Left="10" Canvas.Top="10" x:Name="avaPlot" />
+            </Canvas>
+            <GridSplitter Grid.Column="3" ShowsPreview="True" />
+            <Grid Grid.Column="4">
+                <Grid RowDefinitions="350, 0, *">
+                    <Grid Grid.Row="0"></Grid>
+                    <GridSplitter Grid.Row="1" ShowsPreview="True" />
+                    <Grid Grid.Row="2"></Grid>
+                </Grid>
+            </Grid>
+        </Grid>
     </DockPanel>
 </Window>

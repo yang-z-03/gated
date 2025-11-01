@@ -19,6 +19,7 @@
                 <ResourceInclude Source="avares://gated/Styles/MenuFlyoutPresenter.axaml" />
                 <ResourceInclude Source="avares://gated/Styles/PathIcon.axaml" />
                 <ResourceInclude Source="avares://gated/Styles/ScrollViewer.axaml" />
+                <ResourceInclude Source="avares://gated/Styles/GridSplitter.axaml"/>
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Styles.Resources>
