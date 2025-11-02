@@ -241,6 +241,7 @@
 
     <ControlTheme x:Key="{x:Type TreeDataGridTextCell}" TargetType="TreeDataGridTextCell">
         <Setter Property="Padding" Value="8 4" />
+        <Setter Property="FontSize" Value="12.5" />
         <Setter Property="Template">
             <ControlTemplate>
                 <Border

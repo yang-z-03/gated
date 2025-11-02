@@ -6,6 +6,6 @@
     <StaticResource x:Key="TreeDataGridColumnHeaderCornerRadius" ResourceKey="SemiBorderRadiusSmall" />
     <StaticResource x:Key="TreeDataGridColumnHeaderMinHeight" ResourceKey="SemiHeightControlDefault" />
     <StaticResource x:Key="TreeDataGridRowCornerRadius" ResourceKey="SemiBorderRadiusSmall" />
-    <StaticResource x:Key="TreeDataGridRowMinHeight" ResourceKey="SemiHeightControlDefault" />
-    <StaticResource x:Key="TreeDataGridRowMargin" ResourceKey="SemiThicknessSuperTight" />
+    <StaticResource x:Key="TreeDataGridRowMinHeight" ResourceKey="SemiHeightControlSmall" />
+    <StaticResource x:Key="TreeDataGridRowMargin" ResourceKey="SemiThicknessNone" />
 </ResourceDictionary>

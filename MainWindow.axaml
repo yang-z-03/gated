@@ -129,12 +129,12 @@
         <Grid Height="2" DockPanel.Dock="Top" Background="#50000000"></Grid>
         <Grid ColumnDefinitions="350, 0, *, 0, 350" x:Name="Main">
             <Grid Grid.Column="0">
-                <TreeDataGrid></TreeDataGrid>
+                <TreeDataGrid x:Name="workspaceTree" />
             </Grid>
             <GridSplitter Grid.Column="1" ShowsPreview="True" />
-            <Canvas Grid.Column="2">
-                <sc:AvaPlot Width="240" Height="240" Canvas.Left="10" Canvas.Top="10" x:Name="avaPlot" />
-            </Canvas>
+            <Grid Grid.Column="2">
+                <sc:AvaPlot Width="350" Height="350" x:Name="avaPlot" />
+            </Grid>
             <GridSplitter Grid.Column="3" ShowsPreview="True" />
             <Grid Grid.Column="4">
                 <Grid RowDefinitions="350, 0, *">
