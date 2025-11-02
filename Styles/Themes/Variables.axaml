@@ -73,7 +73,7 @@
     
     <!-- default font family -->
     <FontFamily x:Key="SemiFontFamilyRegular">
-        Inter, Adwaita Sans, Helvetica Neue Std, Helvetica Neue, Helvetica, Arial, Simsun
+        Roboto, Inter, Adwaita Sans, Helvetica Neue Std, Helvetica Neue, Helvetica, Arial, Simsun
     </FontFamily>
     
 </ResourceDictionary>

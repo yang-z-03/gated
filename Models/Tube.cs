@@ -2,20 +2,27 @@
 using System.Collections.ObjectModel;
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Linq;
 
 namespace Gated.Models;
 
 public abstract class Population : INode
 {
-    public Dictionary<Channel, float[]> Measurements { get; private set; } = new();
-    public Dictionary<Embedding, float[]> Embeddings { get; private set; } = new();
+    public virtual ObservableCollection<Channel> Channels { get; private set; }
+    public virtual Dictionary<Channel, float[]> Measurements { get; private set; } = new();
+    public virtual Dictionary<Embedding, float[]> Embeddings { get; private set; } = new();
     
     public Population? Parent { get; private set; } = null;
     public Tube? ParentTube { get; private set; } = null;
     public abstract bool IsTube { get; }
     public ObservableCollection<Subset> Subsets { get; private set; } = new();
     
-    public string Name { get; set; } = "Population";
+    public abstract string Name { get; set; }
+    public int ChannelCount { get; set; } = 0;
+    public long EventCount { get; set; } = 0L;
 
     public ObservableCollection<INode> Children
     {
@@ -41,9 +48,695 @@ public abstract class Population : INode
 public class Tube : Population
 {
     public override bool IsTube { get; } = true;
+
+    public enum Specification
+    {
+        Fcs2   = 20,
+        Fcs30  = 30,
+        Fcs31  = 31,
+        Fcs32  = 32
+    }
+
+    public enum StoreMode
+    {
+        List,
+        UnivariateHistogram,
+        CorrelatedHistogram
+    }
+
+    public enum DataType
+    {
+        UnsignedBinaryInteger,
+        AsciiEncodedInteger,
+        Float,
+        Double
+    }
+
+    public enum ByteOrder
+    {
+        BigEndian,
+        LittleEndian
+    }
+
+    // implement the FCS parser
+
+    public DataType Type { get; private set; }
+    public StoreMode Mode { get; private set; }
+    public ByteOrder Order { get; private set; }
+    public long Size { get; private set; }
+    
+    // the general header dictionary. conserved fields defined by the specification
+    // is extracted and represent other fields in this class.
+    public Dictionary<string, object> Header { get; private set; }
+    public override string Name { get; set; }
+    public Dictionary<string, string> Text { get; private set; }
+    public Specification Version { get; private set; }
+    public string Location { get; private set; }
+
+    private FileStream file_stream;
+    private bool ignore_offset;
+
+    public Tube(
+        string fcsFile,
+        bool ignoreOffsetError = false,
+        bool ignoreOffsetDiscrepancy = false,
+        bool useHeaderOffsets = false,
+        bool metadataOnly = false,
+        int? nextDataOffset = null
+    ) {
+        this.ignore_offset = ignoreOffsetError;
+
+        this.Name = Path.GetFileName(fcsFile);
+        this.Location = fcsFile;
+        this.file_stream = new FileStream(fcsFile, FileMode.Open, FileAccess.Read);
+        long currentOffset = nextDataOffset ?? 0;
+
+        // get file size
+        this.Size = this.file_stream.Length;
+        this.file_stream.Position = currentOffset;
+
+        this.Header = this.parse_header(currentOffset);
+        switch (this.Header["version"])
+        {
+            case "2.0": this.Version = Version = Specification.Fcs2; break;
+            case "3.0": this.Version = Version = Specification.Fcs30; break;
+            case "3.1": this.Version = Version = Specification.Fcs31; break;
+            case "3.2": this.Version = Version = Specification.Fcs32; break;
+            default: throw new UnsupportedVersionException(
+                $"Support for {this.Header["version"]} specifcation of FCS file is not implemented"
+            );
+        }
+
+        // text section
+        this.Text = this.parse_text(
+            currentOffset,
+            (int)Header["text_start"],
+            (int)Header["text_stop"]
+        );
+
+        if (Text.ContainsKey("nextdata") && int.Parse(Text["nextdata"]) != 0 && nextDataOffset == null)
+        {
+            file_stream.Close();
+            throw new MultipleDataSetsException(
+                $"{this.Name} contains multiple data sets, use read_multiple_data_sets function"
+            );
+        }
+
+        this.ChannelCount = int.Parse(Text["par"]);
+        this.EventCount = int.Parse(Text["tot"]);
+        switch (this.Text["datatype"].ToLower())
+        {
+            case "i": this.Type = DataType.UnsignedBinaryInteger; break;
+            case "f": this.Type = DataType.Float; break;
+            case "d": this.Type = DataType.Double; break;
+            case "a": this.Type = DataType.AsciiEncodedInteger; break;
+            default: throw new ParserException( 
+                $"Illegal {this.Text["datatype"]} data type");
+        }
+        
+        switch (this.Text["mode"].ToLower())
+        {
+            case "c": this.Mode = StoreMode.CorrelatedHistogram; break;
+            case "u": this.Mode = StoreMode.UnivariateHistogram; break;
+            case "l": this.Mode = StoreMode.List; break;
+            default: throw new ParserException( 
+                $"Illegal {this.Text["mode"]} mode");
+        }
+
+        var byteOrder = this.Text["byteord"];
+        if (byteOrder == "1,2,3,4" || byteOrder == "1,2")
+            this.Order = ByteOrder.LittleEndian;
+        else if (byteOrder == "4,3,2,1" || byteOrder == "2,1")
+            this.Order = ByteOrder.BigEndian;
+        else
+        {
+            // default to system endianness
+            this.Order = BitConverter.IsLittleEndian ? ByteOrder.LittleEndian : ByteOrder.BigEndian;
+        }
+
+        // determine data offsets
+        int headerDataStart = (int)Header["data_start"];
+        int headerDataStop = (int)Header["data_stop"];
+        int dataStart, dataStop;
+
+        if (this.Version == Specification.Fcs2)
+        {
+            dataStart = headerDataStart;
+            dataStop = headerDataStop;
+        }
+        else
+        {
+            if (useHeaderOffsets)
+            {
+                dataStart = headerDataStart;
+                dataStop = headerDataStop;
+            }
+            else
+            {
+                dataStart = int.Parse(Text["begindata"]);
+                dataStop = int.Parse(Text["enddata"]);
+
+                if (dataStart != headerDataStart)
+                {
+                    if (headerDataStart == 0 && dataStop > 99999999)
+                    {
+                        // large file, this is OK.
+                    }
+                    else if (!ignoreOffsetDiscrepancy)
+                    {
+                        file_stream.Close();
+                        throw new DataOffsetDiscrepancyException(
+                            $"{Name} has a discrepancy in the DATA start byte location: {headerDataStart} (HEADER) vs {dataStart} (TEXT)"
+                        );
+                    }
+                }
+
+                if (dataStop != headerDataStop)
+                {
+                    if (headerDataStop == 0 && dataStop > 99999999)
+                    {
+                        // Large file, this is OK
+                    }
+                    else if (!ignoreOffsetDiscrepancy)
+                    {
+                        file_stream.Close();
+                        throw new DataOffsetDiscrepancyException(
+                            $"{Name} has a discrepancy in the DATA end byte location: {headerDataStop} (HEADER) vs {dataStop} (TEXT)"
+                        );
+                    }
+                }
+            }
+        }
+
+        if (dataStop > Size)
+        {
+            file_stream.Close();
+            throw new ParserException("FCS file indicates data section greater than file size");
+        }
+
+        this.extract_channel_metadata();
+
+        if (!metadataOnly)
+        {
+            this.parse_data(
+                currentOffset,
+                dataStart,
+                dataStop,
+                this.Text
+            );
+        }
+
+        file_stream.Close();
+    }
+
+    private byte[] read_bytes(long offset, int start, int stop)
+    {
+        file_stream.Position = offset + start;
+        byte[] buffer = new byte[stop - start + 1];
+        file_stream.ReadExactly(buffer, 0, buffer.Length);
+        return buffer;
+    }
+
+    private Dictionary<string, object> parse_header(long offset)
+    {
+        var header = new Dictionary<string, object>();
+
+        byte[] versionBytes = read_bytes(offset, 3, 5);
+        header["version"] = Encoding.ASCII.GetString(versionBytes);
+
+        header["text_start"] = int.Parse(Encoding.ASCII.GetString(read_bytes(offset, 10, 17)));
+        header["text_stop"] = int.Parse(Encoding.ASCII.GetString(read_bytes(offset, 18, 25)));
+        header["data_start"] = int.Parse(Encoding.ASCII.GetString(read_bytes(offset, 26, 33)));
+        header["data_stop"] = int.Parse(Encoding.ASCII.GetString(read_bytes(offset, 34, 41)));
+
+        try
+        {
+            header["analysis_start"] = int.Parse(
+                Encoding.ASCII.GetString(read_bytes(offset, 42, 49)));
+        }
+        catch
+        {
+            header["analysis_start"] = -1;
+        }
+
+        try
+        {
+            header["analysis_stop"] = int.Parse(
+                Encoding.ASCII.GetString(read_bytes(offset, 50, 57)));
+        }
+        catch
+        {
+            header["analysis_stop"] = -1;
+        }
+
+        return header;
+    }
+
+    private Dictionary<string, string> parse_text(long offset, int start, int stop)
+    {
+        byte[] textBytes = read_bytes(offset, start, stop);
+
+        string text;
+        try
+        {
+            text = Encoding.UTF8.GetString(textBytes);
+        }
+        catch
+        {
+            text = Encoding.GetEncoding("ISO-8859-1").GetString(textBytes);
+        }
+
+        return parse_pairs(text);
+    }
+
+    private List<double> parse_data(long offset, int start, int stop, Dictionary<string, string> text)
+    {
+        if (this.Mode != StoreMode.List)
+        {
+            file_stream.Close();
+            throw new NotImplementedException($"FCS data stored as type '{this.Mode.ToString()}' is unsupported");
+        }
+
+        if (this.Type == DataType.UnsignedBinaryInteger)
+        {
+            Dictionary<int, int> bitWidthByChannel = new Dictionary<int, int>();
+            Dictionary<int, int> maxRangeByChannel = new Dictionary<int, int>();
+
+            for (int i = 1; i <= ChannelCount; i++)
+            {
+                bitWidthByChannel[i] = int.Parse(text[$"p{i}b"]);
+                int tmpMaxRange = int.Parse(text[$"p{i}r"]);
+                maxRangeByChannel[i] = next_power_of_2(tmpMaxRange);
+            }
+
+            var longData = this.parse_int(offset, start, stop, bitWidthByChannel, maxRangeByChannel, this.Order == ByteOrder.LittleEndian);
+            var typeConvert = new List<double>();
+            foreach (long value in longData) typeConvert.Add((double)value);
+            return typeConvert;
+        }
+        else return parse_non_integral(offset, start, stop);
+    }
+
+    private (long, int) calculate_data_count(int start, int stop, int dataTypeSize)
+    {
+        long dataSectSize = stop - start + 1;
+        long dataMod = dataSectSize % dataTypeSize;
+
+        if (dataMod > 0)
+        {
+            if (dataMod == 1 && ignore_offset)
+            {
+                // Warning would be appropriate here
+                stop = stop - 1;
+                dataSectSize = dataSectSize - 1;
+            }
+            else if (dataMod == 1 && !ignore_offset)
+            {
+                file_stream.Close();
+                throw new ParserException(
+                    $"FCS file {Name} reports a data offset that is off by 1. Set `ignore_offset_error=True` to force reading in this file."
+                );
+            }
+            else
+            {
+                file_stream.Close();
+                throw new ParserException("Unable to determine the correct byte offsets for event data");
+            }
+        }
+
+        long numItems = dataSectSize / dataTypeSize;
+        return (numItems, stop);
+    }
+
+    private List<long> parse_int(
+        long offset,
+        int start,
+        int stop,
+        Dictionary<int, int> bitWidthLut,
+        Dictionary<int, int> maxRangeLut,
+        bool isLittleEndian
+    )
+    {
+        if (bitWidthLut.Values.All(b => b == 8 || b == 16 || b == 32))
+        {
+            if (bitWidthLut.Values.Distinct().Count() == 1)
+            {
+                int bitWidth = bitWidthLut.Values.First();
+                int dataTypeSize = bitWidth / 8;
+                long numItems;
+                (numItems, stop) = this.calculate_data_count(start, stop, dataTypeSize);
+
+                file_stream.Position = offset + start;
+                byte[] buffer = new byte[numItems * dataTypeSize];
+                file_stream.ReadExactly(buffer, 0, buffer.Length);
+
+                List<long> result = new List<long>();
+
+                if (bitWidth == 8)
+                {
+                    for (int i = 0; i < numItems; i++)
+                    {
+                        result.Add(buffer[i]);
+                    }
+                }
+                else if (bitWidth == 16)
+                {
+                    for (int i = 0; i < numItems; i++)
+                    {
+                        ushort value = BitConverter.ToUInt16(buffer, i * 2);
+                        if (isLittleEndian != BitConverter.IsLittleEndian)
+                        {
+                            value = reverse_bytes(value);
+                        }
+
+                        result.Add(value);
+                    }
+                }
+                else if (bitWidth == 32)
+                {
+                    for (int i = 0; i < numItems; i++)
+                    {
+                        uint value = BitConverter.ToUInt32(buffer, i * 4);
+                        if (isLittleEndian != BitConverter.IsLittleEndian)
+                        {
+                            value = reverse_bytes(value);
+                        }
+
+                        result.Add(value);
+                    }
+                }
+
+                // apply bit masking if needed
+                if (bitWidthLut.Any(kv => (1 << kv.Value) > maxRangeLut[kv.Key]))
+                {
+                    int amountDataPoints = (int)(numItems / maxRangeLut.Count);
+
+                    for (int i = 0; i < numItems; i++)
+                    {
+                        int channel = (i % maxRangeLut.Count) + 1;
+                        int maxRange = maxRangeLut[channel];
+                        result[i] = result[i] & (maxRange - 1);
+                    }
+                }
+
+                return result;
+            }
+            else
+            {
+                return read_variable_length_int(
+                    bitWidthLut, maxRangeLut, offset, isLittleEndian, start, stop);
+            }
+        }
+        else
+        {
+            // Non-standard bit width
+            return new List<long>();
+        }
+    }
+
+    private List<long> read_variable_length_int(
+        Dictionary<int, int> bitWidthByChannel,
+        Dictionary<int, int> maxRangeByChannel,
+        long offset,
+        bool isLittleEndian,
+        int start,
+        int stop
+    )
+    {
+        byte[] dataBytes = read_bytes(offset, start, stop);
+        List<long> result = new List<long>();
+        int bytePosition = 0;
+
+        int totalEvents = (int)((stop - start + 1) * 8 / bitWidthByChannel.Values.Sum());
+
+        for (int eventNum = 0; eventNum < totalEvents; eventNum++)
+        {
+            foreach (var kvp in bitWidthByChannel.OrderBy(k => k.Key))
+            {
+                int channel = kvp.Key;
+                int bitWidth = kvp.Value;
+                int byteWidth = bitWidth / 8;
+
+                long value = 0;
+                for (int i = 0; i < byteWidth; i++)
+                {
+                    value |= (long)dataBytes[bytePosition + i] << (i * 8);
+                }
+
+                if (isLittleEndian != BitConverter.IsLittleEndian)
+                {
+                    value = reverse_bytes(value, byteWidth);
+                }
+
+                if ((1 << bitWidth) > maxRangeByChannel[channel])
+                {
+                    value = value % maxRangeByChannel[channel];
+                }
+
+                result.Add(value);
+                bytePosition += byteWidth;
+            }
+        }
+
+        return result;
+    }
+
+    private List<double> parse_non_integral(
+        long offset, int start, int stop)
+    {
+        int dataTypeSize;
+        if (this.Type == DataType.Float)
+            dataTypeSize = 4; // float
+        else dataTypeSize = 8;
+
+        long numItems;
+        (numItems, stop) = this.calculate_data_count(start, stop, dataTypeSize);
+
+        file_stream.Position = offset + start;
+        byte[] buffer = new byte[numItems * dataTypeSize];
+        file_stream.ReadExactly(buffer, 0, buffer.Length);
+
+        List<double> result = new List<double>();
+
+        if (this.Type == DataType.Float)
+        {
+            for (int i = 0; i < numItems; i++)
+            {
+                float value = BitConverter.ToSingle(buffer, i * 4);
+                if ((this.Order == ByteOrder.LittleEndian) != BitConverter.IsLittleEndian)
+                {
+                    byte[] valueBytes = BitConverter.GetBytes(value);
+                    Array.Reverse(valueBytes);
+                    value = BitConverter.ToSingle(valueBytes, 0);
+                }
+
+                result.Add(value);
+            }
+        }
+        else
+        {
+            for (int i = 0; i < numItems; i++)
+            {
+                double value = BitConverter.ToDouble(buffer, i * 8);
+                if ((this.Order == ByteOrder.LittleEndian) != BitConverter.IsLittleEndian)
+                {
+                    byte[] valueBytes = BitConverter.GetBytes(value);
+                    Array.Reverse(valueBytes);
+                    value = BitConverter.ToDouble(valueBytes, 0);
+                }
+
+                result.Add(value);
+            }
+        }
+
+        return result;
+    }
+
+    private Dictionary<string, string> parse_pairs(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return new Dictionary<string, string>();
+
+        char delimiter = text[0];
+        string escapedDelimiter = delimiter == '|' ? "\\|" :
+            delimiter == '\\' ? "\\\\" :
+            delimiter == '*' ? "\\*" :
+            delimiter.ToString();
+
+        string content = text.Substring(1, text.Length - 2).Replace("$", "");
+
+        // Split on delimiter unless it's doubled
+        string pattern = $"(?<![{escapedDelimiter}]){escapedDelimiter}(?!{escapedDelimiter})";
+        string[] parts = Regex.Split(content, pattern);
+
+        var result = new Dictionary<string, string>();
+        for (int i = 0; i < parts.Length; i += 2)
+        {
+            if (i + 1 < parts.Length)
+            {
+                string key = parts[i].Replace($"{delimiter}{delimiter}", $"{delimiter}").ToLower();
+                string value = parts[i + 1].Replace($"{delimiter}{delimiter}", $"{delimiter}");
+                result[key] = value;
+            }
+        }
+
+        return result;
+    }
+
+    private void extract_channel_metadata()
+    {
+        Regex pnnRegex = new Regex(@"^p(\d+)n$", RegexOptions.IgnoreCase);
+
+        // Find all PnN values
+        int index = 0;
+        foreach (string key in Text.Keys)
+        {
+            Match match = pnnRegex.Match(key);
+            if (match.Success)
+            {
+                int channelNum = int.Parse(match.Groups[1].Value);
+                channels[channelNum] = new FcsChannel() { Index = index };
+                channels[channelNum].Name = Text[key];
+                index += 1;
+            }
+        }
+
+        // Add other channel metadata
+        foreach (var kvp in channels)
+        {
+            int chanNum = kvp.Key;
+            var chanDict = kvp.Value;
+
+            // PnS
+            string pnsKey = $"p{chanNum}s";
+            chanDict.Label = Text.ContainsKey(pnsKey) ? Text[pnsKey] : "";
+
+            // PnE
+            string pneKey = $"p{chanNum}e";
+            if (Text.ContainsKey(pneKey))
+            {
+                string[] pneParts = Text[pneKey].Split(',');
+                double decades = double.Parse(pneParts[0]);
+                double log0 = double.Parse(pneParts[1]);
+
+                if (log0 == 0 && decades != 0)
+                {
+                    log0 = 1.0;
+                }
+
+                chanDict.Wavelength = (decades, log0);
+            }
+            else
+            {
+                chanDict.Wavelength = (0.0, 0.0);
+            }
+
+            // PnG
+            string pngKey = $"p{chanNum}g";
+            chanDict.Gain = Text.ContainsKey(pngKey) ? double.Parse(Text[pngKey]) : 1.0;
+
+            // PnR
+            string pnrKey = $"p{chanNum}r";
+            chanDict.Range = double.Parse(Text[pnrKey]);
+        }
+
+        return channels;
+    }
+
+    public double[,] AsArray(bool preprocess = true)
+    {
+        if (Events == null) return new double[0, 0];
+
+        double[,] tmpEvents = new double[EventCount, ChannelCount];
+        for (int i = 0; i < EventCount; i++)
+        {
+            for (int j = 0; j < ChannelCount; j++)
+            {
+                tmpEvents[i, j] = Events[i * ChannelCount + j];
+            }
+        }
+
+        if (preprocess)
+        {
+            // Time channel processing
+            if (Text.ContainsKey("timestep") && TimeIndex.HasValue)
+            {
+                string timestepStr = Text["timestep"];
+                double timeStep;
+                if (string.IsNullOrWhiteSpace(timestepStr))
+                {
+                    timeStep = 1.0;
+                }
+                else
+                {
+                    timeStep = double.Parse(timestepStr);
+                }
+
+                for (int i = 0; i < EventCount; i++)
+                {
+                    tmpEvents[i, TimeIndex.Value] *= timeStep;
+                }
+            }
+
+            // Channel processing
+            foreach (var kvp in Channels)
+            {
+                int chanNum = kvp.Key;
+                int chanIdx = chanNum - 1;
+                var chanDict = kvp.Value;
+
+                (double chanDecades, double chanLog0) = ((double, double))chanDict.Wavelength;
+                double chanRange = (double)chanDict.Range;
+                double chanGain = (double)chanDict.Gain;
+
+                if (chanDecades > 0)
+                {
+                    for (int i = 0; i < EventCount; i++)
+                    {
+                        tmpEvents[i, chanIdx] =
+                            Math.Pow(10, chanDecades * tmpEvents[i, chanIdx] / chanRange) * chanLog0;
+                    }
+                }
+
+                if (chanGain != 1.0 && chanGain != 0)
+                {
+                    for (int i = 0; i < EventCount; i++)
+                    {
+                        tmpEvents[i, chanIdx] /= chanGain;
+                    }
+                }
+            }
+        }
+
+        return tmpEvents;
+    }
+
+    private static int next_power_of_2(int x)
+    {
+        if (x == 0) return 1;
+        return (int)Math.Pow(2, Math.Ceiling(Math.Log(x) / Math.Log(2)));
+    }
+
+    private static ushort reverse_bytes(ushort value)
+    {
+        return (ushort)((value >> 8) | (value << 8));
+    }
+
+    private static uint reverse_bytes(uint value)
+    {
+        return (value >> 24) | ((value >> 8) & 0xFF00) | ((value << 8) & 0xFF0000) | (value << 24);
+    }
+
+    private static long reverse_bytes(long value, int byteWidth)
+    {
+        long result = 0;
+        for (int i = 0; i < byteWidth; i++)
+            result = (result << 8) | ((value >> (i * 8)) & 0xFF);
+        return result;
+    }
 }
 
 public class Subset : Population
 {
     public override bool IsTube { get; } = false;
+    public override string Name { get; set; }
 }

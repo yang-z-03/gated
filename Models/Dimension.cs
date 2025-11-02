@@ -3,19 +3,32 @@
 public abstract class Dimension
 {
     public abstract bool IsArtificial { get; }
-    public string Name { get; private set; } = string.Empty;
+    public abstract string Name { get; set; }
+    public abstract string Label { get; set; }
 }
 
 public class Channel : Dimension
 {
+    public Channel(string name, string label, (int, int) wavelength, int max, float gain)
+    {
+        this.Name = name;
+        this.Label = label;
+        this.Wavelength = wavelength;
+        this.Maximum = max;
+        this.Gain = gain;
+    }
+    
     public override bool IsArtificial { get; } = false;
-    public string Excitor { get; private set; } = string.Empty;
-    public string Receiver { get; private set; } = string.Empty;
-    public (int, int) Wavelength { get; private set; } = (-1, -1);
-    public int Maximum { get; private set; } = 65536;
+    public override string Name { get; set; }
+    public override string Label { get; set; }
+    public (int, int) Wavelength { get; private set; }
+    public int Maximum { get; private set; }
+    public float Gain { get; private set; }
 }
 
 public class Embedding : Dimension
 {
     public override bool IsArtificial { get; } = false;
+    public override string Name { get; set; }
+    public override string Label { get; set; }
 }
