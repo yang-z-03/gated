@@ -7,6 +7,7 @@ namespace Gated.Models;
 public abstract class GatingStrategy : INode
 {
     public abstract string Name { get; set; }
+    public virtual string Identifier { get; set; } = "gate";
 
     public ObservableCollection<INode> Children
     {

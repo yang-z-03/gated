@@ -2,9 +2,10 @@
 
 public abstract class Dimension
 {
-    public abstract bool IsArtificial { get; }
+    public abstract string Identifier { get; }
     public abstract string Name { get; set; }
     public abstract string Label { get; set; }
+    public static ChannelImageConverter ImageConverter = new();
 }
 
 public class Channel : Dimension
@@ -18,8 +19,8 @@ public class Channel : Dimension
         this.Gain = gain;
         this.Index = index;
     }
-    
-    public override bool IsArtificial { get; } = false;
+
+    public override string Identifier { get; } = "channel";
     public int Index { get; set; }
     public override string Name { get; set; }
     public override string Label { get; set; }
@@ -30,7 +31,13 @@ public class Channel : Dimension
 
 public class Embedding : Dimension
 {
-    public override bool IsArtificial { get; } = false;
+    public Embedding(string name, string label)
+    {
+        this.Name = name;
+        this.Label = label;
+    }
+    
+    public override string Identifier { get; } = "embedding";
     public override string Name { get; set; }
     public override string Label { get; set; }
 }

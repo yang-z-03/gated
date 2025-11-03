@@ -6,6 +6,7 @@ namespace Gated.Models;
 public abstract class Statistics : INode
 {
     public abstract string Name { get; set; }
+    public virtual string Identifier { get; set; } = "statistics";
     public ObservableCollection<INode> Children { get; } = new();
 }
 

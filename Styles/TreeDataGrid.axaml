@@ -200,6 +200,7 @@
             <ControlTemplate>
                 <PathIcon
                     Name="ChevronPath"
+                    Margin="3 0 0 0"
                     Width="{TemplateBinding Width}"
                     Height="{TemplateBinding Height}"
                     Theme="{StaticResource InnerPathIcon}"

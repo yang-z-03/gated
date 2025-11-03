@@ -38,6 +38,7 @@
     <PackageReference Include="Avalonia.Controls.ColorPicker" Version="11.3.8" />
     <PackageReference Include="Avalonia.Controls.TreeDataGrid" Version="11.1.0" />
     <PackageReference Include="Avalonia.Desktop" Version="11.3.8" />
+    <PackageReference Include="Avalonia.Svg.Skia" Version="11.3.0" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.8" />
     <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.8" />
     <!--Condition below is needed to remove Avalonia.Diagnostics package from build output in Release configuration.-->
@@ -48,5 +49,52 @@
     <PackageReference Include="ScottPlot.Avalonia" Version="5.1.57" />
     <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="3.119.1" />
     <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="3.119.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Resources\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Remove="Resources\controls.svg" />
+    <AvaloniaResource Include="Resources\controls.svg" />
+    <None Remove="Resources\gate.svg" />
+    <AvaloniaResource Include="Resources\gate.svg" />
+    <None Remove="Resources\grouping.svg" />
+    <AvaloniaResource Include="Resources\grouping.svg" />
+    <None Remove="Resources\statistics.svg" />
+    <AvaloniaResource Include="Resources\statistics.svg" />
+    <None Remove="Resources\subset.svg" />
+    <AvaloniaResource Include="Resources\subset.svg" />
+    <None Remove="Resources\tube.svg" />
+    <AvaloniaResource Include="Resources\tube.svg" />
+    <None Remove="Resources\unk.svg" />
+    <AvaloniaResource Include="Resources\unk.svg" />
+    <None Remove="Resources\workspace.svg" />
+    <AvaloniaResource Include="Resources\workspace.svg" />
+    <None Remove="Resources\bulb.svg" />
+    <AvaloniaResource Include="Resources\bulb.svg" />
+    <None Remove="Resources\channel.svg" />
+    <AvaloniaResource Include="Resources\channel.svg" />
+    <None Remove="Resources\chevron-down.svg" />
+    <AvaloniaResource Include="Resources\chevron-down.svg" />
+    <None Remove="Resources\chevron-right.svg" />
+    <AvaloniaResource Include="Resources\chevron-right.svg" />
+    <None Remove="Resources\console.svg" />
+    <AvaloniaResource Include="Resources\console.svg" />
+    <None Remove="Resources\embedding.svg" />
+    <AvaloniaResource Include="Resources\embedding.svg" />
+    <None Remove="Resources\error.svg" />
+    <AvaloniaResource Include="Resources\error.svg" />
+    <None Remove="Resources\matrix.svg" />
+    <AvaloniaResource Include="Resources\matrix.svg" />
+    <None Remove="Resources\ok.svg" />
+    <AvaloniaResource Include="Resources\ok.svg" />
+    <None Remove="Resources\success.svg" />
+    <AvaloniaResource Include="Resources\success.svg" />
+    <None Remove="Resources\table-edit.svg" />
+    <AvaloniaResource Include="Resources\table-edit.svg" />
+    <None Remove="Resources\warning.svg" />
+    <AvaloniaResource Include="Resources\warning.svg" />
   </ItemGroup>
 </Project>

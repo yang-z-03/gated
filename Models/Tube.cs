@@ -11,6 +11,7 @@ namespace Gated.Models;
 
 public abstract class Population : INode
 {
+    public virtual string Identifier { get; set; } = "population";
     public Dictionary<int, Channel> Channels { get; private set; } = new();
     public Dictionary<Channel, float[]> Measurements { get; private set; } = new();
     public Dictionary<Embedding, float[]> Embeddings { get; private set; } = new();
@@ -48,6 +49,7 @@ public abstract class Population : INode
 public class Tube : Population
 {
     public override bool IsTube { get; } = true;
+    public override string Identifier => "tube";
 
     public enum Specification
     {
@@ -247,9 +249,10 @@ public class Tube : Population
                 dataStop,
                 this.Text
             );
-            
+
             this.fill_matrix(true);
         }
+        else this.events = new();
 
         file_stream.Close();
     }
@@ -755,5 +758,6 @@ public class Tube : Population
 public class Subset : Population
 {
     public override bool IsTube { get; } = false;
-    public override string Name { get; set; }
+    public override string Name { get; set; } = "Subset";
+    public override string Identifier => "subset";
 }

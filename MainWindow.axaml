@@ -3,7 +3,9 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:sc="clr-namespace:ScottPlot.Avalonia;assembly=ScottPlot.Avalonia"
-        mc:Ignorable="d" Width="1200" Height="750"
+        xmlns:ga="clr-namespace:Gated"
+        xmlns:gam="clr-namespace:Gated.Models"
+        mc:Ignorable="d" Width="1300" Height="750"
         x:Class="Gated.MainWindow" FontSize="{StaticResource SemiFontSizeRegular}"
         FontFamily="{StaticResource SemiFontFamilyRegular}"
         WindowStartupLocation="CenterScreen"
@@ -127,18 +129,54 @@
         </Menu>
         
         <Grid Height="2" DockPanel.Dock="Top" Background="#50000000"></Grid>
-        <Grid ColumnDefinitions="400, 0, *, 0, 350" x:Name="Main">
+        <Grid ColumnDefinitions="410, 0, *, 0, 350" x:Name="Main">
             <Grid Grid.Column="0">
-                <TreeDataGrid x:Name="workspaceTree"/>
+                <TreeDataGrid x:Name="workspaceTree" Margin="4 4 4 8">
+                    <TreeDataGrid.Resources>
+                        <DataTemplate x:Key="nodeDataTemplate" DataType="gam:INode">
+                            <StackPanel Orientation="Horizontal">
+                                <Image Margin="0 0 6 0"
+                                       VerticalAlignment="Center">
+                                    <Image.Source>
+                                        <MultiBinding Converter="{x:Static gam:Workspace.ImageConverter}">
+                                            <Binding Path="Name" />
+                                            <Binding Path="Identifier" />
+                                        </MultiBinding>
+                                    </Image.Source>
+                                </Image>
+                                <TextBlock Text="{Binding Name}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </TreeDataGrid.Resources>
+                </TreeDataGrid>
             </Grid>
             <GridSplitter Grid.Column="1" ShowsPreview="True" />
             <Grid Grid.Column="2">
-                <sc:AvaPlot Width="350" Height="350" x:Name="avaPlot"/>
+                <sc:AvaPlot Width="370" Height="350" x:Name="avaPlot"/>
             </Grid>
             <GridSplitter Grid.Column="3" ShowsPreview="True" />
             <Grid Grid.Column="4">
                 <Grid RowDefinitions="350, 0, *">
-                    <Grid Grid.Row="0"></Grid>
+                    <Grid Grid.Row="0">
+                        <TreeDataGrid x:Name="featureTree" Margin="4 4 4 8">
+                            <TreeDataGrid.Resources>
+                                <DataTemplate x:Key="dimensionDataTemplate" DataType="gam:Dimension">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Image Margin="12 0 6 0"
+                                               VerticalAlignment="Center">
+                                            <Image.Source>
+                                                <MultiBinding Converter="{x:Static gam:Dimension.ImageConverter}">
+                                                    <Binding Path="Name" />
+                                                    <Binding Path="Identifier" />
+                                                </MultiBinding>
+                                            </Image.Source>
+                                        </Image>
+                                        <TextBlock Text="{Binding Name}" HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </TreeDataGrid.Resources>
+                        </TreeDataGrid>
+                    </Grid>
                     <GridSplitter Grid.Row="1" ShowsPreview="True" />
                     <Grid Grid.Row="2"></Grid>
                 </Grid>

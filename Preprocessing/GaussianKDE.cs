@@ -6,14 +6,14 @@ namespace Gated.Preprocessing;
 
 public class GaussianKDE
 {
-    private readonly double[] _x;
-    private readonly double[] _y;
+    private readonly float[] _x;
+    private readonly float[] _y;
     private readonly double _hx;
     private readonly double _hy;
     private readonly double _normFactor;
 
     public GaussianKDE(
-        IEnumerable<double> x, IEnumerable<double> y, 
+        IEnumerable<float> x, IEnumerable<float> y, 
         double? hx = null, double? hy = null)
     {
         _x = x.ToArray();
@@ -32,7 +32,7 @@ public class GaussianKDE
         _normFactor = 1.0 / (n * _hx * _hy * 2 * Math.PI);
     }
 
-    private static double silverman_bandwidth(double[] data)
+    private static double silverman_bandwidth(float[] data)
     {
         double stdDev = sd(data);
         double iqrange = iqr(data);
@@ -40,23 +40,23 @@ public class GaussianKDE
         return h + 1e-9; // Ensure non-zero
     }
 
-    private static double sd(double[] data)
+    private static double sd(float[] data)
     {
         double mean = data.Average();
         double sumSq = data.Select(d => (d - mean) * (d - mean)).Sum();
         return Math.Sqrt(sumSq / data.Length);
     }
 
-    private static double iqr(double[] data)
+    private static double iqr(float[] data)
     {
-        double[] sorted = data.OrderBy(d => d).ToArray();
+        float[] sorted = data.OrderBy(d => d).ToArray();
         int n = sorted.Length;
         double q1 = sorted[(int)(0.25 * n)];
         double q3 = sorted[(int)(0.75 * n)];
         return q3 - q1;
     }
 
-    public double Estimate(double x, double y)
+    public double Estimate(float x, float y)
     {
         double sum = 0.0;
         for (int i = 0; i < _x.Length; i++)
