@@ -182,10 +182,10 @@
     <Color x:Key="SemiGrey8Color">#E6E8EA</Color>
     <Color x:Key="SemiGrey9Color">#F9F9F9</Color>
     
-    <Color x:Key="SemiBackground0Color">#303030</Color>
-    <Color x:Key="SemiBackground1Color">#353535</Color>
-    <Color x:Key="SemiBackground2Color">#404040</Color>
-    <Color x:Key="SemiBackground3Color">#454545</Color>
+    <Color x:Key="SemiBackground0Color">#1e1e1e</Color>
+    <Color x:Key="SemiBackground1Color">#252525</Color>
+    <Color x:Key="SemiBackground2Color">#303030</Color>
+    <Color x:Key="SemiBackground3Color">#353535</Color>
     <Color x:Key="SemiBackground4Color">#505050</Color>
 
     <SolidColorBrush x:Key="SemiWhite" Color="{StaticResource SemiWhiteColor}" />

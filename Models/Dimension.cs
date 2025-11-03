@@ -9,20 +9,22 @@ public abstract class Dimension
 
 public class Channel : Dimension
 {
-    public Channel(string name, string label, (int, int) wavelength, int max, float gain)
+    public Channel(int index, string name, string label, (float, float) wavelength, float max, float gain)
     {
         this.Name = name;
         this.Label = label;
         this.Wavelength = wavelength;
         this.Maximum = max;
         this.Gain = gain;
+        this.Index = index;
     }
     
     public override bool IsArtificial { get; } = false;
+    public int Index { get; set; }
     public override string Name { get; set; }
     public override string Label { get; set; }
-    public (int, int) Wavelength { get; private set; }
-    public int Maximum { get; private set; }
+    public (float, float) Wavelength { get; private set; }
+    public float Maximum { get; private set; }
     public float Gain { get; private set; }
 }
 

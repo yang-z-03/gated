@@ -4,8 +4,8 @@
     <StaticResource x:Key="TreeDataGridItemCollapsedChevronPathData" ResourceKey="SemiIconTreeTriangleRight" />
     <StaticResource x:Key="TreeDataGridItemCollapsedChevronWidth" ResourceKey="SemiWidthIconMedium" />
     <StaticResource x:Key="TreeDataGridColumnHeaderCornerRadius" ResourceKey="SemiBorderRadiusSmall" />
-    <StaticResource x:Key="TreeDataGridColumnHeaderMinHeight" ResourceKey="SemiHeightControlDefault" />
+    <StaticResource x:Key="TreeDataGridColumnHeaderMinHeight" ResourceKey="SemiHeightControlSmall" />
     <StaticResource x:Key="TreeDataGridRowCornerRadius" ResourceKey="SemiBorderRadiusSmall" />
     <StaticResource x:Key="TreeDataGridRowMinHeight" ResourceKey="SemiHeightControlSmall" />
-    <StaticResource x:Key="TreeDataGridRowMargin" ResourceKey="SemiThicknessNone" />
+    <Thickness x:Key="TreeDataGridRowMargin">4 1 4 1</Thickness> 
 </ResourceDictionary>

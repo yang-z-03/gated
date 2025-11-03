@@ -12,7 +12,7 @@
     <DockPanel>
         <Menu DockPanel.Dock="Top" Background="{StaticResource SemiBackground1}">
             <MenuItem Header="File">
-                <MenuItem Header="Open ..." InputGesture="Ctrl + O"/>
+                <MenuItem Header="Open ..." InputGesture="Ctrl + O" Click="mnu_open_click"/>
                 <Separator/>
                 <MenuItem Header="Replace FCS file ..."/>
                 <MenuItem Header="Save Workspace ..." InputGesture="Ctrl + S"/>
@@ -127,13 +127,13 @@
         </Menu>
         
         <Grid Height="2" DockPanel.Dock="Top" Background="#50000000"></Grid>
-        <Grid ColumnDefinitions="350, 0, *, 0, 350" x:Name="Main">
+        <Grid ColumnDefinitions="400, 0, *, 0, 350" x:Name="Main">
             <Grid Grid.Column="0">
-                <TreeDataGrid x:Name="workspaceTree" />
+                <TreeDataGrid x:Name="workspaceTree"/>
             </Grid>
             <GridSplitter Grid.Column="1" ShowsPreview="True" />
             <Grid Grid.Column="2">
-                <sc:AvaPlot Width="350" Height="350" x:Name="avaPlot" />
+                <sc:AvaPlot Width="350" Height="350" x:Name="avaPlot"/>
             </Grid>
             <GridSplitter Grid.Column="3" ShowsPreview="True" />
             <Grid Grid.Column="4">

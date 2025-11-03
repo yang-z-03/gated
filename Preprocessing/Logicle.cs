@@ -2,21 +2,18 @@
 
 namespace Gated.Preprocessing;
 
-public class Logicle
+public partial class Logicle
 {
-    public const double DefaultT = 262144.0; // Top of scale value
-    public const double DefaultW = 0.5; // Width of linear region
-    public const double DefaultM = 4.5; // Number of decades
-    public const double DefaultA = 0.0; // Additional negative decades
-
     private readonly double T, W, M, A;
     private readonly double a, b, c, d, f;
     private readonly double w, x0, x1, x2;
-    private readonly double xTaylor;
+    private readonly double x_taylor;
     private readonly double[] taylor;
     private const int TAYLOR_LENGTH = 16;
 
-    private Logicle(double T, double W, double M, double A)
+    private Logicle(
+        double T = 262144.0, double W = 0.5,
+        double M = 4.5, double A = 0.0)
     {
         this.T = T;
         this.W = W;
@@ -36,7 +33,7 @@ public class Logicle
         c = c_a * a;
         f = -mf_a * a;
 
-        xTaylor = x1 + w / 4;
+        x_taylor = x1 + w / 4;
         taylor = new double[TAYLOR_LENGTH];
 
         double posCoef = a * Math.Exp(b * x1);
@@ -121,8 +118,8 @@ public class Logicle
             double ce2mdx = c / Math.Exp(d * x);
             double y;
 
-            if (x < xTaylor)
-                y = seriesBiexp(x) - value;
+            if (x < x_taylor)
+                y = series_biexp(x) - value;
             else
                 y = (ae2bx + f) - (ce2mdx + value);
 
@@ -141,7 +138,7 @@ public class Logicle
         return -1;
     }
 
-    private double seriesBiexp(double x)
+    private double series_biexp(double x)
     {
         x -= x1;
         double sum = taylor[TAYLOR_LENGTH - 1] * x;
@@ -150,30 +147,37 @@ public class Logicle
         return (sum * x + taylor[0]) * x;
     }
 
-    public static void Transform(double T, double W, double M, double A, double[] data)
+    private double inverse_scale(double value)
+    {
+        bool negative = value < x1;
+        if (negative) value = 2 * x1 - value;
+
+        double inverse;
+        if (value < x_taylor)
+            inverse = series_biexp(value);
+        else inverse = (a * Math.Exp(b * value) + f) - c / Math.Exp(d * value);
+
+        return negative ? -inverse : inverse;
+    }
+}
+
+public partial class Logicle
+{
+    public static void Transform(
+        double[] data, double T = 262144.0, double W = 0.5, 
+        double M = 4.5, double A = 0.0)
     {
         var logicle = new Logicle(T, W, M, A);
         for (int i = 0; i < data.Length; i++)
             data[i] = logicle.scale(data[i]);
     }
 
-    private double inverseScale(double value)
-    {
-        bool negative = value < x1;
-        if (negative) value = 2 * x1 - value;
-
-        double inverse;
-        if (value < xTaylor)
-            inverse = seriesBiexp(value);
-        else inverse = (a * Math.Exp(b * value) + f) - c / Math.Exp(d * value);
-
-        return negative ? -inverse : inverse;
-    }
-
-    public static void InverseTransform(double T, double W, double M, double A, double[] data)
+    public static void InverseTransform(
+        double[] data, double T = 262144.0, double W = 0.5, 
+        double M = 4.5, double A = 0.0)
     {
         var logicle = new Logicle(T, W, M, A);
         for (int i = 0; i < data.Length; i++)
-            data[i] = logicle.inverseScale(data[i]);
+            data[i] = logicle.inverse_scale(data[i]);
     }
 }

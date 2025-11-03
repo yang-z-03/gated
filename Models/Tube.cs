@@ -11,12 +11,12 @@ namespace Gated.Models;
 
 public abstract class Population : INode
 {
-    public virtual ObservableCollection<Channel> Channels { get; private set; }
-    public virtual Dictionary<Channel, float[]> Measurements { get; private set; } = new();
-    public virtual Dictionary<Embedding, float[]> Embeddings { get; private set; } = new();
+    public Dictionary<int, Channel> Channels { get; private set; } = new();
+    public Dictionary<Channel, float[]> Measurements { get; private set; } = new();
+    public Dictionary<Embedding, float[]> Embeddings { get; private set; } = new();
     
-    public Population? Parent { get; private set; } = null;
-    public Tube? ParentTube { get; private set; } = null;
+    public Population? Parent { get; set; } = null;
+    public Tube? ParentTube { get; set; } = null;
     public abstract bool IsTube { get; }
     public ObservableCollection<Subset> Subsets { get; private set; } = new();
     
@@ -95,6 +95,7 @@ public class Tube : Population
 
     private FileStream file_stream;
     private bool ignore_offset;
+    private List<double> events;
 
     public Tube(
         string fcsFile,
@@ -105,6 +106,8 @@ public class Tube : Population
         int? nextDataOffset = null
     ) {
         this.ignore_offset = ignoreOffsetError;
+        this.ParentTube = this;
+        this.Parent = null;
 
         this.Name = Path.GetFileName(fcsFile);
         this.Location = fcsFile;
@@ -238,12 +241,14 @@ public class Tube : Population
 
         if (!metadataOnly)
         {
-            this.parse_data(
+            this.events = this.parse_data(
                 currentOffset,
                 dataStart,
                 dataStop,
                 this.Text
             );
+            
+            this.fill_matrix(true);
         }
 
         file_stream.Close();
@@ -585,129 +590,88 @@ public class Tube : Population
     private void extract_channel_metadata()
     {
         Regex pnnRegex = new Regex(@"^p(\d+)n$", RegexOptions.IgnoreCase);
-
-        // Find all PnN values
+        Dictionary<int, string> channelNames = new();
+        
+        // find all PnN values
         int index = 0;
-        foreach (string key in Text.Keys)
+        foreach (string key in this.Text.Keys)
         {
             Match match = pnnRegex.Match(key);
             if (match.Success)
             {
                 int channelNum = int.Parse(match.Groups[1].Value);
-                channels[channelNum] = new FcsChannel() { Index = index };
-                channels[channelNum].Name = Text[key];
+                channelNames.Add(channelNum, this.Text[key]);
                 index += 1;
             }
         }
 
         // Add other channel metadata
-        foreach (var kvp in channels)
+        foreach (var kvp in channelNames)
         {
             int chanNum = kvp.Key;
             var chanDict = kvp.Value;
 
-            // PnS
             string pnsKey = $"p{chanNum}s";
-            chanDict.Label = Text.ContainsKey(pnsKey) ? Text[pnsKey] : "";
+            var label = Text.ContainsKey(pnsKey) ? Text[pnsKey] : "";
 
-            // PnE
             string pneKey = $"p{chanNum}e";
+            (float, float) wavelength = (0, 0);
             if (Text.ContainsKey(pneKey))
             {
                 string[] pneParts = Text[pneKey].Split(',');
                 double decades = double.Parse(pneParts[0]);
                 double log0 = double.Parse(pneParts[1]);
-
-                if (log0 == 0 && decades != 0)
-                {
-                    log0 = 1.0;
-                }
-
-                chanDict.Wavelength = (decades, log0);
-            }
-            else
-            {
-                chanDict.Wavelength = (0.0, 0.0);
+                if (log0 == 0 && decades != 0) log0 = 1.0;
+                wavelength = (Convert.ToSingle(decades), Convert.ToSingle(log0));
             }
 
-            // PnG
             string pngKey = $"p{chanNum}g";
-            chanDict.Gain = Text.ContainsKey(pngKey) ? double.Parse(Text[pngKey]) : 1.0;
+            var gain = Text.ContainsKey(pngKey) ? float.Parse(Text[pngKey]) : 1.0f;
 
-            // PnR
             string pnrKey = $"p{chanNum}r";
-            chanDict.Range = double.Parse(Text[pnrKey]);
+            var max = float.Parse(Text[pnrKey]);
+            
+            this.Channels.Add(chanNum, new Channel(
+                chanNum, chanDict, label, wavelength, max, gain));
         }
-
-        return channels;
     }
 
-    public double[,] AsArray(bool preprocess = true)
+    private void fill_matrix(bool preprocess = true)
     {
-        if (Events == null) return new double[0, 0];
-
-        double[,] tmpEvents = new double[EventCount, ChannelCount];
-        for (int i = 0; i < EventCount; i++)
+        this.Measurements.Clear();
+        foreach (var channel in this.Channels)
         {
-            for (int j = 0; j < ChannelCount; j++)
-            {
-                tmpEvents[i, j] = Events[i * ChannelCount + j];
-            }
-        }
+            int chanNum = channel.Key;
+            int chanIdx = chanNum - 1;
+            
+            float[] values = new float[this.EventCount];
+            for (int i = 0; i < this.EventCount; i++)
+                values[i] = Convert.ToSingle(this.events[i * this.ChannelCount + chanIdx]);
 
-        if (preprocess)
-        {
-            // Time channel processing
-            if (Text.ContainsKey("timestep") && TimeIndex.HasValue)
+            if (preprocess && Text.ContainsKey("timestep") && channel.Value.Name.ToLower().StartsWith("time"))
             {
                 string timestepStr = Text["timestep"];
-                double timeStep;
+                float timeStep;
                 if (string.IsNullOrWhiteSpace(timestepStr))
-                {
-                    timeStep = 1.0;
-                }
-                else
-                {
-                    timeStep = double.Parse(timestepStr);
-                }
+                    timeStep = 1.0f;
+                else timeStep = float.Parse(timestepStr);
+                for (int k = 0; k < values.Length; k++)
+                    values[k] *= timeStep;
+            }
 
+            (float chanDecades, float chanLog0) = channel.Value.Wavelength;
+            float chanRange = channel.Value.Maximum;
+            float chanGain = channel.Value.Gain;
+
+            if (chanDecades > 0)
                 for (int i = 0; i < EventCount; i++)
-                {
-                    tmpEvents[i, TimeIndex.Value] *= timeStep;
-                }
-            }
+                    values[i] = Convert.ToSingle(Math.Pow(10, chanDecades * values[i] / chanRange) * chanLog0);
 
-            // Channel processing
-            foreach (var kvp in Channels)
-            {
-                int chanNum = kvp.Key;
-                int chanIdx = chanNum - 1;
-                var chanDict = kvp.Value;
-
-                (double chanDecades, double chanLog0) = ((double, double))chanDict.Wavelength;
-                double chanRange = (double)chanDict.Range;
-                double chanGain = (double)chanDict.Gain;
-
-                if (chanDecades > 0)
-                {
-                    for (int i = 0; i < EventCount; i++)
-                    {
-                        tmpEvents[i, chanIdx] =
-                            Math.Pow(10, chanDecades * tmpEvents[i, chanIdx] / chanRange) * chanLog0;
-                    }
-                }
-
-                if (chanGain != 1.0 && chanGain != 0)
-                {
-                    for (int i = 0; i < EventCount; i++)
-                    {
-                        tmpEvents[i, chanIdx] /= chanGain;
-                    }
-                }
-            }
+            if (chanGain != 0)
+                for (int i = 0; i < EventCount; i++)
+                    values[i] /= chanGain;
+            this.Measurements.Add(channel.Value, values);
         }
-
-        return tmpEvents;
     }
 
     private static int next_power_of_2(int x)
@@ -732,6 +696,59 @@ public class Tube : Population
         for (int i = 0; i < byteWidth; i++)
             result = (result << 8) | ((value >> (i * 8)) & 0xFF);
         return result;
+    }
+
+    public Channel? GetChannelByName(string channelName)
+    {
+        foreach (var channel in this.Channels)  
+            if (channel.Value.Name == channelName) return channel.Value;
+        return null;
+    }
+    
+    public Channel? GetChannelByIndex(int channelId)
+    {
+        foreach (var channel in this.Channels)  
+            if (channel.Value.Index == channelId) return channel.Value;
+        return null;
+    }
+
+    public Dictionary<Dimension, float[]?> GetValues(int max, params Dimension[] dimensions)
+    {
+        Dictionary<Dimension, float[]?> dict = new();
+        
+        int step = (int)Math.Max(1, this.EventCount / max);
+        int[] indices = new int[max];
+        int no = 0;
+        while (no < max)
+        {
+            indices[no] = no * step;
+            no++;
+        }
+        
+        foreach (var dimension in dimensions)
+        {
+            if ((dimension is Channel channel) && (this.Measurements!.ContainsKey(channel)))
+            {
+                var all = this.Measurements[channel];
+                if (this.EventCount <= max) dict.Add(dimension, all);
+                else dict.Add(dimension, GetValues(dimension, indices));
+            }
+        }
+
+        return dict;
+    }
+
+    public float[]? GetValues(Dimension dimension, int[] indices)
+    {
+        if ((dimension is Channel channel) && (this.Measurements!.ContainsKey(channel)))
+        {
+            var all = this.Measurements[channel];
+            float[] selected = new float[indices.Length];
+            for (int id = 0; id < indices.Length; id++) selected[id] = all[indices[id]];
+            return selected;
+        }
+
+        return null;
     }
 }
 
