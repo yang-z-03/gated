@@ -17,6 +17,17 @@ public interface INode
     public string Name { get; set; }
     public string Identifier { get; set; }
     public ObservableCollection<INode> Children { get; }
+    public bool IsExpanded { get; set; }
+}
+
+public static class INodeExtensions
+{
+    public static string? GetNCells(this INode node)
+    {
+        if (node is Tube t)
+            return t.EventCount.ToString();
+        return null;
+    }
 }
 
 public class INodeImageConverter : IMultiValueConverter
@@ -29,14 +40,18 @@ public class INodeImageConverter : IMultiValueConverter
     
     private readonly IImage bmp_tube;
     private readonly IImage bmp_subset;
+    private readonly IImage bmp_gate_collection;
     private readonly IImage bmp_gate;
+    private readonly IImage bmp_statistics_collection;
     private readonly IImage bmp_statistics;
     private readonly IImage bmp_unk;
 
     public INodeImageConverter()
     {
         this.bmp_workspace = new SvgImage {Source = SvgSource.Load("avares://gated/Resources/workspace.svg", null)};
-        this.bmp_grouping =  new SvgImage {Source = SvgSource.Load("avares://gated/Resources/grouping.svg", null)};
+        this.bmp_grouping =  new SvgImage {Source = SvgSource.Load("avares://gated/Resources/group.svg", null)};
+        this.bmp_gate_collection =  new SvgImage {Source = SvgSource.Load("avares://gated/Resources/gates.svg", null)};
+        this.bmp_statistics_collection =  new SvgImage {Source = SvgSource.Load("avares://gated/Resources/stats.svg", null)};
         this.bmp_isotype =  new SvgImage {Source = SvgSource.Load("avares://gated/Resources/controls.svg", null)};
         this.bmp_blank =  new SvgImage {Source = SvgSource.Load("avares://gated/Resources/controls.svg", null)};
         this.bmp_single =  new SvgImage {Source = SvgSource.Load("avares://gated/Resources/controls.svg", null)};
@@ -62,6 +77,10 @@ public class INodeImageConverter : IMultiValueConverter
                     case "fmo": return this.bmp_single;
                     case "isotype": return this.bmp_isotype;
                     case "tube": return this.bmp_tube;
+                    case "statistics": return this.bmp_statistics_collection;
+                    case "statistic": return this.bmp_statistics;
+                    case "gates": return this.bmp_gate_collection;
+                    case "gate": return this.bmp_gate;
                     default: return this.bmp_unk;
                 }        
             }
@@ -110,7 +129,7 @@ public class Workspace : INode
         this.Children.Add(new Grouping("Single Staining", new List<Tube>(), "single"));
         this.Children.Add(new Grouping("FMO Staining", new List<Tube>(), "fmo"));
         this.Children.Add(new Grouping("Isotype Control", new List<Tube>(), "isotype"));
-        this.Children.Add(new Grouping("Samples", new List<Tube>()));
+        this.Children.Add(new Grouping("Samples", new List<Tube>(), null, true));
     }
     
     public string Name { get; set; } = "Workspace";
@@ -118,6 +137,7 @@ public class Workspace : INode
 
     public string FilePath { get; private set; } = string.Empty;
     public bool IsDirty { get; set; } = false;
+    public bool IsExpanded { get; set; } = true;
     public ObservableCollection<INode> Children { get; } = new();
 
     public static INodeImageConverter ImageConverter = new INodeImageConverter();

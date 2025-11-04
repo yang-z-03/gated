@@ -4,10 +4,49 @@ using System.Drawing;
 
 namespace Gated.Models;
 
+public class GatingStrategyCollection : ObservableCollection<GatingStrategy>, INode
+{
+    public GatingStrategyCollection()
+        : base()
+    {
+        this.CollectionChanged += (s, e) =>
+        {
+            if (e.OldItems != null)
+            {
+                foreach (var o in e.OldItems)
+                    if (o is INode node)
+                        if (this.children.Contains(node))
+                            this.children.Remove(node);
+            }
+            
+            if (e.NewItems != null)
+            {
+                foreach (var n in e.NewItems)
+                    if (n is INode node)
+                        if (!this.children.Contains(node))
+                            this.children.Add(node);
+            }
+        };
+    }
+
+    public string Name { get; set; } = "Gates";
+    public string Identifier { get; set; } = "gates";
+    private ObservableCollection<INode> children = new();
+
+    public ObservableCollection<INode> Children
+    {
+        get { return children; }
+    }
+    
+    public bool IsExpanded { get; set; } = true;
+}
+
 public abstract class GatingStrategy : INode
 {
     public abstract string Name { get; set; }
     public virtual string Identifier { get; set; } = "gate";
+    
+    public bool IsExpanded { get; set; } = true;
 
     public ObservableCollection<INode> Children
     {

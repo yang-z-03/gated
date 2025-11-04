@@ -11,6 +11,29 @@ namespace Gated.Models;
 
 public abstract class Population : INode
 {
+    public Population()
+    {
+        this.children.Add(this.Statistics);
+        this.Gates.CollectionChanged += (s, e) =>
+        {
+            if (e.OldItems != null)
+            {
+                foreach (var o in e.OldItems)
+                    if (o is INode node)
+                        if (this.children.Contains(node))
+                            this.children.Remove(node);
+            }
+            
+            if (e.NewItems != null)
+            {
+                foreach (var n in e.NewItems)
+                    if (n is INode node)
+                        if (!this.children.Contains(node))
+                            this.children.Add(node);
+            }
+        };
+    }
+    
     public virtual string Identifier { get; set; } = "population";
     public Dictionary<int, Channel> Channels { get; private set; } = new();
     public Dictionary<Channel, float[]> Measurements { get; private set; } = new();
@@ -24,20 +47,18 @@ public abstract class Population : INode
     public abstract string Name { get; set; }
     public int ChannelCount { get; set; } = 0;
     public long EventCount { get; set; } = 0L;
+    
+    public bool IsExpanded { get; set; } = false;
+
+    private ObservableCollection<INode> children = new();
 
     public ObservableCollection<INode> Children
     {
-        get
-        {
-            ObservableCollection<INode> children = new();
-            foreach (GatingStrategy child in this.Gates) children.Add(child);
-            foreach (Statistics child in this.Statistics) children.Add(child);
-            return children;
-        }
+        get { return children; }
     }
 
-    public ObservableCollection<GatingStrategy> Gates { get; private set; } = new();
-    public ObservableCollection<Statistics> Statistics { get; private set; } = new();
+    public GatingStrategyCollection Gates { get; private set; } = new();
+    public StatisticsCollection Statistics { get; private set; } = new();
     
     // population-level settings that, if exists, will override the settings
     // from the group. it is supported though, for any sub-population to implement

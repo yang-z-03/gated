@@ -96,5 +96,11 @@
     <AvaloniaResource Include="Resources\table-edit.svg" />
     <None Remove="Resources\warning.svg" />
     <AvaloniaResource Include="Resources\warning.svg" />
+    <None Remove="Resources\stats.svg" />
+    <AvaloniaResource Include="Resources\stats.svg" />
+    <None Remove="Resources\gates.svg" />
+    <AvaloniaResource Include="Resources\gates.svg" />
+    <None Remove="Resources\group.svg" />
+    <AvaloniaResource Include="Resources\group.svg" />
   </ItemGroup>
 </Project>

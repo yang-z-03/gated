@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
 using System.Linq;
+using System.Linq.Expressions;
 using Avalonia.Controls;
 using Avalonia.Controls.Models.TreeDataGrid;
 using Avalonia.Controls.Selection;
@@ -54,7 +55,6 @@ public partial class MainWindow : Window
 
         this.DataContext = this.ViewModel;
         this.workspaceTree.Source = this.ViewModel.WorkspaceView;
-        this.ViewModel.WorkspaceView.ExpandAll();
         this.ViewModel.WorkspaceView.RowSelection!.SelectedIndex = 0;
         this.ViewModel.WorkspaceView.RowSelection.SelectionChanged += workspace_tree_select;
 
@@ -73,7 +73,7 @@ public partial class MainWindow : Window
         this.plotter.UserInputProcessor.Reset();
     }
 
-    private void draw_gate()
+    private void draw_polygon_gate()
     {
         this.lock_plot();
         this.plotter.UserInputProcessor.UserActionResponses.Add(
@@ -95,9 +95,19 @@ public partial class MainWindow : Window
 
         if (files.Count >= 1)
         {
-            this.ViewModel.Workspace.Children[4].Children.Add(
-                new Tube(files[0].Path.AbsolutePath.Replace("%20", " "))
-            );
+            foreach (var file in files)
+            {
+                try
+                {
+                    (this.ViewModel.Workspace.Children[4] as Grouping)!.Samples.Add(
+                        new Tube(files[0].Path.AbsolutePath.Replace("%20", " "))
+                    );
+                }
+                catch (Exception ex)
+                {
+                    
+                }
+            }
         }
     }
 
@@ -112,13 +122,11 @@ public partial class MainWindow : Window
             this.ViewModel.Dimensions.Clear();
             foreach(var dim in tube.Channels)
                 this.ViewModel.Dimensions.Add(dim.Value);
-            
+
             this.display_scatter(
                 tube,
                 tube.GetChannelByName("FSC-A"),
                 tube.GetChannelByName("SSC-A"));
-            
-            this.draw_gate();
         }
     }
 
@@ -181,8 +189,8 @@ public class MainWindowViewModel
                     new TemplateColumn<INode>(
                         "Node", "nodeDataTemplate",null,
                         width: new GridLength(300, GridUnitType.Pixel)),
-                    x => x.Children),
-                new TextColumn<INode, string>("Type", x => x.GetType().Name, width: new GridLength(100, GridUnitType.Pixel))
+                    x => x.Children, null, x => x.IsExpanded),
+                new TextColumn<INode, string>("# Cells", x => x.GetNCells(), width: new GridLength(100, GridUnitType.Pixel))
             }
         };
 
