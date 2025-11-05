@@ -30,7 +30,7 @@
     <x:Double x:Key="SemiBorderRadiusSpacingFull">9999</x:Double> 
     <CornerRadius x:Key="SemiBorderRadiusExtraSmall">4</CornerRadius> 
     <CornerRadius x:Key="SemiBorderRadiusSmall">4</CornerRadius> 
-    <CornerRadius x:Key="SemiBorderRadiusMedium">6</CornerRadius> 
+    <CornerRadius x:Key="SemiBorderRadiusMedium">8</CornerRadius> 
     <CornerRadius x:Key="SemiBorderRadiusLarge">12</CornerRadius> 
     <CornerRadius x:Key="SemiBorderRadiusFull">9999</CornerRadius> 
 

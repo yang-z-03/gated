@@ -6,6 +6,9 @@ using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Linq;
+using Gated.Configurations;
+using Gated.Preprocessing;
+using ScottPlot;
 
 namespace Gated.Models;
 
@@ -34,30 +37,160 @@ public abstract class Population : INode
     }
     
     public virtual string Identifier { get; set; } = "population";
-    public Dictionary<int, Channel> Channels { get; private set; } = new();
-    public Dictionary<Channel, float[]> Measurements { get; private set; } = new();
-    public Dictionary<Embedding, float[]> Embeddings { get; private set; } = new();
+    public abstract string Name { get; set; }
+    public int ChannelCount { get; set; } = 0;
+    public long EventCount { get; set; } = 0L;
+    public Dictionary<int, Channel> Channels { get; set; } = new();
+    public Dictionary<int, Embedding> Embeddings { get; set; } = new();
     
     public Population? Parent { get; set; } = null;
     public Tube? ParentTube { get; set; } = null;
     public Grouping? ParentGroup { get; set; } = null;
     public abstract bool IsTube { get; }
+    public GatingStrategy? AssociatedGate { get; set; } = null;
     public ObservableCollection<Subset> Subsets { get; private set; } = new();
     
-    public abstract string Name { get; set; }
-    public int ChannelCount { get; set; } = 0;
-    public long EventCount { get; set; } = 0L;
-    
     public bool IsExpanded { get; set; } = false;
-
     private ObservableCollection<INode> children = new();
-
     public ObservableCollection<INode> Children
     {
         get { return children; }
     }
+
+    public abstract Dictionary<Dimension, float[]?> GetValues(long max, params Dimension[] dimensions);
+    public abstract float[]? GetValues(Dimension dimension, long[] indices);
+    public Compensation? Compensation { get; set; } = null;
     
-    public Compensation? Compensation { get; private set; } = null;
+    internal static bool inside_polygon(
+        Coordinates checkPoint, 
+        List<Coordinates> polygonPoints)
+    {
+        bool inside = false;
+        int pointCount = polygonPoints.Count;
+        Coordinates p1, p2;
+        for (int i = 0, j = pointCount - 1; i < pointCount; j = i, i++)
+        {
+            p1 = polygonPoints[i];
+            p2 = polygonPoints[j];
+            if (checkPoint.Y < p2.Y)
+            {
+                if (p1.Y <= checkPoint.Y)
+                    if ((checkPoint.Y - p1.Y) * (p2.X - p1.X) > (checkPoint.X - p1.X) * (p2.Y - p1.Y))
+                        inside = (!inside);
+            }
+            else if (checkPoint.Y < p1.Y)
+                if ((checkPoint.Y - p1.Y) * (p2.X - p1.X) < (checkPoint.X - p1.X) * (p2.Y - p1.Y))
+                    inside = (!inside);
+            
+        }
+        
+        return inside;
+    }
+
+    public abstract void AddGate(GatingStrategy gate);
+    
+    public ScatterConfig Display(
+        IPlotControl plot, Dimension x, Dimension y, 
+        ScatterConfig? config = null)
+    {
+        if (config == null)
+            if (this.ParentGroup!.ScatterConfigs.ContainsKey(x))
+                if (this.ParentGroup!.ScatterConfigs[x].ContainsKey(y))
+                    config = this.ParentGroup!.ScatterConfigs[x][y];
+        
+        if (config == null)
+            config = new ScatterConfig(x, y);
+        
+        plot.Plot.Clear();
+        var dict = this.GetValues(config.MaxDisplay, x!, y!);
+        var xs = dict[x!]!;
+        var ys = dict[y!]!;
+        config.XTransform.Transform(xs);
+        config.YTransform.Transform(ys);
+        
+        // axis limits
+        if (!config.has_initialize_range())
+            config.initialize_range(xs, ys);
+        
+        plot.Plot.Axes.SetLimitsX(config.XRange.Item1, config.XRange.Item2);
+        plot.Plot.Axes.SetLimitsY(config.YRange.Item1, config.YRange.Item2);
+        
+        // hide axis edge line
+        plot.Plot.Axes.Right.FrameLineStyle.Width = 0;
+        plot.Plot.Axes.Top.FrameLineStyle.Width = 0;
+        // scientific notation
+        plot.Plot.Axes.SetupMultiplierNotation(plot.Plot.Axes.Left);
+        plot.Plot.Axes.SetupMultiplierNotation(plot.Plot.Axes.Bottom);
+
+        if (config.Density)
+        {
+            var dictDens = this.GetValues(config.DensityEstimate, x!, y!);
+            var densx = dictDens[x!]!;
+            var densy = dictDens[y!]!;
+
+            GaussianKDE kde = new(densx, densy);
+            double[] density = new double[xs.Length];
+            for (int j = 0; j < xs.Length; j++)
+                density[j] = kde.Estimate(xs[j], ys[j]);
+
+            double minDensity = density.Min();
+            double maxDensity = density.Max();
+            double spanDensity = maxDensity - minDensity;
+            var colormap = new ScottPlot.Colormaps.Turbo();
+            for (int j = 0; j < xs.Length; j++)
+            {
+                double fraction = (density[j] - minDensity) / spanDensity;
+                var marker = plot.Plot.Add.Marker(xs[j], ys[j]);
+                marker.Color = colormap.GetColor(fraction).WithAlpha(.8);
+                marker.Size = 2;
+            }
+        }
+        else
+        {
+            var scatter = plot.Plot.Add.Markers(xs, ys);
+            scatter.MarkerSize = 2;
+            scatter.MarkerColor = Color.FromHex("#00000070");
+        }
+        
+        // plot gates at this level.
+        if (this.AssociatedGate == null)
+            this.ParentGroup!.Gates.Display(plot, x, y);
+        else this.AssociatedGate.Subsets.Display(plot, x, y);
+
+        plot.Refresh();
+
+        if (!this.ParentGroup!.ScatterConfigs.ContainsKey(x))
+        {
+            var conf = new Dictionary<Dimension, ScatterConfig>();
+            conf.Add(y, config);
+            this.ParentGroup!.ScatterConfigs.Add(x, conf);
+        }
+        else
+        {
+            if (!this.ParentGroup!.ScatterConfigs[x].ContainsKey(y))
+                this.ParentGroup!.ScatterConfigs[x].Add(y, config);
+            else this.ParentGroup!.ScatterConfigs[x][y] = config;
+        }
+
+        return config;
+    }
+    
+    public Channel? GetChannelByName(string channelName)
+    {
+        foreach (var channel in this.Channels)  
+            if (channel.Value.Name == channelName) return channel.Value;
+        return null;
+    }
+    
+    public Channel? GetChannelByIndex(int channelId)
+    {
+        foreach (var channel in this.Channels)  
+            if (channel.Value.Index == channelId) return channel.Value;
+        return null;
+    }
+
+    public Dimension GetDefaultX() => GetChannelByName("FSC-A") ?? GetChannelByIndex(0)!;
+    public Dimension GetDefaultY() => GetChannelByName("SSC-A") ?? GetChannelByIndex(1)!;
 }
 
 public class Tube : Population
@@ -108,6 +241,8 @@ public class Tube : Population
     public Dictionary<string, string> Text { get; private set; }
     public Specification Version { get; private set; }
     public string Location { get; private set; }
+    
+    public Dictionary<Dimension, float[]> Measurements { get; internal set; } = new();
 
     private FileStream file_stream;
     private bool ignore_offset;
@@ -716,52 +851,32 @@ public class Tube : Population
             result = (result << 8) | ((value >> (i * 8)) & 0xFF);
         return result;
     }
-
-    public Channel? GetChannelByName(string channelName)
-    {
-        foreach (var channel in this.Channels)  
-            if (channel.Value.Name == channelName) return channel.Value;
-        return null;
-    }
     
-    public Channel? GetChannelByIndex(int channelId)
-    {
-        foreach (var channel in this.Channels)  
-            if (channel.Value.Index == channelId) return channel.Value;
-        return null;
-    }
-
-    public Dictionary<Dimension, float[]?> GetValues(int max, params Dimension[] dimensions)
+    public override Dictionary<Dimension, float[]?> GetValues(long max, params Dimension[] dimensions)
     {
         Dictionary<Dimension, float[]?> dict = new();
         
-        int step = (int)Math.Max(1, this.EventCount / max);
-        int[] indices = new int[max];
-        int no = 0;
-        while (no < max)
-        {
-            indices[no] = no * step;
-            no++;
-        }
+        long step = Math.Max(1L, this.EventCount / max);
+        long length = Math.Min(max, this.EventCount);
+        long[] indices = new long[length];
+        for (int i = 0; i < length; i++)
+            indices[i] = step * i;
         
         foreach (var dimension in dimensions)
-        {
-            if ((dimension is Channel channel) && (this.Measurements!.ContainsKey(channel)))
+            if ((this.Measurements!.ContainsKey(dimension)))
             {
-                var all = this.Measurements[channel];
-                if (this.EventCount <= max) dict.Add(dimension, all);
-                else dict.Add(dimension, GetValues(dimension, indices));
+                // implicitly return a copy of the data.
+                dict.Add(dimension, GetValues(dimension, indices));
             }
-        }
 
         return dict;
     }
 
-    public float[]? GetValues(Dimension dimension, int[] indices)
+    public override float[]? GetValues(Dimension dimension, long[] indices)
     {
-        if ((dimension is Channel channel) && (this.Measurements!.ContainsKey(channel)))
+        if (this.Measurements!.ContainsKey(dimension))
         {
-            var all = this.Measurements[channel];
+            var all = this.Measurements[dimension];
             float[] selected = new float[indices.Length];
             for (int id = 0; id < indices.Length; id++) selected[id] = all[indices[id]];
             return selected;
@@ -769,11 +884,112 @@ public class Tube : Population
 
         return null;
     }
+    
+    public override void AddGate(GatingStrategy gate)
+    {
+        // TODO: implement different gating schemes here.
+        if (gate is PolygonalGate polygon)
+        {
+            // get data points
+            var data = this.GetValues(this.EventCount, polygon.X, polygon.Y);
+            polygon.XTransform.Transform(data[polygon.X]!);
+            polygon.YTransform.Transform(data[polygon.Y]!);
+
+            var x = data[polygon.X]!;
+            var y = data[polygon.Y]!;
+            List<long> selection = new();
+            for(long i = 0; i < this.EventCount; i++)
+                if (inside_polygon(new Coordinates(x[i], y[i]), polygon.Polygon))
+                    selection.Add(i);
+
+            var subset = new Subset(
+                this, selection.ToArray(), polygon, polygon.Name);
+        }
+    }
 }
 
 public class Subset : Population
 {
+    public Subset(Population p, long[] indices, GatingStrategy? associatedGate = null, string name = "Subset")
+    {
+        this.Name = name;
+        this.AssociatedGate = associatedGate;
+        
+        this.Parent = p;
+        this.ParentGroup = p.ParentGroup;
+        this.ParentTube = p.ParentTube;
+        this.EventCount = indices.Length;
+        this.ChannelCount = p.ChannelCount;
+        this.Channels = p.Channels;
+        this.Embeddings = p.Embeddings;
+        this.Compensation = p.Compensation;
+
+        this.Selection = indices;
+        p.Subsets.Add(this);
+    }
+    
     public override bool IsTube { get; } = false;
     public override string Name { get; set; } = "Subset";
     public override string Identifier => "subset";
+    
+    public long[] Selection { get; init; }
+    
+    public override Dictionary<Dimension, float[]?> GetValues(long max, params Dimension[] dimensions)
+    {
+        Dictionary<Dimension, float[]?> dict = new();
+        
+        long step = Math.Max(1L, this.EventCount / max);
+        long length = Math.Min(max, this.EventCount);
+        long[] indices = new long[length];
+        for (int i = 0; i < length; i++)
+            indices[i] = step * i;
+        
+        // mapping to the selection
+        for (int i = 0; i < length; i++)
+            indices[i] = this.Selection[indices[i]];
+        
+        foreach (var dimension in dimensions)
+            if ((this.ParentTube!.Measurements!.ContainsKey(dimension)))
+                dict.Add(dimension, GetValues(dimension, indices));
+
+        return dict;
+    }
+
+    public override float[]? GetValues(Dimension dimension, long[] indices)
+    {
+        if (this.ParentTube!.Measurements!.ContainsKey(dimension))
+        {
+            var all = this.ParentTube!.Measurements[dimension];
+            float[] selected = new float[indices.Length];
+            for (int id = 0; id < indices.Length; id++) selected[id] = all[indices[id]];
+            return selected;
+        }
+
+        return null;
+    }
+    
+    public override void AddGate(GatingStrategy gate)
+    {
+        // TODO: implement different gating schemes here.
+        if (gate is PolygonalGate polygon)
+        {
+            // get data points
+            var data = this.GetValues(this.EventCount, polygon.X, polygon.Y);
+            polygon.XTransform.Transform(data[polygon.X]!);
+            polygon.YTransform.Transform(data[polygon.Y]!);
+
+            var x = data[polygon.X]!;
+            var y = data[polygon.Y]!;
+            List<long> selection = new();
+            for(long i = 0; i < this.EventCount; i++)
+                if (inside_polygon(new Coordinates(x[i], y[i]), polygon.Polygon))
+                    selection.Add(i);
+            
+            for (int i = 0; i < selection.Count; i++)
+                selection[i] = this.Selection[selection[i]];
+
+            var subset = new Subset(
+                this, selection.ToArray(), polygon, polygon.Name);
+        }
+    }
 }

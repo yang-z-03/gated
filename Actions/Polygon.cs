@@ -1,23 +1,47 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using Gated.Models;
 using ScottPlot;
 using ScottPlot.Interactivity;
 
 namespace Gated.Actions;
 
-public class Polygon(MouseButton button) : IUserActionResponse
+public interface IGatingAction
 {
+    public event EventHandler? GateDefined;
+}
+
+public class Polygon(MouseButton button) : IUserActionResponse, IGatingAction
+{
+    public Polygon(MouseButton button, bool editLocked) : this(button)
+    {
+        this.edit_locked = editLocked;
+    }
+    
+    public Polygon(IPlotControl control, PolygonalGate gate, MouseButton button) : this(button)
+    {
+        this.vertices = gate.Polygon;
+        this.closed = true;
+        foreach (Coordinates v in vertices)
+            this.pixels.Add(control.Plot.GetPixel(v));
+        this.apply(control.Plot);
+        this.edit_locked = true;
+    }
+    
     public MouseButton MouseButton { get; } = button;
     public int Tolerance { get; } = 4;
-    private List<Coordinates> vertices = new();
+    internal List<Coordinates> vertices = new();
     private List<Pixel> pixels = new();
     private ScottPlot.Plottables.Polygon? polygon = null;
     private bool closed = false;
     
     private bool edit_mode = false;
     private int edit_index = -1;
+    private bool edit_locked = false;
 
+    public event EventHandler? GateDefined;
+    
     public void ResetState(IPlotControl plotControl)
     {
         return;
@@ -90,13 +114,15 @@ public class Polygon(MouseButton button) : IUserActionResponse
                     this.edit_index = hit_test;
                     return ResponseInfo.NoActionRequired;
                 }
-                else this.reset_state(plotControl);
+                else if(!this.edit_locked) { this.reset_state(plotControl); }
+                else return ResponseInfo.NoActionRequired;
             }
 
             if (this.vertices.Count > 0 && hit_on_first(mouseDownAction.Pixel, this.Tolerance))
             {
                 this.closed = true;
                 this.apply(plot);
+                this.GateDefined?.Invoke(this, EventArgs.Empty);
                 return ResponseInfo.Refresh;
             }
             else
@@ -104,6 +130,8 @@ public class Polygon(MouseButton button) : IUserActionResponse
                 this.vertices.Add(current);
                 this.pixels.Add(mouseDownAction.Pixel);
                 this.apply(plot);
+                this.edit_mode = true;
+                this.edit_index = this.vertices.Count - 1;
                 return ResponseInfo.Refresh;
             }
         }

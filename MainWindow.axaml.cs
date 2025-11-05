@@ -9,12 +9,18 @@ using Avalonia.Controls;
 using Avalonia.Controls.Models.TreeDataGrid;
 using Avalonia.Controls.Selection;
 using Avalonia.Interactivity;
+using Avalonia.Media;
 using Avalonia.Platform.Storage;
+using Gated.Configurations;
 using Gated.Models;
 using Gated.Preprocessing;
 using ScottPlot.Avalonia;
 using ScottPlot;
 using ScottPlot.Interactivity;
+using Color = ScottPlot.Color;
+using Colors = ScottPlot.Colors;
+using FontStyle = ScottPlot.FontStyle;
+using Population = Gated.Models.Population;
 
 namespace Gated;
 
@@ -26,6 +32,9 @@ public partial class MainWindow : Window
 
     private Grouping? current_grouping = null;
     private Tube? current_tube = null;
+    private Population? current_population = null;
+    private GatingStrategy? current_gate = null;
+    private ScatterConfig? current_scatter = null;
     
     public MainWindow()
     {
@@ -50,11 +59,11 @@ public partial class MainWindow : Window
         };
         
         // change figure colors
-        this.plotter.Plot.FigureBackground.Color = Color.FromHex("#1e1e1e");
+        this.plotter.Plot.FigureBackground.Color = Color.FromHex("#2e3238");
         this.plotter.Plot.DataBackground.Color = Color.FromHex("#ffffff");
         // change axis and grid colors
         this.plotter.Plot.Axes.Color(Color.FromHex("#d0d0d0"));
-        this.plotter.Plot.Grid.MajorLineColor = Color.FromHex("#d0d0d0");
+        this.plotter.Plot.Grid.MajorLineColor = Color.FromHex("#f0f0f0");
         this.plotter.Plot.Font.Set("Inter", ScottPlot.FontWeight.Normal, FontSlant.Upright, FontSpacing.Normal);
 
         this.DataContext = this.ViewModel;
@@ -77,11 +86,23 @@ public partial class MainWindow : Window
         this.plotter.UserInputProcessor.Reset();
     }
 
-    private void draw_polygon_gate()
+    private Actions.Polygon draw_polygon_gate(PolygonalGate? gate = null)
     {
         this.lock_plot();
-        this.plotter.UserInputProcessor.UserActionResponses.Add(
-            new Gated.Actions.Polygon(ScottPlot.Interactivity.StandardMouseButtons.Left));
+        Actions.Polygon cont;
+        if (gate == null)
+            cont = new Gated.Actions.Polygon(
+                    button: ScottPlot.Interactivity.StandardMouseButtons.Left,
+                    editLocked: true
+                );
+        else 
+            cont = new Gated.Actions.Polygon(
+                button: ScottPlot.Interactivity.StandardMouseButtons.Left,
+                gate: gate, control: this.plotter
+            );
+        
+        this.plotter.UserInputProcessor.UserActionResponses.Add(cont);
+        return cont;
     }
 
     public MainWindowViewModel ViewModel { get; set; } = new();
@@ -145,64 +166,64 @@ public partial class MainWindow : Window
             foreach(var dim in tube.Channels)
                 this.ViewModel.Dimensions.Add(dim.Value);
 
-            this.display_scatter(
-                tube,
-                tube.GetChannelByName("FSC-A"),
-                tube.GetChannelByName("SSC-A"));
+            this.current_tube = tube;
+            this.current_population = tube;
+            this.placeHold.IsVisible = false;
+            this.plotter.IsVisible = true;
+            this.current_grouping = tube.ParentGroup;
+            this.current_gate = this.current_population.AssociatedGate;
+
+            this.current_scatter = tube.Display(
+                this.plotter,
+                tube.GetDefaultX(),
+                tube.GetDefaultY(),
+                null
+            );
+            
+            // exit from previous tool to panning
+            this.reset_user_input();
+            this.mnuToolPan.IsChecked = true;
         }
+        else if (item is Subset subset)
+        {
+            this.ViewModel.Dimensions.Clear();
+            foreach(var dim in subset.Channels)
+                this.ViewModel.Dimensions.Add(dim.Value);
+
+            this.current_tube = subset.ParentTube;
+            this.current_population = subset;
+            this.placeHold.IsVisible = false;
+            this.plotter.IsVisible = true;
+            this.current_grouping = subset.ParentGroup;
+            this.current_gate = this.current_population.AssociatedGate;
+
+            this.current_scatter = subset.Display(
+                this.plotter,
+                subset.GetDefaultX(),
+                subset.GetDefaultY(),
+                null
+            );
+            
+            // exit from previous tool to panning
+            this.reset_user_input();
+            this.mnuToolPan.IsChecked = true;
+        }
+        
     }
 
-    private void display_scatter(
-        Tube tube, Channel? x, Channel? y, 
-        int maxDisplay = 10000, int densityEstimate = 3000,
-        bool shouldRefreshAxis = true)
+    private void mnu_add_polygon_gate(object? sender, RoutedEventArgs e)
     {
-        if (x == null || y == null) return;
-        this.plotter.Plot.Clear();
-        var dict = tube.GetValues(maxDisplay, x!, y!);
-        var xs = dict[x!]!;
-        var ys = dict[y!]!;
-
-        var dictDens = tube.GetValues(densityEstimate, x!, y!);
-        var densx = dictDens[x!]!;
-        var densy = dictDens[y!]!;
+        if (this.current_scatter == null) return;
+        if (this.current_tube == null) return;
+        if (this.current_population == null) return;
+        if (this.current_grouping == null) return;
         
-        // axis limits
-
-        if (shouldRefreshAxis)
+        var action = draw_polygon_gate(null);
+        action.GateDefined += (s, e) =>
         {
-            this.plotter.Plot.Axes.SetLimitsX(0, dict[x!]!.Max());
-            this.plotter.Plot.Axes.SetLimitsY(0, dict[y!]!.Max());
-        }
-
-        // hide axis edge line
-        this.plotter.Plot.Axes.Right.FrameLineStyle.Width = 0;
-        this.plotter.Plot.Axes.Top.FrameLineStyle.Width = 0;
-        // scientific notation
-        this.plotter.Plot.Axes.SetupMultiplierNotation(this.plotter.Plot.Axes.Left);
-        this.plotter.Plot.Axes.SetupMultiplierNotation(this.plotter.Plot.Axes.Bottom);
-        
-        GaussianKDE kde = new GaussianKDE(densx, densy);
-        double[] density = new double[xs.Length];
-        for (int j = 0; j < xs.Length; j++)
-            density[j] = kde.Estimate(xs[j], ys[j]);
-
-        this.plotter.Plot.XLabel($"{x!.Label} ({x!.Name})");
-        this.plotter.Plot.YLabel($"{y!.Label} ({y!.Name})");
-
-        double minDensity = density.Min();
-        double maxDensity = density.Max();
-        double spanDensity = maxDensity - minDensity;
-        var colormap = new ScottPlot.Colormaps.Turbo();
-        for (int j = 0; j < xs.Length; j++)
-        {
-            double fraction = (density[j] - minDensity) / spanDensity;
-            var marker = this.plotter.Plot.Add.Marker(xs[j], ys[j]);
-            marker.Color = colormap.GetColor(fraction).WithAlpha(.8);
-            marker.Size = 2;
-        }
-        
-        this.plotter.Refresh();
+            Actions.Polygon? p = s as Actions.Polygon;
+            this.current_grouping.AddGate(this.current_gate, new PolygonalGate(this.current_scatter, p!));
+        };
     }
 }
 

@@ -11,7 +11,7 @@ public partial class Logicle
     private readonly double[] taylor;
     private const int TAYLOR_LENGTH = 16;
 
-    private Logicle(
+    internal Logicle(
         double T = 262144.0, double W = 0.5,
         double M = 4.5, double A = 0.0)
     {
@@ -96,7 +96,7 @@ public partial class Logicle
         return -1;
     }
 
-    private double scale(double value)
+    internal double scale(double value)
     {
         if (value == 0) return x1;
 
@@ -147,7 +147,7 @@ public partial class Logicle
         return (sum * x + taylor[0]) * x;
     }
 
-    private double inverse_scale(double value)
+    internal double inverse_scale(double value)
     {
         bool negative = value < x1;
         if (negative) value = 2 * x1 - value;
@@ -161,23 +161,41 @@ public partial class Logicle
     }
 }
 
-public partial class Logicle
+public class LogicleTransform(
+    double t = 262144.0,
+    double w = 0.5,
+    double m = 4.5,
+    double a = 0.0) : ITransform
 {
-    public static void Transform(
-        double[] data, double T = 262144.0, double W = 0.5, 
-        double M = 4.5, double A = 0.0)
-    {
-        var logicle = new Logicle(T, W, M, A);
-        for (int i = 0; i < data.Length; i++)
-            data[i] = logicle.scale(data[i]);
-    }
+    private Logicle logicle = new Logicle(t, w, m, a);
+    
+    public double Transform(double data) => this.logicle.scale(data);
+    public float Transform(float data) => Convert.ToSingle(this.logicle.scale(data));
 
-    public static void InverseTransform(
-        double[] data, double T = 262144.0, double W = 0.5, 
-        double M = 4.5, double A = 0.0)
+    public void Transform(double[] data)
     {
-        var logicle = new Logicle(T, W, M, A);
         for (int i = 0; i < data.Length; i++)
-            data[i] = logicle.inverse_scale(data[i]);
+            data[i] = this.Transform(data[i]);
+    }
+    
+    public void Transform(float[] data)
+    {
+        for (int i = 0; i < data.Length; i++)
+            data[i] = this.Transform(data[i]);
+    }
+    
+    public double InverseTransform(double data) => this.logicle.inverse_scale(data);
+    public float InverseTransform(float data) => Convert.ToSingle(this.logicle.inverse_scale(data));
+
+    public void InverseTransform(double[] data)
+    {
+        for (int i = 0; i < data.Length; i++)
+            data[i] = this.InverseTransform(data[i]);
+    }
+    
+    public void InverseTransform(float[] data)
+    {
+        for (int i = 0; i < data.Length; i++)
+            data[i] = this.InverseTransform(data[i]);
     }
 }

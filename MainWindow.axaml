@@ -5,7 +5,7 @@
         xmlns:sc="clr-namespace:ScottPlot.Avalonia;assembly=ScottPlot.Avalonia"
         xmlns:ga="clr-namespace:Gated"
         xmlns:gam="clr-namespace:Gated.Models"
-        mc:Ignorable="d" Width="1300" Height="750"
+        mc:Ignorable="d" Width="1400" Height="750"
         x:Class="Gated.MainWindow" FontSize="{StaticResource SemiFontSizeRegular}"
         FontFamily="{StaticResource SemiFontFamilyRegular}"
         WindowStartupLocation="CenterScreen"
@@ -88,10 +88,10 @@
                 <MenuItem Header="Export Graphics ..."/>
             </MenuItem>
             <MenuItem Header="Gating">
-                <MenuItem ToggleType="Radio" IsChecked="True" Header="Pan"/>
+                <MenuItem ToggleType="Radio" IsChecked="True" Header="Pan" x:Name="mnuToolPan"/>
                 <MenuItem ToggleType="Radio" IsChecked="False" Header="Binary Gate"/>
                 <MenuItem ToggleType="Radio" IsChecked="False" Header="Range Gate"/>
-                <MenuItem ToggleType="Radio" IsChecked="False" Header="Polygonal Gate"/>
+                <MenuItem ToggleType="Radio" IsChecked="False" Header="Polygonal Gate" Click="mnu_add_polygon_gate"/>
                 <MenuItem ToggleType="Radio" IsChecked="False" Header="Quad Gate"/>
                 <MenuItem ToggleType="Radio" IsChecked="False" Header="Curly Quad Gate"/>
                 <Separator/>
@@ -151,8 +151,12 @@
                 </TreeDataGrid>
             </Grid>
             <GridSplitter Grid.Column="1" ShowsPreview="True" />
-            <Grid Grid.Column="2">
-                <sc:AvaPlot Width="370" Height="350" x:Name="avaPlot"/>
+            <Grid Grid.Column="2" x:Name="plotterGrid" Background="{StaticResource SemiGrey1Color}">
+                <Label Foreground="{StaticResource SemiGrey2Color}"
+                       FontSize="40" FontWeight="Black" x:Name="placeHold"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center">Select a sample to plot</Label>
+                <sc:AvaPlot Width="370" Height="350" x:Name="avaPlot" IsVisible="False"/>
             </Grid>
             <GridSplitter Grid.Column="3" ShowsPreview="True" />
             <Grid Grid.Column="4">

@@ -26,6 +26,8 @@ public static class INodeExtensions
     {
         if (node is Tube t)
             return t.EventCount.ToString();
+        else if (node is Subset s)
+            return s.EventCount.ToString();
         return null;
     }
 }
