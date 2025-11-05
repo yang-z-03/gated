@@ -13,8 +13,7 @@ public abstract class Population : INode
 {
     public Population()
     {
-        this.children.Add(this.Statistics);
-        this.Gates.CollectionChanged += (s, e) =>
+        this.Subsets.CollectionChanged += (s, e) =>
         {
             if (e.OldItems != null)
             {
@@ -41,6 +40,7 @@ public abstract class Population : INode
     
     public Population? Parent { get; set; } = null;
     public Tube? ParentTube { get; set; } = null;
+    public Grouping? ParentGroup { get; set; } = null;
     public abstract bool IsTube { get; }
     public ObservableCollection<Subset> Subsets { get; private set; } = new();
     
@@ -56,15 +56,8 @@ public abstract class Population : INode
     {
         get { return children; }
     }
-
-    public GatingStrategyCollection Gates { get; private set; } = new();
-    public StatisticsCollection Statistics { get; private set; } = new();
     
-    // population-level settings that, if exists, will override the settings
-    // from the group. it is supported though, for any sub-population to implement
-    // such settings e.g. compensation separately.
-    
-    public Compensation Compensation { get; private set; } = new();
+    public Compensation? Compensation { get; private set; } = null;
 }
 
 public class Tube : Population
@@ -122,6 +115,7 @@ public class Tube : Population
 
     public Tube(
         string fcsFile,
+        Grouping grouping,
         bool ignoreOffsetError = false,
         bool ignoreOffsetDiscrepancy = false,
         bool useHeaderOffsets = false,
@@ -131,6 +125,7 @@ public class Tube : Population
         this.ignore_offset = ignoreOffsetError;
         this.ParentTube = this;
         this.Parent = null;
+        this.ParentGroup = grouping;
 
         this.Name = Path.GetFileName(fcsFile);
         this.Location = fcsFile;

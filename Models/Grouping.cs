@@ -11,8 +11,6 @@ public class Grouping : INode
         this.Name = name;
         if (identifier != null)
             this.Identifier = identifier;
-        foreach (var tube in tubes)
-            this.Children.Add(tube);
         
         this.children.Add(this.Gates);
         this.children.Add(this.Statistics);
@@ -35,6 +33,8 @@ public class Grouping : INode
             }
         };
         
+        foreach (var tube in tubes)
+            this.AddSample(tube);
         this.IsExpanded = isExpanded;
     }
     
@@ -59,5 +59,38 @@ public class Grouping : INode
     public ObservableCollection<INode> Children
     {
         get { return children; }
+    }
+
+    public bool AddSample(Tube tube)
+    {
+        if (this.Dimensions.Count == 0)
+        {
+            foreach(var dim in tube.Channels)
+                this.Dimensions.Add(dim.Value);
+            
+            this.Samples.Add(tube);
+        }
+        else
+        {
+            bool match_channels = true;
+            foreach (var dim in this.Dimensions)
+            {
+                if (dim is Channel channel)
+                {
+                    bool found = false;
+                    foreach (var dimc in tube.Channels)
+                        if (dimc.Value.IsEqual(channel))
+                            found = true;
+
+                    if (!found) match_channels = false;
+                }
+            }
+
+            if (!match_channels)
+                return false;
+            else this.Samples.Add(tube);
+        }
+
+        return true;
     }
 }

@@ -106,8 +106,6 @@ public class Polygon(MouseButton button) : IUserActionResponse
                 this.apply(plot);
                 return ResponseInfo.Refresh;
             }
-            
-            return ResponseInfo.NoActionRequired;
         }
 
         if (userInput is IMouseButtonAction mouseUpAction

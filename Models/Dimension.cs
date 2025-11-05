@@ -1,4 +1,6 @@
-﻿namespace Gated.Models;
+﻿using System;
+
+namespace Gated.Models;
 
 public abstract class Dimension
 {
@@ -27,6 +29,13 @@ public class Channel : Dimension
     public (float, float) Wavelength { get; private set; }
     public float Maximum { get; private set; }
     public float Gain { get; private set; }
+
+    public bool IsEqual(Channel? other)
+    {
+        return (this.Name == other?.Name)
+            && (Convert.ToInt32(this.Maximum) == Convert.ToInt32(other?.Maximum))
+            && (Math.Abs(this.Gain - (other?.Gain ?? 1)) <= 1e-5);
+    }
 }
 
 public class Embedding : Dimension

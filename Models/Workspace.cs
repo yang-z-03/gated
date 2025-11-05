@@ -125,11 +125,30 @@ public class Workspace : INode
     public Workspace(string name)
     {
         this.Name = name;
-        this.Children.Add(new Grouping("Blank Control", new List<Tube>(), "blank"));
-        this.Children.Add(new Grouping("Single Staining", new List<Tube>(), "single"));
-        this.Children.Add(new Grouping("FMO Staining", new List<Tube>(), "fmo"));
-        this.Children.Add(new Grouping("Isotype Control", new List<Tube>(), "isotype"));
-        this.Children.Add(new Grouping("Samples", new List<Tube>(), null, true));
+        this.Groupings.CollectionChanged += (s, e) =>
+        {
+            if (e.OldItems != null)
+            {
+                foreach (var o in e.OldItems)
+                    if (o is INode node)
+                        if (this.children.Contains(node))
+                            this.children.Remove(node);
+            }
+            
+            if (e.NewItems != null)
+            {
+                foreach (var n in e.NewItems)
+                    if (n is INode node)
+                        if (!this.children.Contains(node))
+                            this.children.Add(node);
+            }
+        };
+        
+        this.Groupings.Add(new Grouping("Blank Control", new List<Tube>(), "blank"));
+        this.Groupings.Add(new Grouping("Single Staining", new List<Tube>(), "single"));
+        this.Groupings.Add(new Grouping("FMO Staining", new List<Tube>(), "fmo"));
+        this.Groupings.Add(new Grouping("Isotype Control", new List<Tube>(), "isotype"));
+        this.Groupings.Add(new Grouping("Samples", new List<Tube>(), null, true));
     }
     
     public string Name { get; set; } = "Workspace";
@@ -138,7 +157,12 @@ public class Workspace : INode
     public string FilePath { get; private set; } = string.Empty;
     public bool IsDirty { get; set; } = false;
     public bool IsExpanded { get; set; } = true;
-    public ObservableCollection<INode> Children { get; } = new();
+    private ObservableCollection<INode> children = new();
+    public ObservableCollection<INode> Children
+    {
+        get { return children; }
+    }
 
+    public ObservableCollection<Grouping> Groupings { get; set; } = new();
     public static INodeImageConverter ImageConverter = new INodeImageConverter();
 }

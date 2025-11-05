@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
@@ -22,6 +23,9 @@ public partial class MainWindow : Window
     private AvaPlot plotter;
     private FontStyle axis_title_font;
     private FontStyle axis_tick_font;
+
+    private Grouping? current_grouping = null;
+    private Tube? current_tube = null;
     
     public MainWindow()
     {
@@ -47,10 +51,10 @@ public partial class MainWindow : Window
         
         // change figure colors
         this.plotter.Plot.FigureBackground.Color = Color.FromHex("#1e1e1e");
-        this.plotter.Plot.DataBackground.Color = Color.FromHex("#a0a0a0");
+        this.plotter.Plot.DataBackground.Color = Color.FromHex("#ffffff");
         // change axis and grid colors
-        this.plotter.Plot.Axes.Color(Color.FromHex("#d7d7d7"));
-        this.plotter.Plot.Grid.MajorLineColor = Color.FromHex("#b0b0b0");
+        this.plotter.Plot.Axes.Color(Color.FromHex("#d0d0d0"));
+        this.plotter.Plot.Grid.MajorLineColor = Color.FromHex("#d0d0d0");
         this.plotter.Plot.Font.Set("Inter", ScottPlot.FontWeight.Normal, FontSlant.Upright, FontSpacing.Normal);
 
         this.DataContext = this.ViewModel;
@@ -90,7 +94,7 @@ public partial class MainWindow : Window
             new FilePickerOpenOptions
         {
             Title = "Open FCS or Workspace",
-            AllowMultiple = false
+            AllowMultiple = true
         });
 
         if (files.Count >= 1)
@@ -99,14 +103,32 @@ public partial class MainWindow : Window
             {
                 try
                 {
-                    (this.ViewModel.Workspace.Children[4] as Grouping)!.Samples.Add(
-                        new Tube(files[0].Path.AbsolutePath.Replace("%20", " "))
-                    );
-                }
-                catch (Exception ex)
-                {
+                    Grouping default_grouping = this.ViewModel.Workspace.Groupings[4];
+                    var tube = new Tube(file.Path.AbsolutePath.Replace("%20", " "), default_grouping);
+                    bool success = default_grouping.AddSample(tube);
+
+                    if (!success && this.ViewModel.Workspace.Groupings.Count > 5)
+                    {
+                        for (int index = 5; index < this.ViewModel.Workspace.Groupings.Count; index++)
+                        {
+                            success = this.ViewModel.Workspace.Groupings[index].AddSample(tube);
+                            if (success)
+                            {
+                                tube.ParentGroup = this.ViewModel.Workspace.Groupings[index];
+                                break;
+                            }
+                        }
+                    }
+
+                    if (!success)
+                    {
+                        var g = new Grouping(
+                            "Grouping " + (this.ViewModel.Workspace.Groupings.Count - 4).ToString(), 
+                            new List<Tube>() {tube}, null, true);
+                        this.ViewModel.Workspace.Groupings.Add(g);
+                    }
                     
-                }
+                } catch {}
             }
         }
     }
@@ -130,7 +152,10 @@ public partial class MainWindow : Window
         }
     }
 
-    private void display_scatter(Tube tube, Channel? x, Channel? y, int maxDisplay = 10000, int densityEstimate = 3000)
+    private void display_scatter(
+        Tube tube, Channel? x, Channel? y, 
+        int maxDisplay = 10000, int densityEstimate = 3000,
+        bool shouldRefreshAxis = true)
     {
         if (x == null || y == null) return;
         this.plotter.Plot.Clear();
@@ -143,8 +168,13 @@ public partial class MainWindow : Window
         var densy = dictDens[y!]!;
         
         // axis limits
-        this.plotter.Plot.Axes.SetLimitsX(0, dict[x!]!.Max());
-        this.plotter.Plot.Axes.SetLimitsY(0, dict[y!]!.Max());
+
+        if (shouldRefreshAxis)
+        {
+            this.plotter.Plot.Axes.SetLimitsX(0, dict[x!]!.Max());
+            this.plotter.Plot.Axes.SetLimitsY(0, dict[y!]!.Max());
+        }
+
         // hide axis edge line
         this.plotter.Plot.Axes.Right.FrameLineStyle.Width = 0;
         this.plotter.Plot.Axes.Top.FrameLineStyle.Width = 0;
