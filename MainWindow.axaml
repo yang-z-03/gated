@@ -92,7 +92,7 @@
                 <MenuItem ToggleType="Radio" IsChecked="False" Header="Binary Gate"/>
                 <MenuItem ToggleType="Radio" IsChecked="False" Header="Range Gate"/>
                 <MenuItem ToggleType="Radio" IsChecked="False" Header="Polygonal Gate" Click="mnu_add_polygon_gate"/>
-                <MenuItem ToggleType="Radio" IsChecked="False" Header="Quad Gate"/>
+                <MenuItem ToggleType="Radio" IsChecked="False" Header="Quad Gate" Click="mnu_add_quad_gate"/>
                 <MenuItem ToggleType="Radio" IsChecked="False" Header="Curly Quad Gate"/>
                 <Separator/>
                 <MenuItem Header="Merge (Logic OR)"/>

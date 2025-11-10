@@ -11,6 +11,7 @@ using Avalonia.Controls.Selection;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
+using Gated.Actions;
 using Gated.Configurations;
 using Gated.Models;
 using Gated.Preprocessing;
@@ -104,6 +105,25 @@ public partial class MainWindow : Window
         this.plotter.UserInputProcessor.UserActionResponses.Add(cont);
         return cont;
     }
+    
+    private Actions.Quad draw_cross_gate(QuadGate? gate = null)
+    {
+        this.lock_plot();
+        Actions.Quad cont;
+        if (gate == null)
+            cont = new Gated.Actions.Quad(
+                button: ScottPlot.Interactivity.StandardMouseButtons.Left,
+                editLocked: true
+            );
+        else 
+            cont = new Gated.Actions.Quad(
+                button: ScottPlot.Interactivity.StandardMouseButtons.Left,
+                gate: gate, control: this.plotter
+            );
+        
+        this.plotter.UserInputProcessor.UserActionResponses.Add(cont);
+        return cont;
+    }
 
     public MainWindowViewModel ViewModel { get; set; } = new();
 
@@ -181,7 +201,7 @@ public partial class MainWindow : Window
             );
             
             // exit from previous tool to panning
-            this.reset_user_input();
+            this.lock_plot();
             this.mnuToolPan.IsChecked = true;
         }
         else if (item is Subset subset)
@@ -205,10 +225,77 @@ public partial class MainWindow : Window
             );
             
             // exit from previous tool to panning
-            this.reset_user_input();
+            this.lock_plot();
             this.mnuToolPan.IsChecked = true;
         }
+        else if (item is GatingStrategy gate)
+        {
+            this.ViewModel.Dimensions.Clear();
+            this.current_tube = null;
+            this.current_population = null;
+            this.placeHold.IsVisible = false;
+            this.plotter.IsVisible = true;
+            this.current_grouping = gate.ParentGroup;
+            this.current_gate = gate;
+
+            if (item is PolygonalGate polyg)
+            {
+                this.ViewModel.Dimensions.Add(polyg.X);
+                this.ViewModel.Dimensions.Add(polyg.Y);
+                polyg.Display(this.plotter);
+                var action = draw_polygon_gate(polyg);
+                
+                action.GateDefined += (s, e) =>
+                {
+                    Actions.Polygon? p = s as Actions.Polygon;
+                    PolygonalGate gate = new PolygonalGate(this.current_scatter!, p!, this.current_grouping!);
+                    p!.defined_gate = gate;
+                    this.current_grouping!.AddGate(this.current_gate, gate);
+                };
         
+                action.GateUpdated += (s, e) =>
+                {
+                    Actions.Polygon? p = s as Actions.Polygon;
+                    if (p!.defined_gate != null)
+                    {
+                        p!.defined_gate.Polygon = p!.vertices;
+                        p!.defined_gate!.Update();
+                    }
+                };
+            }
+            else if(item is QuadGate q)
+            {
+                this.ViewModel.Dimensions.Add(q.X);
+                this.ViewModel.Dimensions.Add(q.Y);
+                q.Display(this.plotter);
+                var action = draw_cross_gate(q);
+                
+                action.GateDefined += (s, e) =>
+                {
+                    Actions.Quad? p = s as Actions.Quad;
+                    QuadGate gate = new QuadGate(
+                        this.current_scatter!,
+                        Convert.ToSingle(p!.vertice.GetValueOrDefault().X),
+                        Convert.ToSingle(p!.vertice.GetValueOrDefault().Y),
+                        this.current_grouping!);
+                    p!.defined_gate = gate;
+                    this.current_grouping!.AddGate(this.current_gate, gate);
+                };
+
+                action.GateUpdated += (s, e) =>
+                {
+                    Actions.Quad? p = s as Actions.Quad;
+                    if (p!.defined_gate != null)
+                    {
+                        p!.defined_gate.HorizontalCutoff = Convert.ToSingle(p.vertice.GetValueOrDefault().X);
+                        p!.defined_gate.VerticalCutoff = Convert.ToSingle(p.vertice.GetValueOrDefault().Y);
+                        p!.defined_gate!.Update();
+                    }
+                };
+            }
+
+            this.plotter.Refresh();
+        }
     }
 
     private void mnu_add_polygon_gate(object? sender, RoutedEventArgs e)
@@ -222,7 +309,51 @@ public partial class MainWindow : Window
         action.GateDefined += (s, e) =>
         {
             Actions.Polygon? p = s as Actions.Polygon;
-            this.current_grouping.AddGate(this.current_gate, new PolygonalGate(this.current_scatter, p!));
+            PolygonalGate gate = new PolygonalGate(this.current_scatter, p!, this.current_grouping);
+            p!.defined_gate = gate;
+            this.current_grouping.AddGate(this.current_gate, gate);
+        };
+        
+        action.GateUpdated += (s, e) =>
+        {
+            Actions.Polygon? p = s as Actions.Polygon;
+            if (p!.defined_gate != null)
+            {
+                p!.defined_gate.Polygon = p!.vertices;
+                p!.defined_gate!.Update();
+            }
+        };
+    }
+    
+    private void mnu_add_quad_gate(object? sender, RoutedEventArgs e)
+    {
+        if (this.current_scatter == null) return;
+        if (this.current_tube == null) return;
+        if (this.current_population == null) return;
+        if (this.current_grouping == null) return;
+        
+        var action = draw_cross_gate(null);
+        action.GateDefined += (s, e) =>
+        {
+            Actions.Quad? p = s as Actions.Quad;
+            QuadGate gate = new QuadGate(
+                this.current_scatter, 
+                Convert.ToSingle(p!.vertice.GetValueOrDefault().X), 
+                Convert.ToSingle(p!.vertice.GetValueOrDefault().Y), 
+                this.current_grouping);
+            p.defined_gate = gate;
+            this.current_grouping.AddGate(this.current_gate, gate);
+        };
+        
+        action.GateUpdated += (s, e) =>
+        {
+            Actions.Quad? p = s as Actions.Quad;
+            if (p!.defined_gate != null)
+            {
+                p!.defined_gate.HorizontalCutoff = Convert.ToSingle(p.vertice.GetValueOrDefault().X);
+                p!.defined_gate.VerticalCutoff = Convert.ToSingle(p.vertice.GetValueOrDefault().Y);
+                p!.defined_gate!.Update();
+            }
         };
     }
 }

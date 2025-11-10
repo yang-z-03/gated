@@ -7,25 +7,19 @@ using ScottPlot.Interactivity;
 
 namespace Gated.Actions;
 
-public interface IGatingAction
-{
-    public event EventHandler? GateDefined;
-    public event EventHandler? GateUpdated;
-}
 
-public class Polygon(MouseButton button) : IUserActionResponse, IGatingAction
+public class Quad(MouseButton button) : IUserActionResponse, IGatingAction
 {
-    public Polygon(MouseButton button, bool editLocked) : this(button)
+    public Quad(MouseButton button, bool editLocked) : this(button)
     {
         this.edit_locked = editLocked;
     }
     
-    public Polygon(IPlotControl control, PolygonalGate gate, MouseButton button) : this(button)
+    public Quad(IPlotControl control, QuadGate gate, MouseButton button) : this(button)
     {
-        this.vertices = gate.Polygon;
+        this.vertice = new Coordinates(gate.HorizontalCutoff, gate.VerticalCutoff);
         this.closed = true;
-        foreach (Coordinates v in vertices)
-            this.pixels.Add(control.Plot.GetPixel(v));
+        this.pixel = control.Plot.GetPixel(this.vertice ?? new Coordinates());
         this.apply(control.Plot);
         this.edit_locked = true;
         this.defined_gate = gate;
@@ -33,14 +27,13 @@ public class Polygon(MouseButton button) : IUserActionResponse, IGatingAction
     
     public MouseButton MouseButton { get; } = button;
     public int Tolerance { get; } = 4;
-    internal List<Coordinates> vertices = new();
-    private List<Pixel> pixels = new();
-    private ScottPlot.Plottables.Polygon? polygon = null;
+    internal Coordinates? vertice = new();
+    private Pixel? pixel = new();
+    private List<ScottPlot.IPlottable> plottables = new();
     private bool closed = false;
-    internal PolygonalGate? defined_gate = null;
+    internal QuadGate? defined_gate = null;
     
     private bool edit_mode = false;
-    private int edit_index = -1;
     private bool edit_locked = false;
 
     public event EventHandler? GateDefined;
@@ -53,33 +46,19 @@ public class Polygon(MouseButton button) : IUserActionResponse, IGatingAction
 
     private void reset_state(IPlotControl plotControl)
     {
-        this.vertices.Clear();
-        this.pixels.Clear();
-        if (this.polygon != null)
-            plotControl.Plot.Remove(this.polygon);
-        this.polygon = null;
+        this.vertice = null;
+        this.pixel = null;
+        foreach(var pl in this.plottables)
+            plotControl.Plot.Remove(pl);
+        this.plottables.Clear();
         this.closed = false;
     }
 
-    private int hit_on_any(Pixel pixel, int tolerance = 4)
+    private bool hit_on_first(Pixel p, int tolerance = 4)
     {
-        int index = 0;
-        foreach (var px in this.pixels)
-        {
-            if ((pixel.X >= px.X - tolerance) && (pixel.X <= px.X + tolerance) &&
-                (pixel.Y >= px.Y - tolerance) && (pixel.Y <= px.Y + tolerance))
-                return index;
-            index++;
-        }
-
-        return -1;
-    }
-    
-    private bool hit_on_first(Pixel pixel, int tolerance = 4)
-    {
-        var px = this.pixels.First();
-        if ((pixel.X >= px.X - tolerance) && (pixel.X <= px.X + tolerance) &&
-            (pixel.Y >= px.Y - tolerance) && (pixel.Y <= px.Y + tolerance))
+        Pixel px = this.pixel ?? new Pixel();
+        if ((p.X >= px.X - tolerance) && (p.X <= px.X + tolerance) &&
+            (p.Y >= px.Y - tolerance) && (p.Y <= px.Y + tolerance))
             return true;
 
         return false;
@@ -110,32 +89,24 @@ public class Polygon(MouseButton button) : IUserActionResponse, IGatingAction
             if (closed)
             {
                 // hit on the vertices of the previous polygons
-                int hit_test = hit_on_any(mouseDownAction.Pixel, this.Tolerance);
-                if (hit_test >= 0)
+                bool hit_test = hit_on_first(mouseDownAction.Pixel, this.Tolerance);
+                if (hit_test)
                 {
                     // move the vertix.
                     this.edit_mode = true;
-                    this.edit_index = hit_test;
                     return ResponseInfo.NoActionRequired;
                 }
                 else if(!this.edit_locked) { this.reset_state(plotControl); }
                 else return ResponseInfo.NoActionRequired;
             }
-
-            if (this.vertices.Count > 0 && hit_on_first(mouseDownAction.Pixel, this.Tolerance))
-            {
-                this.closed = true;
-                this.apply(plot);
-                this.GateDefined?.Invoke(this, EventArgs.Empty);
-                return ResponseInfo.Refresh;
-            }
             else
             {
-                this.vertices.Add(current);
-                this.pixels.Add(mouseDownAction.Pixel);
+                this.vertice = current;
+                this.pixel = mouseDownAction.Pixel;
                 this.apply(plot);
+                this.GateDefined?.Invoke(this, EventArgs.Empty);
                 this.edit_mode = true;
-                this.edit_index = this.vertices.Count - 1;
+                this.closed = true;
                 return ResponseInfo.Refresh;
             }
         }
@@ -149,7 +120,6 @@ public class Polygon(MouseButton button) : IUserActionResponse, IGatingAction
             
             if (this.edit_mode)
             {
-                this.edit_index = -1;
                 this.edit_mode = false;
             }
             
@@ -162,8 +132,8 @@ public class Polygon(MouseButton button) : IUserActionResponse, IGatingAction
             Plot? plot = plotControl.GetPlotAtPixel(mouseMoveAction.Pixel);
             if (plot == null) return ResponseInfo.NoActionRequired;
             Coordinates current = plot!.GetCoordinates(mouseMoveAction.Pixel);
-            this.vertices[this.edit_index] = current;
-            this.pixels[this.edit_index] = mouseMoveAction.Pixel;
+            this.vertice = current;
+            this.pixel = mouseMoveAction.Pixel;
             this.apply(plot);
             return ResponseInfo.Refresh;
         }
@@ -173,24 +143,21 @@ public class Polygon(MouseButton button) : IUserActionResponse, IGatingAction
 
     private void apply(Plot plot, int highlight = -1)
     {
-        if (polygon != null)
-            plot.Remove(this.polygon);
+        foreach(var pl in this.plottables)
+            plot.Remove(pl);
 
-        if (this.vertices.Count > 0)
+        if (this.pixel != null)
         {
-            this.polygon = plot.Add.Polygon(this.vertices.ToArray());
-            this.polygon.FillColor = Color.FromHex("#135CB820");
-            
-            this.polygon.LineColor = Colors.Black;
-            this.polygon.LinePattern = LinePattern.Solid;
-            this.polygon.LineWidth = 1;
-
-            this.polygon.MarkerShape = this.closed ? MarkerShape.FilledSquare : MarkerShape.FilledCircle;
-            this.polygon.MarkerSize = 2 * Tolerance;
-            this.polygon.MarkerFillColor = Colors.White;
-            this.polygon.MarkerStyle.OutlineColor = Color.FromHex("#135CB8");
-            this.polygon.MarkerStyle.OutlineWidth = 1;
-            this.polygon.MarkerStyle.OutlinePattern = LinePattern.Solid;
+            var p1 = plot.Add.HorizontalLine(vertice.GetValueOrDefault().Y, 2, Colors.Black, LinePattern.Solid);
+            var p2 = plot.Add.VerticalLine(vertice.GetValueOrDefault().X, 2, Colors.Black, LinePattern.Solid);
+            var marker = plot.Add.Marker(vertice ?? new(), MarkerShape.FilledSquare, 8, Colors.White);
+            marker.MarkerFillColor = Colors.White;
+            marker.MarkerStyle.OutlineColor = Color.FromHex("#135CB8");
+            marker.MarkerStyle.OutlineWidth = 1;
+            marker.MarkerStyle.OutlinePattern = LinePattern.Solid;
+            this.plottables.Add(marker);
+            this.plottables.Add(p1);
+            this.plottables.Add(p2);
         }
     }
 }

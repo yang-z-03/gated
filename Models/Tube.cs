@@ -48,6 +48,7 @@ public abstract class Population : INode
     public Grouping? ParentGroup { get; set; } = null;
     public abstract bool IsTube { get; }
     public GatingStrategy? AssociatedGate { get; set; } = null;
+    public int AssociatedGateIndex { get; set; } = 0;
     public ObservableCollection<Subset> Subsets { get; private set; } = new();
     
     public bool IsExpanded { get; set; } = false;
@@ -60,34 +61,11 @@ public abstract class Population : INode
     public abstract Dictionary<Dimension, float[]?> GetValues(long max, params Dimension[] dimensions);
     public abstract float[]? GetValues(Dimension dimension, long[] indices);
     public Compensation? Compensation { get; set; } = null;
-    
-    internal static bool inside_polygon(
-        Coordinates checkPoint, 
-        List<Coordinates> polygonPoints)
-    {
-        bool inside = false;
-        int pointCount = polygonPoints.Count;
-        Coordinates p1, p2;
-        for (int i = 0, j = pointCount - 1; i < pointCount; j = i, i++)
-        {
-            p1 = polygonPoints[i];
-            p2 = polygonPoints[j];
-            if (checkPoint.Y < p2.Y)
-            {
-                if (p1.Y <= checkPoint.Y)
-                    if ((checkPoint.Y - p1.Y) * (p2.X - p1.X) > (checkPoint.X - p1.X) * (p2.Y - p1.Y))
-                        inside = (!inside);
-            }
-            else if (checkPoint.Y < p1.Y)
-                if ((checkPoint.Y - p1.Y) * (p2.X - p1.X) < (checkPoint.X - p1.X) * (p2.Y - p1.Y))
-                    inside = (!inside);
-            
-        }
-        
-        return inside;
-    }
 
-    public abstract void AddGate(GatingStrategy gate);
+    public virtual void AddGate(GatingStrategy gate)
+    {
+        gate.AddPopulation(this);
+    }
     
     public ScatterConfig Display(
         IPlotControl plot, Dimension x, Dimension y, 
@@ -122,7 +100,7 @@ public abstract class Population : INode
         plot.Plot.Axes.SetupMultiplierNotation(plot.Plot.Axes.Left);
         plot.Plot.Axes.SetupMultiplierNotation(plot.Plot.Axes.Bottom);
 
-        if (config.Density)
+        if (config.Type == PlotType.Density)
         {
             var dictDens = this.GetValues(config.DensityEstimate, x!, y!);
             var densx = dictDens[x!]!;
@@ -145,11 +123,30 @@ public abstract class Population : INode
                 marker.Size = 2;
             }
         }
-        else
+        else if (config.Type == PlotType.Scatter)
         {
             var scatter = plot.Plot.Add.Markers(xs, ys);
             scatter.MarkerSize = 2;
             scatter.MarkerColor = Color.FromHex("#00000070");
+        }
+        else if (config.Type == PlotType.Heatmap)
+        {
+            double[,] histogram = new double[config.Resolution, config.Resolution];
+            float xstep = (config.XRange.Item2 - config.XRange.Item1) / config.Resolution;
+            float ystep = (config.YRange.Item2 - config.YRange.Item1) / config.Resolution;
+            for (int i = 0; i < xs.Length; i++)
+            {
+                histogram[
+                    config.Resolution - Math.Max(1, Math.Min(config.Resolution, Convert.ToInt32((ys[i] - config.YRange.Item1) / ystep))),
+                    Math.Max(0, Math.Min(config.Resolution - 1, Convert.ToInt32((xs[i] - config.XRange.Item1) / xstep)))
+                ]++;
+            }
+            
+            var hm1 = plot.Plot.Add.Heatmap(histogram);
+            hm1.Colormap = new Configurations.Turbo();
+            hm1.CellAlignment = Alignment.LowerLeft;
+            hm1.CellWidth = xstep;
+            hm1.CellHeight = ystep;
         }
         
         // plot gates at this level.
@@ -884,36 +881,20 @@ public class Tube : Population
 
         return null;
     }
-    
-    public override void AddGate(GatingStrategy gate)
-    {
-        // TODO: implement different gating schemes here.
-        if (gate is PolygonalGate polygon)
-        {
-            // get data points
-            var data = this.GetValues(this.EventCount, polygon.X, polygon.Y);
-            polygon.XTransform.Transform(data[polygon.X]!);
-            polygon.YTransform.Transform(data[polygon.Y]!);
-
-            var x = data[polygon.X]!;
-            var y = data[polygon.Y]!;
-            List<long> selection = new();
-            for(long i = 0; i < this.EventCount; i++)
-                if (inside_polygon(new Coordinates(x[i], y[i]), polygon.Polygon))
-                    selection.Add(i);
-
-            var subset = new Subset(
-                this, selection.ToArray(), polygon, polygon.Name);
-        }
-    }
 }
 
 public class Subset : Population
 {
-    public Subset(Population p, long[] indices, GatingStrategy? associatedGate = null, string name = "Subset")
+    public Subset(
+        Population p, 
+        long[] indices, 
+        GatingStrategy? associatedGate = null, 
+        int associatedGateIndex = 0, 
+        string name = "Subset")
     {
         this.Name = name;
         this.AssociatedGate = associatedGate;
+        this.AssociatedGateIndex = associatedGateIndex;
         
         this.Parent = p;
         this.ParentGroup = p.ParentGroup;
@@ -924,16 +905,25 @@ public class Subset : Population
         this.Embeddings = p.Embeddings;
         this.Compensation = p.Compensation;
 
-        this.Selection = indices;
+        this._selection = indices;
         p.Subsets.Add(this);
     }
     
     public override bool IsTube { get; } = false;
     public override string Name { get; set; } = "Subset";
     public override string Identifier => "subset";
-    
-    public long[] Selection { get; init; }
-    
+
+    private long[] _selection;
+    public long[] Selection
+    {
+        get { return _selection;}
+        set
+        {
+            _selection = value;
+            EventCount = _selection.Length;
+        }
+    }
+
     public override Dictionary<Dimension, float[]?> GetValues(long max, params Dimension[] dimensions)
     {
         Dictionary<Dimension, float[]?> dict = new();
@@ -966,30 +956,5 @@ public class Subset : Population
         }
 
         return null;
-    }
-    
-    public override void AddGate(GatingStrategy gate)
-    {
-        // TODO: implement different gating schemes here.
-        if (gate is PolygonalGate polygon)
-        {
-            // get data points
-            var data = this.GetValues(this.EventCount, polygon.X, polygon.Y);
-            polygon.XTransform.Transform(data[polygon.X]!);
-            polygon.YTransform.Transform(data[polygon.Y]!);
-
-            var x = data[polygon.X]!;
-            var y = data[polygon.Y]!;
-            List<long> selection = new();
-            for(long i = 0; i < this.EventCount; i++)
-                if (inside_polygon(new Coordinates(x[i], y[i]), polygon.Polygon))
-                    selection.Add(i);
-            
-            for (int i = 0; i < selection.Count; i++)
-                selection[i] = this.Selection[selection[i]];
-
-            var subset = new Subset(
-                this, selection.ToArray(), polygon, polygon.Name);
-        }
     }
 }

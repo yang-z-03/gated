@@ -83,6 +83,7 @@ public class INodeImageConverter : IMultiValueConverter
                     case "statistic": return this.bmp_statistics;
                     case "gates": return this.bmp_gate_collection;
                     case "gate": return this.bmp_gate;
+                    case "subset": return this.bmp_subset;
                     default: return this.bmp_unk;
                 }        
             }
