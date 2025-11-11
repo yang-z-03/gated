@@ -35,6 +35,7 @@ public class ScatterConfig
     public int RangeEstimateResolution { get; set; } = 100;
     public int Resolution { get; set; } = 200;
 
+    internal bool require_range_update = true;
     internal bool has_initialize_range()
     {
         return (

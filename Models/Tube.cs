@@ -74,20 +74,20 @@ public abstract class Population : INode
             var origin = transform.InverseTransform(max);
             double[] thr =
             [
-                50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 800,
-                1000, 1500, 2000, 2500, 3000, 4000, 5000, 6000, 7000, 8000,
-                10000, 15000, 20000, 25000, 30000, 40000, 50000, 60000, 70000, 80000,
-                100000, 150000, 200000, 250000, 300000, 400000, 500000, 600000, 700000, 800000,
-                1000000, 1500000, 2000000, 2500000, 3000000, 4000000, 5000000, 6000000, 7000000, 8000000,
+                50, 100, 150, 200, 250, 300, 400, 500, 600, 800,
+                1000, 1500, 2000, 2500, 3000, 4000, 5000, 6000, 8000,
+                10000, 15000, 20000, 25000, 30000, 40000, 50000, 60000, 80000,
+                100000, 150000, 200000, 250000, 300000, 400000, 500000, 600000, 800000,
+                1000000, 1500000, 2000000, 2500000, 3000000, 4000000, 5000000, 6000000, 8000000,
             ];
 
             string[] names =
             [
-                "50", "100", "150", "200", "250", "300", "400", "500", "600", "700", "800",
-                "1000", "1500", "2000", "2500", "3k", "4k", "5k", "6k", "7k", "8k",
-                "10k", "15k", "20k", "25k", "30k", "40k", "50k", "60k", "70k", "80k",
-                "100k", "150k", "200k", "250k", "300k", "400k", "500k", "600k", "700k", "800k",
-                "1M", "1.5M", "2M", "2.5M", "3M", "4M", "5M", "6M", "7M", "8M"
+                "50", "100", "150", "200", "250", "300", "400", "500", "600", "800",
+                "1000", "1500", "2000", "2500", "3k", "4k", "5k", "6k", "8k",
+                "10k", "15k", "20k", "25k", "30k", "40k", "50k", "60k", "80k",
+                "100k", "150k", "200k", "250k", "300k", "400k", "500k", "600k", "800k",
+                "1M", "1.5M", "2M", "2.5M", "3M", "4M", "5M", "6M", "8M"
             ];
 
             int m = 0;
@@ -113,14 +113,27 @@ public abstract class Population : INode
         }
         else if (transform is LogicleTransform)
         {
-            var ticks = new double[] { 1e3, 1e4, 1e5, 1e6, 1e7, 1e8 };
+            double[] ticks = [
+                2e2, 3e2, 4e2, 5e2, 6e2, 7e2, 8e2, 9e2, 1e3, 
+                2e3, 3e3, 4e3, 5e3, 6e3, 7e3, 8e3, 9e3, 1e4, 
+                2e4, 3e4, 4e4, 5e4, 6e4, 7e4, 8e4, 9e4, 1e5, 
+                2e5, 3e5, 4e5, 5e5, 6e5, 7e5, 8e5, 9e5, 1e6, 
+                2e6, 3e6, 4e6, 5e6, 6e6, 7e6, 8e6, 9e6, 1e7, 
+                2e7, 3e7, 4e7, 5e7, 6e7, 7e7, 8e7, 9e7, 1e8];
             transform.Transform(ticks);
-            axis.SetTicks(ticks, new string[]{"1k", "10k", "100k", "1M", "10M", "100M"});
+            axis.SetTicks(ticks, [
+                "", "", "", "", "", "", "", "", "1k", 
+                "", "", "", "", "", "", "", "", "10k", 
+                "", "", "", "", "", "", "", "", "100k", 
+                "", "", "", "", "", "", "", "", "1M", 
+                "", "", "", "", "", "", "", "", "10M", 
+                "", "", "", "", "", "", "", "", "100M"
+            ]);
         }
         else axis.SetTicks(new double[]{}, new string[] {});
     }
 
-    private double[,] order(int[,] hist, int size)
+    internal static double[,] order(int[,] hist, int size)
     {
         List<int> values = new List<int>();
         for (int i = 0; i < size; i++)
@@ -159,8 +172,10 @@ public abstract class Population : INode
         config.YTransform.Transform(ys);
         
         // axis limits
-        if (!config.has_initialize_range())
+        if ((!config.has_initialize_range()) || config.require_range_update)
             config.initialize_range(xs, ys);
+
+        config.require_range_update = false;
         
         plot.Plot.Axes.SetLimitsX(config.XRange.Item1, config.XRange.Item2);
         plot.Plot.Axes.SetLimitsY(config.YRange.Item1, config.YRange.Item2);
@@ -175,7 +190,9 @@ public abstract class Population : INode
         this.set_ticks(plot.Plot.Axes.Bottom, config.XTransform, config.XRange.Item2);
         plot.Plot.Axes.Bottom.TickLabelStyle.Rotation = -90;
         plot.Plot.Axes.Bottom.TickLabelStyle.Alignment = Alignment.MiddleRight;
-
+        plot.Plot.Axes.Bottom.MinimumSize = 45;
+        plot.Plot.Axes.Left.MinimumSize = 45;
+        
         if (config.Type == PlotType.Density)
         {
             var dictDens = this.GetValues(config.DensityEstimate, x!, y!);
@@ -218,7 +235,7 @@ public abstract class Population : INode
                 ]++;
             }
             
-            double[,] o = this.order(histogram, config.Resolution);
+            double[,] o = Tube.order(histogram, config.Resolution);
             var hm1 = plot.Plot.Add.Heatmap(o);
             hm1.Colormap = new Configurations.Turbo();
             hm1.CellAlignment = Alignment.LowerLeft;
@@ -1018,7 +1035,8 @@ public class Subset : Population
         
         foreach (var dimension in dimensions)
             if ((this.ParentTube!.Measurements!.ContainsKey(dimension)))
-                dict.Add(dimension, GetValues(dimension, indices));
+                if(!dict.ContainsKey(dimension))
+                    dict.Add(dimension, GetValues(dimension, indices));
 
         return dict;
     }

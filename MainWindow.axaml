@@ -89,11 +89,11 @@
             </MenuItem>
             <MenuItem Header="Gating">
                 <MenuItem ToggleType="Radio" IsChecked="True" Header="Pan" x:Name="mnuToolPan"/>
-                <MenuItem ToggleType="Radio" IsChecked="False" Header="Binary Gate"/>
-                <MenuItem ToggleType="Radio" IsChecked="False" Header="Range Gate"/>
-                <MenuItem ToggleType="Radio" IsChecked="False" Header="Polygonal Gate" Click="mnu_add_polygon_gate"/>
-                <MenuItem ToggleType="Radio" IsChecked="False" Header="Quad Gate" Click="mnu_add_quad_gate"/>
-                <MenuItem ToggleType="Radio" IsChecked="False" Header="Curly Quad Gate"/>
+                <MenuItem ToggleType="Radio" IsChecked="False" IsEnabled="False" Header="Binary Gate"/>
+                <MenuItem ToggleType="Radio" IsChecked="False" IsEnabled="False" Header="Range Gate"/>
+                <MenuItem ToggleType="Radio" IsChecked="False" Header="Polygonal Gate" Click="mnu_add_polygon_gate" x:Name="mnuToolPolygon"/>
+                <MenuItem ToggleType="Radio" IsChecked="False" Header="Quad Gate" Click="mnu_add_quad_gate" x:Name="mnuToolQuad"/>
+                <MenuItem ToggleType="Radio" IsChecked="False" IsEnabled="False" Header="Curly Quad Gate"/>
                 <Separator/>
                 <MenuItem Header="Merge (Logic OR)"/>
                 <MenuItem Header="Exclude (Logic NOT)"/>
@@ -159,21 +159,21 @@
                     <DockPanel Grid.Row="0" Grid.Column="1">
                         <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
                             <StackPanel Orientation="Horizontal" Margin="40 5 0 20">
-                                <RadioButton Width="45" IsChecked="True" Theme="{DynamicResource PureCardRadioButton}">
-                                    <Image Height="24" Width="24"><SvgImage Source="avares://gated/Resources/bulb.svg" /> </Image>
+                                <RadioButton Width="45" IsChecked="True" x:Name="cmbToolPan" Theme="{DynamicResource PureCardRadioButton}">
+                                    <Image Height="24" Width="24"><SvgImage Source="avares://gated/Resources/pointer.svg" /></Image>
                                 </RadioButton>
-                                <RadioButton Width="45" Theme="{DynamicResource PureCardRadioButton}">
-                                    Polygon
+                                <RadioButton Width="45" x:Name="cmbToolPolygon" Theme="{DynamicResource PureCardRadioButton}">
+                                    <Image Height="24" Width="24"><SvgImage Source="avares://gated/Resources/polygon.svg" /></Image>
                                 </RadioButton>
-                                <RadioButton Width="45" Theme="{DynamicResource PureCardRadioButton}">
-                                    Quad
+                                <RadioButton Width="45" x:Name="cmbToolQuad" Theme="{DynamicResource PureCardRadioButton}">
+                                    <Image Height="24" Width="24"><SvgImage Source="avares://gated/Resources/cross.svg" /></Image>
                                 </RadioButton>
                             </StackPanel>
                         </StackPanel>
                     </DockPanel>
                     <sc:AvaPlot Grid.Row="1" Grid.Column="1" x:Name="avaPlot" IsVisible="True"
-                                Width="370" Height="350" Margin="0 10 0 0"/>
-                    <StackPanel Orientation="Vertical" Grid.Row="2" Grid.Column="1" Width="350" Margin="0 30">
+                                Width="370" Height="370" Margin="0 10 0 0"/>
+                    <StackPanel Orientation="Vertical" Grid.Row="2" Grid.Column="1" Width="350" Margin="0 15">
                         <StackPanel Orientation="Horizontal">
                         <ComboBox Width="300" Margin="10 0" DockPanel.Dock="Left" x:Name="cmbX" IsEnabled="False">
                             <ComboBox.SelectionBoxItemTemplate>
@@ -195,15 +195,21 @@
                         </ComboBox>
                         <Button Width="35" VerticalAlignment="Top" IsEnabled="False" x:Name="btnTransformX">
                             <Image Height="20" Width="20"><SvgImage Source="avares://gated/Resources/channel.svg" /> </Image>
+                            <Button.ContextFlyout>
+                                <MenuFlyout Placement="Bottom">
+                                    <MenuItem ToggleType="Radio" Click="toogle_x_linear" IsChecked="True" Header="Linear"/>
+                                    <MenuItem ToggleType="Radio" Click="toogle_x_logicle" Header="Biexponential (Logicle)"/>
+                                </MenuFlyout>
+                            </Button.ContextFlyout>
                         </Button>
                         </StackPanel>
-                        <Label Margin="14 5 0 0" Foreground="#a0a0a0">All data points</Label>
+                        <Label x:Name="lblX" Margin="14 5 0 0" Foreground="#a0a0a0">All data points</Label>
                     </StackPanel>
                     <StackPanel Orientation="Vertical" Grid.Row="1" Grid.Column="0" Width="350">
                         <StackPanel.RenderTransform>
                             <RotateTransform Angle="-90" CenterX="80" CenterY="-80"></RotateTransform>
                         </StackPanel.RenderTransform>
-                        <Label Margin="4 0 0 5" Foreground="#a0a0a0">All data points</Label>
+                        <Label x:Name="lblY" Margin="4 0 0 5" Foreground="#a0a0a0">All data points</Label>
                         <StackPanel Orientation="Horizontal" Width="350">
                         <ComboBox Width="300" x:Name="cmbY" IsEnabled="False">
                             <ComboBox.SelectionBoxItemTemplate>
@@ -226,6 +232,12 @@
                         
                         <Button VerticalAlignment="Top" Width="35" Margin="10 0 0 0" IsEnabled="False" x:Name="btnTransformY">
                             <Image Height="20" Width="20"><SvgImage Source="avares://gated/Resources/channel.svg" /> </Image>
+                            <Button.ContextFlyout>
+                                <MenuFlyout Placement="Bottom">
+                                    <MenuItem ToggleType="Radio" Click="toogle_y_linear" IsChecked="True" Header="Linear"/>
+                                    <MenuItem ToggleType="Radio" Click="toogle_y_logicle" Header="Biexponential (Logicle)"/>
+                                </MenuFlyout>
+                            </Button.ContextFlyout>
                         </Button>
                         </StackPanel>
                     </StackPanel>

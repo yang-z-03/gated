@@ -284,7 +284,7 @@ public class QuadGate : GatingStrategy
         base.Display(plot);
         var config = this.ParentGroup!.ScatterConfigs[this.X][this.Y];
         
-        double[,] histogram = new double[config.Resolution, config.Resolution];
+        int[,] histogram = new int[config.Resolution, config.Resolution];
         float xstep = (config.XRange.Item2 - config.XRange.Item1) / config.Resolution;
         float ystep = (config.YRange.Item2 - config.YRange.Item1) / config.Resolution;
 
@@ -304,7 +304,8 @@ public class QuadGate : GatingStrategy
             }
         }
 
-        var hm1 = plot.Plot.Add.Heatmap(histogram);
+        double[,] ord = Tube.order(histogram, config.Resolution);
+        var hm1 = plot.Plot.Add.Heatmap(ord);
         hm1.Colormap = new Configurations.Turbo();
         hm1.CellAlignment = Alignment.LowerLeft;
         hm1.CellWidth = xstep;
@@ -484,7 +485,7 @@ public class PolygonalGate : GatingStrategy
         base.Display(plot);
         var config = this.ParentGroup!.ScatterConfigs[this.X][this.Y];
         
-        double[,] histogram = new double[config.Resolution, config.Resolution];
+        int[,] histogram = new int[config.Resolution, config.Resolution];
         float xstep = (config.XRange.Item2 - config.XRange.Item1) / config.Resolution;
         float ystep = (config.YRange.Item2 - config.YRange.Item1) / config.Resolution;
 
@@ -504,7 +505,8 @@ public class PolygonalGate : GatingStrategy
             }
         }
 
-        var hm1 = plot.Plot.Add.Heatmap(histogram);
+        double[,] ord = Tube.order(histogram, config.Resolution);
+        var hm1 = plot.Plot.Add.Heatmap(ord);
         hm1.Colormap = new Configurations.Turbo();
         hm1.CellAlignment = Alignment.LowerLeft;
         hm1.CellWidth = xstep;

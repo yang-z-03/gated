@@ -52,10 +52,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="Resources\" />
-  </ItemGroup>
-
-  <ItemGroup>
     <None Remove="Resources\controls.svg" />
     <AvaloniaResource Include="Resources\controls.svg" />
     <None Remove="Resources\gate.svg" />
@@ -102,5 +98,11 @@
     <AvaloniaResource Include="Resources\gates.svg" />
     <None Remove="Resources\group.svg" />
     <AvaloniaResource Include="Resources\group.svg" />
+    <None Remove="Resources\pointer.svg" />
+    <AvaloniaResource Include="Resources\pointer.svg" />
+    <None Remove="Resources\polygon.svg" />
+    <AvaloniaResource Include="Resources\polygon.svg" />
+    <None Remove="Resources\cross.svg" />
+    <AvaloniaResource Include="Resources\cross.svg" />
   </ItemGroup>
 </Project>

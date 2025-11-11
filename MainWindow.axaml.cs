@@ -1,43 +1,34 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.ComponentModel;
-using System.IO;
 using System.Linq;
-using System.Linq.Expressions;
 using Avalonia.Controls;
 using Avalonia.Controls.Models.TreeDataGrid;
 using Avalonia.Controls.Selection;
 using Avalonia.Interactivity;
-using Avalonia.Media;
 using Avalonia.Platform.Storage;
-using Gated.Actions;
 using Gated.Configurations;
 using Gated.Models;
 using Gated.Preprocessing;
 using ScottPlot.Avalonia;
-using ScottPlot;
-using ScottPlot.Interactivity;
 using Color = ScottPlot.Color;
-using Colors = ScottPlot.Colors;
-using FontStyle = ScottPlot.FontStyle;
 using Population = Gated.Models.Population;
 
 namespace Gated;
 
 public partial class MainWindow : Window
 {
-    private AvaPlot plotter;
-    private FontStyle axis_title_font;
-    private FontStyle axis_tick_font;
+    private readonly AvaPlot plotter;
 
-    private Grouping? current_grouping = null;
-    private Tube? current_tube = null;
-    private Population? current_population = null;
-    private GatingStrategy? current_gate = null;
-    private ScatterConfig? current_scatter = null;
+    private Grouping? current_grouping;
+    private Tube? current_tube;
+    private Population? current_population;
+    private GatingStrategy? current_gate;
+    private ScatterConfig? current_scatter;
 
     private bool should_combo_respond = true;
+    private bool x_logicle = false;
+    private bool y_logicle = false;
     
     public MainWindow()
     {
@@ -45,29 +36,13 @@ public partial class MainWindow : Window
 
         this.plotter = this.avaPlot;
         
-        this.axis_title_font = new ScottPlot.FontStyle()
-        {
-            Name = "Inter",
-            Size = 13,
-            Bold = true,
-            Color = Colors.White
-        };
-        
-        this.axis_tick_font = new ScottPlot.FontStyle()
-        {
-            Name = "Inter",
-            Size = 12,
-            Bold = false,
-            Color = Colors.White
-        };
-        
         // change figure colors
         this.plotter.Plot.FigureBackground.Color = Color.FromHex("#282828");
         this.plotter.Plot.DataBackground.Color = Color.FromHex("#1e1e1e");
         // change axis and grid colors
         this.plotter.Plot.Axes.Color(Color.FromHex("#707070"));
         this.plotter.Plot.Grid.MajorLineColor = Color.FromHex("#303030");
-        this.plotter.Plot.Font.Set("Inter", ScottPlot.FontWeight.Normal, FontSlant.Upright, FontSpacing.Normal);
+        this.plotter.Plot.Font.Set("Inter");
         this.lock_plot();
         this.plotter.Plot.Axes.SetLimitsX(0, 10);
         this.plotter.Plot.Axes.SetLimitsY(0, 10);
@@ -75,8 +50,8 @@ public partial class MainWindow : Window
         // hide axis edge line
         this.plotter.Plot.Axes.Right.FrameLineStyle.Width = 0;
         this.plotter.Plot.Axes.Top.FrameLineStyle.Width = 0;
-        this.plotter.Plot.Axes.Left.SetTicks(new double[]{ 1, 3, 5, 7, 9}, new []{"1k", "10k", "100k", "1M", "10M"});
-        this.plotter.Plot.Axes.Bottom.SetTicks(new double[]{ 1, 3, 5, 7, 9}, new []{"1k", "10k", "100k", "1M", "10M"});
+        this.plotter.Plot.Axes.Left.SetTicks([1, 3, 5, 7, 9], ["1k", "10k", "100k", "1M", "10M"]);
+        this.plotter.Plot.Axes.Bottom.SetTicks([1, 3, 5, 7, 9], ["1k", "10k", "100k", "1M", "10M"]);
         
         this.DataContext = this.ViewModel;
         this.workspaceTree.Source = this.ViewModel.WorkspaceView;
@@ -87,6 +62,180 @@ public partial class MainWindow : Window
         
         this.cmbX.SelectionChanged += combo_axis_changed;
         this.cmbY.SelectionChanged += combo_axis_changed;
+
+        this.btnTransformX.Click += (s, e) => { this.btnTransformX.ContextFlyout!.ShowAt(this.btnTransformX); };
+        this.btnTransformY.Click += (s, e) => { this.btnTransformY.ContextFlyout!.ShowAt(this.btnTransformY); };
+
+        this.cmbToolPan.IsCheckedChanged += (s, e) =>
+        {
+            if (this.cmbToolPan.IsChecked ?? false)
+                switch_tool(Tool.Pan);
+        };
+        
+        this.cmbToolPolygon.IsCheckedChanged += (s, e) =>
+        {
+            if (this.cmbToolPolygon.IsChecked ?? false)
+                switch_tool(Tool.Polygon);
+        };
+        
+        this.cmbToolQuad.IsCheckedChanged += (s, e) =>
+        {
+            if (this.cmbToolQuad.IsChecked ?? false)
+                switch_tool(Tool.Quad);
+        };
+    }
+
+    private void toogle_x_linear(object? sender, RoutedEventArgs e)
+    {
+        this.x_logicle = false;
+        transformation_changed();
+    }
+    
+    private void toogle_x_logicle(object? sender, RoutedEventArgs e)
+    {
+        this.x_logicle = true;
+        transformation_changed();
+    }
+    
+    private void toogle_y_linear(object? sender, RoutedEventArgs e)
+    {
+        this.y_logicle = false;
+        transformation_changed();
+    }
+    
+    private void toogle_y_logicle(object? sender, RoutedEventArgs e)
+    {
+        this.y_logicle = true;
+        transformation_changed();
+    }
+
+    private void transformation_changed()
+    {
+        if (should_combo_respond)
+        {
+            if (this.current_population != null)
+            {
+                if (x_logicle)
+                    this.current_scatter!.XTransform = new LogicleTransform(t: this.current_scatter!.X.Maximum);
+                else this.current_scatter!.XTransform = new LinearTransform();
+                
+                if (y_logicle)
+                    this.current_scatter!.YTransform = new LogicleTransform(t: this.current_scatter!.Y.Maximum);
+                else this.current_scatter!.YTransform = new LinearTransform();
+                this.current_scatter!.require_range_update = true;
+                
+                this.current_scatter = this.current_population!.Display(
+                    this.plotter,
+                    (this.cmbX.SelectedItem as Dimension)!,
+                    (this.cmbY.SelectedItem as Dimension)!,
+                    this.current_scatter
+                );
+
+                this.current_population.ParentGroup!.ScatterConfigs[
+                        (this.cmbX.SelectedItem as Dimension)!][(this.cmbY.SelectedItem as Dimension)!] =
+                    this.current_scatter;
+
+                // exit from previous tool to panning
+                this.switch_tool(Tool.Pan);
+            }
+        }
+    }
+
+    private enum Tool
+    {
+        Pan,
+        Polygon,
+        Quad
+    }
+
+    private void switch_tool(Tool t)
+    {
+        switch (t)
+        {
+            case Tool.Pan:
+                this.mnuToolPan.IsChecked = true;
+                this.cmbToolPan.IsChecked = true;
+                this.lock_plot();
+                break;
+            
+            case Tool.Quad:
+                this.mnuToolQuad.IsChecked = true;
+                this.cmbToolQuad.IsChecked = true;
+                
+                if (this.current_scatter == null) return;
+                if (this.current_tube == null) return;
+                if (this.current_population == null) return;
+                if (this.current_grouping == null) return;
+        
+                var action_q = draw_cross_gate(null);
+                action_q.GateDefined += (s, e) =>
+                {
+                    Actions.Quad? p = s as Actions.Quad;
+                    QuadGate gate = new QuadGate(
+                        this.current_scatter, 
+                        Convert.ToSingle(p!.vertice.GetValueOrDefault().X), 
+                        Convert.ToSingle(p!.vertice.GetValueOrDefault().Y), 
+                        this.current_grouping);
+                    p.defined_gate = gate;
+                    this.current_grouping.AddGate(this.current_gate, gate, this.current_population.AssociatedGateIndex);
+                    this.refresh_tree();
+                };
+        
+                action_q.GateUpdated += (s, e) =>
+                {
+                    Actions.Quad? p = s as Actions.Quad;
+                    if (p!.defined_gate != null)
+                    {
+                        p!.defined_gate.HorizontalCutoff = Convert.ToSingle(p.vertice.GetValueOrDefault().X);
+                        p!.defined_gate.VerticalCutoff = Convert.ToSingle(p.vertice.GetValueOrDefault().Y);
+                        p!.defined_gate!.Update();
+                    }
+                    
+                    this.refresh_tree();
+                };
+                break;
+            
+            case Tool.Polygon:
+                this.mnuToolPolygon.IsChecked = true;
+                this.cmbToolPolygon.IsChecked = true;
+                
+                if (this.current_scatter == null) return;
+                if (this.current_tube == null) return;
+                if (this.current_population == null) return;
+                if (this.current_grouping == null) return;
+        
+                var action_p = draw_polygon_gate(null);
+                action_p.GateDefined += (s, e) =>
+                {
+                    Actions.Polygon? p = s as Actions.Polygon;
+                    PolygonalGate gate = new PolygonalGate(this.current_scatter, p!, this.current_grouping);
+                    p!.defined_gate = gate;
+                    this.current_grouping.AddGate(this.current_gate, gate, this.current_population.AssociatedGateIndex);
+                    this.refresh_tree();
+                };
+        
+                action_p.GateUpdated += (s, e) =>
+                {
+                    Actions.Polygon? p = s as Actions.Polygon;
+                    if (p!.defined_gate != null)
+                    {
+                        p!.defined_gate.Polygon = p!.vertices;
+                        p!.defined_gate!.Update();
+                    }
+                    
+                    this.refresh_tree();
+                };
+
+                break;
+        }
+    }
+
+    private ScatterConfig try_get_config(Grouping group, Dimension x, Dimension y)
+    {
+        if (group.ScatterConfigs!.ContainsKey(x))
+                if (group.ScatterConfigs[x]!.ContainsKey(y))
+                    return group!.ScatterConfigs[x][y];
+        return new ScatterConfig(x, y);
     }
 
     private void combo_axis_changed(object? sender, SelectionChangedEventArgs e)
@@ -95,20 +244,29 @@ public partial class MainWindow : Window
         {
             if (this.current_population != null)
             {
+                var config = try_get_config(
+                    this.current_population.ParentGroup!,
+                    (this.cmbX.SelectedItem as Dimension)!,
+                    (this.cmbY.SelectedItem as Dimension)!
+                );
+
+                this.x_logicle = config.XTransform is LogicleTransform;
+                this.y_logicle = config.YTransform is LogicleTransform;
+                
                 this.current_scatter = this.current_population!.Display(
                     this.plotter,
                     (this.cmbX.SelectedItem as Dimension)!,
                     (this.cmbY.SelectedItem as Dimension)!,
-                    null
+                    config
                 );
 
                 this.current_population.ParentGroup!.ScatterConfigs[
                         (this.cmbX.SelectedItem as Dimension)!][(this.cmbY.SelectedItem as Dimension)!] =
                     this.current_scatter;
 
+                this.transformation_changed();
                 // exit from previous tool to panning
-                this.lock_plot();
-                this.mnuToolPan.IsChecked = true;
+                this.switch_tool(Tool.Pan);
             }
         }
         
@@ -169,9 +327,9 @@ public partial class MainWindow : Window
 
     private async void mnu_open_click(object? sender, RoutedEventArgs e)
     {
-        var topLevel = TopLevel.GetTopLevel(this);
+        var top_level = TopLevel.GetTopLevel(this);
 
-        var files = await topLevel!.StorageProvider.OpenFilePickerAsync(
+        var files = await top_level!.StorageProvider.OpenFilePickerAsync(
             new FilePickerOpenOptions
         {
             Title = "Open FCS or Workspace",
@@ -221,6 +379,9 @@ public partial class MainWindow : Window
         var index = e.SelectedIndexes.First();
         var item = e.SelectedItems.First();
 
+        Dimension? prev_x = this.cmbX.SelectedItem as Dimension;
+        Dimension? prev_y = this.cmbY.SelectedItem as Dimension;
+        
         if (item is Tube tube)
         {
             this.ViewModel.Dimensions.Clear();
@@ -241,8 +402,8 @@ public partial class MainWindow : Window
 
             this.current_scatter = tube.Display(
                 this.plotter,
-                tube.GetDefaultX(),
-                tube.GetDefaultY(),
+                this.cmbX.Items.Contains(prev_x) ? prev_x! : tube.GetDefaultX(),
+                this.cmbX.Items.Contains(prev_y) ? prev_y! : tube.GetDefaultY(),
                 null
             );
             
@@ -251,8 +412,12 @@ public partial class MainWindow : Window
             this.cmbY.SelectedIndex = this.cmbX.Items.IndexOf(this.current_scatter!.Y);
             this.cmbX.IsEnabled = true;
             this.cmbY.IsEnabled = true;
-            this.lock_plot();
-            this.mnuToolPan.IsChecked = true;
+            this.btnTransformX.IsEnabled = true;
+            this.btnTransformY.IsEnabled = true;
+            this.switch_tool(Tool.Pan);
+            
+            this.lblY.Content = "All data points";
+            this.lblX.Content = "All data points";
         }
         else if (item is Subset subset)
         {
@@ -274,8 +439,8 @@ public partial class MainWindow : Window
 
             this.current_scatter = subset.Display(
                 this.plotter,
-                subset.GetDefaultX(),
-                subset.GetDefaultY(),
+                this.cmbX.Items.Contains(prev_x) ? prev_x! : subset.GetDefaultX(),
+                this.cmbX.Items.Contains(prev_y) ? prev_y! : subset.GetDefaultY(),
                 null
             );
             
@@ -284,8 +449,11 @@ public partial class MainWindow : Window
             this.cmbY.SelectedIndex = this.cmbX.Items.IndexOf(this.current_scatter!.Y);
             this.cmbX.IsEnabled = true;
             this.cmbY.IsEnabled = true;
-            this.lock_plot();
-            this.mnuToolPan.IsChecked = true;
+            this.btnTransformX.IsEnabled = true;
+            this.btnTransformY.IsEnabled = true;
+            this.switch_tool(Tool.Pan);
+            this.lblY.Content = subset.Name;
+            this.lblX.Content = subset.Name;
         }
         else if (item is GatingStrategy gate)
         {
@@ -295,11 +463,19 @@ public partial class MainWindow : Window
             this.plotter.IsVisible = true;
             this.current_grouping = gate.ParentGroup;
             this.current_gate = gate;
+            this.cmbX.Items.Clear();
+            this.cmbY.Items.Clear();
+            this.lblY.Content = gate.ParentGroup!.Name + " (Concatenated)";
+            this.lblX.Content = gate.ParentGroup!.Name + " (Concatenated)";
 
             if (item is PolygonalGate polyg)
             {
                 this.ViewModel.Dimensions.Add(polyg.X);
                 this.ViewModel.Dimensions.Add(polyg.Y);
+                this.cmbX.Items.Add(polyg.X);
+                this.cmbX.SelectedIndex = 0;
+                this.cmbY.Items.Add(polyg.Y);
+                this.cmbY.SelectedIndex = 0;
                 polyg.Display(this.plotter);
                 var action = draw_polygon_gate(polyg);
                 
@@ -326,6 +502,10 @@ public partial class MainWindow : Window
                 this.ViewModel.Dimensions.Add(q.X);
                 this.ViewModel.Dimensions.Add(q.Y);
                 q.Display(this.plotter);
+                this.cmbX.Items.Add(q.X);
+                this.cmbX.SelectedIndex = 0;
+                this.cmbY.Items.Add(q.Y);
+                this.cmbY.SelectedIndex = 0;
                 var action = draw_cross_gate(q);
                 
                 action.GateDefined += (s, e) =>
@@ -351,7 +531,11 @@ public partial class MainWindow : Window
                     }
                 };
             }
-
+            
+            this.cmbX.IsEnabled = false;
+            this.cmbY.IsEnabled = false;
+            this.btnTransformX.IsEnabled = false;
+            this.btnTransformY.IsEnabled = false;
             this.plotter.Refresh();
         }
 
@@ -360,61 +544,19 @@ public partial class MainWindow : Window
 
     private void mnu_add_polygon_gate(object? sender, RoutedEventArgs e)
     {
-        if (this.current_scatter == null) return;
-        if (this.current_tube == null) return;
-        if (this.current_population == null) return;
-        if (this.current_grouping == null) return;
-        
-        var action = draw_polygon_gate(null);
-        action.GateDefined += (s, e) =>
-        {
-            Actions.Polygon? p = s as Actions.Polygon;
-            PolygonalGate gate = new PolygonalGate(this.current_scatter, p!, this.current_grouping);
-            p!.defined_gate = gate;
-            this.current_grouping.AddGate(this.current_gate, gate, this.current_population.AssociatedGateIndex);
-        };
-        
-        action.GateUpdated += (s, e) =>
-        {
-            Actions.Polygon? p = s as Actions.Polygon;
-            if (p!.defined_gate != null)
-            {
-                p!.defined_gate.Polygon = p!.vertices;
-                p!.defined_gate!.Update();
-            }
-        };
+        this.switch_tool(Tool.Polygon);
     }
     
     private void mnu_add_quad_gate(object? sender, RoutedEventArgs e)
     {
-        if (this.current_scatter == null) return;
-        if (this.current_tube == null) return;
-        if (this.current_population == null) return;
-        if (this.current_grouping == null) return;
-        
-        var action = draw_cross_gate(null);
-        action.GateDefined += (s, e) =>
-        {
-            Actions.Quad? p = s as Actions.Quad;
-            QuadGate gate = new QuadGate(
-                this.current_scatter, 
-                Convert.ToSingle(p!.vertice.GetValueOrDefault().X), 
-                Convert.ToSingle(p!.vertice.GetValueOrDefault().Y), 
-                this.current_grouping);
-            p.defined_gate = gate;
-            this.current_grouping.AddGate(this.current_gate, gate, this.current_population.AssociatedGateIndex);
-        };
-        
-        action.GateUpdated += (s, e) =>
-        {
-            Actions.Quad? p = s as Actions.Quad;
-            if (p!.defined_gate != null)
-            {
-                p!.defined_gate.HorizontalCutoff = Convert.ToSingle(p.vertice.GetValueOrDefault().X);
-                p!.defined_gate.VerticalCutoff = Convert.ToSingle(p.vertice.GetValueOrDefault().Y);
-                p!.defined_gate!.Update();
-            }
-        };
+        this.switch_tool(Tool.Quad);
+    }
+
+    private void refresh_tree()
+    {
+        if (current_grouping == null) return;
+        this.current_grouping!.IsExpanded = false;
+        this.current_grouping!.IsExpanded = true;
     }
 }
 

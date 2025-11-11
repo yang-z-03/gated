@@ -7,6 +7,7 @@ public abstract class Dimension
     public abstract string Identifier { get; }
     public abstract string Name { get; set; }
     public abstract string Label { get; set; }
+    public abstract float Maximum { get; set; }
     public static ChannelImageConverter ImageConverter = new();
 }
 
@@ -27,7 +28,7 @@ public class Channel : Dimension
     public override string Name { get; set; }
     public override string Label { get; set; }
     public (float, float) Wavelength { get; private set; }
-    public float Maximum { get; private set; }
+    public override float Maximum { get; set; }
     public float Gain { get; private set; }
 
     public bool IsEqual(Channel? other)
@@ -49,4 +50,5 @@ public class Embedding : Dimension
     public override string Identifier { get; } = "embedding";
     public override string Name { get; set; }
     public override string Label { get; set; }
+    public override float Maximum { get; set; }
 }
