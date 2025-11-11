@@ -112,16 +112,16 @@ public class Grouping : INode
         return true;
     }
     
-    public void AddGate(GatingStrategy? parent, GatingStrategy gate)
+    public void AddGate(GatingStrategy? parent, GatingStrategy gate, int subset_id = 0)
     {
         foreach (var tube in this.Samples)
         {
-            var found = find_corresponding_population(tube, parent);
+            var found = find_corresponding_population(tube, parent, subset_id);
             if (found != null)
             {
                 bool has_gate = false;
                 foreach(var subset in found.Subsets)
-                    if (subset.AssociatedGate == gate)
+                    if (subset.AssociatedGate == gate && subset.AssociatedGateIndex == subset_id)
                         has_gate = true;
                 
                 if(!has_gate) found.AddGate(gate);
@@ -132,13 +132,13 @@ public class Grouping : INode
         else parent.Subsets.Add(gate);
     }
 
-    private Population? find_corresponding_population(Population p, GatingStrategy? parent)
+    private Population? find_corresponding_population(Population p, GatingStrategy? parent, int subset_id = 0)
     {
         if (parent == null) return p;
         foreach (var subs in p.Subsets)
         {
             Population? found = null;
-            if (subs.AssociatedGate == parent) found = subs;
+            if (subs.AssociatedGate == parent && subs.AssociatedGateIndex == subset_id) found = subs;
             else if (subs.Subsets.Count > 0) found = find_corresponding_population(subs, parent);
 
             if (found != null) return found;

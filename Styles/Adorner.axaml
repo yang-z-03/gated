@@ -1,0 +1,20 @@
+﻿<ResourceDictionary
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ControlTheme x:Key="{x:Type AdornerLayer}" TargetType="AdornerLayer">
+        <Setter Property="DefaultFocusAdorner">
+            <FocusAdornerTemplate>
+                <Border Theme="{DynamicResource AdornerLayerBorder}" />
+            </FocusAdornerTemplate>
+        </Setter>
+    </ControlTheme>
+
+    <ControlTheme x:Key="AdornerLayerBorder" TargetType="Border">
+        <Setter Property="BorderThickness" Value="{DynamicResource AdornerLayerBorderThickness}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource AdornerLayerBorderBrush}" />
+        <Setter Property="CornerRadius" Value="{DynamicResource AdornerLayerCornerRadius}" />
+        <Style Selector="^.Solid">
+            <Setter Property="BorderBrush" Value="{DynamicResource AdornerLayerSolidBorderBrush}" />
+        </Style>
+    </ControlTheme>
+</ResourceDictionary>

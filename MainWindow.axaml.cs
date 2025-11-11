@@ -36,6 +36,8 @@ public partial class MainWindow : Window
     private Population? current_population = null;
     private GatingStrategy? current_gate = null;
     private ScatterConfig? current_scatter = null;
+
+    private bool should_combo_respond = true;
     
     public MainWindow()
     {
@@ -60,19 +62,57 @@ public partial class MainWindow : Window
         };
         
         // change figure colors
-        this.plotter.Plot.FigureBackground.Color = Color.FromHex("#2e3238");
-        this.plotter.Plot.DataBackground.Color = Color.FromHex("#ffffff");
+        this.plotter.Plot.FigureBackground.Color = Color.FromHex("#282828");
+        this.plotter.Plot.DataBackground.Color = Color.FromHex("#1e1e1e");
         // change axis and grid colors
-        this.plotter.Plot.Axes.Color(Color.FromHex("#d0d0d0"));
-        this.plotter.Plot.Grid.MajorLineColor = Color.FromHex("#f0f0f0");
+        this.plotter.Plot.Axes.Color(Color.FromHex("#707070"));
+        this.plotter.Plot.Grid.MajorLineColor = Color.FromHex("#303030");
         this.plotter.Plot.Font.Set("Inter", ScottPlot.FontWeight.Normal, FontSlant.Upright, FontSpacing.Normal);
-
+        this.lock_plot();
+        this.plotter.Plot.Axes.SetLimitsX(0, 10);
+        this.plotter.Plot.Axes.SetLimitsY(0, 10);
+        
+        // hide axis edge line
+        this.plotter.Plot.Axes.Right.FrameLineStyle.Width = 0;
+        this.plotter.Plot.Axes.Top.FrameLineStyle.Width = 0;
+        this.plotter.Plot.Axes.Left.SetTicks(new double[]{ 1, 3, 5, 7, 9}, new []{"1k", "10k", "100k", "1M", "10M"});
+        this.plotter.Plot.Axes.Bottom.SetTicks(new double[]{ 1, 3, 5, 7, 9}, new []{"1k", "10k", "100k", "1M", "10M"});
+        
         this.DataContext = this.ViewModel;
         this.workspaceTree.Source = this.ViewModel.WorkspaceView;
         this.ViewModel.WorkspaceView.RowSelection!.SelectedIndex = 0;
         this.ViewModel.WorkspaceView.RowSelection.SelectionChanged += workspace_tree_select;
 
         this.featureTree.Source = this.ViewModel.FeatureView;
+        
+        this.cmbX.SelectionChanged += combo_axis_changed;
+        this.cmbY.SelectionChanged += combo_axis_changed;
+    }
+
+    private void combo_axis_changed(object? sender, SelectionChangedEventArgs e)
+    {
+        if (should_combo_respond)
+        {
+            if (this.current_population != null)
+            {
+                this.current_scatter = this.current_population!.Display(
+                    this.plotter,
+                    (this.cmbX.SelectedItem as Dimension)!,
+                    (this.cmbY.SelectedItem as Dimension)!,
+                    null
+                );
+
+                this.current_population.ParentGroup!.ScatterConfigs[
+                        (this.cmbX.SelectedItem as Dimension)!][(this.cmbY.SelectedItem as Dimension)!] =
+                    this.current_scatter;
+
+                // exit from previous tool to panning
+                this.lock_plot();
+                this.mnuToolPan.IsChecked = true;
+            }
+        }
+        
+        this.plotter.Refresh();
     }
 
     private void lock_plot()
@@ -176,6 +216,7 @@ public partial class MainWindow : Window
 
     private void workspace_tree_select(object? sender, TreeSelectionModelSelectionChangedEventArgs e)
     {
+        should_combo_respond = false;
         // force single select
         var index = e.SelectedIndexes.First();
         var item = e.SelectedItems.First();
@@ -183,12 +224,17 @@ public partial class MainWindow : Window
         if (item is Tube tube)
         {
             this.ViewModel.Dimensions.Clear();
-            foreach(var dim in tube.Channels)
+            this.cmbX.Items.Clear();
+            this.cmbY.Items.Clear();
+            foreach (var dim in tube.Channels)
+            {
                 this.ViewModel.Dimensions.Add(dim.Value);
+                this.cmbX.Items.Add(dim.Value);
+                this.cmbY.Items.Add(dim.Value);
+            }
 
             this.current_tube = tube;
             this.current_population = tube;
-            this.placeHold.IsVisible = false;
             this.plotter.IsVisible = true;
             this.current_grouping = tube.ParentGroup;
             this.current_gate = this.current_population.AssociatedGate;
@@ -201,18 +247,27 @@ public partial class MainWindow : Window
             );
             
             // exit from previous tool to panning
+            this.cmbX.SelectedIndex = this.cmbX.Items.IndexOf(this.current_scatter!.X);
+            this.cmbY.SelectedIndex = this.cmbX.Items.IndexOf(this.current_scatter!.Y);
+            this.cmbX.IsEnabled = true;
+            this.cmbY.IsEnabled = true;
             this.lock_plot();
             this.mnuToolPan.IsChecked = true;
         }
         else if (item is Subset subset)
         {
             this.ViewModel.Dimensions.Clear();
-            foreach(var dim in subset.Channels)
+            this.cmbX.Items.Clear();
+            this.cmbY.Items.Clear();
+            foreach (var dim in subset.Channels)
+            {
+                this.cmbX.Items.Add(dim.Value);
+                this.cmbY.Items.Add(dim.Value);
                 this.ViewModel.Dimensions.Add(dim.Value);
+            }
 
             this.current_tube = subset.ParentTube;
             this.current_population = subset;
-            this.placeHold.IsVisible = false;
             this.plotter.IsVisible = true;
             this.current_grouping = subset.ParentGroup;
             this.current_gate = this.current_population.AssociatedGate;
@@ -225,6 +280,10 @@ public partial class MainWindow : Window
             );
             
             // exit from previous tool to panning
+            this.cmbX.SelectedIndex = this.cmbX.Items.IndexOf(this.current_scatter!.X);
+            this.cmbY.SelectedIndex = this.cmbX.Items.IndexOf(this.current_scatter!.Y);
+            this.cmbX.IsEnabled = true;
+            this.cmbY.IsEnabled = true;
             this.lock_plot();
             this.mnuToolPan.IsChecked = true;
         }
@@ -233,7 +292,6 @@ public partial class MainWindow : Window
             this.ViewModel.Dimensions.Clear();
             this.current_tube = null;
             this.current_population = null;
-            this.placeHold.IsVisible = false;
             this.plotter.IsVisible = true;
             this.current_grouping = gate.ParentGroup;
             this.current_gate = gate;
@@ -296,6 +354,8 @@ public partial class MainWindow : Window
 
             this.plotter.Refresh();
         }
+
+        should_combo_respond = true;
     }
 
     private void mnu_add_polygon_gate(object? sender, RoutedEventArgs e)
@@ -311,7 +371,7 @@ public partial class MainWindow : Window
             Actions.Polygon? p = s as Actions.Polygon;
             PolygonalGate gate = new PolygonalGate(this.current_scatter, p!, this.current_grouping);
             p!.defined_gate = gate;
-            this.current_grouping.AddGate(this.current_gate, gate);
+            this.current_grouping.AddGate(this.current_gate, gate, this.current_population.AssociatedGateIndex);
         };
         
         action.GateUpdated += (s, e) =>
@@ -342,7 +402,7 @@ public partial class MainWindow : Window
                 Convert.ToSingle(p!.vertice.GetValueOrDefault().Y), 
                 this.current_grouping);
             p.defined_gate = gate;
-            this.current_grouping.AddGate(this.current_gate, gate);
+            this.current_grouping.AddGate(this.current_gate, gate, this.current_population.AssociatedGateIndex);
         };
         
         action.GateUpdated += (s, e) =>

@@ -66,7 +66,76 @@ public abstract class Population : INode
     {
         gate.AddPopulation(this);
     }
-    
+
+    private void set_ticks(IAxis axis, ITransform transform, float max)
+    {
+        if (transform is LinearTransform)
+        {
+            var origin = transform.InverseTransform(max);
+            double[] thr =
+            [
+                50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 800,
+                1000, 1500, 2000, 2500, 3000, 4000, 5000, 6000, 7000, 8000,
+                10000, 15000, 20000, 25000, 30000, 40000, 50000, 60000, 70000, 80000,
+                100000, 150000, 200000, 250000, 300000, 400000, 500000, 600000, 700000, 800000,
+                1000000, 1500000, 2000000, 2500000, 3000000, 4000000, 5000000, 6000000, 7000000, 8000000,
+            ];
+
+            string[] names =
+            [
+                "50", "100", "150", "200", "250", "300", "400", "500", "600", "700", "800",
+                "1000", "1500", "2000", "2500", "3k", "4k", "5k", "6k", "7k", "8k",
+                "10k", "15k", "20k", "25k", "30k", "40k", "50k", "60k", "70k", "80k",
+                "100k", "150k", "200k", "250k", "300k", "400k", "500k", "600k", "700k", "800k",
+                "1M", "1.5M", "2M", "2.5M", "3M", "4M", "5M", "6M", "7M", "8M"
+            ];
+
+            int m = 0;
+            for (int i = 0; i < thr.Length; i++)
+            {
+                if (max <= thr[m]) break;
+                m += 1;
+            }
+
+            int from = Math.Max(0, m - 8);
+            int to = Math.Min(m, thr.Length - 1);
+
+            double[] ticks = new double[to - from + 1];
+            string[] labels = new string[to - from + 1];
+            for (int i = from; i <= to; i++)
+            {
+                ticks[i - from] = thr[i];
+                labels[i - from] = names[i];
+            }
+
+            transform.Transform(ticks);
+            axis.SetTicks(ticks, labels);
+        }
+        else if (transform is LogicleTransform)
+        {
+            var ticks = new double[] { 1e3, 1e4, 1e5, 1e6, 1e7, 1e8 };
+            transform.Transform(ticks);
+            axis.SetTicks(ticks, new string[]{"1k", "10k", "100k", "1M", "10M", "100M"});
+        }
+        else axis.SetTicks(new double[]{}, new string[] {});
+    }
+
+    private double[,] order(int[,] hist, int size)
+    {
+        List<int> values = new List<int>();
+        for (int i = 0; i < size; i++)
+        for (int j = 0; j < size; j++)
+            if (!values.Contains((hist[i, j])))
+                values.Add(hist[i, j]);
+        values.Sort();
+
+        double[,] order = new double[size, size];
+        for (int i = 0; i < size; i++)
+        for (int j = 0; j < size; j++)
+            order[i, j] = values.IndexOf(hist[i, j]);
+        return order;
+    }
+
     public ScatterConfig Display(
         IPlotControl plot, Dimension x, Dimension y, 
         ScatterConfig? config = null)
@@ -78,6 +147,9 @@ public abstract class Population : INode
         
         if (config == null)
             config = new ScatterConfig(x, y);
+
+        config.X = x;
+        config.Y = y;
         
         plot.Plot.Clear();
         var dict = this.GetValues(config.MaxDisplay, x!, y!);
@@ -96,9 +168,13 @@ public abstract class Population : INode
         // hide axis edge line
         plot.Plot.Axes.Right.FrameLineStyle.Width = 0;
         plot.Plot.Axes.Top.FrameLineStyle.Width = 0;
-        // scientific notation
-        plot.Plot.Axes.SetupMultiplierNotation(plot.Plot.Axes.Left);
-        plot.Plot.Axes.SetupMultiplierNotation(plot.Plot.Axes.Bottom);
+        
+        // set ticks.
+        // reverse transform to origin scale.
+        this.set_ticks(plot.Plot.Axes.Left, config.YTransform, config.YRange.Item2);
+        this.set_ticks(plot.Plot.Axes.Bottom, config.XTransform, config.XRange.Item2);
+        plot.Plot.Axes.Bottom.TickLabelStyle.Rotation = -90;
+        plot.Plot.Axes.Bottom.TickLabelStyle.Alignment = Alignment.MiddleRight;
 
         if (config.Type == PlotType.Density)
         {
@@ -131,7 +207,7 @@ public abstract class Population : INode
         }
         else if (config.Type == PlotType.Heatmap)
         {
-            double[,] histogram = new double[config.Resolution, config.Resolution];
+            int[,] histogram = new int[config.Resolution, config.Resolution];
             float xstep = (config.XRange.Item2 - config.XRange.Item1) / config.Resolution;
             float ystep = (config.YRange.Item2 - config.YRange.Item1) / config.Resolution;
             for (int i = 0; i < xs.Length; i++)
@@ -142,7 +218,8 @@ public abstract class Population : INode
                 ]++;
             }
             
-            var hm1 = plot.Plot.Add.Heatmap(histogram);
+            double[,] o = this.order(histogram, config.Resolution);
+            var hm1 = plot.Plot.Add.Heatmap(o);
             hm1.Colormap = new Configurations.Turbo();
             hm1.CellAlignment = Alignment.LowerLeft;
             hm1.CellWidth = xstep;
@@ -863,7 +940,8 @@ public class Tube : Population
             if ((this.Measurements!.ContainsKey(dimension)))
             {
                 // implicitly return a copy of the data.
-                dict.Add(dimension, GetValues(dimension, indices));
+                if (!dict.ContainsKey(dimension))
+                    dict.Add(dimension, GetValues(dimension, indices));
             }
 
         return dict;

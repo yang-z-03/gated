@@ -7,5 +7,10 @@
         <ResourceInclude Source="avares://gated/Styles/Themes/Dark/Window.axaml" />
         <ResourceInclude Source="avares://gated/Styles/Themes/Dark/GridSplitter.axaml"/>
         <ResourceInclude Source="avares://gated/Styles/Themes/Dark/TreeDataGrid.axaml" />
+        <ResourceInclude Source="avares://gated/Styles/Themes/Dark/Combo.axaml" />
+        <ResourceInclude Source="avares://gated/Styles/Themes/Dark/Adorner.axaml" />
+        <ResourceInclude Source="avares://gated/Styles/Themes/Dark/Button.axaml" />
+        <ResourceInclude Source="avares://gated/Styles/Themes/Dark/Textbox.axaml" />
+        <ResourceInclude Source="avares://gated/Styles/Themes/Dark/Radio.axaml" />
     </ResourceDictionary.MergedDictionaries>
 </ResourceDictionary>

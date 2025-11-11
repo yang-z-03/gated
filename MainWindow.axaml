@@ -129,6 +129,9 @@
         </Menu>
         
         <Grid Height="2" DockPanel.Dock="Top" Background="#50000000"></Grid>
+        <Grid Height="30" DockPanel.Dock="Bottom" Background="#303030">
+            <Label Margin="10 8 10 0" Foreground="#a0a0a0">Append samples to grouping to begin analysis</Label>
+        </Grid>
         <Grid ColumnDefinitions="410, 0, *, 0, 350" x:Name="Main">
             <Grid Grid.Column="0">
                 <TreeDataGrid x:Name="workspaceTree" Margin="4 4 4 8">
@@ -151,12 +154,82 @@
                 </TreeDataGrid>
             </Grid>
             <GridSplitter Grid.Column="1" ShowsPreview="True" />
-            <Grid Grid.Column="2" x:Name="plotterGrid" Background="{StaticResource SemiGrey1Color}">
-                <Label Foreground="{StaticResource SemiGrey2Color}"
-                       FontSize="40" FontWeight="Black" x:Name="placeHold"
-                       HorizontalAlignment="Center"
-                       VerticalAlignment="Center">Select a sample to plot</Label>
-                <sc:AvaPlot Width="370" Height="350" x:Name="avaPlot" IsVisible="False"/>
+            <Grid Grid.Column="2" x:Name="plotterGrid" Background="#282828">
+                <Grid Width="450" Height="500" ColumnDefinitions="1*, 9*" RowDefinitions="1.5*, 7.5*, 1*">
+                    <DockPanel Grid.Row="0" Grid.Column="1">
+                        <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
+                            <StackPanel Orientation="Horizontal" Margin="40 5 0 20">
+                                <RadioButton Width="45" IsChecked="True" Theme="{DynamicResource PureCardRadioButton}">
+                                    <Image Height="24" Width="24"><SvgImage Source="avares://gated/Resources/bulb.svg" /> </Image>
+                                </RadioButton>
+                                <RadioButton Width="45" Theme="{DynamicResource PureCardRadioButton}">
+                                    Polygon
+                                </RadioButton>
+                                <RadioButton Width="45" Theme="{DynamicResource PureCardRadioButton}">
+                                    Quad
+                                </RadioButton>
+                            </StackPanel>
+                        </StackPanel>
+                    </DockPanel>
+                    <sc:AvaPlot Grid.Row="1" Grid.Column="1" x:Name="avaPlot" IsVisible="True"
+                                Width="370" Height="350" Margin="0 10 0 0"/>
+                    <StackPanel Orientation="Vertical" Grid.Row="2" Grid.Column="1" Width="350" Margin="0 30">
+                        <StackPanel Orientation="Horizontal">
+                        <ComboBox Width="300" Margin="10 0" DockPanel.Dock="Left" x:Name="cmbX" IsEnabled="False">
+                            <ComboBox.SelectionBoxItemTemplate>
+                                <DataTemplate DataType="gam:Dimension">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ContentControl Foreground="#a0a0a0" Content="{Binding Name}" />
+                                        <ContentControl Foreground="#e0e0e0" Margin="10 0" Content="{Binding Label}" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ComboBox.SelectionBoxItemTemplate>
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate DataType="gam:Dimension">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ContentControl Foreground="#a0a0a0" Content="{Binding Name}" />
+                                        <ContentControl Foreground="#e0e0e0" Margin="10 0" Content="{Binding Label}" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <Button Width="35" VerticalAlignment="Top" IsEnabled="False" x:Name="btnTransformX">
+                            <Image Height="20" Width="20"><SvgImage Source="avares://gated/Resources/channel.svg" /> </Image>
+                        </Button>
+                        </StackPanel>
+                        <Label Margin="14 5 0 0" Foreground="#a0a0a0">All data points</Label>
+                    </StackPanel>
+                    <StackPanel Orientation="Vertical" Grid.Row="1" Grid.Column="0" Width="350">
+                        <StackPanel.RenderTransform>
+                            <RotateTransform Angle="-90" CenterX="80" CenterY="-80"></RotateTransform>
+                        </StackPanel.RenderTransform>
+                        <Label Margin="4 0 0 5" Foreground="#a0a0a0">All data points</Label>
+                        <StackPanel Orientation="Horizontal" Width="350">
+                        <ComboBox Width="300" x:Name="cmbY" IsEnabled="False">
+                            <ComboBox.SelectionBoxItemTemplate>
+                                <DataTemplate DataType="gam:Dimension">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ContentControl Foreground="#a0a0a0" Content="{Binding Name}" />
+                                        <ContentControl Foreground="#e0e0e0" Margin="10 0" Content="{Binding Label}" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ComboBox.SelectionBoxItemTemplate>
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate DataType="gam:Dimension">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ContentControl Foreground="#a0a0a0" Content="{Binding Name}" />
+                                        <ContentControl Foreground="#e0e0e0" Margin="10 0" Content="{Binding Label}" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        
+                        <Button VerticalAlignment="Top" Width="35" Margin="10 0 0 0" IsEnabled="False" x:Name="btnTransformY">
+                            <Image Height="20" Width="20"><SvgImage Source="avares://gated/Resources/channel.svg" /> </Image>
+                        </Button>
+                        </StackPanel>
+                    </StackPanel>
+                </Grid>
             </Grid>
             <GridSplitter Grid.Column="3" ShowsPreview="True" />
             <Grid Grid.Column="4">

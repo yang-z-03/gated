@@ -21,6 +21,11 @@
                 <ResourceInclude Source="avares://gated/Styles/ScrollViewer.axaml" />
                 <ResourceInclude Source="avares://gated/Styles/GridSplitter.axaml"/>
                 <ResourceInclude Source="avares://gated/Styles/TreeDataGrid.axaml"/>
+                <ResourceInclude Source="avares://gated/Styles/Adorner.axaml" />
+                <ResourceInclude Source="avares://gated/Styles/Button.axaml" />
+                <ResourceInclude Source="avares://gated/Styles/Combo.axaml" />
+                <ResourceInclude Source="avares://gated/Styles/Textbox.axaml" />
+                <ResourceInclude Source="avares://gated/Styles/Radio.axaml" />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Styles.Resources>
