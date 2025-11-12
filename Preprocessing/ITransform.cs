@@ -13,6 +13,8 @@ public interface ITransform
     public void InverseTransform(double[] x);
     public float InverseTransform(float x);
     public void InverseTransform(float[] x);
+
+    public bool IsEqual(ITransform other);
 }
 
 public class LinearTransform(
@@ -51,5 +53,15 @@ public class LinearTransform(
     {
         for (int i = 0; i < data.Length; i++)
             data[i] = this.InverseTransform(data[i]);
+    }
+
+    public bool IsEqual(ITransform other)
+    {
+        if (other is LinearTransform lin)
+        {
+            return (k32 == lin.k32 && b32 == lin.b32);
+        }
+
+        return false;
     }
 }

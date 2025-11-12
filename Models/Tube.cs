@@ -67,7 +67,7 @@ public abstract class Population : INode
         gate.AddPopulation(this);
     }
 
-    private void set_ticks(IAxis axis, ITransform transform, float max)
+    internal static void set_ticks(IAxis axis, ITransform transform, float max)
     {
         if (transform is LinearTransform)
         {
@@ -172,8 +172,24 @@ public abstract class Population : INode
         config.YTransform.Transform(ys);
         
         // axis limits
+        // initialize range using the maximal values within the group!
         if ((!config.has_initialize_range()) || config.require_range_update)
-            config.initialize_range(xs, ys);
+        {
+            List<float> xvals = new();
+            List<float> yvals = new();
+            foreach (var sample in this.ParentGroup!.Samples)
+            {
+                var data = sample.GetValues(sample.EventCount, x!, y!);
+                xvals.AddRange(data[x!]!);
+                yvals.AddRange(data[y!]!);
+            }
+
+            var xv = xvals.ToArray();
+            var yv = yvals.ToArray();
+            config.XTransform.Transform(xv);
+            config.YTransform.Transform(yv);
+            config.initialize_range(xv, yv);
+        }
 
         config.require_range_update = false;
         
@@ -186,8 +202,8 @@ public abstract class Population : INode
         
         // set ticks.
         // reverse transform to origin scale.
-        this.set_ticks(plot.Plot.Axes.Left, config.YTransform, config.YRange.Item2);
-        this.set_ticks(plot.Plot.Axes.Bottom, config.XTransform, config.XRange.Item2);
+        set_ticks(plot.Plot.Axes.Left, config.YTransform, config.YRange.Item2);
+        set_ticks(plot.Plot.Axes.Bottom, config.XTransform, config.XRange.Item2);
         plot.Plot.Axes.Bottom.TickLabelStyle.Rotation = -90;
         plot.Plot.Axes.Bottom.TickLabelStyle.Alignment = Alignment.MiddleRight;
         plot.Plot.Axes.Bottom.MinimumSize = 45;
@@ -245,8 +261,8 @@ public abstract class Population : INode
         
         // plot gates at this level.
         if (this.AssociatedGate == null)
-            this.ParentGroup!.Gates.Display(plot, x, y);
-        else this.AssociatedGate.Subsets.Display(plot, x, y);
+            this.ParentGroup!.Gates.Display(plot, x, y, config.XTransform, config.YTransform);
+        else this.AssociatedGate.Subsets.Display(plot, x, y, config.XTransform, config.YTransform);
 
         plot.Refresh();
 
@@ -353,7 +369,7 @@ public class Tube : Population
         this.Parent = null;
         this.ParentGroup = grouping;
 
-        this.Name = Path.GetFileName(fcsFile);
+        this.Name = Path.GetFileNameWithoutExtension(fcsFile);
         this.Location = fcsFile;
         this.file_stream = new FileStream(fcsFile, FileMode.Open, FileAccess.Read);
         long currentOffset = nextDataOffset ?? 0;

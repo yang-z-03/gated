@@ -292,6 +292,8 @@
         <Setter Property="Foreground" Value="{DynamicResource ComboBoxItemForeground}" />
         <Setter Property="Background" Value="{DynamicResource ComboBoxItemBackground}" />
         <Setter Property="Padding" Value="{DynamicResource ComboBoxItemDefaultPadding}" />
+        <Setter Property="Margin" Value="5 0" />
+        <Setter Property="CornerRadius" Value="{DynamicResource SemiBorderRadiusSmall}" />
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
         <Setter Property="Template">
             <ControlTemplate TargetType="ComboBoxItem">

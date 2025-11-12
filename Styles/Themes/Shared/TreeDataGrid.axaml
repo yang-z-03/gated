@@ -7,5 +7,5 @@
     <StaticResource x:Key="TreeDataGridColumnHeaderMinHeight" ResourceKey="SemiHeightControlSmall" />
     <StaticResource x:Key="TreeDataGridRowCornerRadius" ResourceKey="SemiBorderRadiusSmall" />
     <StaticResource x:Key="TreeDataGridRowMinHeight" ResourceKey="SemiHeightControlSmall" />
-    <Thickness x:Key="TreeDataGridRowMargin">4 1 4 1</Thickness> 
+    <Thickness x:Key="TreeDataGridRowMargin">4 0 4 0</Thickness> 
 </ResourceDictionary>

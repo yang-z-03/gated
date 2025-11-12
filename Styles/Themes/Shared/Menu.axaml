@@ -17,7 +17,7 @@
     <!--  Menu item  -->
     <Thickness x:Key="TopLevelMenuItemPadding">10 0</Thickness>
     <StaticResource x:Key="TopLevelMenuItemMinHeight" ResourceKey="SemiHeightControlSmall" />
-    <Thickness x:Key="MenuItemPadding">8 4</Thickness>
+    <Thickness x:Key="MenuItemPadding">8 3</Thickness>
     <StaticResource x:Key="MenuItemCornerRadius" ResourceKey="SemiBorderRadiusSmall" />
     <x:Double x:Key="MenuItemSeparatorHeight">0.5</x:Double>
     <StaticResource x:Key="MenuItemSeparatorMargin" ResourceKey="SemiThicknessExtraTight" />

@@ -29,6 +29,9 @@ public partial class MainWindow : Window
     private bool should_combo_respond = true;
     private bool x_logicle = false;
     private bool y_logicle = false;
+
+    private List<INode> equivalent_nodes = new();
+    private int current_index = -1;
     
     public MainWindow()
     {
@@ -42,7 +45,7 @@ public partial class MainWindow : Window
         // change axis and grid colors
         this.plotter.Plot.Axes.Color(Color.FromHex("#707070"));
         this.plotter.Plot.Grid.MajorLineColor = Color.FromHex("#303030");
-        this.plotter.Plot.Font.Set("Inter");
+        this.plotter.Plot.Font.Set("Roboto");
         this.lock_plot();
         this.plotter.Plot.Axes.SetLimitsX(0, 10);
         this.plotter.Plot.Axes.SetLimitsY(0, 10);
@@ -82,6 +85,30 @@ public partial class MainWindow : Window
         {
             if (this.cmbToolQuad.IsChecked ?? false)
                 switch_tool(Tool.Quad);
+        };
+
+        this.btnPrev.Click += (s, e) =>
+        {
+            if (this.equivalent_nodes.Count == 0) return;
+            if (this.current_population == null) return;
+            if (this.current_index < 1) return;
+            if (this.current_index >= this.equivalent_nodes.Count) return;
+
+            this.current_index--;
+            this.select_node(this.equivalent_nodes[this.current_index]);
+            this.update_equivalent();
+        };
+        
+        this.btnNext.Click += (s, e) =>
+        {
+            if (this.equivalent_nodes.Count == 0) return;
+            if (this.current_population == null) return;
+            if (this.current_index < 0) return;
+            if (this.current_index >= this.equivalent_nodes.Count - 1) return;
+
+            this.current_index++;
+            this.select_node(this.equivalent_nodes[this.current_index]);
+            this.update_equivalent();
         };
     }
 
@@ -374,11 +401,44 @@ public partial class MainWindow : Window
 
     private void workspace_tree_select(object? sender, TreeSelectionModelSelectionChangedEventArgs e)
     {
-        should_combo_respond = false;
         // force single select
-        var index = e.SelectedIndexes.First();
         var item = e.SelectedItems.First();
+        this.select_node(item);
 
+        // set equivalent node
+        if (this.current_grouping != null)
+        {
+            if (this.current_population == this.current_tube)
+            {
+                this.equivalent_nodes.Clear();
+                foreach(var sample in this.current_grouping.Samples)
+                    this.equivalent_nodes.Add(sample);
+            }
+            else if (this.current_gate != null)
+            {
+                this.equivalent_nodes.Clear();
+                foreach(var sample in this.current_gate.Populations.Keys)
+                    this.equivalent_nodes.Add(sample);
+            }
+            
+            this.update_equivalent();
+        }
+    }
+
+    private void update_equivalent()
+    {
+        if (this.current_population == null) return;
+        if (!this.equivalent_nodes.Contains(this.current_population)) return;
+        this.lblRounder.Content =
+            $"{this.equivalent_nodes.IndexOf(this.current_population) + 1} / {this.equivalent_nodes.Count}";
+        this.lblSample.Content = this.current_population.ParentTube!.Name;
+        this.current_index = this.equivalent_nodes.IndexOf(this.current_population);
+    }
+
+    private void select_node(object? item)
+    {
+        should_combo_respond = false;
+        
         Dimension? prev_x = this.cmbX.SelectedItem as Dimension;
         Dimension? prev_y = this.cmbY.SelectedItem as Dimension;
         
@@ -476,6 +536,7 @@ public partial class MainWindow : Window
                 this.cmbX.SelectedIndex = 0;
                 this.cmbY.Items.Add(polyg.Y);
                 this.cmbY.SelectedIndex = 0;
+                
                 polyg.Display(this.plotter);
                 var action = draw_polygon_gate(polyg);
                 
@@ -538,7 +599,7 @@ public partial class MainWindow : Window
             this.btnTransformY.IsEnabled = false;
             this.plotter.Refresh();
         }
-
+        
         should_combo_respond = true;
     }
 
@@ -557,6 +618,11 @@ public partial class MainWindow : Window
         if (current_grouping == null) return;
         this.current_grouping!.IsExpanded = false;
         this.current_grouping!.IsExpanded = true;
+    }
+
+    private void mnu_about(object? sender, RoutedEventArgs e)
+    {
+        (new About()).ShowDialog(this);
     }
 }
 

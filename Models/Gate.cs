@@ -44,10 +44,10 @@ public class GatingStrategyCollection : ObservableCollection<GatingStrategy>, IN
     
     public bool IsExpanded { get; set; } = true;
 
-    public void Display(IPlotControl plot, Dimension x, Dimension y)
+    public void Display(IPlotControl plot, Dimension x, Dimension y, ITransform xtrans, ITransform ytrans)
     {
         foreach (var child in this)
-            child.Display(plot, x, y);
+            child.Display(plot, x, y, xtrans, ytrans);
     }
 }
 
@@ -83,7 +83,7 @@ public abstract class GatingStrategy : INode
     public Dictionary<Population, List<Population>> Populations { get; init; } = new();
     public GatingStrategyCollection Subsets { get; private set; } = new();
 
-    public virtual void Display(IPlotControl plot, Dimension x, Dimension y)
+    public virtual void Display(IPlotControl plot, Dimension x, Dimension y, ITransform xtrans, ITransform ytrans)
     {
         return;
     }
@@ -269,9 +269,9 @@ public class QuadGate : GatingStrategy
             subset.Update();
     }
 
-    public override void Display(IPlotControl plot, Dimension x, Dimension y)
+    public override void Display(IPlotControl plot, Dimension x, Dimension y, ITransform xtrans, ITransform ytrans)
     {
-        base.Display(plot, x, y);
+        base.Display(plot, x, y, xtrans, ytrans);
         if (x == this.X && y == this.Y)
         {
             plot.Plot.Add.HorizontalLine(this.VerticalCutoff, 1, this.color, LinePattern.Solid);
@@ -283,6 +283,22 @@ public class QuadGate : GatingStrategy
     {
         base.Display(plot);
         var config = this.ParentGroup!.ScatterConfigs[this.X][this.Y];
+        
+        plot.Plot.Axes.SetLimitsX(config.XRange.Item1, config.XRange.Item2);
+        plot.Plot.Axes.SetLimitsY(config.YRange.Item1, config.YRange.Item2);
+        
+        // hide axis edge line
+        plot.Plot.Axes.Right.FrameLineStyle.Width = 0;
+        plot.Plot.Axes.Top.FrameLineStyle.Width = 0;
+        
+        // set ticks.
+        // reverse transform to origin scale.
+        Tube.set_ticks(plot.Plot.Axes.Left, config.YTransform, config.YRange.Item2);
+        Tube.set_ticks(plot.Plot.Axes.Bottom, config.XTransform, config.XRange.Item2);
+        plot.Plot.Axes.Bottom.TickLabelStyle.Rotation = -90;
+        plot.Plot.Axes.Bottom.TickLabelStyle.Alignment = Alignment.MiddleRight;
+        plot.Plot.Axes.Bottom.MinimumSize = 45;
+        plot.Plot.Axes.Left.MinimumSize = 45;
         
         int[,] histogram = new int[config.Resolution, config.Resolution];
         float xstep = (config.XRange.Item2 - config.XRange.Item1) / config.Resolution;
@@ -461,10 +477,10 @@ public class PolygonalGate : GatingStrategy
             subset.Update();
     }
 
-    public override void Display(IPlotControl plot, Dimension x, Dimension y)
+    public override void Display(IPlotControl plot, Dimension x, Dimension y, ITransform xtrans, ITransform ytrans)
     {
-        base.Display(plot, x, y);
-        if (x == this.X && y == this.Y)
+        base.Display(plot, x, y, xtrans, ytrans);
+        if (x == this.X && y == this.Y && this.XTransform.IsEqual(xtrans) && this.YTransform.IsEqual(ytrans))
         {
             var p = plot.Plot.Add.Polygon(this.Polygon.ToArray());
             p.FillColor = Color.FromARGB(0);
@@ -485,6 +501,22 @@ public class PolygonalGate : GatingStrategy
         base.Display(plot);
         var config = this.ParentGroup!.ScatterConfigs[this.X][this.Y];
         
+        plot.Plot.Axes.SetLimitsX(config.XRange.Item1, config.XRange.Item2);
+        plot.Plot.Axes.SetLimitsY(config.YRange.Item1, config.YRange.Item2);
+        
+        // hide axis edge line
+        plot.Plot.Axes.Right.FrameLineStyle.Width = 0;
+        plot.Plot.Axes.Top.FrameLineStyle.Width = 0;
+        
+        // set ticks.
+        // reverse transform to origin scale.
+        Tube.set_ticks(plot.Plot.Axes.Left, config.YTransform, config.YRange.Item2);
+        Tube.set_ticks(plot.Plot.Axes.Bottom, config.XTransform, config.XRange.Item2);
+        plot.Plot.Axes.Bottom.TickLabelStyle.Rotation = -90;
+        plot.Plot.Axes.Bottom.TickLabelStyle.Alignment = Alignment.MiddleRight;
+        plot.Plot.Axes.Bottom.MinimumSize = 45;
+        plot.Plot.Axes.Left.MinimumSize = 45;
+        
         int[,] histogram = new int[config.Resolution, config.Resolution];
         float xstep = (config.XRange.Item2 - config.XRange.Item1) / config.Resolution;
         float ystep = (config.YRange.Item2 - config.YRange.Item1) / config.Resolution;
@@ -495,6 +527,8 @@ public class PolygonalGate : GatingStrategy
             var dict = pop.GetValues(pop.EventCount, this.X, this.Y);
             var xs = dict[this.X]!;
             var ys = dict[this.Y]!;
+            config.XTransform.Transform(xs);
+            config.YTransform.Transform(ys);
             for (int i = 0; i < xs.Length; i++)
             {
                 histogram[

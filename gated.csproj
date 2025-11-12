@@ -104,5 +104,9 @@
     <AvaloniaResource Include="Resources\polygon.svg" />
     <None Remove="Resources\cross.svg" />
     <AvaloniaResource Include="Resources\cross.svg" />
+    <None Remove="Resources\left.svg" />
+    <AvaloniaResource Include="Resources\left.svg" />
+    <None Remove="Resources\right.svg" />
+    <AvaloniaResource Include="Resources\right.svg" />
   </ItemGroup>
 </Project>

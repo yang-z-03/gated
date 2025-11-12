@@ -65,7 +65,7 @@ public class ScatterConfig
             y_hist[Convert.ToInt32((y[i] - ymin) / y_step)]++;
         }
 
-        int threshold = Convert.ToInt32(x.Length * 0.98);
+        int threshold = Convert.ToInt32(x.Length * 0.99);
         int xcum = 0;
         float x_range = 1;
         for (int i = 0; i < this.RangeEstimateResolution; i++)

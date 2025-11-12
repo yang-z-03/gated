@@ -168,6 +168,10 @@ public class LogicleTransform(
     double a = 0.0) : ITransform
 {
     private Logicle logicle = new Logicle(t, w, m, a);
+    private double T = t;
+    private double W = w;
+    private double M = m;
+    private double A = a;
     
     public double Transform(double data) => this.logicle.scale(data);
     public float Transform(float data) => Convert.ToSingle(this.logicle.scale(data));
@@ -197,5 +201,20 @@ public class LogicleTransform(
     {
         for (int i = 0; i < data.Length; i++)
             data[i] = this.InverseTransform(data[i]);
+    }
+    
+    public bool IsEqual(ITransform other)
+    {
+        if (other is LogicleTransform log)
+        {
+            return (
+                T == log.T &&
+                W == log.W &&
+                M == log.M &&
+                A == log.A
+            );
+        }
+
+        return false;
     }
 }
