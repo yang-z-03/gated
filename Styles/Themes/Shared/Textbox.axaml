@@ -1,13 +1,14 @@
 ﻿<ResourceDictionary xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <StaticResource x:Key="ButtonDefaultFontSize" ResourceKey="SemiFontSizeRegular" />
-    <StaticResource x:Key="ButtonDefaultFontWeight" ResourceKey="SemiFontWeightBold" />
-    <Thickness x:Key="ButtonDefaultPadding">12 0</Thickness>
-    <Thickness x:Key="ButtonLargePadding">16 0</Thickness>
-    <Thickness x:Key="ButtonSmallPadding">6 0</Thickness>
-    <StaticResource x:Key="ButtonDefaultHeight" ResourceKey="SemiHeightControlDefault" />
-    <StaticResource x:Key="ButtonSmallHeight" ResourceKey="SemiHeightControlSmall" />
-    <StaticResource x:Key="ButtonLargeHeight" ResourceKey="SemiHeightControlLarge" />
-    <StaticResource x:Key="ButtonBorderThickness" ResourceKey="SemiBorderThicknessControl" />
-    <StaticResource x:Key="ButtonCornerRadius" ResourceKey="SemiBorderRadiusSmall" />
-    <StaticResource x:Key="IconButtonClearData" ResourceKey="SemiIconClear" />
+    <StaticResource x:Key="TextBoxDefaultHeight" ResourceKey="SemiHeightControlSmall" />
+    <StaticResource x:Key="TextBoxSmallHeight" ResourceKey="SemiHeightControlSmall" />
+    <StaticResource x:Key="TextBoxLargeHeight" ResourceKey="SemiHeightControlLarge" />
+    <StaticResource x:Key="TextBoxDefaultCornerRadius" ResourceKey="SemiBorderRadiusSmall" />
+    <Thickness x:Key="TextBoxInnerLeftContentPadding">0 0 2 0</Thickness>
+    <Thickness x:Key="TextBoxInnerRightContentPadding">2 0 0 0</Thickness>
+    <Thickness x:Key="TextBoxContentPadding">4 0</Thickness>
+    <StaticResource x:Key="TextBoxBorderThickness" ResourceKey="SemiBorderThicknessControl" />
+    <Thickness x:Key="TextBoxTextAreaContentPadding">2</Thickness>
+    <x:Double x:Key="TextBoxTextAreaHeight">25</x:Double>
+    <StaticResource x:Key="PasswordBoxRevealButtonData" ResourceKey="SemiIconEyeClosedSolid" />
+    <StaticResource x:Key="PasswordBoxHideButtonData" ResourceKey="SemiIconEyeOpened" />
 </ResourceDictionary>

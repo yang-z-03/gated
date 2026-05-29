@@ -1,306 +1,330 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:sc="clr-namespace:ScottPlot.Avalonia;assembly=ScottPlot.Avalonia"
-        xmlns:ga="clr-namespace:Gated"
-        xmlns:gam="clr-namespace:Gated.Models"
-        mc:Ignorable="d" Width="1400" Height="750"
-        x:Class="Gated.MainWindow" FontSize="{StaticResource SemiFontSizeRegular}"
-        FontFamily="{StaticResource SemiFontFamilyRegular}"
+        xmlns:controls="using:gated.Controls"
+        x:Class="gated.MainWindow"
+        x:CompileBindings="False"
+        Width="1400" Height="850"
+        MinWidth="1100" MinHeight="700"
+        Title="Gated"
+
+        ExtendClientAreaChromeHints="Default"
+        SystemDecorations="Full"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaTitleBarHeightHint="0"
         WindowStartupLocation="CenterScreen"
-        Title="Gated">
-    
-    <DockPanel>
-        <Menu DockPanel.Dock="Top" Background="{StaticResource SemiBackground1}">
-            <MenuItem Header="File">
-                <MenuItem Header="Open ..." InputGesture="Ctrl + O" Click="mnu_open_click"/>
-                <Separator/>
-                <MenuItem Header="Replace FCS file ..."/>
-                <MenuItem Header="Save Workspace ..." InputGesture="Ctrl + S"/>
-                <Separator/>
-                <MenuItem Header="Exit"/>
+        Background="{DynamicResource SemiColorBackground0}">
+
+    <DockPanel x:Name="window">
+        <Border DockPanel.Dock="Top" Background="#252530" BorderThickness="0,0,0,0" BorderBrush="#252530">
+          <Grid Height="40">
+            <Rectangle Fill="#252530" PointerPressed="title_bar_pressed"/>
+            <DockPanel>
+              <Border BorderBrush="#252530" BorderThickness="0 0 0 0"/>
+              <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <Button Width="30" Height="30" Margin="5 5 0 5" Click="window_minimize" Classes="Title">
+                  <TextBlock IsHitTestVisible="False" FontFamily="Segoe Fluent Icons" Text="&#xe1d8;" 
+                             HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="14"/>
+                </Button>
+                <Button Width="30" Height="30" Margin="5 5 5 5" Click="window_close" Classes="Close">
+                  <TextBlock IsHitTestVisible="False" FontFamily="Segoe Fluent Icons" Text="&#xe10a;" 
+                             HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="14"/>
+                </Button>
+              </StackPanel>
+              <Grid>
+                <StackPanel IsHitTestVisible="False" Margin="2 5 2 2" Orientation="Horizontal" 
+                            HorizontalAlignment="Center" VerticalAlignment="Stretch">
+                  <Image Width="16" Height="16" Source="avares://gated/app.ico"/>
+                  <Grid Width="10"/>
+                  <TextBlock Text="Gated · Flow Cytometry Analyser" VerticalAlignment="Center"
+                             FontWeight="Bold" Foreground="White" FontSize="13"/>
+                </StackPanel>
+              </Grid>
+            </DockPanel>
+          </Grid>
+        </Border>
+
+        <Menu DockPanel.Dock="Top" Background="#252530">
+            <MenuItem Header="_File">
+                <MenuItem Header="Open workspace ..." InputGesture="Ctrl+Shift+O" IsEnabled="False" />
+                <MenuItem Header="Open FCS ..." InputGesture="Ctrl+O" Click="open_fcs_menu_item_click" />
+                <MenuItem Header="Save workspace ..." InputGesture="Ctrl+S" IsEnabled="False" />
             </MenuItem>
-            <MenuItem Header="Samples">
-                <MenuItem Header="Create Group ..." InputGesture="Ctrl + G"/>
-                <MenuItem Header="Rename Group ..."/>
-                <MenuItem Header="Delete Group"/>
-                <Separator/>
-                <MenuItem Header="Append Samples to Group ..."/>
-                <MenuItem Header="Delete Samples" InputGesture="Delete"/>
-                <Separator/>
-                <MenuItem Header="Assign Technical Controls ..." InputGesture="Ctrl + Shift + A"/>
-                <Separator/>
-                <MenuItem Header="Concatenate"/>
-                <MenuItem Header="Export ..." InputGesture="Ctrl + E"/>
-                <Separator/>
-                <MenuItem Header="Select Equivalent Nodes" InputGesture="Ctrl + Shift + E"/>
-                <MenuItem Header="Expand"/>
-                <MenuItem Header="Collapse"/>
-                <Separator/>
-                <MenuItem Header="Channel Settings ..." InputGesture="Ctrl + Q"/>
-                <MenuItem Header="FCS Metadata Table ..."/>
+            <MenuItem Header="_Samples">
+                <MenuItem Header="Create group" Command="{Binding CreateGroupCommand}" />
+                <MenuItem Header="Rename group" IsEnabled="False" />
+                <MenuItem Header="Delete group" Command="{Binding DeleteSelectedCommand}" />
+                <Separator />
+                <MenuItem Header="Append samples to groups" Click="open_fcs_menu_item_click" />
+                <MenuItem Header="Delete selected samples" Command="{Binding DeleteSelectedCommand}" />
+                <MenuItem Header="Concatenate" IsEnabled="False" />
+                <MenuItem Header="Select equivalent nodes" IsEnabled="False" />
+                <MenuItem Header="Expand" IsEnabled="False" />
+                <MenuItem Header="Collapse" IsEnabled="False" />
+                <MenuItem Header="Channel settings ..." IsEnabled="False" />
             </MenuItem>
-            <MenuItem Header="Plotting">
-                <MenuItem Header="Add Scatter Plot"/>
-                <MenuItem Header="Add Histogram"/>
-                <Separator/>
-                <MenuItem Header="Display">
-                    <MenuItem ToggleType="Radio" Header="Scatter"/>
-                    <MenuItem ToggleType="Radio" IsChecked="True" Header="Kernel Density Pseudocolor"/>
-                </MenuItem>
-                <MenuItem ToggleType="CheckBox" IsChecked="True" Header="Show Outliers as Scatter"/>
-                <MenuItem ToggleType="CheckBox" IsChecked="True" Header="Show Grid"/>
-                <MenuItem ToggleType="CheckBox" IsChecked="True" Header="Draw Large Dots"/>
-                <MenuItem ToggleType="CheckBox" IsChecked="True" Header="Show Gate Frequencies"/>
-                <MenuItem ToggleType="CheckBox" IsChecked="True" Header="Show Gate Annotation"/>
-                <MenuItem ToggleType="CheckBox" IsChecked="True" Header="Show Number of Events"/>
-                <Separator/>
-                <MenuItem Header="Axis X">
-                    <MenuItem ToggleType="Radio" Header="Linear"/>
-                    <MenuItem ToggleType="Radio" Header="Logarithm"/>
-                    <MenuItem ToggleType="Radio" Header="Arctanh"/>
-                    <MenuItem ToggleType="Radio" IsChecked="True" Header="Biexponential (Logicle)"/>
-                    <Separator/>
-                    <MenuItem Header="Axis Settings ..."/>
-                </MenuItem>
-                <MenuItem Header="Axis Y">
-                    <MenuItem ToggleType="Radio" Header="Linear"/>
-                    <MenuItem ToggleType="Radio" Header="Logarithm"/>
-                    <MenuItem ToggleType="Radio" Header="Arctanh"/>
-                    <MenuItem ToggleType="Radio" IsChecked="True" Header="Biexponential (Logicle)"/>
-                    <Separator/>
-                    <MenuItem Header="Axis Settings ..."/>
-                </MenuItem>
-                <MenuItem Header="Gate">
-                    <MenuItem IsEnabled="False" Header="All Samples"></MenuItem>
-                </MenuItem>
-                <MenuItem Header="Graphics Settings ..."/>
-                <Separator/>
-                <MenuItem Header="Parent Population"/>
-                <MenuItem Header="Child Populations">
-                    <MenuItem IsEnabled="False" Header="No Children"></MenuItem>
-                </MenuItem>
-                <MenuItem Header="Previous Equivalent Population"/>
-                <MenuItem Header="Next Equivalent Population"/>
-                <Separator/>
-                <MenuItem Header="Copy Image"/>
-                <MenuItem Header="Export Graphics ..."/>
+            <MenuItem Header="_Plotting">
+                <MenuItem Header="Density" Click="density_menu_item_click" />
+                <MenuItem Header="Contour" Click="contour_menu_item_click" />
+                <MenuItem Header="Zebra" Click="zebra_menu_item_click" />
+                <MenuItem Header="Histogram" Click="histogram_menu_item_click" />
             </MenuItem>
-            <MenuItem Header="Gating">
-                <MenuItem ToggleType="Radio" IsChecked="True" Header="Pan" x:Name="mnuToolPan"/>
-                <MenuItem ToggleType="Radio" IsChecked="False" Header="Binary Gate" Click="mnu_add_binary_gate" x:Name="mnuToolBinary"/>
-                <MenuItem ToggleType="Radio" IsChecked="False" Header="Range Gate" Click="mnu_add_range_gate" x:Name="mnuToolRange"/>
-                <MenuItem ToggleType="Radio" IsChecked="False" Header="Polygonal Gate" Click="mnu_add_polygon_gate" x:Name="mnuToolPolygon"/>
-                <MenuItem ToggleType="Radio" IsChecked="False" Header="Quad Gate" Click="mnu_add_quad_gate" x:Name="mnuToolQuad"/>
-                <MenuItem ToggleType="Radio" IsChecked="False" Header="Curly Quad Gate" Click="mnu_add_curly_quad_gate" x:Name="mnuToolCurlyQuad"/>
-                <Separator/>
-                <MenuItem Header="Merge (Logic OR)"/>
-                <MenuItem Header="Exclude (Logic NOT)"/>
-                <MenuItem Header="Overlap (Logic AND)"/>
-                <Separator/>
-                <MenuItem Header="Rename Gate ..."/>
-                <MenuItem Header="Delete Gate and All Sub-population"/>
+            <MenuItem Header="_Gating">
+                <MenuItem Header="View" Click="view_tool_menu_item_click" />
+                <MenuItem Header="Polygon gate" Click="polygon_tool_menu_item_click" />
+                <MenuItem Header="Rectangle gate" Click="rectangle_tool_menu_item_click" />
+                <MenuItem Header="Quad gate" Click="quadrant_tool_menu_item_click" />
+                <MenuItem Header="Curly quad gate" Click="curly_quadrant_tool_menu_item_click" />
+                <MenuItem Header="Threshold gate" Click="threshold_tool_menu_item_click" />
+                <MenuItem Header="Range gate" Click="range_tool_menu_item_click" />
+                <Separator />
+                <MenuItem Header="Merge" IsEnabled="False" />
+                <MenuItem Header="Exclude" IsEnabled="False" />
+                <MenuItem Header="Overlap" IsEnabled="False" />
+                <Separator />
+                <MenuItem Header="Rename gate" IsEnabled="False" />
+                <MenuItem Header="Delete selected gate" Command="{Binding DeleteSelectedCommand}" />
             </MenuItem>
-            <MenuItem Header="Compensation">
-                <MenuItem Header="Auto-compensation ..."/>
-                <MenuItem Header="Compensation Table Editor ..."/>
+            <MenuItem Header="_Compensation">
+                <MenuItem Header="Compensation table editor ..." IsEnabled="False" />
             </MenuItem>
-            <MenuItem Header="Statistics">
-                <MenuItem Header="Mean"/>
-                <MenuItem Header="Median"/>
-                <MenuItem Header="Geometric Mean"/>
-                <MenuItem Header="Coefficient of Variation"/>
-                <MenuItem Header="Standard Deviance"/>
-                <MenuItem Header="Frequency of ..."/>
-                <MenuItem Header="Frequency of Parent Population"/>
-                <MenuItem Header="Frequency of All"/>
-                <MenuItem Header="Number of Events"/>
-                <Separator/>
-                <MenuItem Header="Leiden Community ..."/>
-                <MenuItem Header="UMAP ..."/>
-                <Separator/>
-                <MenuItem Header="Export Statistics ..."/>
+            <MenuItem Header="_Statistics">
+                <MenuItem Header="Mean" Command="{Binding AddMeanStatisticCommand}" />
+                <MenuItem Header="Median" Command="{Binding AddMedianStatisticCommand}" />
+                <MenuItem Header="Geometric mean" IsEnabled="False" />
+                <MenuItem Header="Coefficient of variation (CV)" IsEnabled="False" />
+                <MenuItem Header="Standard deviation (SD)" IsEnabled="False" />
+                <MenuItem Header="Frequency of parent population" IsEnabled="False" />
+                <MenuItem Header="Frequency of all" IsEnabled="False" />
+                <MenuItem Header="Number of events" Command="{Binding AddCountStatisticCommand}" />
             </MenuItem>
-            <MenuItem Header="Help">
-                <MenuItem Header="About Gated ..." Click="mnu_about"/>
-                <MenuItem Header="Project Website ..."/>
-            </MenuItem>
+            <MenuItem Header="_Help" />
         </Menu>
-        
-        <Grid Height="2" DockPanel.Dock="Top" Background="#50000000"></Grid>
-        <Grid Height="30" DockPanel.Dock="Bottom" Background="#303030">
-            <Label VerticalAlignment="Center" Margin="10 0 0 0" Foreground="#a0a0a0"
-                   FontSize="12">
-                Append samples to grouping to begin analysis
-            </Label>
-        </Grid>
-        <Grid ColumnDefinitions="410, 0, *, 0, 350" x:Name="Main">
-            <Grid Grid.Column="0">
-                <TreeDataGrid x:Name="workspaceTree" Margin="4 4 4 8">
-                    <TreeDataGrid.Resources>
-                        <DataTemplate x:Key="nodeDataTemplate" DataType="gam:INode">
-                            <StackPanel Orientation="Horizontal">
-                                <Image Margin="0 0 6 0"
-                                       VerticalAlignment="Center">
-                                    <Image.Source>
-                                        <MultiBinding Converter="{x:Static gam:Workspace.ImageConverter}">
-                                            <Binding Path="Name" />
-                                            <Binding Path="Identifier" />
-                                        </MultiBinding>
-                                    </Image.Source>
-                                </Image>
-                                <TextBlock Text="{Binding Name}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+
+        <Grid DockPanel.Dock="Top" Height="6" Background="{DynamicResource SemiColorSplits}" />
+
+        <Border DockPanel.Dock="Bottom"
+                Height="28"
+                BorderBrush="#505050"
+                BorderThickness="0,1,0,0"
+                Background="{DynamicResource SemiColorBackground2}">
+            <TextBlock Margin="10,0,10,2"
+                       VerticalAlignment="Center"
+                       Foreground="{DynamicResource SemiColorText2}"
+                       Text="{Binding StatusText}" />
+        </Border>
+
+        <Grid ColumnDefinitions="500,5,*">
+            <Border Grid.Column="0"
+                    BorderBrush="{DynamicResource SemiColorSplits}"
+                    BorderThickness="0,0,1,0"
+                    Background="{DynamicResource SemiColorBackground0}">
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                              VerticalScrollBarVisibility="Auto">
+                    <controls:ProjectTreeView Margin="4"
+                                              Nodes="{Binding ProjectNodes}"
+                                              SelectNodeCommand="{Binding SelectProjectNodeCommand}"
+                                              ToggleNodeCommand="{Binding ToggleProjectNodeCommand}" />
+                </ScrollViewer>
+            </Border>
+
+            <GridSplitter Grid.Column="1"
+                          Width="5"
+                          HorizontalAlignment="Stretch"
+                          Background="{DynamicResource SemiColorSplits}"
+                          ResizeDirection="Columns" />
+
+            <Grid Grid.Column="2"
+                  RowDefinitions="*,5,250"
+                  Background="{DynamicResource SemiColorBackground1}">
+                <Grid Grid.Row="0"
+                      ColumnDefinitions="*,400">
+                    <Grid Grid.Column="0"
+                          RowDefinitions="Auto,*">
+                        <Border Grid.Row="0"
+                                HorizontalAlignment="Center"
+                                Margin="0,16,0,8"
+                                Padding="10"
+                                CornerRadius="8"
+                                BorderBrush="{DynamicResource SemiColorBorder}"
+                                BorderThickness="1"
+                                Background="{DynamicResource SemiColorBackground0}">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button Width="44" Height="44" Click="view_tool_menu_item_click">V</Button>
+                                <Button Width="44" Height="44" Click="polygon_tool_menu_item_click">P</Button>
+                                <Button Width="44" Height="44" Click="rectangle_tool_menu_item_click">R</Button>
+                                <Button Width="44" Height="44" Click="threshold_tool_menu_item_click">T</Button>
+                                <Button Width="44" Height="44" Click="range_tool_menu_item_click">Rg</Button>
+                                <TextBlock Margin="18,0,8,0" VerticalAlignment="Center" Foreground="{DynamicResource SemiColorText2}" Text="{Binding ActiveTool}" />
                             </StackPanel>
-                        </DataTemplate>
-                    </TreeDataGrid.Resources>
-                </TreeDataGrid>
-            </Grid>
-            <GridSplitter Grid.Column="1" ShowsPreview="True" />
-            <Grid Grid.Column="2" x:Name="plotterGrid" Background="#282828">
-                <Grid Width="500" Height="500" ColumnDefinitions="1*, 9*" RowDefinitions="1.5*, 7.5*, 1*">
-                    <Border Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" 
-                            BorderThickness="1" BorderBrush="#404040" Height="70"
-                            CornerRadius="10" Background="#202020">
-                        <Border.Effect>
-                            <DropShadowEffect Color="#202020" BlurRadius="3" OffsetX="0" OffsetY="-1" />
-                        </Border.Effect>
-                        <DockPanel>
-                        <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
-                            <StackPanel Orientation="Horizontal" Margin="10 10 0 10">
-                                <RadioButton Width="45" IsChecked="True" x:Name="cmbToolPan" Theme="{DynamicResource PureCardRadioButton}">
-                                    <Image Height="24" Width="24"><SvgImage Source="avares://gated/Resources/pointer.svg" /></Image>
-                                </RadioButton>
-                                <RadioButton Width="45" x:Name="cmbToolPolygon" Theme="{DynamicResource PureCardRadioButton}">
-                                    <Image Height="24" Width="24"><SvgImage Source="avares://gated/Resources/polygon.svg" /></Image>
-                                </RadioButton>
-                                <RadioButton Width="45" x:Name="cmbToolQuad" Theme="{DynamicResource PureCardRadioButton}">
-                                    <Image Height="24" Width="24"><SvgImage Source="avares://gated/Resources/cross.svg" /></Image>
-                                </RadioButton>
-                                <RadioButton Width="45" x:Name="cmbToolBinary" Theme="{DynamicResource PureCardRadioButton}">
-                                    <Image Height="24" Width="24"><SvgImage Source="avares://gated/Resources/cross.svg" /></Image>
-                                </RadioButton>
-                                <RadioButton Width="45" x:Name="cmbToolRange" Theme="{DynamicResource PureCardRadioButton}">
-                                    <Image Height="24" Width="24"><SvgImage Source="avares://gated/Resources/cross.svg" /></Image>
-                                </RadioButton>
-                                <RadioButton Width="45" x:Name="cmbToolCurlyQuad" Theme="{DynamicResource PureCardRadioButton}">
-                                    <Image Height="24" Width="24"><SvgImage Source="avares://gated/Resources/cross.svg" /></Image>
-                                </RadioButton>
-                            </StackPanel>
-                        </StackPanel>
-                        <StackPanel Orientation="Horizontal" Margin="10 10 0 10" DockPanel.Dock="Right">
-                            <Button Width="45" Height="50" Margin="0 0 5 0" x:Name="btnPrev">
-                                <Image Height="24" Width="24"><SvgImage Source="avares://gated/Resources/left.svg" /></Image>
-                            </Button>
-                            <StackPanel Margin="5 0 5 0" Orientation="Vertical" VerticalAlignment="Center">
-                                <Label Foreground="Gray" HorizontalAlignment="Center" x:Name="lblRounder"> 0 / 0</Label>
-                                <Label Foreground="LightGray" FontWeight="Bold" HorizontalAlignment="Center" x:Name="lblSample" Margin="5 5 5 2">Empty</Label>
-                            </StackPanel>
-                            <Button Width="45" Height="50" Margin="5 0 10 0" x:Name="btnNext">
-                                <Image Height="24" Width="24"><SvgImage Source="avares://gated/Resources/right.svg" /></Image>
-                            </Button>
-                        </StackPanel>
-                        <Grid />
-                    </DockPanel>
                         </Border>
-                    <sc:AvaPlot Grid.Row="1" Grid.Column="1" x:Name="avaPlot" IsVisible="True"
-                                Width="370" Height="370" Margin="0 10 0 0"/>
-                    <StackPanel Orientation="Vertical" Grid.Row="2" Grid.Column="1" Width="350" Margin="0 15">
-                        <StackPanel Orientation="Horizontal">
-                        <ComboBox Width="300" Margin="10 0" DockPanel.Dock="Left" x:Name="cmbX" IsEnabled="False">
-                            <ComboBox.SelectionBoxItemTemplate>
-                                <DataTemplate DataType="gam:Dimension">
-                                    <StackPanel Orientation="Horizontal">
-                                        <ContentControl Foreground="#a0a0a0" Content="{Binding Name}" />
-                                        <ContentControl Foreground="#e0e0e0" Margin="10 0" Content="{Binding Label}" />
-                                    </StackPanel>
-                                </DataTemplate>
-                            </ComboBox.SelectionBoxItemTemplate>
-                            <ComboBox.ItemTemplate>
-                                <DataTemplate DataType="gam:Dimension">
-                                    <StackPanel Orientation="Horizontal">
-                                        <ContentControl Foreground="#a0a0a0" Content="{Binding Name}" />
-                                        <ContentControl Foreground="#e0e0e0" Margin="10 0" Content="{Binding Label}" />
-                                    </StackPanel>
-                                </DataTemplate>
-                            </ComboBox.ItemTemplate>
-                        </ComboBox>
-                        <Button Width="35" VerticalAlignment="Top" IsEnabled="False" x:Name="btnTransformX">
-                            <Image Height="20" Width="20"><SvgImage Source="avares://gated/Resources/channel.svg" /> </Image>
-                            <Button.ContextFlyout>
-                                <MenuFlyout Placement="Bottom">
-                                    <MenuItem ToggleType="Radio" Click="toogle_x_linear" IsChecked="True" Header="Linear"/>
-                                    <MenuItem ToggleType="Radio" Click="toogle_x_logicle" Header="Biexponential (Logicle)"/>
-                                </MenuFlyout>
-                            </Button.ContextFlyout>
-                        </Button>
-                        </StackPanel>
-                        <Label x:Name="lblX" Margin="14 5 0 0" Foreground="#a0a0a0">All data points</Label>
-                    </StackPanel>
-                    <StackPanel Orientation="Vertical" Grid.Row="1" Grid.Column="0" Width="350">
-                        <StackPanel.RenderTransform>
-                            <RotateTransform Angle="-90" CenterX="80" CenterY="-80"></RotateTransform>
-                        </StackPanel.RenderTransform>
-                        <Label x:Name="lblY" Margin="4 0 0 5" Foreground="#a0a0a0">All data points</Label>
-                        <StackPanel Orientation="Horizontal" Width="350">
-                        <ComboBox Width="300" x:Name="cmbY" IsEnabled="False">
-                            <ComboBox.SelectionBoxItemTemplate>
-                                <DataTemplate DataType="gam:Dimension">
-                                    <StackPanel Orientation="Horizontal">
-                                        <ContentControl Foreground="#a0a0a0" Content="{Binding Name}" />
-                                        <ContentControl Foreground="#e0e0e0" Margin="10 0" Content="{Binding Label}" />
-                                    </StackPanel>
-                                </DataTemplate>
-                            </ComboBox.SelectionBoxItemTemplate>
-                            <ComboBox.ItemTemplate>
-                                <DataTemplate DataType="gam:Dimension">
-                                    <StackPanel Orientation="Horizontal">
-                                        <ContentControl Foreground="#a0a0a0" Content="{Binding Name}" />
-                                        <ContentControl Foreground="#e0e0e0" Margin="10 0" Content="{Binding Label}" />
-                                    </StackPanel>
-                                </DataTemplate>
-                            </ComboBox.ItemTemplate>
-                        </ComboBox>
-                        
-                        <Button VerticalAlignment="Top" Width="35" Margin="10 0 0 0" IsEnabled="False" x:Name="btnTransformY">
-                            <Image Height="20" Width="20"><SvgImage Source="avares://gated/Resources/channel.svg" /> </Image>
-                            <Button.ContextFlyout>
-                                <MenuFlyout Placement="Bottom">
-                                    <MenuItem ToggleType="Radio" Click="toogle_y_linear" IsChecked="True" Header="Linear"/>
-                                    <MenuItem ToggleType="Radio" Click="toogle_y_logicle" Header="Biexponential (Logicle)"/>
-                                </MenuFlyout>
-                            </Button.ContextFlyout>
-                        </Button>
-                        </StackPanel>
-                    </StackPanel>
-                </Grid>
-            </Grid>
-            <GridSplitter Grid.Column="3" ShowsPreview="True" />
-            <Grid Grid.Column="4">
-                <Grid RowDefinitions="350, 0, *">
-                    <Grid Grid.Row="0">
-                        <TreeDataGrid x:Name="featureTree" Margin="4 4 4 8">
-                            <TreeDataGrid.Resources>
-                                <DataTemplate x:Key="dimensionDataTemplate" DataType="gam:Dimension">
-                                    <StackPanel Orientation="Horizontal">
-                                        <Image Margin="12 0 6 0"
-                                               VerticalAlignment="Center">
-                                            <Image.Source>
-                                                <MultiBinding Converter="{x:Static gam:Dimension.ImageConverter}">
-                                                    <Binding Path="Name" />
-                                                    <Binding Path="Identifier" />
-                                                </MultiBinding>
-                                            </Image.Source>
-                                        </Image>
-                                        <TextBlock Text="{Binding Name}" HorizontalAlignment="Left" VerticalAlignment="Center"/>
-                                    </StackPanel>
-                                </DataTemplate>
-                            </TreeDataGrid.Resources>
-                        </TreeDataGrid>
+
+                        <controls:FlowPlotView Grid.Row="1" Margin="16"
+                                               Group="{Binding SelectedGroup}"
+                                               Sample="{Binding SelectedSample}"
+                                               Gate="{Binding PlotGate}"
+                                               Gates="{Binding PlotGates}"
+                                               Population="{Binding PlotPopulation}"
+                                               XAxis="{Binding XAxis}"
+                                               YAxis="{Binding YAxis}"
+                                               PlotMode="{Binding EffectivePlotMode}"
+                                               ActiveTool="{Binding ActiveTool}"
+                                               GateCreatedCommand="{Binding AddCanvasGateCommand}"
+                                               GateEditedCommand="{Binding GateEditedCommand}" />
                     </Grid>
-                    <GridSplitter Grid.Row="1" ShowsPreview="True" />
-                    <Grid Grid.Row="2"></Grid>
+
+                    <Border Grid.Column="1"
+                            BorderBrush="{DynamicResource SemiColorSplits}"
+                            BorderThickness="1,0,0,0"
+                            Background="{DynamicResource SemiColorBackground0}"
+                            Padding="8">
+                        <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                                      VerticalScrollBarVisibility="Auto">
+                            <StackPanel Spacing="8" Margin="16, 8, 16, 16">
+                                <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Axis properties" />
+
+                                <Expander Header="X axis" IsExpanded="True">
+                                    <StackPanel Spacing="8" Margin="0,8,0,16">
+                                        <TextBlock Margin="0,4,0,-4" Foreground="{DynamicResource SemiColorText2}" Text="Selected channel" />
+                                        <ComboBox Classes='Small'
+                                                  ItemsSource="{Binding AxisChoices}"
+                                                  SelectedItem="{Binding SelectedXAxisChoice}">
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <TextBlock IsVisible="{Binding HasLabel}" Foreground="{DynamicResource SemiColorText0}" FontWeight="SemiBold" Text="{Binding Label}" />
+                                                        <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="{Binding Name}" />
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
+
+                                        <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                                            <StackPanel>
+                                                <TextBlock Margin="0,4" Foreground="{DynamicResource SemiColorText2}" Text="Minimum" />
+                                                <TextBox Text="{Binding XAxis.Minimum, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1">
+                                                <TextBlock Margin="0,4" Foreground="{DynamicResource SemiColorText2}" Text="Maximum" />
+                                                <TextBox Text="{Binding XAxis.Maximum, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                        </Grid>
+
+                                        <TextBlock Margin="0,4,0,-4" Foreground="{DynamicResource SemiColorText2}" Text="Axis scale" />
+                                        <ComboBox Classes='Small'
+                                                  ItemsSource="{Binding CoordinateScaleChoices}"
+                                                  SelectedItem="{Binding XAxis.ScaleKind}" />
+
+                                        <Grid IsVisible="{Binding XAxis.IsLogicle}" RowDefinitions="Auto,Auto" ColumnDefinitions="*,*" ColumnSpacing="8" RowSpacing="8">
+                                            <StackPanel>
+                                                <TextBlock Margin="0,4" Foreground="{DynamicResource SemiColorText2}" Text="Top of scale (T)" />
+                                                <TextBox Text="{Binding XAxis.LogicleTopOfScale, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1">
+                                                <TextBlock Margin="0,4" Foreground="{DynamicResource SemiColorText2}" Text="Number of decades (M)" />
+                                                <TextBox Text="{Binding XAxis.LogicleDecades, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Row="1">
+                                                <TextBlock Margin="0,4" Foreground="{DynamicResource SemiColorText2}" Text="Linearization width (W)" />
+                                                <TextBox Text="{Binding XAxis.LogicleLinearizationWidth, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Row="1" Grid.Column="1">
+                                                <TextBlock Margin="0,4" Foreground="{DynamicResource SemiColorText2}" Text="Negative decades (A)" />
+                                                <TextBox Text="{Binding XAxis.LogicleNegativeDecades, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </StackPanel>
+                                </Expander>
+
+                                <Expander Header="Y axis" IsExpanded="True">
+                                    <StackPanel Spacing="8" Margin="0,8,0,16">
+                                        <TextBlock Margin="0,4,0,-4" Foreground="{DynamicResource SemiColorText2}" Text="Selected channel" />
+                                        <ComboBox Classes='Small'
+                                                  IsEnabled="{Binding IsYAxisEnabled}"
+                                                  ItemsSource="{Binding AxisChoices}"
+                                                  SelectedItem="{Binding SelectedYAxisChoice}">
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <TextBlock IsVisible="{Binding HasLabel}" Foreground="{DynamicResource SemiColorText0}" FontWeight="SemiBold" Text="{Binding Label}" />
+                                                        <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="{Binding Name}" />
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
+
+                                        <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                                            <StackPanel>
+                                                <TextBlock Margin="0,4" Foreground="{DynamicResource SemiColorText2}" Text="Minimum" />
+                                                <TextBox IsEnabled="{Binding IsYAxisEnabled}" Text="{Binding YAxis.Minimum, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1">
+                                                <TextBlock Margin="0,4" Foreground="{DynamicResource SemiColorText2}" Text="Maximum" />
+                                                <TextBox IsEnabled="{Binding IsYAxisEnabled}" Text="{Binding YAxis.Maximum, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                        </Grid>
+
+                                        <TextBlock Margin="0,4,0,-4" Foreground="{DynamicResource SemiColorText2}" Text="Axis scale" />
+                                        <ComboBox Classes='Small'
+                                                  IsEnabled="{Binding IsYAxisEnabled}"
+                                                  ItemsSource="{Binding CoordinateScaleChoices}"
+                                                  SelectedItem="{Binding YAxis.ScaleKind}" />
+
+                                        <Grid IsVisible="{Binding YAxis.IsLogicle}" RowDefinitions="Auto,Auto" ColumnDefinitions="*,*" ColumnSpacing="8" RowSpacing="8">
+                                            <StackPanel>
+                                                <TextBlock Margin="0,4" Foreground="{DynamicResource SemiColorText2}" Text="Top of scale (T)" />
+                                                <TextBox IsEnabled="{Binding IsYAxisEnabled}" Text="{Binding YAxis.LogicleTopOfScale, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1">
+                                                <TextBlock Margin="0,4" Foreground="{DynamicResource SemiColorText2}" Text="Number of decades (M)" />
+                                                <TextBox IsEnabled="{Binding IsYAxisEnabled}" Text="{Binding YAxis.LogicleDecades, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Row="1">
+                                                <TextBlock Margin="0,4" Foreground="{DynamicResource SemiColorText2}" Text="Linearization width (W)" />
+                                                <TextBox IsEnabled="{Binding IsYAxisEnabled}" Text="{Binding YAxis.LogicleLinearizationWidth, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Row="1" Grid.Column="1">
+                                                <TextBlock Margin="0,4" Foreground="{DynamicResource SemiColorText2}" Text="Negative decades (A)" />
+                                                <TextBox IsEnabled="{Binding IsYAxisEnabled}" Text="{Binding YAxis.LogicleNegativeDecades, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </StackPanel>
+                                </Expander>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Border>
                 </Grid>
+
+                <GridSplitter Grid.Row="1"
+                              Height="5"
+                              HorizontalAlignment="Stretch"
+                              Background="{DynamicResource SemiColorSplits}"
+                              ResizeDirection="Rows" />
+
+                <Border Grid.Row="2"
+                        BorderBrush="{DynamicResource SemiColorSplits}"
+                        BorderThickness="0,1,0,0"
+                        Background="{DynamicResource SemiColorBackground0}"
+                        Padding="16">
+                    <Grid RowDefinitions="Auto,Auto,*">
+                        <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Gate statistics" />
+                        <TextBlock Grid.Row="1"
+                                   Margin="0,8,0,0"
+                                   Foreground="{DynamicResource SemiColorText0}"
+                                   Text="{Binding SelectedGateName}"
+                                   FontWeight="SemiBold" />
+                        <DataGrid Grid.Row="2"
+                                  Margin="0,12,0,0"
+                                  x:Name="statistics"
+                                  AutoGenerateColumns="False"
+                                  IsReadOnly="True"
+                                  CanUserReorderColumns="False"
+                                  CanUserResizeColumns="True"
+                                  CanUserSortColumns="True"
+                                  HeadersVisibility="Column"
+                                  GridLinesVisibility="Horizontal"
+                                  ItemsSource="{Binding StatisticTableView}" />
+                    </Grid>
+                </Border>
             </Grid>
         </Grid>
     </DockPanel>

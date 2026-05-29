@@ -1,8 +1,9 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Data.Core.Plugins;
 using Avalonia.Markup.Xaml;
 
-namespace Gated;
+namespace gated;
 
 public partial class App : Application
 {
@@ -19,5 +20,6 @@ public partial class App : Application
         }
 
         base.OnFrameworkInitializationCompleted();
+        BindingPlugins.PropertyAccessors.Add(new DataRowViewPropertyAccessorPlugin());
     }
 }

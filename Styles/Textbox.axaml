@@ -127,10 +127,21 @@
                 </DataValidationErrors>
             </ControlTemplate>
         </Setter>
-
+        
         <Style Selector="^:pointerover /template/ Border#PART_ContentPresenterBorder">
             <Setter Property="Background" Value="{DynamicResource TextBoxPointeroverBackground}" />
             <Setter Property="BorderBrush" Value="{DynamicResource TextBoxPointeroverBorderBrush}" />
+        </Style>
+        <Style Selector="^:focus /template/ Border#PART_ContentPresenterBorder">
+            <Setter Property="Background" Value="White" />
+            <Setter Property="BorderBrush" Value="DodgerBlue" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style Selector="^:focus /template/ TextPresenter#PART_TextPresenter">
+            <Setter Property="CaretBrush" Value="Black" />
+        </Style>
+        <Style Selector="^:focus">
+            <Setter Property="Foreground" Value="Black" />
         </Style>
         <Style Selector="^:pressed /template/ Border#PART_ContentPresenterBorder">
             <Setter Property="Background" Value="{DynamicResource TextBoxPressedBackground}" />

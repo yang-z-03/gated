@@ -22,6 +22,6 @@
     <x:Double x:Key="MenuItemSeparatorHeight">0.5</x:Double>
     <StaticResource x:Key="MenuItemSeparatorMargin" ResourceKey="SemiThicknessExtraTight" />
     <Thickness x:Key="MenuItemIconMargin">0 0 8 0</Thickness>
-    <Thickness x:Key="MenuItemInputGestureTextMargin">4 0</Thickness>
+    <Thickness x:Key="MenuItemInputGestureTextMargin">10 0 0 0</Thickness>
     <Thickness x:Key="MenuItemExpandIconMargin">4 0 -4 0</Thickness>
 </ResourceDictionary>

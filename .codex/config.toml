@@ -1,0 +1,7 @@
+model_provider = "openai_http"
+
+[model_providers.openai_http]
+name = "OpenAI HTTP only"
+wire_api = "responses"
+supports_websockets = false
+requires_openai_auth = true

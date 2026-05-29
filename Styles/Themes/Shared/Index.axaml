@@ -11,5 +11,9 @@
         <ResourceInclude Source="avares://gated/Styles/Themes/Shared/Button.axaml" />
         <ResourceInclude Source="avares://gated/Styles/Themes/Shared/Textbox.axaml" />
         <ResourceInclude Source="avares://gated/Styles/Themes/Shared/Radio.axaml" />
+        <ResourceInclude Source="avares://gated/Styles/Themes/Shared/CheckBox.axaml" />
+        <ResourceInclude Source="avares://gated/Styles/Themes/Shared/ToogleButton.axaml" />
+        <ResourceInclude Source="avares://gated/Styles/Themes/Shared/Expander.axaml" />
+        <ResourceInclude Source="avares://gated/Styles/Themes/Shared/DataGrid.axaml" />
     </ResourceDictionary.MergedDictionaries>
 </ResourceDictionary>

@@ -1,5 +1,5 @@
 <ResourceDictionary
-     x:Class="Gated.Styles.Locales.English"
+     x:Class="gated.Styles.Locales.English"
      xmlns="https://github.com/avaloniaui"
      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     

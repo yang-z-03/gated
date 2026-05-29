@@ -1,4 +1,4 @@
 
 using Avalonia.Controls;
-namespace Gated.Styles.Locales;
+namespace gated.Styles.Locales;
 public class English : ResourceDictionary;

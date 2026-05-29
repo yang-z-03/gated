@@ -2,11 +2,11 @@
     <StaticResource x:Key="ComboBoxSelectorCornerRadius" ResourceKey="SemiBorderRadiusSmall" />
     <StaticResource x:Key="ComboBoxSelectorThickness" ResourceKey="SemiBorderThicknessControl" />
     <Thickness x:Key="ComboBoxItemDefaultPadding">5 3</Thickness>
-    <Thickness x:Key="ComboBoxSelectorDefaultPadding">12 0 0 0</Thickness>
+    <Thickness x:Key="ComboBoxSelectorDefaultPadding">6 0 1 0</Thickness>
     <x:Double x:Key="ComboBoxPopupMaxDropDownHeight">504</x:Double>
     <StaticResource x:Key="ComboBoxPopupBorderThickness" ResourceKey="SemiBorderThicknessControl" />
     <StaticResource x:Key="ComboBoxPopupBoxCornerRadius" ResourceKey="SemiBorderRadiusMedium" />
-    <x:Double x:Key="ComboBoxIconWidth">32</x:Double>
+    <x:Double x:Key="ComboBoxIconWidth">25</x:Double>
     <StaticResource x:Key="ComboBoxIcon" ResourceKey="SemiIconChevronDown" />
     <StaticResource x:Key="ComboBoxPopupBorderMargin" ResourceKey="SemiThicknessExtraTight" />
     <Thickness x:Key="ComboBoxPopupBorderPadding">0 6</Thickness>

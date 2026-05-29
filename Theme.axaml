@@ -1,4 +1,4 @@
-<Styles x:Class="Gated.Theme"
+<Styles x:Class="gated.Theme"
         xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:semi="https://irihi.tech/semi">
@@ -6,9 +6,8 @@
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <!-- shared components -->
-                <ResourceInclude Source="avares://gated/Styles/Themes/Variables.axaml" />
-                <ResourceInclude Source="avares://gated/Styles/Themes/Dark.axaml" /> <!-- themes -->
                 <ResourceInclude Source="avares://gated/Styles/Icons/Icons.axaml" /> <!-- icons -->
+                <ResourceInclude Source="avares://gated/Styles/Themes/Dark.axaml" /> <!-- themes -->
                 <ResourceInclude Source="avares://gated/Styles/Locales/English.axaml" /> <!-- locales -->
                 
                 <!-- core styling components based on the tokens included above -->
@@ -20,12 +19,15 @@
                 <ResourceInclude Source="avares://gated/Styles/PathIcon.axaml" />
                 <ResourceInclude Source="avares://gated/Styles/ScrollViewer.axaml" />
                 <ResourceInclude Source="avares://gated/Styles/GridSplitter.axaml"/>
-                <ResourceInclude Source="avares://gated/Styles/TreeDataGrid.axaml"/>
                 <ResourceInclude Source="avares://gated/Styles/Adorner.axaml" />
                 <ResourceInclude Source="avares://gated/Styles/Button.axaml" />
                 <ResourceInclude Source="avares://gated/Styles/Combo.axaml" />
                 <ResourceInclude Source="avares://gated/Styles/Textbox.axaml" />
+                <ResourceInclude Source="avares://gated/Styles/CheckBox.axaml" />
                 <ResourceInclude Source="avares://gated/Styles/Radio.axaml" />
+                <ResourceInclude Source="avares://gated/Styles/ToogleButton.axaml" />
+                <ResourceInclude Source="avares://gated/Styles/Expander.axaml" />
+                <ResourceInclude Source="avares://gated/Styles/DataGrid.axaml" />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Styles.Resources>

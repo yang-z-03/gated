@@ -172,7 +172,7 @@
                                 RecognizesAccessKey="True" />
                             <TextBlock
                                 Name="PART_InputGestureText"
-                                Grid.Column="3"
+                                Grid.Column="3" FontSize="12"
                                 Margin="{DynamicResource MenuItemInputGestureTextMargin}"
                                 HorizontalAlignment="Right"
                                 VerticalAlignment="Center"

@@ -1,7 +1,7 @@
 ﻿using Avalonia;
 using System;
 
-namespace Gated;
+namespace gated;
 
 class Program
 {

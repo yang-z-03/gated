@@ -378,7 +378,7 @@
     <SolidColorBrush x:Key="SemiColorPrimaryDisabled" Color="{StaticResource SemiBlue2Color}" />
     <SolidColorBrush x:Key="SemiColorPrimaryLight" Opacity="0.2" Color="{StaticResource SemiBlue5Color}" />
     <SolidColorBrush x:Key="SemiColorPrimaryLightPointerover" Opacity="0.3" Color="{StaticResource SemiBlue5Color}" />
-    <SolidColorBrush x:Key="SemiColorPrimaryLightActive" Opacity="0.4" Color="{StaticResource SemiBlue5Color}" />
+    <SolidColorBrush x:Key="SemiColorPrimaryLightActive" Opacity="0.5" Color="{StaticResource SemiBlue5Color}" />
     
     <!--  secondary  -->
     <SolidColorBrush x:Key="SemiColorSecondary" Color="{StaticResource SemiLightBlue5Color}" />
@@ -476,6 +476,6 @@
     <BoxShadows x:Key="SemiColorShadow">0 0 #0A000000</BoxShadows>
     <BoxShadows x:Key="SemiShadowElevated">inset 0 0 0 1 #1AFFFFFF, 0 4 14 #40000000</BoxShadows>
     
-    <SolidColorBrush x:Key="SemiColorSplits" Opacity="0.25" Color="{StaticResource SemiBlackColor}" />
+    <SolidColorBrush x:Key="SemiColorSplits" Opacity="1" Color="#151515" />
 
 </ResourceDictionary>

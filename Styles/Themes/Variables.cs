@@ -1,4 +1,4 @@
 
 using Avalonia.Controls;
-namespace Gated.Styles.Themes;
+namespace gated.Styles.Themes;
 public class Variables : ResourceDictionary;

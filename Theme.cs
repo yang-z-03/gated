@@ -5,8 +5,8 @@ using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
-using Gated.Styles.Locales;
-namespace Gated;
+using gated.Styles.Locales;
+namespace gated;
 
 public class Theme : Avalonia.Styling.Styles
 {
