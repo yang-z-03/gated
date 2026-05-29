@@ -14,7 +14,7 @@ public class Grouping : INode
             this.Identifier = identifier;
         
         this.children.Add(this.Gates);
-        this.children.Add(this.Statistics);
+        // statistics now live inside GatingStrategy.StatisticDefinitions
         this.Samples.CollectionChanged += (s, e) =>
         {
             if (e.OldItems != null)
@@ -51,7 +51,7 @@ public class Grouping : INode
     public Compensation Compensation { get; set; } = new();
     
     public GatingStrategyCollection Gates { get; private set; } = new();
-    public StatisticsCollection Statistics { get; private set; } = new();
+    // StatisticsCollection removed — stats now in GatingStrategy.StatisticDefinitions
     public ObservableCollection<Tube> Samples { get; } = new();
 
     private ObservableCollection<INode> children = new();

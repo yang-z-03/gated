@@ -8,6 +8,9 @@ public abstract class Dimension
     public abstract string Name { get; set; }
     public abstract string Label { get; set; }
     public abstract float Maximum { get; set; }
+    public string DisplayMaximum
+    { get => this.Maximum.ToString("N0"); }
+    
     public static ChannelImageConverter ImageConverter = new();
 }
 

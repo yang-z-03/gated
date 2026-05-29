@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Linq;
 using Gated.Configurations;
+using Gated.Display;
 using Gated.Preprocessing;
 using ScottPlot;
 
@@ -172,26 +173,10 @@ public abstract class Population : INode
         config.YTransform.Transform(ys);
         
         // axis limits
-        // initialize range using the maximal values within the group!
-        if ((!config.has_initialize_range()) || config.require_range_update)
-        {
-            List<float> xvals = new();
-            List<float> yvals = new();
-            foreach (var sample in this.ParentGroup!.Samples)
-            {
-                var data = sample.GetValues(sample.EventCount, x!, y!);
-                xvals.AddRange(data[x!]!);
-                yvals.AddRange(data[y!]!);
-            }
-
-            var xv = xvals.ToArray();
-            var yv = yvals.ToArray();
-            config.XTransform.Transform(xv);
-            config.YTransform.Transform(yv);
-            config.initialize_range(xv, yv);
-        }
-
-        config.require_range_update = false;
+        float xRangeMax = config.XTransform.Transform(x.Maximum);
+        float yRangeMax = config.YTransform.Transform(y.Maximum);
+        config.XRange = (0, xRangeMax);
+        config.YRange = (0, yRangeMax);
         
         plot.Plot.Axes.SetLimitsX(config.XRange.Item1, config.XRange.Item2);
         plot.Plot.Axes.SetLimitsY(config.YRange.Item1, config.YRange.Item2);
@@ -202,8 +187,8 @@ public abstract class Population : INode
         
         // set ticks.
         // reverse transform to origin scale.
-        set_ticks(plot.Plot.Axes.Left, config.YTransform, config.YRange.Item2);
-        set_ticks(plot.Plot.Axes.Bottom, config.XTransform, config.XRange.Item2);
+        PlotHelper.SetTicks(plot.Plot.Axes.Left, config.YTransform, config.YRange.Item2);
+        PlotHelper.SetTicks(plot.Plot.Axes.Bottom, config.XTransform, config.XRange.Item2);
         plot.Plot.Axes.Bottom.TickLabelStyle.Rotation = -90;
         plot.Plot.Axes.Bottom.TickLabelStyle.Alignment = Alignment.MiddleRight;
         plot.Plot.Axes.Bottom.MinimumSize = 45;
@@ -251,7 +236,7 @@ public abstract class Population : INode
                 ]++;
             }
             
-            double[,] o = Tube.order(histogram, config.Resolution);
+            double[,] o = PlotHelper.Order(histogram, config.Resolution);
             var hm1 = plot.Plot.Add.Heatmap(o);
             hm1.Colormap = new Configurations.Turbo();
             hm1.CellAlignment = Alignment.LowerLeft;
@@ -1023,6 +1008,7 @@ public class Subset : Population
     public override bool IsTube { get; } = false;
     public override string Name { get; set; } = "Subset";
     public override string Identifier => "subset";
+    public Dictionary<string, double> StatisticResults { get; set; } = new();
 
     private long[] _selection;
     public long[] Selection

@@ -10,6 +10,7 @@ using Avalonia.Platform.Storage;
 using Gated.Configurations;
 using Gated.Models;
 using Gated.Preprocessing;
+using ScottPlot;
 using ScottPlot.Avalonia;
 using Color = ScottPlot.Color;
 using Population = Gated.Models.Population;
@@ -81,10 +82,28 @@ public partial class MainWindow : Window
                 switch_tool(Tool.Polygon);
         };
         
-        this.cmbToolQuad.IsCheckedChanged += (s, e) =>
+                this.cmbToolQuad.IsCheckedChanged += (s, e) =>
         {
             if (this.cmbToolQuad.IsChecked ?? false)
                 switch_tool(Tool.Quad);
+        };
+
+        this.cmbToolBinary.IsCheckedChanged += (s, e) =>
+        {
+            if (this.cmbToolBinary.IsChecked ?? false)
+                switch_tool(Tool.Binary);
+        };
+
+        this.cmbToolRange.IsCheckedChanged += (s, e) =>
+        {
+            if (this.cmbToolRange.IsChecked ?? false)
+                switch_tool(Tool.Range);
+        };
+
+        this.cmbToolCurlyQuad.IsCheckedChanged += (s, e) =>
+        {
+            if (this.cmbToolCurlyQuad.IsChecked ?? false)
+                switch_tool(Tool.CurlyQuad);
         };
 
         this.btnPrev.Click += (s, e) =>
@@ -149,7 +168,7 @@ public partial class MainWindow : Window
                 if (y_logicle)
                     this.current_scatter!.YTransform = new LogicleTransform(t: this.current_scatter!.Y.Maximum);
                 else this.current_scatter!.YTransform = new LinearTransform();
-                this.current_scatter!.require_range_update = true;
+                // range updates automatically from channel max in Display()
                 
                 this.current_scatter = this.current_population!.Display(
                     this.plotter,
@@ -172,7 +191,10 @@ public partial class MainWindow : Window
     {
         Pan,
         Polygon,
-        Quad
+        Quad,
+        Binary,
+        Range,
+        CurlyQuad
     }
 
     private void switch_tool(Tool t)
@@ -200,8 +222,8 @@ public partial class MainWindow : Window
                     Actions.Quad? p = s as Actions.Quad;
                     QuadGate gate = new QuadGate(
                         this.current_scatter, 
-                        Convert.ToSingle(p!.vertice.GetValueOrDefault().X), 
-                        Convert.ToSingle(p!.vertice.GetValueOrDefault().Y), 
+                        this.current_scatter!.XTransform.InverseTransform((float)p!.vertice.GetValueOrDefault().X), 
+                        this.current_scatter!.YTransform.InverseTransform((float)p!.vertice.GetValueOrDefault().Y), 
                         this.current_grouping);
                     p.defined_gate = gate;
                     this.current_grouping.AddGate(this.current_gate, gate, this.current_population.AssociatedGateIndex);
@@ -213,8 +235,8 @@ public partial class MainWindow : Window
                     Actions.Quad? p = s as Actions.Quad;
                     if (p!.defined_gate != null)
                     {
-                        p!.defined_gate.HorizontalCutoff = Convert.ToSingle(p.vertice.GetValueOrDefault().X);
-                        p!.defined_gate.VerticalCutoff = Convert.ToSingle(p.vertice.GetValueOrDefault().Y);
+                        p!.defined_gate.HorizontalCutoff = this.current_scatter!.XTransform.InverseTransform((float)p.vertice.GetValueOrDefault().X);
+                        p!.defined_gate.VerticalCutoff = this.current_scatter!.YTransform.InverseTransform((float)p.vertice.GetValueOrDefault().Y);
                         p!.defined_gate!.Update();
                     }
                     
@@ -246,13 +268,120 @@ public partial class MainWindow : Window
                     Actions.Polygon? p = s as Actions.Polygon;
                     if (p!.defined_gate != null)
                     {
-                        p!.defined_gate.Polygon = p!.vertices;
+                        p!.defined_gate.Polygon = p!.vertices.Select(v => new Coordinates(
+                        this.current_scatter!.XTransform.InverseTransform(v.X),
+                        this.current_scatter!.YTransform.InverseTransform(v.Y)
+                    )).ToList();
                         p!.defined_gate!.Update();
                     }
                     
                     this.refresh_tree();
                 };
 
+                break;
+            
+            case Tool.Binary:
+                this.mnuToolBinary.IsChecked = true;
+                this.cmbToolBinary.IsChecked = true;
+
+                if (this.current_scatter == null) return;
+                if (this.current_population == null) return;
+                if (this.current_grouping == null) return;
+
+                var action_b = draw_binary_gate(null);
+                action_b.GateDefined += (s, e) =>
+                {
+                    Actions.BinaryGateLine? p = s as Actions.BinaryGateLine;
+                    float origThreshold = this.current_scatter!.XTransform.InverseTransform(p!.threshold);
+                    BinaryGate gate = new BinaryGate(
+                        this.current_scatter!.X, this.current_scatter!.XTransform,
+                        origThreshold, this.current_grouping);
+                    p.defined_gate = gate;
+                    this.current_grouping.AddGate(this.current_gate, gate, this.current_population.AssociatedGateIndex);
+                    this.refresh_tree();
+                };
+                action_b.GateUpdated += (s, e) =>
+                {
+                    Actions.BinaryGateLine? p = s as Actions.BinaryGateLine;
+                    if (p!.defined_gate != null)
+                    {
+                        p!.defined_gate.Threshold = this.current_scatter!.XTransform.InverseTransform(p!.threshold);
+                        p!.defined_gate!.Update();
+                    }
+                    this.refresh_tree();
+                };
+                break;
+
+            case Tool.Range:
+                this.mnuToolRange.IsChecked = true;
+                this.cmbToolRange.IsChecked = true;
+
+                if (this.current_scatter == null) return;
+                if (this.current_population == null) return;
+                if (this.current_grouping == null) return;
+
+                var action_r = draw_range_gate(null);
+                action_r.GateDefined += (s, e) =>
+                {
+                    Actions.RangeLines? p = s as Actions.RangeLines;
+                    float origLower = this.current_scatter!.XTransform.InverseTransform(p!.lower);
+                    float origUpper = this.current_scatter!.XTransform.InverseTransform(p!.upper);
+                    RangeGate gate = new RangeGate(
+                        this.current_scatter!.X, this.current_scatter!.XTransform,
+                        origLower, origUpper, this.current_grouping);
+                    p.defined_gate = gate;
+                    this.current_grouping.AddGate(this.current_gate, gate, this.current_population.AssociatedGateIndex);
+                    this.refresh_tree();
+                };
+                action_r.GateUpdated += (s, e) =>
+                {
+                    Actions.RangeLines? p = s as Actions.RangeLines;
+                    if (p!.defined_gate != null)
+                    {
+                        p!.defined_gate.Lower = this.current_scatter!.XTransform.InverseTransform(p!.lower);
+                        p!.defined_gate.Upper = this.current_scatter!.XTransform.InverseTransform(p!.upper);
+                        p!.defined_gate!.Update();
+                    }
+                    this.refresh_tree();
+                };
+                break;
+
+            case Tool.CurlyQuad:
+                this.mnuToolCurlyQuad.IsChecked = true;
+                this.cmbToolCurlyQuad.IsChecked = true;
+
+                if (this.current_scatter == null) return;
+                if (this.current_population == null) return;
+                if (this.current_grouping == null) return;
+
+                var action_cq = draw_curly_quad_gate(null);
+                action_cq.GateDefined += (s, e) =>
+                {
+                    Actions.CurlyQuad? p = s as Actions.CurlyQuad;
+                    if (p!.crosshair == null) return;
+                    float origH = this.current_scatter!.XTransform.InverseTransform((float)p.crosshair.Value.X);
+                    float origV = this.current_scatter!.YTransform.InverseTransform((float)p.crosshair.Value.Y);
+                    CurlyQuadGate gate = new CurlyQuadGate(
+                        this.current_scatter, origH, origV,
+                        p.topAnchorX, p.rightAnchorY,
+                        this.current_grouping);
+                    p.defined_gate = gate;
+                    this.current_grouping.AddGate(this.current_gate, gate, this.current_population.AssociatedGateIndex);
+                    this.refresh_tree();
+                };
+                action_cq.GateUpdated += (s, e) =>
+                {
+                    Actions.CurlyQuad? p = s as Actions.CurlyQuad;
+                    if (p!.defined_gate != null && p!.crosshair != null)
+                    {
+                        p!.defined_gate.HorizontalCutoff = this.current_scatter!.XTransform.InverseTransform((float)p.crosshair.Value.X);
+                        p!.defined_gate.VerticalCutoff = this.current_scatter!.YTransform.InverseTransform((float)p.crosshair.Value.Y);
+                        p!.defined_gate.HorizontalCurliness = p.topAnchorX;
+                        p!.defined_gate.VerticalCurliness = p.rightAnchorY;
+                        p!.defined_gate!.Update();
+                    }
+                    this.refresh_tree();
+                };
                 break;
         }
     }
@@ -331,6 +460,60 @@ public partial class MainWindow : Window
         return cont;
     }
     
+    private Actions.BinaryGateLine draw_binary_gate(BinaryGate? gate = null)
+    {
+        this.lock_plot();
+        Actions.BinaryGateLine act;
+        if (gate == null)
+            act = new Actions.BinaryGateLine(
+                button: ScottPlot.Interactivity.StandardMouseButtons.Left,
+                editLocked: true
+            );
+        else
+            act = new Actions.BinaryGateLine(
+                button: ScottPlot.Interactivity.StandardMouseButtons.Left,
+                gate: gate, control: this.plotter
+            );
+        this.plotter.UserInputProcessor.UserActionResponses.Add(act);
+        return act;
+    }
+
+    private Actions.RangeLines draw_range_gate(RangeGate? gate = null)
+    {
+        this.lock_plot();
+        Actions.RangeLines act;
+        if (gate == null)
+            act = new Actions.RangeLines(
+                button: ScottPlot.Interactivity.StandardMouseButtons.Left,
+                editLocked: true
+            );
+        else
+            act = new Actions.RangeLines(
+                button: ScottPlot.Interactivity.StandardMouseButtons.Left,
+                gate: gate, control: this.plotter
+            );
+        this.plotter.UserInputProcessor.UserActionResponses.Add(act);
+        return act;
+    }
+
+    private Actions.CurlyQuad draw_curly_quad_gate(CurlyQuadGate? gate = null)
+    {
+        this.lock_plot();
+        Actions.CurlyQuad act;
+        if (gate == null)
+            act = new Actions.CurlyQuad(
+                button: ScottPlot.Interactivity.StandardMouseButtons.Left,
+                editLocked: true
+            );
+        else
+            act = new Actions.CurlyQuad(
+                button: ScottPlot.Interactivity.StandardMouseButtons.Left,
+                gate: gate, control: this.plotter
+            );
+        this.plotter.UserInputProcessor.UserActionResponses.Add(act);
+        return act;
+    }
+
     private Actions.Quad draw_cross_gate(QuadGate? gate = null)
     {
         this.lock_plot();
@@ -553,7 +736,10 @@ public partial class MainWindow : Window
                     Actions.Polygon? p = s as Actions.Polygon;
                     if (p!.defined_gate != null)
                     {
-                        p!.defined_gate.Polygon = p!.vertices;
+                        p!.defined_gate.Polygon = p!.vertices.Select(v => new Coordinates(
+                        this.current_scatter!.XTransform.InverseTransform(v.X),
+                        this.current_scatter!.YTransform.InverseTransform(v.Y)
+                    )).ToList();
                         p!.defined_gate!.Update();
                     }
                 };
@@ -574,8 +760,8 @@ public partial class MainWindow : Window
                     Actions.Quad? p = s as Actions.Quad;
                     QuadGate gate = new QuadGate(
                         this.current_scatter!,
-                        Convert.ToSingle(p!.vertice.GetValueOrDefault().X),
-                        Convert.ToSingle(p!.vertice.GetValueOrDefault().Y),
+                        this.current_scatter!.XTransform.InverseTransform((float)p!.vertice.GetValueOrDefault().X),
+                        this.current_scatter!.YTransform.InverseTransform((float)p!.vertice.GetValueOrDefault().Y),
                         this.current_grouping!);
                     p!.defined_gate = gate;
                     this.current_grouping!.AddGate(this.current_gate, gate);
@@ -586,8 +772,108 @@ public partial class MainWindow : Window
                     Actions.Quad? p = s as Actions.Quad;
                     if (p!.defined_gate != null)
                     {
-                        p!.defined_gate.HorizontalCutoff = Convert.ToSingle(p.vertice.GetValueOrDefault().X);
-                        p!.defined_gate.VerticalCutoff = Convert.ToSingle(p.vertice.GetValueOrDefault().Y);
+                        p!.defined_gate.HorizontalCutoff = this.current_scatter!.XTransform.InverseTransform((float)p.vertice.GetValueOrDefault().X);
+                        p!.defined_gate.VerticalCutoff = this.current_scatter!.YTransform.InverseTransform((float)p.vertice.GetValueOrDefault().Y);
+                        p!.defined_gate!.Update();
+                    }
+                };
+            }
+            else if (item is BinaryGate bg)
+            {
+                this.ViewModel.Dimensions.Add(bg.X);
+                this.ViewModel.Dimensions.Add(bg.X);
+                bg.Display(this.plotter);
+                this.cmbX.Items.Add(bg.X);
+                this.cmbX.SelectedIndex = 0;
+                this.cmbY.Items.Add(bg.X);
+                this.cmbY.SelectedIndex = 0;
+                var action = draw_binary_gate(bg);
+
+                action.GateDefined += (s, e) =>
+                {
+                    Actions.BinaryGateLine? p = s as Actions.BinaryGateLine;
+                    float origThreshold = bg.XTransform.InverseTransform(p!.threshold);
+                    BinaryGate gate = new BinaryGate(bg.X, bg.XTransform, origThreshold, this.current_grouping!);
+                    p!.defined_gate = gate;
+                    this.current_grouping!.AddGate(this.current_gate, gate);
+                };
+
+                action.GateUpdated += (s, e) =>
+                {
+                    Actions.BinaryGateLine? p = s as Actions.BinaryGateLine;
+                    if (p!.defined_gate != null)
+                    {
+                        p!.defined_gate.Threshold = bg.XTransform.InverseTransform(p!.threshold);
+                        p!.defined_gate!.Update();
+                    }
+                };
+            }
+            else if (item is RangeGate rg)
+            {
+                this.ViewModel.Dimensions.Add(rg.X);
+                this.ViewModel.Dimensions.Add(rg.X);
+                rg.Display(this.plotter);
+                this.cmbX.Items.Add(rg.X);
+                this.cmbX.SelectedIndex = 0;
+                this.cmbY.Items.Add(rg.X);
+                this.cmbY.SelectedIndex = 0;
+                var action = draw_range_gate(rg);
+
+                action.GateDefined += (s, e) =>
+                {
+                    Actions.RangeLines? p = s as Actions.RangeLines;
+                    float origLower = rg.XTransform.InverseTransform(p!.lower);
+                    float origUpper = rg.XTransform.InverseTransform(p!.upper);
+                    RangeGate gate = new RangeGate(rg.X, rg.XTransform, origLower, origUpper, this.current_grouping!);
+                    p!.defined_gate = gate;
+                    this.current_grouping!.AddGate(this.current_gate, gate);
+                };
+
+                action.GateUpdated += (s, e) =>
+                {
+                    Actions.RangeLines? p = s as Actions.RangeLines;
+                    if (p!.defined_gate != null)
+                    {
+                        p!.defined_gate.Lower = rg.XTransform.InverseTransform(p!.lower);
+                        p!.defined_gate.Upper = rg.XTransform.InverseTransform(p!.upper);
+                        p!.defined_gate!.Update();
+                    }
+                };
+            }
+            else if (item is CurlyQuadGate cqg)
+            {
+                this.ViewModel.Dimensions.Add(cqg.X);
+                this.ViewModel.Dimensions.Add(cqg.Y);
+                cqg.Display(this.plotter);
+                this.cmbX.Items.Add(cqg.X);
+                this.cmbX.SelectedIndex = 0;
+                this.cmbY.Items.Add(cqg.Y);
+                this.cmbY.SelectedIndex = 0;
+                var action = draw_curly_quad_gate(cqg);
+
+                action.GateDefined += (s, e) =>
+                {
+                    Actions.CurlyQuad? p = s as Actions.CurlyQuad;
+                    if (p!.crosshair == null) return;
+                    float origH = cqg.XTransform.InverseTransform((float)p.crosshair.Value.X);
+                    float origV = cqg.YTransform.InverseTransform((float)p.crosshair.Value.Y);
+                    CurlyQuadGate gate = new CurlyQuadGate(
+                        this.current_scatter!, origH, origV,
+                        p.topAnchorX, p.rightAnchorY,
+                        this.current_grouping!);
+                    p!.defined_gate = gate;
+                    this.current_grouping!.AddGate(this.current_gate, gate);
+                };
+
+                action.GateUpdated += (s, e) =>
+                {
+                    Actions.CurlyQuad? p = s as Actions.CurlyQuad;
+                    if (p!.defined_gate != null && p!.crosshair != null)
+                    {
+                        p!.defined_gate.HorizontalCutoff = cqg.XTransform.InverseTransform((float)p.crosshair.Value.X);
+                        p!.defined_gate.VerticalCutoff = cqg.YTransform.InverseTransform((float)p.crosshair.Value.Y);
+                        p!.defined_gate.HorizontalCurliness = p.topAnchorX;
+                        p!.defined_gate.VerticalCurliness = p.rightAnchorY;
                         p!.defined_gate!.Update();
                     }
                 };
@@ -611,6 +897,55 @@ public partial class MainWindow : Window
     private void mnu_add_quad_gate(object? sender, RoutedEventArgs e)
     {
         this.switch_tool(Tool.Quad);
+    }
+
+    private void mnu_add_binary_gate(object? sender, RoutedEventArgs e)
+    {
+        this.switch_tool(Tool.Binary);
+    }
+
+    private void mnu_add_range_gate(object? sender, RoutedEventArgs e)
+    {
+        this.switch_tool(Tool.Range);
+    }
+
+    private void mnu_add_curly_quad_gate(object? sender, RoutedEventArgs e)
+    {
+        this.switch_tool(Tool.CurlyQuad);
+    }
+
+    private void mnu_create_group(object? sender, RoutedEventArgs e)
+    {
+        int nextNum = this.ViewModel.Workspace.Groupings.Count - 4;
+        string name = "Grouping " + (nextNum + 1).ToString();
+        var g = new Grouping(name, new List<Tube>(), null);
+        this.ViewModel.Workspace.Groupings.Add(g);
+        this.refresh_tree();
+    }
+
+    private void mnu_move_tube_to_group(object? sender, RoutedEventArgs e)
+    {
+        if (this.current_tube == null) return;
+        var tube = this.current_tube;
+        var srcGroup = tube.ParentGroup;
+        if (srcGroup == null) return;
+
+        foreach (var targetGroup in this.ViewModel.Workspace.Groupings)
+        {
+            if (targetGroup == srcGroup) continue;
+            srcGroup.Samples.Remove(tube);
+            if (targetGroup.AddSample(tube))
+            {
+                tube.ParentGroup = targetGroup;
+                this.current_grouping = targetGroup;
+                this.refresh_tree();
+                return;
+            }
+            else
+            {
+                srcGroup.AddSample(tube);
+            }
+        }
     }
 
     private void refresh_tree()
@@ -651,9 +986,10 @@ public class MainWindowViewModel
                 new TemplateColumn<Dimension>(
                     "Name", "dimensionDataTemplate",null,
                     width: new GridLength(150, GridUnitType.Pixel)),
+                new TextColumn<Dimension, string>("Max", x => x.DisplayMaximum,
+                    width: new GridLength(100, GridUnitType.Pixel)),
                 new TextColumn<Dimension, string>("Label", x => x.Label, 
-                    width: new GridLength(100, GridUnitType.Pixel),
-                    new TextColumnOptions<Dimension>(){BeginEditGestures = BeginEditGestures.Tap})
+                    width: new GridLength(100, GridUnitType.Pixel))
             }
         };
     }

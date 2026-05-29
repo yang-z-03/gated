@@ -12,8 +12,8 @@ public partial class Logicle
     private const int TAYLOR_LENGTH = 16;
 
     internal Logicle(
-        double T = 262144.0, double W = 0.5,
-        double M = 4.5, double A = 0.0)
+        double T = 262144.0, double W = 0.3,
+        double M = 3, double A = 0.0)
     {
         this.T = T;
         this.W = W;
@@ -163,8 +163,8 @@ public partial class Logicle
 
 public class LogicleTransform(
     double t = 262144.0,
-    double w = 0.5,
-    double m = 4.5,
+    double w = 0.3,
+    double m = 3.0,
     double a = 0.0) : ITransform
 {
     private Logicle logicle = new Logicle(t, w, m, a);

@@ -17,7 +17,7 @@ public class Quad(MouseButton button) : IUserActionResponse, IGatingAction
     
     public Quad(IPlotControl control, QuadGate gate, MouseButton button) : this(button)
     {
-        this.vertice = new Coordinates(gate.HorizontalCutoff, gate.VerticalCutoff);
+        this.vertice = new Coordinates(gate.XTransform.Transform(gate.HorizontalCutoff), gate.YTransform.Transform(gate.VerticalCutoff));
         this.closed = true;
         this.pixel = control.Plot.GetPixel(this.vertice ?? new Coordinates());
         this.apply(control.Plot);

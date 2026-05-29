@@ -89,11 +89,11 @@
             </MenuItem>
             <MenuItem Header="Gating">
                 <MenuItem ToggleType="Radio" IsChecked="True" Header="Pan" x:Name="mnuToolPan"/>
-                <MenuItem ToggleType="Radio" IsChecked="False" IsEnabled="False" Header="Binary Gate"/>
-                <MenuItem ToggleType="Radio" IsChecked="False" IsEnabled="False" Header="Range Gate"/>
+                <MenuItem ToggleType="Radio" IsChecked="False" Header="Binary Gate" Click="mnu_add_binary_gate" x:Name="mnuToolBinary"/>
+                <MenuItem ToggleType="Radio" IsChecked="False" Header="Range Gate" Click="mnu_add_range_gate" x:Name="mnuToolRange"/>
                 <MenuItem ToggleType="Radio" IsChecked="False" Header="Polygonal Gate" Click="mnu_add_polygon_gate" x:Name="mnuToolPolygon"/>
                 <MenuItem ToggleType="Radio" IsChecked="False" Header="Quad Gate" Click="mnu_add_quad_gate" x:Name="mnuToolQuad"/>
-                <MenuItem ToggleType="Radio" IsChecked="False" IsEnabled="False" Header="Curly Quad Gate"/>
+                <MenuItem ToggleType="Radio" IsChecked="False" Header="Curly Quad Gate" Click="mnu_add_curly_quad_gate" x:Name="mnuToolCurlyQuad"/>
                 <Separator/>
                 <MenuItem Header="Merge (Logic OR)"/>
                 <MenuItem Header="Exclude (Logic NOT)"/>
@@ -158,7 +158,7 @@
             </Grid>
             <GridSplitter Grid.Column="1" ShowsPreview="True" />
             <Grid Grid.Column="2" x:Name="plotterGrid" Background="#282828">
-                <Grid Width="450" Height="500" ColumnDefinitions="1*, 9*" RowDefinitions="1.5*, 7.5*, 1*">
+                <Grid Width="500" Height="500" ColumnDefinitions="1*, 9*" RowDefinitions="1.5*, 7.5*, 1*">
                     <Border Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" 
                             BorderThickness="1" BorderBrush="#404040" Height="70"
                             CornerRadius="10" Background="#202020">
@@ -175,6 +175,15 @@
                                     <Image Height="24" Width="24"><SvgImage Source="avares://gated/Resources/polygon.svg" /></Image>
                                 </RadioButton>
                                 <RadioButton Width="45" x:Name="cmbToolQuad" Theme="{DynamicResource PureCardRadioButton}">
+                                    <Image Height="24" Width="24"><SvgImage Source="avares://gated/Resources/cross.svg" /></Image>
+                                </RadioButton>
+                                <RadioButton Width="45" x:Name="cmbToolBinary" Theme="{DynamicResource PureCardRadioButton}">
+                                    <Image Height="24" Width="24"><SvgImage Source="avares://gated/Resources/cross.svg" /></Image>
+                                </RadioButton>
+                                <RadioButton Width="45" x:Name="cmbToolRange" Theme="{DynamicResource PureCardRadioButton}">
+                                    <Image Height="24" Width="24"><SvgImage Source="avares://gated/Resources/cross.svg" /></Image>
+                                </RadioButton>
+                                <RadioButton Width="45" x:Name="cmbToolCurlyQuad" Theme="{DynamicResource PureCardRadioButton}">
                                     <Image Height="24" Width="24"><SvgImage Source="avares://gated/Resources/cross.svg" /></Image>
                                 </RadioButton>
                             </StackPanel>

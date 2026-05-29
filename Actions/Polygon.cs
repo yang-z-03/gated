@@ -22,7 +22,7 @@ public class Polygon(MouseButton button) : IUserActionResponse, IGatingAction
     
     public Polygon(IPlotControl control, PolygonalGate gate, MouseButton button) : this(button)
     {
-        this.vertices = gate.Polygon;
+        this.vertices = gate.Polygon.Select(v => new Coordinates(gate.XTransform.Transform(v.X), gate.YTransform.Transform(v.Y))).ToList();
         this.closed = true;
         foreach (Coordinates v in vertices)
             this.pixels.Add(control.Plot.GetPixel(v));
