@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Globalization;
 using gated.Models;
 
 namespace gated.Services;
@@ -37,7 +38,11 @@ public sealed class FcsReader
         var byte_order = parse_byte_order(text.TryGetValue("byteord", out string? order) ? order : "");
         var channels = extract_channels(text, channel_count);
         var values = read_data(file_stream, data_start, data_stop, channel_count, event_count, data_type, byte_order, text);
-        return new FlowSample(Path.GetFileNameWithoutExtension(file_path), channels, values);
+        string sample_name = Path.GetFileNameWithoutExtension(file_path);
+        var sample = new FlowSample(sample_name, channels, values);
+        if (try_parse_spillover(text, sample_name, out var spillover))
+            sample.DefaultCompensation = spillover;
+        return sample;
     }
 
     private static Dictionary<string, object> parse_header(FileStream file_stream, long offset)
@@ -163,6 +168,34 @@ public sealed class FcsReader
         }
 
         return channels;
+    }
+
+    private static bool try_parse_spillover(Dictionary<string, string> text, string sample_name, out CompensationMatrix matrix)
+    {
+        matrix = new CompensationMatrix();
+        if (!text.TryGetValue("spillover", out string? spillover_text) || string.IsNullOrWhiteSpace(spillover_text))
+            return false;
+
+        var parts = spillover_text.Split(',', StringSplitOptions.TrimEntries);
+        if (parts.Length == 0 || !int.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out int size) || size <= 0)
+            return false;
+        if (parts.Length < 1 + size + size * size)
+            return false;
+
+        var channel_names = parts.Skip(1).Take(size).ToArray();
+        var values = new float[size, size];
+        int value_offset = 1 + size;
+        for (int row = 0; row < size; row++)
+        for (int column = 0; column < size; column++)
+        {
+            string token = parts[value_offset + row * size + column];
+            if (!float.TryParse(token, NumberStyles.Float, CultureInfo.InvariantCulture, out float value))
+                return false;
+            values[row, column] = value;
+        }
+
+        matrix = CompensationMatrix.Create($"Compensation matrix ({sample_name})", channel_names, values);
+        return true;
     }
 
     private static float[,] read_data(

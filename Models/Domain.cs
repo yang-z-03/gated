@@ -29,6 +29,7 @@ public enum GateKind
 public enum PlotMode
 {
     Density,
+    Dotplot,
     Contour,
     Zebra,
     Histogram
@@ -43,6 +44,15 @@ public enum GatingTool
     CurlyQuadrant,
     Threshold,
     Range
+}
+
+public enum PopulationRegion
+{
+    Primary,
+    TopRight,
+    TopLeft,
+    BottomRight,
+    BottomLeft
 }
 
 public enum StatisticKind
@@ -250,6 +260,15 @@ public sealed class GateDefinition : NotifyBase
     public double YMaximum { get; set; } = 262144.0;
     public AxisScale XScale { get; set; } = new();
     public AxisScale YScale { get; set; } = new();
+    public string PreferredXChannel { get; set; } = "";
+    public string? PreferredYChannel { get; set; }
+    public double PreferredXMinimum { get; set; }
+    public double PreferredXMaximum { get; set; } = 262144.0;
+    public double PreferredYMinimum { get; set; }
+    public double PreferredYMaximum { get; set; } = 262144.0;
+    public AxisScale PreferredXScale { get; set; } = new();
+    public AxisScale PreferredYScale { get; set; } = new();
+    public PopulationRegion ParentPopulationRegion { get; set; } = PopulationRegion.Primary;
     public GateDefinition? Parent { get; set; }
 
     public string Name
@@ -283,6 +302,7 @@ public sealed class GateDefinition : NotifyBase
     }
 
     public bool IsOneDimensional => Kind is GateKind.Threshold or GateKind.Range || string.IsNullOrWhiteSpace(YChannel);
+    public bool HasLinkedPopulations => Kind is GateKind.Quadrant or GateKind.CurlyQuadrant;
 }
 
 public sealed class StatisticDefinition
@@ -359,9 +379,19 @@ public sealed class PopulationResult : NotifyBase
     private int event_count;
 
     public GateDefinition Gate { get; init; } = new();
+    public PopulationRegion Region { get; init; } = PopulationRegion.Primary;
     public int[] EventIndices { get; set; } = Array.Empty<int>();
     public ObservableCollection<PopulationResult> Children { get; } = new();
     public ObservableCollection<StatisticResult> Statistics { get; } = new();
+
+    public string DisplayName => Region switch
+    {
+        PopulationRegion.TopRight => $"{Gate.Name}: Top right",
+        PopulationRegion.TopLeft => $"{Gate.Name}: Top left",
+        PopulationRegion.BottomRight => $"{Gate.Name}: Bottom right",
+        PopulationRegion.BottomLeft => $"{Gate.Name}: Bottom left",
+        _ => Gate.Name
+    };
 
     public int EventCount
     {
@@ -372,14 +402,34 @@ public sealed class PopulationResult : NotifyBase
 
 public sealed class CompensationMatrix : NotifyBase
 {
+    private string name = "Compensation";
     private float[,] values = new float[0, 0];
 
+    public Guid Id { get; } = Guid.NewGuid();
     public IReadOnlyList<string> ChannelNames { get; private set; } = Array.Empty<string>();
+
+    public string Name
+    {
+        get => name;
+        set => SetField(ref name, value);
+    }
 
     public float[,] Values
     {
         get => values;
         private set => SetField(ref values, value);
+    }
+
+    public static CompensationMatrix Create(string name, IReadOnlyList<string> channel_names, float[,] values)
+    {
+        var matrix = new CompensationMatrix
+        {
+            Name = name,
+            ChannelNames = channel_names.ToArray(),
+            Values = (float[,])values.Clone()
+        };
+        matrix.OnPropertyChanged(nameof(ChannelNames));
+        return matrix;
     }
 
     public void ResetIdentity(IReadOnlyList<string> channel_names)
@@ -390,12 +440,39 @@ public sealed class CompensationMatrix : NotifyBase
             Values[index, index] = 1.0f;
         OnPropertyChanged(nameof(ChannelNames));
     }
+
+    public void ReplaceValues(float[,] new_values)
+    {
+        if (new_values.GetLength(0) != ChannelNames.Count || new_values.GetLength(1) != ChannelNames.Count)
+            throw new ArgumentException("Compensation dimensions must match the channel list.", nameof(new_values));
+
+        Values = (float[,])new_values.Clone();
+    }
+
+    public bool IsEquivalentTo(CompensationMatrix other)
+    {
+        if (!ChannelNames.SequenceEqual(other.ChannelNames, StringComparer.Ordinal))
+            return false;
+        if (Values.GetLength(0) != other.Values.GetLength(0) || Values.GetLength(1) != other.Values.GetLength(1))
+            return false;
+
+        for (int row = 0; row < Values.GetLength(0); row++)
+        for (int column = 0; column < Values.GetLength(1); column++)
+        {
+            if (Math.Abs(Values[row, column] - other.Values[row, column]) > 0.000001f)
+                return false;
+        }
+
+        return true;
+    }
 }
 
 public sealed class FlowSample : NotifyBase
 {
     private string name = "";
     private float[,] compensated_events = new float[0, 0];
+
+    public Guid Id { get; } = Guid.NewGuid();
 
     public string Name
     {
@@ -407,6 +484,7 @@ public sealed class FlowSample : NotifyBase
     public float[,] RawEvents { get; private init; } = new float[0, 0];
     public ObservableCollection<PopulationResult> Populations { get; } = new();
     public Dictionary<string, float[]> Embeddings { get; } = new();
+    public CompensationMatrix? DefaultCompensation { get; set; }
 
     public float[,] CompensatedEvents
     {
@@ -430,6 +508,9 @@ public sealed class FlowSample : NotifyBase
 
     public float[] GetChannelValues(string channel_name, int[]? event_indices = null)
     {
+        if (Embeddings.TryGetValue(channel_name, out var embedding_values))
+            return select_values(embedding_values, event_indices);
+
         int channel_index = GetChannelIndex(channel_name);
         if (channel_index < 0)
             return Array.Empty<float>();
@@ -448,6 +529,17 @@ public sealed class FlowSample : NotifyBase
         return selected;
     }
 
+    private static float[] select_values(float[] values, int[]? event_indices)
+    {
+        if (event_indices is null)
+            return values.ToArray();
+
+        var selected = new float[event_indices.Length];
+        for (int index = 0; index < event_indices.Length; index++)
+            selected[index] = values[event_indices[index]];
+        return selected;
+    }
+
     public int GetChannelIndex(string channel_name)
     {
         for (int index = 0; index < Channels.Count; index++)
@@ -459,9 +551,22 @@ public sealed class FlowSample : NotifyBase
         return -1;
     }
 
-    public void ApplyCompensation(CompensationMatrix matrix)
+    public void ApplyCompensation(CompensationMatrix? matrix)
     {
-        if (matrix.Values.GetLength(0) != ChannelCount)
+        if (matrix is null || matrix.Values.GetLength(0) == 0)
+        {
+            CompensatedEvents = (float[,])RawEvents.Clone();
+            return;
+        }
+
+        var mapped_indices = matrix.ChannelNames.Select(GetChannelIndex).ToArray();
+        if (mapped_indices.Any(index => index < 0) || matrix.Values.GetLength(0) != mapped_indices.Length || matrix.Values.GetLength(1) != mapped_indices.Length)
+        {
+            CompensatedEvents = (float[,])RawEvents.Clone();
+            return;
+        }
+
+        if (!try_invert(matrix.Values, out var inverse))
         {
             CompensatedEvents = (float[,])RawEvents.Clone();
             return;
@@ -470,42 +575,133 @@ public sealed class FlowSample : NotifyBase
         var compensated = new float[EventCount, ChannelCount];
         for (int row = 0; row < EventCount; row++)
         {
-            for (int target = 0; target < ChannelCount; target++)
+            for (int column = 0; column < ChannelCount; column++)
+                compensated[row, column] = RawEvents[row, column];
+
+            for (int target = 0; target < mapped_indices.Length; target++)
             {
                 double value = 0;
-                for (int source = 0; source < ChannelCount; source++)
-                    value += RawEvents[row, source] * matrix.Values[source, target];
-                compensated[row, target] = Convert.ToSingle(value);
+                for (int source = 0; source < mapped_indices.Length; source++)
+                    value += RawEvents[row, mapped_indices[source]] * inverse[source, target];
+                compensated[row, mapped_indices[target]] = Convert.ToSingle(value);
             }
         }
 
         CompensatedEvents = compensated;
     }
 
+    private static bool try_invert(float[,] matrix, out double[,] inverse)
+    {
+        int size = matrix.GetLength(0);
+        inverse = new double[size, size];
+        if (matrix.GetLength(1) != size)
+            return false;
+
+        var augmented = new double[size, size * 2];
+        for (int row = 0; row < size; row++)
+        {
+            for (int column = 0; column < size; column++)
+                augmented[row, column] = matrix[row, column];
+            augmented[row, size + row] = 1.0;
+        }
+
+        for (int pivot = 0; pivot < size; pivot++)
+        {
+            int best_row = pivot;
+            double best_value = Math.Abs(augmented[pivot, pivot]);
+            for (int row = pivot + 1; row < size; row++)
+            {
+                double value = Math.Abs(augmented[row, pivot]);
+                if (value <= best_value)
+                    continue;
+                best_value = value;
+                best_row = row;
+            }
+
+            if (best_value < 1e-12)
+                return false;
+
+            if (best_row != pivot)
+            {
+                for (int column = 0; column < size * 2; column++)
+                    (augmented[pivot, column], augmented[best_row, column]) = (augmented[best_row, column], augmented[pivot, column]);
+            }
+
+            double divisor = augmented[pivot, pivot];
+            for (int column = 0; column < size * 2; column++)
+                augmented[pivot, column] /= divisor;
+
+            for (int row = 0; row < size; row++)
+            {
+                if (row == pivot)
+                    continue;
+                double factor = augmented[row, pivot];
+                for (int column = 0; column < size * 2; column++)
+                    augmented[row, column] -= factor * augmented[pivot, column];
+            }
+        }
+
+        for (int row = 0; row < size; row++)
+        for (int column = 0; column < size; column++)
+            inverse[row, column] = augmented[row, size + column];
+
+        return true;
+    }
+
     public void Recalculate(FlowGroup group)
     {
-        ApplyCompensation(group.Compensation);
+        ApplyCompensation(group.AppliedCompensation);
         Populations.Clear();
         var all_indices = Enumerable.Range(0, EventCount).ToArray();
         foreach (var gate in group.Gates)
-            Populations.Add(build_population(group, gate, all_indices, all_indices.Length));
+        foreach (var population in build_population_results(group, gate, all_indices, all_indices.Length))
+            Populations.Add(population);
     }
 
     private PopulationResult build_population(FlowGroup group, GateDefinition gate, int[] parent_indices, int all_count)
     {
-        var event_indices = GateEvaluator.Apply(this, gate, parent_indices);
-        var result = new PopulationResult { Gate = gate, EventIndices = event_indices, EventCount = event_indices.Length };
+        return build_population(group, gate, PopulationRegion.Primary, parent_indices, all_count);
+    }
+
+    private PopulationResult build_population(FlowGroup group, GateDefinition gate, PopulationRegion region, int[] parent_indices, int all_count)
+    {
+        var event_indices = GateEvaluator.Apply(this, gate, region, parent_indices);
+        var result = new PopulationResult { Gate = gate, Region = region, EventIndices = event_indices, EventCount = event_indices.Length };
         foreach (var definition in gate.Statistics)
             result.Statistics.Add(StatisticsCalculator.Calculate(this, definition, event_indices, parent_indices.Length, all_count));
         foreach (var child in gate.Children)
-            result.Children.Add(build_population(group, child, event_indices, all_count));
+        {
+            if (child.ParentPopulationRegion != region)
+                continue;
+
+            foreach (var child_result in build_population_results(group, child, event_indices, all_count))
+                result.Children.Add(child_result);
+        }
         return result;
+    }
+
+    private IEnumerable<PopulationResult> build_population_results(FlowGroup group, GateDefinition gate, int[] parent_indices, int all_count)
+    {
+        if (!gate.HasLinkedPopulations)
+        {
+            yield return build_population(group, gate, PopulationRegion.Primary, parent_indices, all_count);
+            yield break;
+        }
+
+        yield return build_population(group, gate, PopulationRegion.TopRight, parent_indices, all_count);
+        yield return build_population(group, gate, PopulationRegion.TopLeft, parent_indices, all_count);
+        yield return build_population(group, gate, PopulationRegion.BottomRight, parent_indices, all_count);
+        yield return build_population(group, gate, PopulationRegion.BottomLeft, parent_indices, all_count);
     }
 }
 
 public sealed class FlowGroup : NotifyBase
 {
     private string name = "Samples";
+    private CompensationMatrix? applied_compensation;
+    private bool applied_compensation_is_manual;
+
+    public Guid Id { get; } = Guid.NewGuid();
 
     public string Name
     {
@@ -515,8 +711,15 @@ public sealed class FlowGroup : NotifyBase
 
     public ObservableCollection<FlowSample> Samples { get; } = new();
     public ObservableCollection<GateDefinition> Gates { get; } = new();
-    public CompensationMatrix Compensation { get; } = new();
+    public ObservableCollection<StatisticDefinition> Statistics { get; } = new();
+    public ObservableCollection<CompensationMatrix> CompensationCandidates { get; } = new();
     public string ChannelProfile { get; private set; } = "";
+
+    public CompensationMatrix? AppliedCompensation
+    {
+        get => applied_compensation;
+        private set => SetField(ref applied_compensation, value);
+    }
 
     public IReadOnlyList<ChannelDefinition> Channels => Samples.FirstOrDefault() is { } sample
         ? sample.Channels.ToList()
@@ -529,12 +732,71 @@ public sealed class FlowGroup : NotifyBase
         if (Samples.Count == 0)
         {
             ChannelProfile = sample.ChannelProfile;
-            Compensation.ResetIdentity(sample.Channels.Select(channel => channel.Name).ToArray());
+        }
+
+        var previous_applied_compensation = AppliedCompensation;
+        if (sample.DefaultCompensation is not null)
+        {
+            var registered = RegisterCompensation(sample.DefaultCompensation, make_applied_if_first: true);
+            if (!applied_compensation_is_manual && AppliedCompensation?.Name == "Identity" && !ReferenceEquals(AppliedCompensation, registered))
+                AppliedCompensation = registered;
+        }
+        else if (CompensationCandidates.Count == 0)
+        {
+            var identity = new CompensationMatrix { Name = "Identity" };
+            identity.ResetIdentity(sample.Channels.Select(channel => channel.Name).ToArray());
+            RegisterCompensation(identity, make_applied_if_first: true);
         }
 
         Samples.Add(sample);
-        sample.Recalculate(this);
+        if (ReferenceEquals(previous_applied_compensation, AppliedCompensation))
+            sample.Recalculate(this);
+        else
+            RecalculateSamples();
         OnPropertyChanged(nameof(Channels));
+    }
+
+    public CompensationMatrix RegisterCompensation(CompensationMatrix compensation, bool make_applied_if_first)
+    {
+        var existing = CompensationCandidates.FirstOrDefault(item => item.IsEquivalentTo(compensation));
+        if (existing is not null)
+        {
+            if (AppliedCompensation is null && make_applied_if_first && !applied_compensation_is_manual)
+                AppliedCompensation = existing;
+            return existing;
+        }
+
+        compensation.Name = unique_compensation_name(compensation.Name);
+        CompensationCandidates.Add(compensation);
+        if (AppliedCompensation is null && make_applied_if_first && !applied_compensation_is_manual)
+            AppliedCompensation = compensation;
+        return compensation;
+    }
+
+    public void SetAppliedCompensation(CompensationMatrix compensation, bool manual)
+    {
+        if (!CompensationCandidates.Contains(compensation))
+            RegisterCompensation(compensation, make_applied_if_first: false);
+
+        AppliedCompensation = compensation;
+        applied_compensation_is_manual |= manual;
+        RecalculateSamples();
+    }
+
+    public bool IsAppliedCompensation(CompensationMatrix compensation) =>
+        ReferenceEquals(AppliedCompensation, compensation);
+
+    private string unique_compensation_name(string preferred_name)
+    {
+        string base_name = string.IsNullOrWhiteSpace(preferred_name) ? "Compensation" : preferred_name.Trim();
+        if (CompensationCandidates.All(item => item.Name != base_name))
+            return base_name;
+
+        int index = 2;
+        while (CompensationCandidates.Any(item => item.Name == $"{base_name} {index}"))
+            index++;
+
+        return $"{base_name} {index}";
     }
 
     public void RecalculateSamples()

@@ -9,6 +9,11 @@ public static class GateEvaluator
 {
     public static int[] Apply(FlowSample sample, GateDefinition gate, int[] parent_indices)
     {
+        return Apply(sample, gate, PopulationRegion.Primary, parent_indices);
+    }
+
+    public static int[] Apply(FlowSample sample, GateDefinition gate, PopulationRegion region, int[] parent_indices)
+    {
         if (gate.Kind is GateKind.Merge or GateKind.Exclude or GateKind.Overlap)
             return parent_indices.ToArray();
 
@@ -25,7 +30,7 @@ public static class GateEvaluator
         {
             double x_value = x_values[row];
             double y_value = y_values is null ? 0 : y_values[row];
-            if (Contains(gate, x_value, y_value))
+            if (Contains(gate, region, x_value, y_value))
                 selected.Add(row);
         }
 
@@ -34,30 +39,52 @@ public static class GateEvaluator
 
     public static bool Contains(GateDefinition gate, double x_value, double y_value)
     {
+        return Contains(gate, PopulationRegion.Primary, x_value, y_value);
+    }
+
+    public static bool Contains(GateDefinition gate, PopulationRegion region, double x_value, double y_value)
+    {
         if (gate.Vertices.Count == 0)
             return true;
 
-        double transformed_x = gate.XScale.Transform(x_value);
-        double transformed_y = gate.IsOneDimensional ? 0 : gate.YScale.Transform(y_value);
-        var transformed_vertices = transformed_gate_vertices(gate);
+        double normalized_x = normalize_x(gate, x_value);
+        double normalized_y = gate.IsOneDimensional ? 0 : normalize_y(gate, y_value);
+        var normalized_vertices = normalized_gate_vertices(gate);
         return gate.Kind switch
         {
-            GateKind.Polygon => contains_polygon(transformed_vertices, transformed_x, transformed_y),
-            GateKind.Rectangle => contains_rectangle(transformed_vertices, transformed_x, transformed_y),
-            GateKind.Threshold => transformed_x >= transformed_vertices[0].X,
-            GateKind.Range => contains_range(transformed_vertices, transformed_x),
-            GateKind.Quadrant => transformed_x >= transformed_vertices[0].X && transformed_y >= transformed_vertices[0].Y,
-            GateKind.CurlyQuadrant => transformed_x >= transformed_vertices[0].X && transformed_y >= transformed_vertices[0].Y,
+            GateKind.Polygon => contains_polygon(normalized_vertices, normalized_x, normalized_y),
+            GateKind.Rectangle => contains_rectangle(normalized_vertices, normalized_x, normalized_y),
+            GateKind.Threshold => normalized_x >= normalized_vertices[0].X,
+            GateKind.Range => contains_range(normalized_vertices, normalized_x),
+            GateKind.Quadrant => contains_quadrant(normalized_vertices[0], normalized_x, normalized_y, region),
+            GateKind.CurlyQuadrant => contains_quadrant(normalized_vertices[0], normalized_x, normalized_y, region),
             _ => true
         };
     }
 
-    private static Point[] transformed_gate_vertices(GateDefinition gate) =>
+    private static Point[] normalized_gate_vertices(GateDefinition gate) =>
         gate.Vertices
             .Select(vertex => new Point(
-                gate.XScale.Transform(vertex.X),
-                gate.IsOneDimensional ? 0 : gate.YScale.Transform(vertex.Y)))
+                normalize_x(gate, vertex.X),
+                gate.IsOneDimensional ? 0 : normalize_y(gate, vertex.Y)))
             .ToArray();
+
+    private static double normalize_x(GateDefinition gate, double value) =>
+        normalize(value, gate.XMinimum, gate.XMaximum, gate.XScale);
+
+    private static double normalize_y(GateDefinition gate, double value) =>
+        normalize(value, gate.YMinimum, gate.YMaximum, gate.YScale);
+
+    private static double normalize(double value, double minimum, double maximum, AxisScale scale)
+    {
+        double transformed_minimum = scale.Transform(minimum);
+        double transformed_maximum = scale.Transform(maximum);
+        double transformed_span = transformed_maximum - transformed_minimum;
+        if (transformed_span <= 0)
+            return 0;
+
+        return (scale.Transform(value) - transformed_minimum) / transformed_span;
+    }
 
     private static bool contains_polygon(IReadOnlyList<Point> vertices, double x_value, double y_value)
     {
@@ -102,6 +129,17 @@ public static class GateEvaluator
         double min_x = Math.Min(vertices[0].X, vertices[1].X);
         double max_x = Math.Max(vertices[0].X, vertices[1].X);
         return x_value >= min_x && x_value <= max_x;
+    }
+
+    private static bool contains_quadrant(Point center, double x_value, double y_value, PopulationRegion region)
+    {
+        return region switch
+        {
+            PopulationRegion.TopLeft => x_value < center.X && y_value >= center.Y,
+            PopulationRegion.BottomRight => x_value >= center.X && y_value < center.Y,
+            PopulationRegion.BottomLeft => x_value < center.X && y_value < center.Y,
+            _ => x_value >= center.X && y_value >= center.Y
+        };
     }
 }
 

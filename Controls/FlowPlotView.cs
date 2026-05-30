@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Globalization;
 using System.Linq;
@@ -42,6 +43,18 @@ public sealed class FlowPlotView : Control
     public static readonly StyledProperty<PlotMode> PlotModeProperty =
         AvaloniaProperty.Register<FlowPlotView, PlotMode>(nameof(PlotMode), PlotMode.Density);
 
+    public static readonly StyledProperty<bool> ShowOutlierPointsProperty =
+        AvaloniaProperty.Register<FlowPlotView, bool>(nameof(ShowOutlierPoints), true);
+
+    public static readonly StyledProperty<bool> ShowGridlinesProperty =
+        AvaloniaProperty.Register<FlowPlotView, bool>(nameof(ShowGridlines), true);
+
+    public static readonly StyledProperty<int> ContourLevelCountProperty =
+        AvaloniaProperty.Register<FlowPlotView, int>(nameof(ContourLevelCount), 20);
+
+    public static readonly StyledProperty<int> DensitySmoothingProperty =
+        AvaloniaProperty.Register<FlowPlotView, int>(nameof(DensitySmoothing), 3);
+
     public static readonly StyledProperty<GatingTool> ActiveToolProperty =
         AvaloniaProperty.Register<FlowPlotView, GatingTool>(nameof(ActiveTool), GatingTool.View);
 
@@ -60,6 +73,9 @@ public sealed class FlowPlotView : Control
     private Point pending_preview_point;
     private bool has_pending_preview_point;
     private Rect plot_rect;
+    private FlowGroup? subscribed_group;
+    private FlowSample? subscribed_sample;
+    private readonly List<FlowSample> subscribed_group_samples = new();
     private AxisSettings? subscribed_x_axis;
     private AxisSettings? subscribed_y_axis;
     private WriteableBitmap? cached_plot_bitmap;
@@ -77,6 +93,10 @@ public sealed class FlowPlotView : Control
             XAxisProperty,
             YAxisProperty,
             PlotModeProperty,
+            ShowOutlierPointsProperty,
+            ShowGridlinesProperty,
+            ContourLevelCountProperty,
+            DensitySmoothingProperty,
             ActiveToolProperty,
             GateCreatedCommandProperty,
             GateEditedCommandProperty);
@@ -130,6 +150,30 @@ public sealed class FlowPlotView : Control
         set => SetValue(PlotModeProperty, value);
     }
 
+    public bool ShowOutlierPoints
+    {
+        get => GetValue(ShowOutlierPointsProperty);
+        set => SetValue(ShowOutlierPointsProperty, value);
+    }
+
+    public bool ShowGridlines
+    {
+        get => GetValue(ShowGridlinesProperty);
+        set => SetValue(ShowGridlinesProperty, value);
+    }
+
+    public int ContourLevelCount
+    {
+        get => GetValue(ContourLevelCountProperty);
+        set => SetValue(ContourLevelCountProperty, value);
+    }
+
+    public int DensitySmoothing
+    {
+        get => GetValue(DensitySmoothingProperty);
+        set => SetValue(DensitySmoothingProperty, value);
+    }
+
     public GatingTool ActiveTool
     {
         get => GetValue(ActiveToolProperty);
@@ -176,6 +220,10 @@ public sealed class FlowPlotView : Control
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
+        if (change.Property == GroupProperty)
+            resubscribe_group(Group);
+        if (change.Property == SampleProperty)
+            resubscribe_sample(Sample);
         if (change.Property == XAxisProperty)
             resubscribe_axis(ref subscribed_x_axis, XAxis);
         if (change.Property == YAxisProperty)
@@ -191,8 +239,13 @@ public sealed class FlowPlotView : Control
             || change.Property == PopulationProperty
             || change.Property == XAxisProperty
             || change.Property == YAxisProperty
-            || change.Property == PlotModeProperty)
+            || change.Property == PlotModeProperty
+            || change.Property == ShowOutlierPointsProperty
+            || change.Property == DensitySmoothingProperty
+            || change.Property == ContourLevelCountProperty)
             invalidate_plot_cache();
+        if (change.Property == ShowGridlinesProperty)
+            InvalidateVisual();
     }
 
     protected override void OnPointerMoved(PointerEventArgs e)
@@ -269,10 +322,13 @@ public sealed class FlowPlotView : Control
         if (XAxis is null || YAxis is null)
             return;
 
-        draw_grid(context);
+        if (ShowGridlines)
+            draw_grid(context);
 
         if (is_histogram_mode())
             draw_plot_bitmap(context, true);
+        else if (PlotMode == PlotMode.Contour)
+            draw_contour_plot(context);
         else draw_density(context);
 
         draw_axes(context);
@@ -284,6 +340,81 @@ public sealed class FlowPlotView : Control
     {
         draw_plot_bitmap(context, false);
     }
+
+    private void draw_contour_plot(DrawingContext context)
+    {
+        var grid = create_density_grid();
+        if (grid is null)
+            return;
+
+        if (ShowOutlierPoints)
+            context.DrawImage(create_dotplot_bitmap(grid.Value.density, grid.Value.total_count), plot_rect);
+
+        var normalized_density = smooth_density(normalized_density_grid(grid.Value.density, grid.Value.max_density), DensitySmoothing);
+        double[] levels = contour_levels(ContourLevelCount);
+        context.DrawImage(create_filled_contour_bitmap(normalized_density, levels), plot_rect);
+
+        var pen = new Pen(Brushes.Black, 0.8);
+        foreach (double level in levels)
+            draw_contour_level(context, normalized_density, level, pen);
+    }
+
+    private static WriteableBitmap create_filled_contour_bitmap(double[,] normalized_density, double[] levels)
+    {
+        var pixels = new byte[density_size * density_size * 4];
+        for (int x_bin = 0; x_bin < density_size; x_bin++)
+        for (int y_bin = 0; y_bin < density_size; y_bin++)
+        {
+            double value = normalized_density[x_bin, y_bin];
+            int level_index = Array.FindLastIndex(levels, level => value >= level);
+            if (level_index < 0)
+                continue;
+
+            double normalized_level = (level_index + 1.0) / levels.Length;
+            byte shade = Convert.ToByte(250 - normalized_level * 210);
+            set_pixel(pixels, x_bin, density_size - 1 - y_bin, Color.FromRgb(shade, shade, shade));
+        }
+
+        return create_bitmap(pixels);
+    }
+
+    private void draw_contour_level(DrawingContext context, double[,] density, double level, Pen pen)
+    {
+        for (int x = 0; x < density_size - 1; x++)
+        for (int y = 0; y < density_size - 1; y++)
+        {
+            var points = contour_cell_points(density[x, y], density[x + 1, y], density[x + 1, y + 1], density[x, y + 1], x, y, level);
+            for (int index = 0; index + 1 < points.Count; index += 2)
+                context.DrawLine(pen, density_to_screen(points[index]), density_to_screen(points[index + 1]));
+        }
+    }
+
+    private static List<Point> contour_cell_points(double bottom_left, double bottom_right, double top_right, double top_left, int x, int y, double level)
+    {
+        var points = new List<Point>(4);
+        add_contour_intersection(points, bottom_left, bottom_right, new Point(x, y), new Point(x + 1, y), level);
+        add_contour_intersection(points, bottom_right, top_right, new Point(x + 1, y), new Point(x + 1, y + 1), level);
+        add_contour_intersection(points, top_right, top_left, new Point(x + 1, y + 1), new Point(x, y + 1), level);
+        add_contour_intersection(points, top_left, bottom_left, new Point(x, y + 1), new Point(x, y), level);
+        if (points.Count == 4)
+            return [points[0], points[1], points[2], points[3]];
+
+        return points;
+    }
+
+    private static void add_contour_intersection(List<Point> points, double first_value, double second_value, Point first, Point second, double level)
+    {
+        if ((first_value < level && second_value < level) || (first_value > level && second_value > level) || Math.Abs(first_value - second_value) < double.Epsilon)
+            return;
+
+        double t = Math.Clamp((level - first_value) / (second_value - first_value), 0, 1);
+        points.Add(new Point(first.X + (second.X - first.X) * t, first.Y + (second.Y - first.Y) * t));
+    }
+
+    private Point density_to_screen(Point point) =>
+        new(
+            plot_rect.Left + point.X / (density_size - 1) * plot_rect.Width,
+            plot_rect.Bottom - point.Y / (density_size - 1) * plot_rect.Height);
 
     private void draw_plot_bitmap(DrawingContext context, bool histogram)
     {
@@ -300,12 +431,42 @@ public sealed class FlowPlotView : Control
 
     private WriteableBitmap? create_density_bitmap()
     {
+        var grid = create_density_grid();
+        if (grid is null)
+            return null;
+
+        if (PlotMode == PlotMode.Dotplot)
+            return create_dotplot_bitmap(grid.Value.density, grid.Value.total_count);
+
+        var normalized_density = normalized_density_grid(grid.Value.density, grid.Value.max_density);
+        if (PlotMode == PlotMode.Zebra)
+            normalized_density = smooth_density(normalized_density, DensitySmoothing);
+        var pixels = new byte[density_size * density_size * 4];
+        if (PlotMode == PlotMode.Zebra && ShowOutlierPoints)
+            add_dotplot_pixels(pixels, grid.Value.density, grid.Value.total_count);
+
+        for (int x_bin = 0; x_bin < density_size; x_bin++)
+        for (int y_bin = 0; y_bin < density_size; y_bin++)
+        {
+            double normalized = normalized_density[x_bin, y_bin];
+            if (normalized <= 0)
+                continue;
+
+            set_pixel(pixels, x_bin, density_size - 1 - y_bin, plot_color(normalized, PlotMode, ContourLevelCount));
+        }
+
+        return create_bitmap(pixels);
+    }
+
+    private (int[,] density, int max_density, int total_count)? create_density_grid()
+    {
         var samples = resolve_samples().ToArray();
         if (samples.Length == 0 || XAxis is null || YAxis is null)
             return null;
 
         var density = new int[density_size, density_size];
         int max_density = 0;
+        int total_count = 0;
         double x_minimum = XAxis.Scale.Transform(XAxis.Minimum);
         double x_span = XAxis.Scale.Transform(XAxis.Maximum) - x_minimum;
         double y_minimum = YAxis.Scale.Transform(YAxis.Minimum);
@@ -327,42 +488,49 @@ public sealed class FlowPlotView : Control
                 if (x_bin < 0 || y_bin < 0)
                     continue;
 
+                total_count++;
                 int value = ++density[x_bin, y_bin];
                 if (value > max_density)
                     max_density = value;
             }
         }
 
-        if (max_density == 0)
-            return null;
+        return max_density == 0 ? null : (density, max_density, total_count);
+    }
 
+    private static double[,] normalized_density_grid(int[,] density, int max_density)
+    {
         var normalized_density = new double[density_size, density_size];
+        double denominator = Math.Log(1 + max_density);
         for (int x_bin = 0; x_bin < density_size; x_bin++)
         for (int y_bin = 0; y_bin < density_size; y_bin++)
         {
             int value = density[x_bin, y_bin];
             if (value > 0)
-                normalized_density[x_bin, y_bin] = Math.Log(1 + value) / Math.Log(1 + max_density);
+                normalized_density[x_bin, y_bin] = Math.Log(1 + value) / denominator;
         }
 
-        if (PlotMode is PlotMode.Contour or PlotMode.Zebra)
-            normalized_density = smooth_density(normalized_density);
+        return normalized_density;
+    }
 
+    private static WriteableBitmap create_dotplot_bitmap(int[,] density, int total_count)
+    {
         var pixels = new byte[density_size * density_size * 4];
+        add_dotplot_pixels(pixels, density, total_count);
+        return create_bitmap(pixels);
+    }
+
+    private static void add_dotplot_pixels(byte[] pixels, int[,] density, int total_count)
+    {
+        double threshold = total_count * 0.00001;
         for (int x_bin = 0; x_bin < density_size; x_bin++)
         for (int y_bin = 0; y_bin < density_size; y_bin++)
         {
-            double normalized = normalized_density[x_bin, y_bin];
-            if (normalized <= 0)
+            if (density[x_bin, y_bin] <= threshold)
                 continue;
 
-            if (PlotMode == PlotMode.Contour && !is_contour_cell(normalized_density, x_bin, y_bin))
-                continue;
-
-            set_pixel(pixels, x_bin, density_size - 1 - y_bin, plot_color(normalized, PlotMode));
+            set_pixel(pixels, x_bin, density_size - 1 - y_bin, Colors.Black);
         }
-
-        return create_bitmap(pixels);
     }
 
     private WriteableBitmap? create_histogram_bitmap()
@@ -400,7 +568,7 @@ public sealed class FlowPlotView : Control
             return null;
 
         var pixels = new byte[density_size * density_size * 4];
-        var fill = Color.FromRgb(62, 194, 175);
+        var fill = Colors.Black;
         for (int bin = 0; bin < density_size; bin++)
         {
             int height = Math.Clamp((int)Math.Round(bins[bin] / (double)max_count * density_size), 0, density_size);
@@ -884,22 +1052,17 @@ public sealed class FlowPlotView : Control
         return Color.FromRgb(255, Convert.ToByte(220 - (value - 0.75) * 260), 40);
     }
 
-    private static bool is_contour_cell(double[,] normalized_density, int x_bin, int y_bin)
+    private static double[,] smooth_density(double[,] source, int passes)
     {
-        double[] levels = [0.2, 0.35, 0.5, 0.65, 0.8, 0.92];
-        double value = normalized_density[x_bin, y_bin];
-        double right = x_bin + 1 < density_size ? normalized_density[x_bin + 1, y_bin] : value;
-        double up = y_bin + 1 < density_size ? normalized_density[x_bin, y_bin + 1] : value;
-        return levels.Any(level =>
-            crosses_level(value, right, level)
-            || crosses_level(value, up, level)
-            || Math.Abs(value - level) < 0.01);
+        passes = Math.Clamp(passes, 0, 12);
+        var result = source;
+        for (int pass = 0; pass < passes; pass++)
+            result = smooth_density_once(result);
+
+        return result;
     }
 
-    private static bool crosses_level(double first, double second, double level) =>
-        first <= level && second >= level || second <= level && first >= level;
-
-    private static double[,] smooth_density(double[,] source)
+    private static double[,] smooth_density_once(double[,] source)
     {
         double[] kernel = [1, 4, 6, 4, 1];
         var horizontal = new double[density_size, density_size];
@@ -946,17 +1109,31 @@ public sealed class FlowPlotView : Control
         return result;
     }
 
-    private static Color plot_color(double value, PlotMode mode)
+    private static double[] contour_levels(int count)
     {
-        if (mode == PlotMode.Contour)
-            return Color.FromRgb(38, 84, 160);
+        count = Math.Clamp(count, 2, 80);
+        var levels = new double[count];
+        for (int index = 0; index < count; index++)
+            levels[index] = 0.08 + 0.88 * (index + 1) / (count + 1);
 
+        return levels;
+    }
+
+    private static Color plot_color(double value, PlotMode mode, int level_count)
+    {
         if (mode == PlotMode.Zebra)
         {
-            int band = (int)Math.Floor(value * 12);
-            return band % 2 == 0
-                ? Color.FromRgb(18, 34, 88)
-                : Color.FromRgb(0, 186, 172);
+            Color[] cycle =
+            [
+                Color.FromRgb(220, 220, 220),
+                Color.FromRgb(150, 150, 150),
+                Color.FromRgb(85, 85, 85),
+                Color.FromRgb(35, 35, 35),
+                Colors.Black
+            ];
+            int bands = Math.Clamp(level_count * 5, 10, 400);
+            int band = Math.Clamp((int)Math.Floor(value * bands), 0, bands - 1);
+            return cycle[band % cycle.Length];
         }
 
         return density_color(value);
@@ -1096,6 +1273,72 @@ public sealed class FlowPlotView : Control
 
     private static bool is_tick_in_range(double value, AxisSettings? axis) =>
         axis is not null && value >= axis.Minimum && value <= axis.Maximum;
+
+    private void resubscribe_group(FlowGroup? group)
+    {
+        if (subscribed_group is not null)
+        {
+            subscribed_group.Samples.CollectionChanged -= group_samples_collection_changed;
+            unsubscribe_group_samples();
+        }
+
+        subscribed_group = group;
+        if (subscribed_group is null)
+            return;
+
+        subscribed_group.Samples.CollectionChanged += group_samples_collection_changed;
+        subscribe_group_samples();
+    }
+
+    private void resubscribe_sample(FlowSample? sample)
+    {
+        if (subscribed_sample is not null)
+            subscribed_sample.PropertyChanged -= sample_property_changed;
+
+        subscribed_sample = sample;
+        if (subscribed_sample is not null)
+            subscribed_sample.PropertyChanged += sample_property_changed;
+        if (subscribed_group is not null)
+        {
+            unsubscribe_group_samples();
+            subscribe_group_samples();
+        }
+    }
+
+    private void group_samples_collection_changed(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        unsubscribe_group_samples();
+        subscribe_group_samples();
+        invalidate_plot_cache();
+    }
+
+    private void subscribe_group_samples()
+    {
+        if (subscribed_group is null)
+            return;
+
+        foreach (var sample in subscribed_group.Samples)
+        {
+            if (ReferenceEquals(sample, subscribed_sample))
+                continue;
+
+            sample.PropertyChanged += sample_property_changed;
+            subscribed_group_samples.Add(sample);
+        }
+    }
+
+    private void unsubscribe_group_samples()
+    {
+        foreach (var sample in subscribed_group_samples)
+            sample.PropertyChanged -= sample_property_changed;
+        subscribed_group_samples.Clear();
+    }
+
+    private void sample_property_changed(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(FlowSample.CompensatedEvents) or null or "")
+            invalidate_plot_cache();
+    }
 
     private void resubscribe_axis(ref AxisSettings? old_axis, AxisSettings? new_axis)
     {

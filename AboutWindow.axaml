@@ -1,0 +1,56 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="gated.AboutWindow"
+        Width="450"
+        SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource SemiColorBackground0}"
+        Title="About Gated">
+    <Border Padding="24">
+        <Grid RowDefinitions="Auto,*,Auto">
+            <StackPanel Orientation="Horizontal" Spacing="18" HorizontalAlignment="Center">
+                <Image Width="32" Height="32" Source="avares://gated/app.ico" />
+                <StackPanel>
+                    <TextBlock Text="Gated"
+                               Foreground="{DynamicResource SemiColorText0}"
+                               FontSize="22"
+                               FontWeight="Light" />
+                    <TextBlock Text="Flow Cytometry Analyser"
+                               Foreground="{DynamicResource SemiColorText2}" />
+                </StackPanel>
+            </StackPanel>
+
+            <StackPanel Grid.Row="1" Margin="0,24,0,0" Spacing="6">
+                <TextBlock Text="Copyright (C) Zheng Yang 2025 - 2026" TextAlignment="Center"
+                           Foreground="{DynamicResource SemiColorText0}" />
+            
+                <TextBlock HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center"
+                           LineHeight="18" Margin="30 10" FontSize="12" Foreground="#909090" FontWeight="Regular">
+                    This program is free software: you can redistribute it and/or modify it under the terms
+                    of the <Italic Foreground="#e0e0e0">GNU General Public License</Italic> as published by 
+                    the Free Software Foundation, either <Italic Foreground="#e0e0e0">version 3</Italic> of 
+                    the license, or (at your opinion) any later version.
+                </TextBlock>
+                <TextBlock HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center"
+                           LineHeight="18" Margin="30 10" FontSize="12" Foreground="#909090" FontWeight="Regular">
+                    This program is distributed in the hope that it will be useful, but 
+                    <Italic Foreground="#e0e0e0">without any warranty</Italic>; without even the implied warranty
+                    of <Italic Foreground="#e0e0e0">merchantability</Italic> or 
+                    <Italic Foreground="#e0e0e0">fitness of a particular purpose</Italic>. See the 
+                    GNU General Public License for details.
+                </TextBlock>
+                <Label HorizontalAlignment="Center" Margin="0 5 0 5" FontSize="12" Foreground="#f0f0f0" FontWeight="Regular">
+                    0.19.0
+                </Label>
+
+            </StackPanel>
+
+            <Button Grid.Row="2"
+                    HorizontalAlignment="Right"
+                    MinWidth="88"
+                    Content="OK"
+                    Click="ok_button_click" />
+        </Grid>
+    </Border>
+</Window>

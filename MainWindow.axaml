@@ -45,59 +45,66 @@
 
         <Menu DockPanel.Dock="Top" Background="#252530">
             <MenuItem Header="_File">
-                <MenuItem Header="Open workspace ..." InputGesture="Ctrl+Shift+O" IsEnabled="False" />
+                <MenuItem Header="Open workspace ..." InputGesture="Ctrl+Shift+O" Click="open_workspace_menu_item_click" />
                 <MenuItem Header="Open FCS ..." InputGesture="Ctrl+O" Click="open_fcs_menu_item_click" />
-                <MenuItem Header="Save workspace ..." InputGesture="Ctrl+S" IsEnabled="False" />
+                <MenuItem Header="Save workspace ..." InputGesture="Ctrl+S" Click="save_workspace_menu_item_click" />
             </MenuItem>
             <MenuItem Header="_Samples">
                 <MenuItem Header="Create group" Command="{Binding CreateGroupCommand}" />
-                <MenuItem Header="Rename group" IsEnabled="False" />
+                <MenuItem Header="Rename group" Command="{Binding RenameGroupCommand}" />
                 <MenuItem Header="Delete group" Command="{Binding DeleteSelectedCommand}" />
                 <Separator />
                 <MenuItem Header="Append samples to groups" Click="open_fcs_menu_item_click" />
                 <MenuItem Header="Delete selected samples" Command="{Binding DeleteSelectedCommand}" />
-                <MenuItem Header="Concatenate" IsEnabled="False" />
+                <MenuItem Header="Concatenate" Command="{Binding ConcatenateSamplesCommand}" />
                 <MenuItem Header="Select equivalent nodes" IsEnabled="False" />
-                <MenuItem Header="Expand" IsEnabled="False" />
-                <MenuItem Header="Collapse" IsEnabled="False" />
+                <MenuItem Header="Expand" Command="{Binding ExpandProjectTreeCommand}" />
+                <MenuItem Header="Collapse" Command="{Binding CollapseProjectTreeCommand}" />
                 <MenuItem Header="Channel settings ..." IsEnabled="False" />
             </MenuItem>
             <MenuItem Header="_Plotting">
-                <MenuItem Header="Density" Click="density_menu_item_click" />
-                <MenuItem Header="Contour" Click="contour_menu_item_click" />
-                <MenuItem Header="Zebra" Click="zebra_menu_item_click" />
-                <MenuItem Header="Histogram" Click="histogram_menu_item_click" />
+                <MenuItem Header="Density" ToggleType="Radio" IsChecked="{Binding IsDensityPlotMode, Mode=OneWay}" Click="density_menu_item_click" />
+                <MenuItem Header="Dotplot" ToggleType="Radio" IsChecked="{Binding IsDotplotPlotMode, Mode=OneWay}" Click="dotplot_menu_item_click" />
+                <MenuItem Header="Contour" ToggleType="Radio" IsChecked="{Binding IsContourPlotMode, Mode=OneWay}" Click="contour_menu_item_click" />
+                <MenuItem Header="Zebra" ToggleType="Radio" IsChecked="{Binding IsZebraPlotMode, Mode=OneWay}" Click="zebra_menu_item_click" />
+                <MenuItem Header="Histogram" ToggleType="Radio" IsChecked="{Binding IsHistogramPlotMode, Mode=OneWay}" Click="histogram_menu_item_click" />
+                <Separator />
+                <MenuItem Header="Show outlier points" ToggleType="CheckBox" IsChecked="{Binding ShowOutlierPoints, Mode=TwoWay}" />
+                <MenuItem Header="Show gridlines" ToggleType="CheckBox" IsChecked="{Binding ShowGridlines, Mode=TwoWay}" />
             </MenuItem>
             <MenuItem Header="_Gating">
-                <MenuItem Header="View" Click="view_tool_menu_item_click" />
-                <MenuItem Header="Polygon gate" Click="polygon_tool_menu_item_click" />
-                <MenuItem Header="Rectangle gate" Click="rectangle_tool_menu_item_click" />
-                <MenuItem Header="Quad gate" Click="quadrant_tool_menu_item_click" />
-                <MenuItem Header="Curly quad gate" Click="curly_quadrant_tool_menu_item_click" />
-                <MenuItem Header="Threshold gate" Click="threshold_tool_menu_item_click" />
-                <MenuItem Header="Range gate" Click="range_tool_menu_item_click" />
+                <MenuItem Header="View" ToggleType="Radio" IsChecked="{Binding IsViewTool, Mode=OneWay}" Click="view_tool_menu_item_click" />
+                <MenuItem Header="Polygon gate" ToggleType="Radio" IsChecked="{Binding IsPolygonTool, Mode=OneWay}" Click="polygon_tool_menu_item_click" />
+                <MenuItem Header="Rectangle gate" ToggleType="Radio" IsChecked="{Binding IsRectangleTool, Mode=OneWay}" Click="rectangle_tool_menu_item_click" />
+                <MenuItem Header="Quad gate" ToggleType="Radio" IsChecked="{Binding IsQuadrantTool, Mode=OneWay}" Click="quadrant_tool_menu_item_click" />
+                <MenuItem Header="Curly quad gate" ToggleType="Radio" IsChecked="{Binding IsCurlyQuadrantTool, Mode=OneWay}" Click="curly_quadrant_tool_menu_item_click" />
+                <MenuItem Header="Threshold gate" ToggleType="Radio" IsChecked="{Binding IsThresholdTool, Mode=OneWay}" Click="threshold_tool_menu_item_click" />
+                <MenuItem Header="Range gate" ToggleType="Radio" IsChecked="{Binding IsRangeTool, Mode=OneWay}" Click="range_tool_menu_item_click" />
                 <Separator />
                 <MenuItem Header="Merge" IsEnabled="False" />
                 <MenuItem Header="Exclude" IsEnabled="False" />
                 <MenuItem Header="Overlap" IsEnabled="False" />
                 <Separator />
-                <MenuItem Header="Rename gate" IsEnabled="False" />
+                <MenuItem Header="Rename gate" Command="{Binding RenameGateCommand}" />
                 <MenuItem Header="Delete selected gate" Command="{Binding DeleteSelectedCommand}" />
             </MenuItem>
             <MenuItem Header="_Compensation">
-                <MenuItem Header="Compensation table editor ..." IsEnabled="False" />
+                <MenuItem Header="Apply selected compensation" Command="{Binding ApplyCompensationCommand}" />
+                <MenuItem Header="Compensation table editor ..." Command="{Binding EditCompensationCommand}" />
             </MenuItem>
             <MenuItem Header="_Statistics">
                 <MenuItem Header="Mean" Command="{Binding AddMeanStatisticCommand}" />
                 <MenuItem Header="Median" Command="{Binding AddMedianStatisticCommand}" />
-                <MenuItem Header="Geometric mean" IsEnabled="False" />
-                <MenuItem Header="Coefficient of variation (CV)" IsEnabled="False" />
-                <MenuItem Header="Standard deviation (SD)" IsEnabled="False" />
-                <MenuItem Header="Frequency of parent population" IsEnabled="False" />
-                <MenuItem Header="Frequency of all" IsEnabled="False" />
+                <MenuItem Header="Geometric mean" Command="{Binding AddGeometricMeanStatisticCommand}" />
+                <MenuItem Header="Coefficient of variation (CV)" Command="{Binding AddCoefficientOfVariationStatisticCommand}" />
+                <MenuItem Header="Standard deviation (SD)" Command="{Binding AddStandardDeviationStatisticCommand}" />
+                <MenuItem Header="Frequency of parent population" Command="{Binding AddFrequencyOfParentStatisticCommand}" />
+                <MenuItem Header="Frequency of all" Command="{Binding AddFrequencyOfAllStatisticCommand}" />
                 <MenuItem Header="Number of events" Command="{Binding AddCountStatisticCommand}" />
             </MenuItem>
-            <MenuItem Header="_Help" />
+            <MenuItem Header="_Help">
+                <MenuItem Header="About Gated" Click="about_menu_item_click" />
+            </MenuItem>
         </Menu>
 
         <Grid DockPanel.Dock="Top" Height="6" Background="{DynamicResource SemiColorSplits}" />
@@ -119,8 +126,8 @@
                     BorderThickness="0,0,1,0"
                     Background="{DynamicResource SemiColorBackground0}">
                 <ScrollViewer HorizontalScrollBarVisibility="Disabled"
-                              VerticalScrollBarVisibility="Auto">
-                    <controls:ProjectTreeView Margin="4"
+                              VerticalScrollBarVisibility="Auto" Margin="8">
+                    <controls:ProjectTreeView Margin="4 0 4 4"
                                               Nodes="{Binding ProjectNodes}"
                                               SelectNodeCommand="{Binding SelectProjectNodeCommand}"
                                               ToggleNodeCommand="{Binding ToggleProjectNodeCommand}" />
@@ -149,10 +156,17 @@
                                 BorderThickness="1"
                                 Background="{DynamicResource SemiColorBackground0}">
                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                <Button Width="44" Height="44" Click="view_tool_menu_item_click">V</Button>
-                                <Button Width="44" Height="44" Click="polygon_tool_menu_item_click">P</Button>
-                                <Button Width="44" Height="44" Click="rectangle_tool_menu_item_click">R</Button>
-                                <Button Width="44" Height="44" Click="threshold_tool_menu_item_click">T</Button>
+                                <Button Width="44" Height="44" Click="view_tool_menu_item_click">
+                                    <Image Width="28" Height="28" Source="{SvgImage avares://gated/Resources/pointer.svg}" />
+                                </Button>
+                                <Button Width="44" Height="44" Click="polygon_tool_menu_item_click">
+                                    <Image Width="28" Height="28" Source="{SvgImage avares://gated/Resources/polygon.svg}" />
+                                </Button>
+                                <Button Width="44" Height="44" Click="quadrant_tool_menu_item_click">
+                                    <Image Width="28" Height="28" Source="{SvgImage avares://gated/Resources/cross.svg}" />
+                                </Button>
+                                <Button Width="44" Height="44" Click="threshold_tool_menu_item_click">T
+                                </Button>
                                 <Button Width="44" Height="44" Click="range_tool_menu_item_click">Rg</Button>
                                 <TextBlock Margin="18,0,8,0" VerticalAlignment="Center" Foreground="{DynamicResource SemiColorText2}" Text="{Binding ActiveTool}" />
                             </StackPanel>
@@ -167,6 +181,10 @@
                                                XAxis="{Binding XAxis}"
                                                YAxis="{Binding YAxis}"
                                                PlotMode="{Binding EffectivePlotMode}"
+                                               ShowOutlierPoints="{Binding ShowOutlierPoints}"
+                                               ShowGridlines="{Binding ShowGridlines}"
+                                               ContourLevelCount="{Binding ContourLevelCount}"
+                                               DensitySmoothing="{Binding DensitySmoothing}"
                                                ActiveTool="{Binding ActiveTool}"
                                                GateCreatedCommand="{Binding AddCanvasGateCommand}"
                                                GateEditedCommand="{Binding GateEditedCommand}" />
@@ -285,6 +303,21 @@
                                             <StackPanel Grid.Row="1" Grid.Column="1">
                                                 <TextBlock Margin="0,4" Foreground="{DynamicResource SemiColorText2}" Text="Negative decades (A)" />
                                                 <TextBox IsEnabled="{Binding IsYAxisEnabled}" Text="{Binding YAxis.LogicleNegativeDecades, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </StackPanel>
+                                </Expander>
+
+                                <Expander Header="Plot style" IsExpanded="True">
+                                    <StackPanel Spacing="8" Margin="0,8,0,16">
+                                        <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                                            <StackPanel>
+                                                <TextBlock Margin="0,4" Foreground="{DynamicResource SemiColorText2}" Text="Contour levels" />
+                                                <TextBox Text="{Binding ContourLevelCount, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1">
+                                                <TextBlock Margin="0,4" Foreground="{DynamicResource SemiColorText2}" Text="Density smoothing" />
+                                                <TextBox Text="{Binding DensitySmoothing, UpdateSourceTrigger=PropertyChanged}" />
                                             </StackPanel>
                                         </Grid>
                                     </StackPanel>

@@ -1,24 +1,36 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
+using System.Diagnostics;
+using System.Threading.Tasks;
 using Avalonia.Data;
 using Avalonia.Controls;
+using Avalonia.Controls.Templates;
 using Avalonia.Input;
+using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using gated.Models;
 using gated.ViewModels;
 using Avalonia.Interactivity;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
+using gated.Services;
 
 namespace gated;
 
 public partial class MainWindow : Window
 {
     private readonly MainWindowViewModel view_model = new();
+    private string? current_workspace_path;
 
     public MainWindow()
     {
         InitializeComponent();
         DataContext = view_model;
+        view_model.RequestTextInputAsync = show_text_input_dialog;
+        view_model.RequestChoiceInputAsync = show_choice_input_dialog;
+        view_model.RequestCompensationEditorAsync = show_compensation_editor_dialog;
         view_model.PropertyChanged += view_model_property_changed;
         update_statistics_columns();
         AddHandler(DragDrop.DragOverEvent, drag_over);
@@ -83,8 +95,104 @@ public partial class MainWindow : Window
         view_model.AddFiles(files.Select(file => file.Path.LocalPath));
     }
 
+    private async void open_workspace_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Open Gated workspace",
+            AllowMultiple = false,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("Gated workspaces") { Patterns = ["*.gated"] },
+                FilePickerFileTypes.All
+            ]
+        });
+
+        var file = files.FirstOrDefault();
+        if (file is null)
+            return;
+
+        string path = file.Path.LocalPath;
+        try
+        {
+            await run_with_progress_dialog("Loading workspace ...", async () =>
+            {
+                var workspace = await Task.Run(() => new WorkspaceBinarySerializer().Load(path));
+                view_model.LoadWorkspace(workspace, path);
+            });
+            current_workspace_path = path;
+        }
+        catch (Exception exception)
+        {
+            view_model.StatusText = $"Failed to load workspace: {exception.Message}";
+        }
+    }
+
+    private async void save_workspace_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        string? path = current_workspace_path;
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+            {
+                Title = "Save Gated workspace",
+                SuggestedFileName = "workspace.gated",
+                DefaultExtension = "gated",
+                FileTypeChoices =
+                [
+                    new FilePickerFileType("Gated workspaces") { Patterns = ["*.gated"] },
+                    FilePickerFileTypes.All
+                ]
+            });
+
+            if (file is null)
+                return;
+
+            path = file.Path.LocalPath;
+        }
+
+        try
+        {
+            await run_with_progress_dialog("Saving workspace ...", () => Task.Run(() => new WorkspaceBinarySerializer().Save(view_model.Workspace, path)));
+            view_model.StatusText = $"Saved workspace: {System.IO.Path.GetFileName(path)}";
+            current_workspace_path = path;
+        }
+        catch (Exception exception)
+        {
+            view_model.StatusText = $"Failed to save workspace: {exception.Message}";
+        }
+    }
+
+    private async void about_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        await new AboutWindow().ShowDialog(this);
+    }
+
+    private async Task run_with_progress_dialog(string message, Func<Task> operation)
+    {
+        var dialog = new ProgressDialog(message);
+        var stopwatch = Stopwatch.StartNew();
+        var dialog_task = dialog.ShowDialog(this);
+        try
+        {
+            await Task.Yield();
+            await operation();
+        }
+        finally
+        {
+            int remaining = 500 - (int)stopwatch.ElapsedMilliseconds;
+            if (remaining > 0)
+                await Task.Delay(remaining);
+            dialog.Close();
+            await dialog_task;
+        }
+    }
+
     private void density_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
         view_model.SelectedPlotMode = PlotMode.Density;
+
+    private void dotplot_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
+        view_model.SelectedPlotMode = PlotMode.Dotplot;
 
     private void contour_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
         view_model.SelectedPlotMode = PlotMode.Contour;
@@ -175,5 +283,298 @@ public partial class MainWindow : Window
         if (lifetime is ClassicDesktopStyleApplicationLifetime desktop)
             desktop.Shutdown();
         else this.Close();
+    }
+
+    private async Task<string?> show_text_input_dialog(string title, string default_value)
+    {
+        var input = new TextBox
+        {
+            Text = default_value,
+            MinWidth = 320
+        };
+        var dialog = new Window
+        {
+            Title = title,
+            Width = 420,
+            MinWidth = 360,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = Background,
+            SizeToContent = SizeToContent.Height,
+            Content = new StackPanel
+            {
+                Margin = new Thickness(16),
+                Spacing = 12,
+                Children =
+                {
+                    new TextBlock { Text = title },
+                    input,
+                    new StackPanel
+                    {
+                        Orientation = Avalonia.Layout.Orientation.Horizontal,
+                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                        Spacing = 8,
+                        Children =
+                        {
+                            new Button { Content = "Cancel", MinWidth = 80, IsCancel = true },
+                            new Button { Content = "OK", MinWidth = 80, IsDefault = true }
+                        }
+                    }
+                }
+            }
+        };
+
+        var buttons = ((StackPanel)((StackPanel)dialog.Content).Children[2]).Children;
+        ((Button)buttons[0]).Click += (_, _) => dialog.Close(null);
+        ((Button)buttons[1]).Click += (_, _) => dialog.Close(input.Text);
+        input.AttachedToVisualTree += (_, _) =>
+        {
+            input.Focus();
+            input.SelectAll();
+        };
+
+        return await dialog.ShowDialog<string?>(this);
+    }
+
+    private async Task<string?> show_choice_input_dialog(string title, System.Collections.Generic.IReadOnlyList<AxisChoice> choices)
+    {
+        var input = new ComboBox
+        {
+            ItemsSource = choices,
+            Classes = { "Small" },
+            SelectedIndex = choices.Count > 0 ? 0 : -1,
+            MinWidth = 320,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
+            ItemTemplate = new FuncDataTemplate<AxisChoice>((choice, _) =>
+            {
+                var panel = new StackPanel
+                {
+                    Orientation = Avalonia.Layout.Orientation.Horizontal,
+                    Spacing = 8
+                };
+                if (choice is null)
+                    return panel;
+
+                if (choice.HasLabel)
+                {
+                    panel.Children.Add(new TextBlock
+                    {
+                        Text = choice.Label,
+                        FontWeight = FontWeight.SemiBold,
+                        Foreground = Brushes.White
+                    });
+                }
+
+                panel.Children.Add(new TextBlock
+                {
+                    Text = choice.Name,
+                    Foreground = new SolidColorBrush(Color.FromRgb(164, 168, 178))
+                });
+                return panel;
+            })
+        };
+        var dialog = new Window
+        {
+            Title = title,
+            Width = 440,
+            MinWidth = 380,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = Background,
+            SizeToContent = SizeToContent.Height,
+            Content = new StackPanel
+            {
+                Margin = new Thickness(16),
+                Spacing = 12,
+                Children =
+                {
+                    new TextBlock { Text = title },
+                    input,
+                    new StackPanel
+                    {
+                        Orientation = Avalonia.Layout.Orientation.Horizontal,
+                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                        Spacing = 8,
+                        Children =
+                        {
+                            new Button { Content = "Cancel", MinWidth = 80, IsCancel = true },
+                            new Button { Content = "OK", MinWidth = 80, IsDefault = true }
+                        }
+                    }
+                }
+            }
+        };
+
+        var buttons = ((StackPanel)((StackPanel)dialog.Content).Children[2]).Children;
+        ((Button)buttons[0]).Click += (_, _) => dialog.Close(null);
+        ((Button)buttons[1]).Click += (_, _) => dialog.Close((input.SelectedItem as AxisChoice)?.Name);
+        input.AttachedToVisualTree += (_, _) => input.Focus();
+
+        return await dialog.ShowDialog<string?>(this);
+    }
+
+    private async Task<bool> show_compensation_editor_dialog(CompensationMatrix compensation)
+    {
+        var values = (float[,])compensation.Values.Clone();
+        var channels = compensation.ChannelNames.ToArray();
+        var name_box = new TextBox
+        {
+            Text = compensation.Name,
+            MinWidth = 280,
+            Margin = new Thickness(0, 4, 0, 4)
+        };
+
+        var table = new Grid
+        {
+            RowSpacing = 5,
+            ColumnSpacing = 5,
+            Margin = new Thickness(0, 16, 0, 0)
+        };
+        table.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
+        for (int column = 0; column < channels.Length; column++)
+            table.ColumnDefinitions.Add(new ColumnDefinition(new GridLength(80)));
+        table.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+        for (int row = 0; row < channels.Length; row++)
+            table.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+
+        for (int column = 0; column < channels.Length; column++)
+        {
+            var header = new TextBlock
+            {
+                Text = channels[column],
+                Foreground = Brushes.White,
+                FontWeight = FontWeight.SemiBold,
+                TextAlignment = TextAlignment.Center
+            };
+            Grid.SetColumn(header, column + 1);
+            table.Children.Add(header);
+        }
+
+        var inputs = new Dictionary<(int Row, int Column), TextBox>();
+        for (int row = 0; row < channels.Length; row++)
+        {
+            var row_header = new TextBlock
+            {
+                Text = channels[row],
+                Foreground = new SolidColorBrush(Color.FromRgb(164, 168, 178)),
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                TextAlignment = TextAlignment.Right,
+                Margin = new Thickness(0, 0, 4, 0)
+            };
+            Grid.SetRow(row_header, row + 1);
+            table.Children.Add(row_header);
+
+            for (int column = 0; column < channels.Length; column++)
+            {
+                var input = new TextBox
+                {
+                    Text = row == column ? "100" : format_compensation_percent(values[row, column]),
+                    MinWidth = 80,
+                    IsEnabled = row != column,
+                    HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Right
+                };
+                Grid.SetRow(input, row + 1);
+                Grid.SetColumn(input, column + 1);
+                table.Children.Add(input);
+                inputs[(row, column)] = input;
+            }
+        }
+
+        var error_text = new TextBlock
+        {
+            Foreground = Brushes.IndianRed,
+            IsVisible = false
+        };
+
+        var dialog = new Window
+        {
+            Title = "Compensation table editor",
+            Width = Math.Clamp(180 + channels.Length * 100, 520, 1100),
+            Height = Math.Clamp(240 + channels.Length * 38, 360, 760),
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = Background,
+            Content = new Grid
+            {
+                Margin = new Thickness(16),
+                RowDefinitions =
+                {
+                    new RowDefinition(GridLength.Auto),
+                    new RowDefinition(GridLength.Auto),
+                    new RowDefinition(new GridLength(1, GridUnitType.Star)),
+                    new RowDefinition(GridLength.Auto),
+                    new RowDefinition(GridLength.Auto)
+                },
+                Children =
+                {
+                    new TextBlock { Text = "Name", Foreground = new SolidColorBrush(Color.FromRgb(164, 168, 178)) },
+                    name_box,
+                    new ScrollViewer
+                    {
+                        HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+                        VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+                        Content = table
+                    },
+                    error_text,
+                    new StackPanel
+                    {
+                        Orientation = Avalonia.Layout.Orientation.Horizontal,
+                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                        Spacing = 8,
+                        Children =
+                        {
+                            new Button { Content = "Cancel", MinWidth = 80, IsCancel = true },
+                            new Button { Content = "OK", MinWidth = 80, IsDefault = true }
+                        }
+                    }
+                }
+            }
+        };
+
+        var grid = (Grid)dialog.Content;
+        Grid.SetRow(name_box, 1);
+        Grid.SetRow((Control)grid.Children[2], 2);
+        Grid.SetRow(error_text, 3);
+        Grid.SetRow((Control)grid.Children[4], 4);
+
+        var buttons = ((StackPanel)grid.Children[4]).Children;
+        ((Button)buttons[0]).Click += (_, _) => dialog.Close(false);
+        ((Button)buttons[1]).Click += (_, _) =>
+        {
+            for (int row = 0; row < channels.Length; row++)
+            for (int column = 0; column < channels.Length; column++)
+            {
+                if (row == column)
+                {
+                    values[row, column] = 1.0f;
+                    continue;
+                }
+
+                string? text = inputs[(row, column)].Text;
+                if (float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out float parsed))
+                {
+                    values[row, column] = parsed / 100.0f;
+                    continue;
+                }
+
+                error_text.Text = $"Invalid number at {channels[row]} / {channels[column]}.";
+                error_text.IsVisible = true;
+                return;
+            }
+
+            compensation.Name = string.IsNullOrWhiteSpace(name_box.Text) ? compensation.Name : name_box.Text.Trim();
+            compensation.ReplaceValues(values);
+            dialog.Close(true);
+        };
+
+        return await dialog.ShowDialog<bool>(this);
+    }
+
+    private static string format_compensation_percent(float value)
+    {
+        float percent = value * 100.0f;
+        if (Math.Abs(percent) < 0.0000001f)
+            return "0";
+        if (Math.Abs(percent - 1.0f) < 0.0000001f)
+            return "1";
+
+        return percent.ToString("F2", CultureInfo.InvariantCulture);
     }
 }

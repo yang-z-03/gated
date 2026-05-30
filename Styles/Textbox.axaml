@@ -79,6 +79,7 @@
                                     </TextBlock>
                                     <TextPresenter
                                         Name="PART_TextPresenter"
+                                        Margin="4 0 4 0"
                                         HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
                                         CaretBlinkInterval="{TemplateBinding CaretBlinkInterval}"
                                         VerticalAlignment="{TemplateBinding VerticalContentAlignment}"

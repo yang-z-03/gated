@@ -162,7 +162,7 @@ public sealed class ProjectTreeView : Control
             draw_chevron(context, new Rect(x, top + 4, 16, 16), node.IsExpanded);
 
         x += chevron_width;
-        draw_icon(context, new Rect(x, top + 4, 16, 16), node.Kind);
+        draw_icon(context, new Rect(x, top + 4, 16, 16), node);
         x += icon_width + 3;
 
         double count_left = Math.Max(x + 72, width - count_width + 8);
@@ -191,10 +191,10 @@ public sealed class ProjectTreeView : Control
         context.DrawImage(chev_right, rect);
     }
 
-    private static void draw_icon(DrawingContext context, Rect rect, ProjectNodeKind kind)
+    private static void draw_icon(DrawingContext context, Rect rect, ProjectNode node)
     {
         SvgImage icon = new SvgImage();
-        switch (kind)
+        switch (node.Kind)
         {
             case ProjectNodeKind.Workspace:
                 icon.Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri("avares://gated/Resources/workspace.svg")));
@@ -214,6 +214,16 @@ public sealed class ProjectTreeView : Control
 
             case ProjectNodeKind.StatisticDefinition:
                 icon.Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri("avares://gated/Resources/stats.svg")));
+                break;
+
+            case ProjectNodeKind.CompensationFolder:
+                icon.Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri("avares://gated/Resources/matrix.svg")));
+                break;
+
+            case ProjectNodeKind.Compensation:
+                icon.Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri(node.IsAppliedCompensation
+                    ? "avares://gated/Resources/ok.svg"
+                    : "avares://gated/Resources/matrix.svg")));
                 break;
 
             case ProjectNodeKind.Sample:
