@@ -67,7 +67,31 @@ public enum StatisticKind
     NumberOfEvents
 }
 
-public sealed record ChannelDefinition(int Index, string Name, string Label, float Maximum, float Gain);
+public sealed class ChannelDefinition : NotifyBase
+{
+    private string label;
+
+    public ChannelDefinition(int index, string name, string label, float maximum, float gain)
+    {
+        Index = index;
+        Name = name;
+        this.label = label;
+        Maximum = maximum;
+        Gain = gain;
+    }
+
+    public int Index { get; }
+    public string Name { get; }
+
+    public string Label
+    {
+        get => label;
+        set => SetField(ref label, value ?? "");
+    }
+
+    public float Maximum { get; }
+    public float Gain { get; }
+}
 
 public sealed record LogicleParameters(double T = 262144.0, double W = 0.3, double M = 3.0, double A = 0.0);
 
@@ -249,6 +273,7 @@ public sealed class GateDefinition : NotifyBase
     private string x_channel = "";
     private string? y_channel;
     private bool is_selected;
+    private bool is_tree_expanded = true;
 
     public Guid Id { get; } = Guid.NewGuid();
     public ObservableCollection<Point> Vertices { get; } = new();
@@ -299,6 +324,12 @@ public sealed class GateDefinition : NotifyBase
     {
         get => is_selected;
         set => SetField(ref is_selected, value);
+    }
+
+    public bool IsTreeExpanded
+    {
+        get => is_tree_expanded;
+        set => SetField(ref is_tree_expanded, value);
     }
 
     public bool IsOneDimensional => Kind is GateKind.Threshold or GateKind.Range || string.IsNullOrWhiteSpace(YChannel);

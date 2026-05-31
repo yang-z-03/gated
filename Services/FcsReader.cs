@@ -173,7 +173,10 @@ public sealed class FcsReader
     private static bool try_parse_spillover(Dictionary<string, string> text, string sample_name, out CompensationMatrix matrix)
     {
         matrix = new CompensationMatrix();
-        if (!text.TryGetValue("spillover", out string? spillover_text) || string.IsNullOrWhiteSpace(spillover_text))
+        text.TryGetValue("spillover", out string? spillover_text);
+        if (string.IsNullOrWhiteSpace(spillover_text)) text.TryGetValue("spill", out spillover_text);
+        if (string.IsNullOrWhiteSpace(spillover_text)) text.TryGetValue("comp", out spillover_text);
+        if (string.IsNullOrWhiteSpace(spillover_text))
             return false;
 
         var parts = spillover_text.Split(',', StringSplitOptions.TrimEntries);

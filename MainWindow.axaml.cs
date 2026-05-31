@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Diagnostics;
+using System.IO;
 using System.Threading.Tasks;
 using Avalonia.Data;
 using Avalonia.Controls;
@@ -33,8 +34,9 @@ public partial class MainWindow : Window
         view_model.RequestCompensationEditorAsync = show_compensation_editor_dialog;
         view_model.PropertyChanged += view_model_property_changed;
         update_statistics_columns();
-        AddHandler(DragDrop.DragOverEvent, drag_over);
-        AddHandler(DragDrop.DropEvent, drop_files);
+        DragDrop.SetAllowDrop(this, true);
+        DragDrop.AddDragOverHandler(this, drag_over);
+        DragDrop.AddDropHandler(this, drop_files);
 
         this.PropertyChanged += (s, e) => {
             if (e.Property == Window.WindowStateProperty)
@@ -92,7 +94,10 @@ public partial class MainWindow : Window
             ]
         });
 
-        view_model.AddFiles(files.Select(file => file.Path.LocalPath));
+        await import_fcs_files(
+            files.Select(file => file.Path.LocalPath),
+            "Failed to open FCS files",
+            target_group: null);
     }
 
     private async void open_workspace_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -168,6 +173,52 @@ public partial class MainWindow : Window
         await new AboutWindow().ShowDialog(this);
     }
 
+    private async Task show_message_dialog(string title, string message)
+    {
+        var dialog = new Window
+        {
+            Title = title,
+            Width = 460,
+            MinWidth = 360,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = Background,
+            SizeToContent = SizeToContent.Height,
+            Content = new StackPanel
+            {
+                Margin = new Thickness(16),
+                Spacing = 12,
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = title,
+                        FontWeight = FontWeight.SemiBold,
+                        Foreground = Brushes.White
+                    },
+                    new TextBlock
+                    {
+                        Text = message,
+                        TextWrapping = TextWrapping.Wrap,
+                        Foreground = new SolidColorBrush(Color.FromRgb(218, 221, 228))
+                    },
+                    new StackPanel
+                    {
+                        Orientation = Avalonia.Layout.Orientation.Horizontal,
+                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                        Children =
+                        {
+                            new Button { Content = "OK", MinWidth = 80, IsDefault = true }
+                        }
+                    }
+                }
+            }
+        };
+
+        var buttons = ((StackPanel)((StackPanel)dialog.Content).Children[2]).Children;
+        ((Button)buttons[0]).Click += (_, _) => dialog.Close();
+        await dialog.ShowDialog(this);
+    }
+
     private async Task run_with_progress_dialog(string message, Func<Task> operation)
     {
         var dialog = new ProgressDialog(message);
@@ -229,20 +280,80 @@ public partial class MainWindow : Window
 
     private void drag_over(object? sender, DragEventArgs e)
     {
-        e.DragEffects = e.Data.Contains(DataFormats.Files) ? DragDropEffects.Copy : DragDropEffects.None;
+        e.DragEffects = e.DataTransfer.Contains(DataFormat.File) && get_drop_target_node(e) is not null
+            ? DragDropEffects.Copy
+            : DragDropEffects.None;
         e.Handled = true;
     }
 
-    private void drop_files(object? sender, DragEventArgs e)
+    private async void drop_files(object? sender, DragEventArgs e)
     {
-        var files = e.Data.GetFiles();
-        if (files is null)
-            return;
-
-        view_model.AddFiles(files
-            .Select(file => file.Path.LocalPath)
-            .Where(path => path.EndsWith(".fcs", System.StringComparison.OrdinalIgnoreCase)));
         e.Handled = true;
+        var target_node = get_drop_target_node(e);
+        if (target_node is null)
+        {
+            await show_message_dialog("Drop failed", "FCS files can only be dropped onto the workspace or a grouping node.");
+            return;
+        }
+
+        var files = e.DataTransfer.TryGetFiles();
+        if (files is null || files.Length == 0)
+        {
+            await show_message_dialog("Drop failed", "The dropped data did not contain files.");
+            return;
+        }
+
+        await import_fcs_files(
+            files.Select(file => file.Path.LocalPath),
+            "Failed to import dropped FCS files",
+            target_node.Kind == ProjectNodeKind.Group ? target_node.Group : null);
+    }
+
+    private ProjectNode? get_drop_target_node(DragEventArgs e)
+    {
+        var point = e.GetPosition(project_tree);
+        if (point.X < 0 || point.Y < 0 || point.X > project_tree.Bounds.Width || point.Y > project_tree.Bounds.Height)
+            return null;
+
+        var node = project_tree.GetNodeAt(point);
+        return node?.Kind is ProjectNodeKind.Workspace or ProjectNodeKind.Group ? node : null;
+    }
+
+    private async Task import_fcs_files(IEnumerable<string?> paths, string failure_title, FlowGroup? target_group)
+    {
+        var file_paths = paths
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Select(path => path!)
+            .Where(path => path.EndsWith(".fcs", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+        if (file_paths.Length == 0)
+        {
+            await show_message_dialog(failure_title, "No .fcs files were provided.");
+            return;
+        }
+
+        var missing_paths = file_paths.Where(path => !File.Exists(path)).ToArray();
+        if (missing_paths.Length > 0)
+        {
+            await show_message_dialog(
+                failure_title,
+                $"The following file could not be found:{Environment.NewLine}{missing_paths[0]}");
+            return;
+        }
+
+        try
+        {
+            if (target_group is null)
+                view_model.AddFiles(file_paths);
+            else
+                view_model.AddFilesToGroup(file_paths, target_group);
+        }
+        catch (Exception exception)
+        {
+            view_model.StatusText = $"{failure_title}: {exception.Message}";
+            await show_message_dialog(failure_title, exception.Message);
+        }
     }
     
     private void title_bar_pressed(object? sender, PointerPressedEventArgs e)

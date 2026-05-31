@@ -62,6 +62,8 @@ public sealed class ProjectTreeView : Control
         set => SetValue(ToggleNodeCommandProperty, value);
     }
 
+    public ProjectNode? GetNodeAt(Point point) => node_at(point.Y);
+
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);

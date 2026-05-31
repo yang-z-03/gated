@@ -5,7 +5,7 @@
         <Nullable>enable</Nullable>
         <ApplicationManifest>app.manifest</ApplicationManifest>
         <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
-        <ApplicationIcon>app.ico</ApplicationIcon>
+        <ApplicationIcon>gated.ico</ApplicationIcon>
     </PropertyGroup>
 
     <ItemGroup>
@@ -105,8 +105,8 @@
       <AvaloniaResource Include="Resources\unk.svg" />
       <None Remove="Resources\unlocked.svg" />
       <AvaloniaResource Include="Resources\unlocked.svg" />
-      <None Remove="Resources\video.ico" />
-      <AvaloniaResource Include="Resources\video.ico" />
+      <None Remove="Resources\gated16.png" />
+      <AvaloniaResource Include="Resources\gated16.png" />
       <None Remove="Resources\video.svg" />
       <AvaloniaResource Include="Resources\video.svg" />
       <None Remove="Resources\visible.svg" />
@@ -119,7 +119,7 @@
       <AvaloniaResource Include="Resources\zoom-in.svg" />
       <None Remove="Resources\zoom-out.svg" />
       <AvaloniaResource Include="Resources\zoom-out.svg" />
-      <None Remove="app.ico" />
-      <AvaloniaResource Include="app.ico" />
+      <None Remove="gated.ico" />
+      <AvaloniaResource Include="gated.ico" />
     </ItemGroup>
 </Project>

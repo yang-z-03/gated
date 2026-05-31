@@ -10,7 +10,7 @@ namespace gated.Services;
 public sealed class WorkspaceBinarySerializer
 {
     private const uint magic = 0x44544731;
-    private const int version = 1;
+    private const int version = 2;
 
     public void Save(FlowWorkspace workspace, string file_path)
     {
@@ -32,13 +32,13 @@ public sealed class WorkspaceBinarySerializer
             throw new InvalidDataException("The file is not a Gated workspace.");
 
         int file_version = reader.ReadInt32();
-        if (file_version != version)
+        if (file_version is < 1 or > version)
             throw new NotSupportedException($"Unsupported Gated workspace version: {file_version}.");
 
         var workspace = new FlowWorkspace { Name = read_string(reader) };
         int group_count = reader.ReadInt32();
         for (int index = 0; index < group_count; index++)
-            workspace.Groups.Add(read_group(reader));
+            workspace.Groups.Add(read_group(reader, file_version));
 
         return workspace;
     }
@@ -65,7 +65,7 @@ public sealed class WorkspaceBinarySerializer
             write_sample(writer, sample);
     }
 
-    private static FlowGroup read_group(BinaryReader reader)
+    private static FlowGroup read_group(BinaryReader reader, int file_version)
     {
         var group = new FlowGroup { Name = read_string(reader) };
         read_statistics(reader, group.Statistics);
@@ -81,7 +81,7 @@ public sealed class WorkspaceBinarySerializer
 
         int gate_count = reader.ReadInt32();
         for (int index = 0; index < gate_count; index++)
-            group.Gates.Add(read_gate(reader, parent: null));
+            group.Gates.Add(read_gate(reader, parent: null, file_version));
 
         int sample_count = reader.ReadInt32();
         for (int index = 0; index < sample_count; index++)
@@ -194,12 +194,14 @@ public sealed class WorkspaceBinarySerializer
 
         write_statistics(writer, gate.Statistics);
 
+        writer.Write(gate.IsTreeExpanded);
+
         writer.Write(gate.Children.Count);
         foreach (var child in gate.Children)
             write_gate(writer, child);
     }
 
-    private static GateDefinition read_gate(BinaryReader reader, GateDefinition? parent)
+    private static GateDefinition read_gate(BinaryReader reader, GateDefinition? parent, int file_version)
     {
         var gate = new GateDefinition
         {
@@ -234,10 +236,12 @@ public sealed class WorkspaceBinarySerializer
             gate.Vertices.Add(new Point(reader.ReadDouble(), reader.ReadDouble()));
 
         read_statistics(reader, gate.Statistics);
+        if (file_version >= 2)
+            gate.IsTreeExpanded = reader.ReadBoolean();
 
         int child_count = reader.ReadInt32();
         for (int index = 0; index < child_count; index++)
-            gate.Children.Add(read_gate(reader, gate));
+            gate.Children.Add(read_gate(reader, gate, file_version));
 
         return gate;
     }

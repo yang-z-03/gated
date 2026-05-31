@@ -33,7 +33,7 @@
               <Grid>
                 <StackPanel IsHitTestVisible="False" Margin="2 5 2 2" Orientation="Horizontal" 
                             HorizontalAlignment="Center" VerticalAlignment="Stretch">
-                  <Image Width="16" Height="16" Source="avares://gated/app.ico"/>
+                  <Image Width="16" Height="16" Source="avares://gated/Resources/gated16.png"/>
                   <Grid Width="10"/>
                   <TextBlock Text="Gated · Flow Cytometry Analyser" VerticalAlignment="Center"
                              FontWeight="Bold" Foreground="White" FontSize="13"/>
@@ -127,7 +127,8 @@
                     Background="{DynamicResource SemiColorBackground0}">
                 <ScrollViewer HorizontalScrollBarVisibility="Disabled"
                               VerticalScrollBarVisibility="Auto" Margin="8">
-                    <controls:ProjectTreeView Margin="4 0 4 4"
+                    <controls:ProjectTreeView x:Name="project_tree"
+                                              Margin="4 0 4 4"
                                               Nodes="{Binding ProjectNodes}"
                                               SelectNodeCommand="{Binding SelectProjectNodeCommand}"
                                               ToggleNodeCommand="{Binding ToggleProjectNodeCommand}" />
@@ -197,8 +198,38 @@
                             Padding="8">
                         <ScrollViewer HorizontalScrollBarVisibility="Disabled"
                                       VerticalScrollBarVisibility="Auto">
-                            <StackPanel Spacing="8" Margin="16, 8, 16, 16">
-                                <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Axis properties" />
+                            <StackPanel Spacing="8" Margin="16, 8, 16, 16"
+                                        Grid.IsSharedSizeScope="True">
+                                <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Properties" />
+
+                                <Expander Header="Channels" IsExpanded="False">
+                                    <StackPanel Spacing="6" Margin="-10,8,0,16">
+                                        <DataGrid MaxHeight="200"
+                                                  AutoGenerateColumns="False"
+                                                  CanUserReorderColumns="False"
+                                                  CanUserResizeColumns="True"
+                                                  CanUserSortColumns="False"
+                                                  GridLinesVisibility="Horizontal"
+                                                  HeadersVisibility="Column"
+                                                  ItemsSource="{Binding ChannelRows}">
+                                            <DataGrid.Columns>
+                                                <DataGridTextColumn Header="Channel"
+                                                                    Width="100"
+                                                                    IsReadOnly="True"
+                                                                    Binding="{Binding Name}" />
+                                                <DataGridTextColumn Header="Label"
+                                                                    Width="140"
+                                                                    Foreground="White"
+                                                                    FontWeight="Bold"
+                                                                    Binding="{Binding Label, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                                <DataGridTextColumn Header="Maximum"
+                                                                    Width="100"
+                                                                    IsReadOnly="True"
+                                                                    Binding="{Binding MaximumDisplay}" />
+                                            </DataGrid.Columns>
+                                        </DataGrid>
+                                    </StackPanel>
+                                </Expander>
 
                                 <Expander Header="X axis" IsExpanded="True">
                                     <StackPanel Spacing="8" Margin="0,8,0,16">
@@ -253,7 +284,7 @@
                                     </StackPanel>
                                 </Expander>
 
-                                <Expander Header="Y axis" IsExpanded="True">
+                                <Expander Header="Y axis" IsExpanded="False">
                                     <StackPanel Spacing="8" Margin="0,8,0,16">
                                         <TextBlock Margin="0,4,0,-4" Foreground="{DynamicResource SemiColorText2}" Text="Selected channel" />
                                         <ComboBox Classes='Small'

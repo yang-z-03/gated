@@ -22,13 +22,12 @@ public sealed class MainWindowViewModel : NotifyBase
     private GateDefinition? selected_gate;
     private PopulationResult? selected_population;
     private CompensationMatrix? selected_compensation;
-    private FlowGroup? sidebars_group;
     private PlotMode selected_plot_mode = PlotMode.Density;
     private GatingTool active_tool = GatingTool.View;
     private bool show_outlier_points = true;
     private bool show_gridlines = true;
-    private int contour_level_count = 20;
-    private int density_smoothing = 3;
+    private int contour_level_count = 10;
+    private int density_smoothing = 9;
     private string status_text = "Append samples to grouping to begin analysis";
     private AxisSettings x_axis = new();
     private AxisSettings y_axis = new();
@@ -36,7 +35,7 @@ public sealed class MainWindowViewModel : NotifyBase
 
     public FlowWorkspace Workspace { get; } = new();
     public ObservableCollection<ProjectNode> ProjectNodes { get; } = new();
-    public ObservableCollection<ChannelDefinition> ChannelRows { get; } = new();
+    public ObservableCollection<ChannelRow> ChannelRows { get; } = new();
     public ObservableCollection<AxisChoice> AxisChoices { get; } = new();
     private DataTable statistic_table = new();
     public ObservableCollection<GateDefinition> PlotGates { get; } = new();
@@ -126,7 +125,13 @@ public sealed class MainWindowViewModel : NotifyBase
     public FlowGroup? SelectedGroup
     {
         get => selected_group;
-        private set => SetField(ref selected_group, value);
+        private set
+        {
+            if (!SetField(ref selected_group, value))
+                return;
+
+            refresh_selection_sidebars();
+        }
     }
 
     public FlowSample? SelectedSample
@@ -327,8 +332,43 @@ public sealed class MainWindowViewModel : NotifyBase
         raise_command_states();
     }
 
+    public void AddFilesToGroup(IEnumerable<string> file_paths, FlowGroup target_group)
+    {
+        var reader = new FcsReader();
+        var fallback_groups = new List<FlowGroup>();
+        int loaded_count = 0;
+        foreach (string file_path in file_paths)
+        {
+            var sample = reader.Read(file_path);
+            var group = target_group.CanAccept(sample)
+                ? target_group
+                : fallback_groups.FirstOrDefault(item => item.CanAccept(sample));
+            if (group is null)
+            {
+                group = new FlowGroup { Name = $"Group {Workspace.Groups.Count + 1}" };
+                Workspace.Groups.Add(group);
+                fallback_groups.Add(group);
+            }
+
+            group.AddSample(sample);
+            SelectedGroup = group;
+            SelectedSample = sample;
+            loaded_count++;
+        }
+
+        refresh_project_tree();
+        if (loaded_count > 0 && selected_group is not null)
+            reset_axes_from_group(selected_group);
+        refresh_selection_sidebars();
+        refresh_plot_gates();
+        refresh_selected_statistics();
+        StatusText = loaded_count == 0 ? StatusText : $"Loaded {loaded_count} FCS sample(s)";
+        raise_command_states();
+    }
+
     public void SaveWorkspace(string file_path)
     {
+        capture_project_expansion_state();
         new WorkspaceBinarySerializer().Save(Workspace, file_path);
         StatusText = $"Saved workspace: {System.IO.Path.GetFileName(file_path)}";
     }
@@ -350,7 +390,6 @@ public sealed class MainWindowViewModel : NotifyBase
         }
 
         project_expansion_state.Clear();
-        sidebars_group = null;
         SelectedNode = null;
         SelectedGroup = Workspace.Groups.FirstOrDefault();
         SelectedSample = selected_group?.Samples.FirstOrDefault();
@@ -695,6 +734,15 @@ public sealed class MainWindowViewModel : NotifyBase
 
         switch (node.Kind)
         {
+            case ProjectNodeKind.Workspace:
+                SelectedGroup = Workspace.Groups.FirstOrDefault();
+                SelectedSample = selected_group?.Samples.FirstOrDefault();
+                SelectedPopulation = null;
+                SelectedGate = null;
+                SelectedCompensation = null;
+                apply_root_axis_context();
+                refresh_plot_gates();
+                break;
             case ProjectNodeKind.GateFolder:
                 if (node.Group is not null)
                     SelectedGroup = node.Group;
@@ -945,28 +993,39 @@ public sealed class MainWindowViewModel : NotifyBase
 
     private void refresh_selection_sidebars()
     {
-        if (ReferenceEquals(sidebars_group, selected_group))
-            return;
-
-        sidebars_group = selected_group;
         ChannelRows.Clear();
         if (selected_group is null)
         {
-            AxisChoices.Clear();
+            refresh_axis_choices();
             return;
         }
 
         foreach (var channel in selected_group.Channels)
-            ChannelRows.Add(channel);
+            ChannelRows.Add(new ChannelRow(channel, update_channel_label));
 
-        var existing_choices = AxisChoices.Select(choice => choice.Name).ToHashSet();
-        var current_choices = selected_group.Channels.Select(channel => channel.Name).ToHashSet();
-        if (existing_choices.SetEquals(current_choices))
+        refresh_axis_choices();
+    }
+
+    private void update_channel_label(ChannelRow row, string label)
+    {
+        if (selected_group is null)
             return;
 
+        foreach (var channel in selected_group.Samples.SelectMany(sample => sample.Channels).Where(channel => channel.Name == row.Name))
+            channel.Label = label;
+
+        refresh_axis_choices();
+    }
+
+    private void refresh_axis_choices()
+    {
         AxisChoices.Clear();
-        foreach (var channel in selected_group.Channels)
-            AxisChoices.Add(new AxisChoice(channel.Name, channel.Label));
+        if (selected_group is not null)
+        {
+            foreach (var channel in selected_group.Channels)
+                AxisChoices.Add(new AxisChoice(channel.Name, channel.Label));
+        }
+
         OnPropertyChanged(nameof(SelectedXAxisChoice));
         OnPropertyChanged(nameof(SelectedYAxisChoice));
     }
@@ -1150,6 +1209,7 @@ public sealed class MainWindowViewModel : NotifyBase
 
         node.IsExpanded = !node.IsExpanded;
         project_expansion_state[node.Key] = node.IsExpanded;
+        sync_project_node_expansion(node);
         refresh_visible_project_nodes();
     }
 
@@ -1168,6 +1228,7 @@ public sealed class MainWindowViewModel : NotifyBase
     {
         node.IsExpanded = is_expanded;
         project_expansion_state[node.Key] = is_expanded;
+        sync_project_node_expansion(node);
         foreach (var child in node.Children)
             set_project_node_expanded(child, is_expanded);
     }
@@ -1181,8 +1242,15 @@ public sealed class MainWindowViewModel : NotifyBase
     private void capture_project_expansion_state(ProjectNode node)
     {
         project_expansion_state[node.Key] = node.IsExpanded;
+        sync_project_node_expansion(node);
         foreach (var child in node.Children)
             capture_project_expansion_state(child);
+    }
+
+    private static void sync_project_node_expansion(ProjectNode node)
+    {
+        if (node.Kind == ProjectNodeKind.Gate && node.Gate is not null)
+            node.Gate.IsTreeExpanded = node.IsExpanded;
     }
 
     private void seed_loaded_workspace_expansion_state()
@@ -1203,7 +1271,7 @@ public sealed class MainWindowViewModel : NotifyBase
 
     private void seed_gate_expansion_state(GateDefinition gate, string key)
     {
-        project_expansion_state[key] = true;
+        project_expansion_state[key] = gate.IsTreeExpanded;
         foreach (var child in gate.Children)
             seed_gate_expansion_state(child, $"{key}:gate:{child.Id}");
     }
@@ -1340,6 +1408,37 @@ public sealed record AxisChoice(string Name, string Label)
 {
     public bool HasLabel => !string.IsNullOrWhiteSpace(Label);
     public string DisplayLabel => HasLabel ? Label : Name;
+}
+
+public sealed class ChannelRow : NotifyBase
+{
+    private readonly Action<ChannelRow, string> label_changed;
+    private string label;
+
+    public ChannelRow(ChannelDefinition channel, Action<ChannelRow, string> label_changed)
+    {
+        this.label_changed = label_changed;
+        Name = channel.Name;
+        label = channel.Label;
+        Maximum = channel.Maximum;
+    }
+
+    public string Name { get; }
+
+    public string Label
+    {
+        get => label;
+        set
+        {
+            if (!SetField(ref label, value ?? ""))
+                return;
+
+            label_changed(this, label);
+        }
+    }
+
+    public float Maximum { get; }
+    public string MaximumDisplay => Maximum.ToString("N0");
 }
 
 public enum ProjectNodeKind

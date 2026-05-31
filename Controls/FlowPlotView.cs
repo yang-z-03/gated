@@ -50,10 +50,10 @@ public sealed class FlowPlotView : Control
         AvaloniaProperty.Register<FlowPlotView, bool>(nameof(ShowGridlines), true);
 
     public static readonly StyledProperty<int> ContourLevelCountProperty =
-        AvaloniaProperty.Register<FlowPlotView, int>(nameof(ContourLevelCount), 20);
+        AvaloniaProperty.Register<FlowPlotView, int>(nameof(ContourLevelCount), 10);
 
     public static readonly StyledProperty<int> DensitySmoothingProperty =
-        AvaloniaProperty.Register<FlowPlotView, int>(nameof(DensitySmoothing), 3);
+        AvaloniaProperty.Register<FlowPlotView, int>(nameof(DensitySmoothing), 9);
 
     public static readonly StyledProperty<GatingTool> ActiveToolProperty =
         AvaloniaProperty.Register<FlowPlotView, GatingTool>(nameof(ActiveTool), GatingTool.View);
