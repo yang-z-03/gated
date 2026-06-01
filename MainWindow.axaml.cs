@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Specialized;
 using System.Globalization;
 using System.Linq;
 using System.Diagnostics;
@@ -13,6 +14,7 @@ using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using gated.Models;
 using gated.ViewModels;
+using gated.Controls;
 using Avalonia.Interactivity;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -33,7 +35,16 @@ public partial class MainWindow : Window
         view_model.RequestChoiceInputAsync = show_choice_input_dialog;
         view_model.RequestCompensationEditorAsync = show_compensation_editor_dialog;
         view_model.PropertyChanged += view_model_property_changed;
+        view_model.AxisChoices.CollectionChanged += channel_choices_collection_changed;
+        view_model.SelectedPageAxisChoices.CollectionChanged += channel_choices_collection_changed;
         update_statistics_columns();
+        update_channel_menus();
+        update_page_editor_viewport_size();
+        page_editor_scroll.PropertyChanged += (_, e) =>
+        {
+            if (e.Property == BoundsProperty)
+                update_page_editor_viewport_size();
+        };
         DragDrop.SetAllowDrop(this, true);
         DragDrop.AddDragOverHandler(this, drag_over);
         DragDrop.AddDropHandler(this, drop_files);
@@ -53,6 +64,19 @@ public partial class MainWindow : Window
     {
         if (e.PropertyName == nameof(MainWindowViewModel.StatisticTable))
             update_statistics_columns();
+        if (e.PropertyName is nameof(MainWindowViewModel.SelectedXAxisChoice)
+            or nameof(MainWindowViewModel.SelectedYAxisChoice)
+            or nameof(MainWindowViewModel.SelectedPageXAxisChoice)
+            or nameof(MainWindowViewModel.SelectedPageYAxisChoice))
+            update_channel_menus();
+    }
+
+    private void channel_choices_collection_changed(object? sender, NotifyCollectionChangedEventArgs e) =>
+        update_channel_menus();
+
+    private void update_page_editor_viewport_size()
+    {
+        page_editor.ViewportSize = page_editor_scroll.Bounds.Size;
     }
 
     private void update_statistics_columns()
@@ -118,19 +142,7 @@ public partial class MainWindow : Window
             return;
 
         string path = file.Path.LocalPath;
-        try
-        {
-            await run_with_progress_dialog("Loading workspace ...", async () =>
-            {
-                var workspace = await Task.Run(() => new WorkspaceBinarySerializer().Load(path));
-                view_model.LoadWorkspace(workspace, path);
-            });
-            current_workspace_path = path;
-        }
-        catch (Exception exception)
-        {
-            view_model.StatusText = $"Failed to load workspace: {exception.Message}";
-        }
+        await load_workspace_with_progress(path);
     }
 
     private async void save_workspace_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -158,7 +170,7 @@ public partial class MainWindow : Window
 
         try
         {
-            await run_with_progress_dialog("Saving workspace ...", () => Task.Run(() => new WorkspaceBinarySerializer().Save(view_model.Workspace, path)));
+            await run_with_progress_dialog("Saving workspace ...", path, () => Task.Run(() => new WorkspaceBinarySerializer().Save(view_model.Workspace, path)));
             view_model.StatusText = $"Saved workspace: {System.IO.Path.GetFileName(path)}";
             current_workspace_path = path;
         }
@@ -219,9 +231,47 @@ public partial class MainWindow : Window
         await dialog.ShowDialog(this);
     }
 
-    private async Task run_with_progress_dialog(string message, Func<Task> operation)
+    public async Task OpenCommandLineFilesAsync(IEnumerable<string> paths)
     {
-        var dialog = new ProgressDialog(message);
+        var file_paths = paths
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Select(path => Path.GetFullPath(path))
+            .Where(File.Exists)
+            .ToArray();
+        if (file_paths.Length == 0)
+            return;
+
+        var workspace_path = file_paths.FirstOrDefault(path => path.EndsWith(".gated", StringComparison.OrdinalIgnoreCase));
+        if (workspace_path is not null)
+            await load_workspace_with_progress(workspace_path);
+
+        var fcs_paths = file_paths
+            .Where(path => path.EndsWith(".fcs", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (fcs_paths.Length > 0)
+            await import_fcs_files(fcs_paths, "Failed to open command line FCS files", target_group: null);
+    }
+
+    private async Task load_workspace_with_progress(string path)
+    {
+        try
+        {
+            await run_with_progress_dialog("Loading workspace ...", path, async () =>
+            {
+                var workspace = await Task.Run(() => new WorkspaceBinarySerializer().Load(path));
+                view_model.LoadWorkspace(workspace, path);
+            });
+            current_workspace_path = path;
+        }
+        catch (Exception exception)
+        {
+            view_model.StatusText = $"Failed to load workspace: {exception.Message}";
+        }
+    }
+
+    private async Task run_with_progress_dialog(string title, string subtitle, Func<Task> operation)
+    {
+        var dialog = new ProgressDialog(title, subtitle);
         var stopwatch = Stopwatch.StartNew();
         var dialog_task = dialog.ShowDialog(this);
         try
@@ -275,11 +325,90 @@ public partial class MainWindow : Window
     private void range_tool_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
         view_model.ActiveTool = GatingTool.Range;
 
+    private void update_channel_menus()
+    {
+        populate_channel_menu(editor_x_channel_menu, view_model.AxisChoices, view_model.SelectedXAxisChoice, editor_x_channel_menu_item_click);
+        populate_channel_menu(editor_y_channel_menu, view_model.AxisChoices, view_model.SelectedYAxisChoice, editor_y_channel_menu_item_click);
+        populate_channel_menu(layout_x_channel_menu, view_model.SelectedPageAxisChoices, view_model.SelectedPageXAxisChoice, layout_x_channel_menu_item_click);
+        populate_channel_menu(layout_y_channel_menu, view_model.SelectedPageAxisChoices, view_model.SelectedPageYAxisChoice, layout_y_channel_menu_item_click);
+    }
+
+    private void editor_x_channel_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if ((e.Source as MenuItem)?.Tag is AxisChoice choice)
+            view_model.SelectedXAxisChoice = choice;
+    }
+
+    private void editor_y_channel_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if ((e.Source as MenuItem)?.Tag is AxisChoice choice)
+            view_model.SelectedYAxisChoice = choice;
+    }
+
+    private void layout_x_channel_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if ((e.Source as MenuItem)?.Tag is AxisChoice choice)
+            view_model.SelectedPageXAxisChoice = choice;
+    }
+
+    private void layout_y_channel_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if ((e.Source as MenuItem)?.Tag is AxisChoice choice)
+            view_model.SelectedPageYAxisChoice = choice;
+    }
+
+    private static void populate_channel_menu(MenuItem menu, IEnumerable<AxisChoice> choices, AxisChoice? selected, EventHandler<RoutedEventArgs> click)
+    {
+        menu.Items.Clear();
+        foreach (var choice in choices)
+        {
+            var item = new MenuItem
+            {
+                Header = create_channel_menu_header(choice),
+                ToggleType = MenuItemToggleType.Radio,
+                IsChecked = selected?.Name == choice.Name,
+                Tag = choice
+            };
+            item.Click += click;
+            menu.Items.Add(item);
+        }
+    }
+
+    private static Control create_channel_menu_header(AxisChoice choice)
+    {
+        var panel = new StackPanel
+        {
+            Orientation = Avalonia.Layout.Orientation.Horizontal,
+            Spacing = 8
+        };
+
+        if (choice.HasLabel)
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = choice.Label,
+                FontWeight = FontWeight.SemiBold,
+                Foreground = Brushes.White
+            });
+        }
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = choice.Name,
+            Foreground = new SolidColorBrush(Color.FromRgb(164, 168, 178))
+        });
+
+        return panel;
+    }
+
     private void swap_axes_button_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
         view_model.SwapAxes();
 
     private void drag_over(object? sender, DragEventArgs e)
     {
+        if (PageEditorView.DraggedProjectNode is not null)
+            return;
+
         e.DragEffects = e.DataTransfer.Contains(DataFormat.File) && get_drop_target_node(e) is not null
             ? DragDropEffects.Copy
             : DragDropEffects.None;
@@ -288,6 +417,9 @@ public partial class MainWindow : Window
 
     private async void drop_files(object? sender, DragEventArgs e)
     {
+        if (PageEditorView.DraggedProjectNode is not null)
+            return;
+
         e.Handled = true;
         var target_node = get_drop_target_node(e);
         if (target_node is null)
@@ -353,6 +485,68 @@ public partial class MainWindow : Window
         {
             view_model.StatusText = $"{failure_title}: {exception.Message}";
             await show_message_dialog(failure_title, exception.Message);
+        }
+    }
+
+    private async void export_page_png_click(object? sender, RoutedEventArgs e) =>
+        await export_page_bitmap("Export page as PNG", "page.png", "png", transparent_background: true);
+
+    private async void export_page_jpg_click(object? sender, RoutedEventArgs e) =>
+        await export_page_bitmap("Export page as JPEG", "page.jpg", "jpg", transparent_background: false);
+
+    private async void export_page_svg_click(object? sender, RoutedEventArgs e)
+    {
+        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Export page as SVG",
+            SuggestedFileName = "page.svg",
+            DefaultExtension = "svg",
+            FileTypeChoices =
+            [
+                new FilePickerFileType("SVG files") { Patterns = ["*.svg"] },
+                FilePickerFileTypes.All
+            ]
+        });
+
+        if (file is null)
+            return;
+
+        try
+        {
+            page_editor.SaveSvg(file.Path.LocalPath);
+            view_model.StatusText = $"Exported page: {System.IO.Path.GetFileName(file.Path.LocalPath)}";
+        }
+        catch (Exception exception)
+        {
+            await show_message_dialog("Export failed", exception.Message);
+        }
+    }
+
+    private async Task export_page_bitmap(string title, string suggested_name, string extension, bool transparent_background)
+    {
+        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = title,
+            SuggestedFileName = suggested_name,
+            DefaultExtension = extension,
+            FileTypeChoices =
+            [
+                new FilePickerFileType($"{extension.ToUpperInvariant()} files") { Patterns = [$"*.{extension}"] },
+                FilePickerFileTypes.All
+            ]
+        });
+
+        if (file is null)
+            return;
+
+        try
+        {
+            page_editor.SaveBitmap(file.Path.LocalPath, transparent_background);
+            view_model.StatusText = $"Exported page: {System.IO.Path.GetFileName(file.Path.LocalPath)}";
+        }
+        catch (Exception exception)
+        {
+            await show_message_dialog("Export failed", exception.Message);
         }
     }
     

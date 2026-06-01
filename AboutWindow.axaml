@@ -37,7 +37,7 @@
             GNU General Public License for details.
         </TextBlock>
         <Label HorizontalAlignment="Center" Margin="0 5 0 5" FontSize="12" Foreground="#f0f0f0" FontWeight="Regular">
-            v. 0.19.2
+            v. 0.20.0
         </Label>
     </StackPanel>
 </Window>

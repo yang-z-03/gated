@@ -5,16 +5,23 @@ namespace gated;
 public partial class ProgressDialog : Window
 {
     public ProgressDialog()
-        : this("Working ...")
+        : this("Working ...", "")
     {
     }
 
     public ProgressDialog(string message)
+        : this(message, "")
     {
-        Message = message;
+    }
+
+    public ProgressDialog(string title, string subtitle)
+    {
+        DialogTitle = title;
+        Subtitle = subtitle;
         InitializeComponent();
         DataContext = this;
     }
 
-    public string Message { get; set; } = "Working ...";
+    public string DialogTitle { get; set; } = "Working ...";
+    public string Subtitle { get; set; } = "";
 }

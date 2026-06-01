@@ -848,6 +848,7 @@ public sealed class FlowWorkspace : NotifyBase
     }
 
     public ObservableCollection<FlowGroup> Groups { get; } = new();
+    public ObservableCollection<PageLayout> PageLayouts { get; } = new();
 }
 
 public abstract class NotifyBase : INotifyPropertyChanged

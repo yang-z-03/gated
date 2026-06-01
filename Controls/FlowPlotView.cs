@@ -49,6 +49,9 @@ public sealed class FlowPlotView : Control
     public static readonly StyledProperty<bool> ShowGridlinesProperty =
         AvaloniaProperty.Register<FlowPlotView, bool>(nameof(ShowGridlines), true);
 
+    public static readonly StyledProperty<bool> ShowGateAnnotationsProperty =
+        AvaloniaProperty.Register<FlowPlotView, bool>(nameof(ShowGateAnnotations), true);
+
     public static readonly StyledProperty<int> ContourLevelCountProperty =
         AvaloniaProperty.Register<FlowPlotView, int>(nameof(ContourLevelCount), 10);
 
@@ -95,6 +98,7 @@ public sealed class FlowPlotView : Control
             PlotModeProperty,
             ShowOutlierPointsProperty,
             ShowGridlinesProperty,
+            ShowGateAnnotationsProperty,
             ContourLevelCountProperty,
             DensitySmoothingProperty,
             ActiveToolProperty,
@@ -160,6 +164,12 @@ public sealed class FlowPlotView : Control
     {
         get => GetValue(ShowGridlinesProperty);
         set => SetValue(ShowGridlinesProperty, value);
+    }
+
+    public bool ShowGateAnnotations
+    {
+        get => GetValue(ShowGateAnnotationsProperty);
+        set => SetValue(ShowGateAnnotationsProperty, value);
     }
 
     public int ContourLevelCount
@@ -641,7 +651,8 @@ public sealed class FlowPlotView : Control
             context.DrawRectangle(null, handle_stroke, rect);
         }
 
-        draw_gate_annotation(context, gate);
+        if (ShowGateAnnotations)
+            draw_gate_annotation(context, gate);
     }
 
     private void draw_pending_gate(DrawingContext context)

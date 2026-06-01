@@ -12,6 +12,7 @@ using Avalonia.Controls.Documents;
 using gated.ViewModels;
 using Avalonia.Svg.Skia;
 using Avalonia.Platform;
+using gated.Models;
 
 namespace gated.Controls;
 
@@ -35,6 +36,9 @@ public sealed class ProjectTreeView : Control
     private const double font_size = 13;
     private INotifyCollectionChanged? subscribed_nodes;
     private ProjectNode[] subscribed_project_nodes = [];
+    private ProjectNode? pressed_node;
+    private Point pressed_point;
+    private bool drag_started;
 
     static ProjectTreeView()
     {
@@ -79,6 +83,10 @@ public sealed class ProjectTreeView : Control
         if (node is null)
             return;
 
+        pressed_node = node;
+        pressed_point = point;
+        drag_started = false;
+
         double chevron_left = 8 + node.Depth * indent_width;
         bool on_chevron = point.X >= chevron_left && point.X <= chevron_left + chevron_width + 4;
         if (node.HasChildren && on_chevron)
@@ -90,6 +98,33 @@ public sealed class ProjectTreeView : Control
             SelectNodeCommand.Execute(node);
 
         e.Handled = true;
+    }
+
+    protected override async void OnPointerMoved(PointerEventArgs e)
+    {
+        base.OnPointerMoved(e);
+        if (pressed_node is null || drag_started || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+            return;
+
+        var point = e.GetPosition(this);
+        if (Math.Abs(point.X - pressed_point.X) < 6 && Math.Abs(point.Y - pressed_point.Y) < 6)
+            return;
+
+        if (pressed_node.Kind is not (ProjectNodeKind.Gate or ProjectNodeKind.Population))
+            return;
+
+        drag_started = true;
+        PageEditorView.DraggedProjectNode = pressed_node;
+        await DragDrop.DoDragDropAsync(e, new DataTransfer(), DragDropEffects.Copy);
+        PageEditorView.DraggedProjectNode = null;
+        pressed_node = null;
+    }
+
+    protected override void OnPointerReleased(PointerReleasedEventArgs e)
+    {
+        base.OnPointerReleased(e);
+        pressed_node = null;
+        drag_started = false;
     }
 
     protected override Size MeasureOverride(Size availableSize)
@@ -204,6 +239,11 @@ public sealed class ProjectTreeView : Control
 
             case ProjectNodeKind.Group:
                 icon.Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri("avares://gated/Resources/group.svg")));
+                break;
+
+            case ProjectNodeKind.LayoutFolder:
+            case ProjectNodeKind.Layout:
+                icon.Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri("avares://gated/Resources/table-edit.svg")));
                 break;
 
             case ProjectNodeKind.GateFolder:

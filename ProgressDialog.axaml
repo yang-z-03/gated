@@ -5,15 +5,18 @@
         SizeToContent="WidthAndHeight"
         CanResize="False"
         WindowStartupLocation="CenterOwner"
-        Background="{DynamicResource SemiColorBackground0}"
         x:CompileBindings="False"
-        Title="Please wait">
-    <Border Padding="20">
-        <StackPanel Spacing="12">
-            <TextBlock Text="{Binding Message}" TextAlignment="Center"
+        Title="Please wait"
+        Background="#303030">
+    <Border Padding="22" MinWidth="420">
+        <StackPanel Spacing="10">
+            <TextBlock Text="{Binding DialogTitle}" TextAlignment="Center"
                        Foreground="{DynamicResource SemiColorText0}"
                        FontWeight="SemiBold" />
-            <ProgressBar IsIndeterminate="True" Height="4" />
+            <TextBlock Text="{Binding Subtitle}" TextAlignment="Center"
+                       TextWrapping="Wrap"
+                       MaxWidth="560" Margin="0 -4 0 4"
+                       Foreground="{DynamicResource SemiColorText2}" />
         </StackPanel>
     </Border>
 </Window>

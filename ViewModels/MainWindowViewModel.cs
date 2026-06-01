@@ -22,30 +22,41 @@ public sealed class MainWindowViewModel : NotifyBase
     private GateDefinition? selected_gate;
     private PopulationResult? selected_population;
     private CompensationMatrix? selected_compensation;
+    private PageLayout? selected_page_layout;
     private PlotMode selected_plot_mode = PlotMode.Density;
     private GatingTool active_tool = GatingTool.View;
     private bool show_outlier_points = true;
     private bool show_gridlines = true;
+    private bool show_gate_annotations = true;
     private int contour_level_count = 10;
     private int density_smoothing = 9;
     private string status_text = "Append samples to grouping to begin analysis";
     private AxisSettings x_axis = new();
     private AxisSettings y_axis = new();
     private int next_gate_number = 1;
+    private bool is_page_editor_mode;
+    private PagePlotElement? selected_page_element;
+    private PagePlotElement? subscribed_page_menu_element;
 
     public FlowWorkspace Workspace { get; } = new();
     public ObservableCollection<ProjectNode> ProjectNodes { get; } = new();
     public ObservableCollection<ChannelRow> ChannelRows { get; } = new();
     public ObservableCollection<AxisChoice> AxisChoices { get; } = new();
+    public ObservableCollection<AxisChoice> SelectedPageAxisChoices { get; } = new();
     private DataTable statistic_table = new();
     public ObservableCollection<GateDefinition> PlotGates { get; } = new();
+    public ObservableCollection<PagePlotElement> PageElements => selected_page_layout?.Elements ?? empty_page_elements;
+    private readonly ObservableCollection<PagePlotElement> empty_page_elements = new();
     public ObservableCollection<CoordinateScaleKind> CoordinateScaleChoices { get; } = new(Enum.GetValues<CoordinateScaleKind>());
+    public ObservableCollection<PlotMode> PlotModeChoices { get; } = new(Enum.GetValues<PlotMode>());
     public DataView StatisticTableView => statistic_table.DefaultView;
     public DataTable StatisticTable => statistic_table;
 
     public ICommand CreateGroupCommand { get; }
+    public ICommand CreateLayoutCommand { get; }
     public ICommand RenameGroupCommand { get; }
     public ICommand RenameGateCommand { get; }
+    public ICommand RenameLayoutCommand { get; }
     public ICommand ConcatenateSamplesCommand { get; }
     public ICommand ApplyCompensationCommand { get; }
     public ICommand EditCompensationCommand { get; }
@@ -68,6 +79,8 @@ public sealed class MainWindowViewModel : NotifyBase
     public ICommand GateEditedCommand { get; }
     public ICommand ToggleProjectNodeCommand { get; }
     public ICommand SelectProjectNodeCommand { get; }
+    public ICommand AddPageElementCommand { get; }
+    public ICommand DeletePageElementCommand { get; }
     public Func<string, string, Task<string?>>? RequestTextInputAsync { get; set; }
     public Func<string, IReadOnlyList<AxisChoice>, Task<string?>>? RequestChoiceInputAsync { get; set; }
     public Func<CompensationMatrix, Task<bool>>? RequestCompensationEditorAsync { get; set; }
@@ -75,8 +88,10 @@ public sealed class MainWindowViewModel : NotifyBase
     public MainWindowViewModel()
     {
         CreateGroupCommand = new RelayCommand(_ => create_group());
+        CreateLayoutCommand = new RelayCommand(_ => create_layout());
         RenameGroupCommand = new RelayCommand(_ => _ = rename_selected_group_async(), _ => selected_group is not null);
         RenameGateCommand = new RelayCommand(_ => _ = rename_selected_gate_async(), _ => selected_gate is not null);
+        RenameLayoutCommand = new RelayCommand(_ => _ = rename_selected_layout_async(), _ => selected_page_layout is not null);
         ConcatenateSamplesCommand = new RelayCommand(_ => concatenate_selected_group(), _ => selected_group?.Samples.Count > 1);
         ApplyCompensationCommand = new RelayCommand(_ => apply_selected_compensation(), _ => selected_group is not null && selected_compensation is not null);
         EditCompensationCommand = new RelayCommand(_ => _ = edit_selected_compensation_async(), _ => selected_group is not null && selected_compensation is not null);
@@ -99,6 +114,9 @@ public sealed class MainWindowViewModel : NotifyBase
         GateEditedCommand = new RelayCommand(_ => RecalculateSelectedGroup());
         ToggleProjectNodeCommand = new RelayCommand(parameter => toggle_project_node(parameter as ProjectNode));
         SelectProjectNodeCommand = new RelayCommand(parameter => select_project_node(parameter as ProjectNode));
+        AddPageElementCommand = new RelayCommand(parameter => add_page_element(parameter as PageDropRequest));
+        DeletePageElementCommand = new RelayCommand(_ => delete_selected_page_element(), _ => selected_page_element is not null);
+        ensure_default_layout();
         refresh_project_tree();
         refresh_selection_sidebars();
         refresh_plot_gates();
@@ -208,6 +226,20 @@ public sealed class MainWindowViewModel : NotifyBase
     public bool IsContourPlotMode => SelectedPlotMode == PlotMode.Contour;
     public bool IsZebraPlotMode => SelectedPlotMode == PlotMode.Zebra;
     public bool IsHistogramPlotMode => SelectedPlotMode == PlotMode.Histogram;
+    public bool IsEditorXAxisLinearScale { get => XAxis.ScaleKind == CoordinateScaleKind.Linear; set { if (value) XAxis.ScaleKind = CoordinateScaleKind.Linear; } }
+    public bool IsEditorXAxisLogicleScale { get => XAxis.ScaleKind == CoordinateScaleKind.Logicle; set { if (value) XAxis.ScaleKind = CoordinateScaleKind.Logicle; } }
+    public bool IsEditorYAxisLinearScale { get => YAxis.ScaleKind == CoordinateScaleKind.Linear; set { if (value) YAxis.ScaleKind = CoordinateScaleKind.Linear; } }
+    public bool IsEditorYAxisLogicleScale { get => YAxis.ScaleKind == CoordinateScaleKind.Logicle; set { if (value) YAxis.ScaleKind = CoordinateScaleKind.Logicle; } }
+
+    public bool IsLayoutDensityPlotMode { get => selected_page_element?.PlotMode == PlotMode.Density; set { if (value && selected_page_element is not null) { selected_page_element.PlotMode = PlotMode.Density; refresh_selected_page_menu_state(); } } }
+    public bool IsLayoutDotplotPlotMode { get => selected_page_element?.PlotMode == PlotMode.Dotplot; set { if (value && selected_page_element is not null) { selected_page_element.PlotMode = PlotMode.Dotplot; refresh_selected_page_menu_state(); } } }
+    public bool IsLayoutContourPlotMode { get => selected_page_element?.PlotMode == PlotMode.Contour; set { if (value && selected_page_element is not null) { selected_page_element.PlotMode = PlotMode.Contour; refresh_selected_page_menu_state(); } } }
+    public bool IsLayoutZebraPlotMode { get => selected_page_element?.PlotMode == PlotMode.Zebra; set { if (value && selected_page_element is not null) { selected_page_element.PlotMode = PlotMode.Zebra; refresh_selected_page_menu_state(); } } }
+    public bool IsLayoutHistogramPlotMode { get => selected_page_element?.PlotMode == PlotMode.Histogram; set { if (value && selected_page_element is not null) { selected_page_element.PlotMode = PlotMode.Histogram; refresh_selected_page_menu_state(); } } }
+    public bool IsLayoutXAxisLinearScale { get => selected_page_element?.XAxis.ScaleKind == CoordinateScaleKind.Linear; set { if (value && selected_page_element is not null) { selected_page_element.XAxis.ScaleKind = CoordinateScaleKind.Linear; refresh_selected_page_menu_state(); } } }
+    public bool IsLayoutXAxisLogicleScale { get => selected_page_element?.XAxis.ScaleKind == CoordinateScaleKind.Logicle; set { if (value && selected_page_element is not null) { selected_page_element.XAxis.ScaleKind = CoordinateScaleKind.Logicle; refresh_selected_page_menu_state(); } } }
+    public bool IsLayoutYAxisLinearScale { get => selected_page_element?.YAxis.ScaleKind == CoordinateScaleKind.Linear; set { if (value && selected_page_element is not null) { selected_page_element.YAxis.ScaleKind = CoordinateScaleKind.Linear; refresh_selected_page_menu_state(); } } }
+    public bool IsLayoutYAxisLogicleScale { get => selected_page_element?.YAxis.ScaleKind == CoordinateScaleKind.Logicle; set { if (value && selected_page_element is not null) { selected_page_element.YAxis.ScaleKind = CoordinateScaleKind.Logicle; refresh_selected_page_menu_state(); } } }
 
     public GatingTool ActiveTool
     {
@@ -247,6 +279,12 @@ public sealed class MainWindowViewModel : NotifyBase
         set => SetField(ref show_gridlines, value);
     }
 
+    public bool ShowGateAnnotations
+    {
+        get => show_gate_annotations;
+        set => SetField(ref show_gate_annotations, value);
+    }
+
     public int ContourLevelCount
     {
         get => contour_level_count;
@@ -266,6 +304,8 @@ public sealed class MainWindowViewModel : NotifyBase
         {
             set_axis(ref x_axis, value, x_axis_property_changed);
             OnPropertyChanged(nameof(SelectedXAxisChoice));
+            OnPropertyChanged(nameof(IsEditorXAxisLinearScale));
+            OnPropertyChanged(nameof(IsEditorXAxisLogicleScale));
         }
     }
 
@@ -276,6 +316,8 @@ public sealed class MainWindowViewModel : NotifyBase
         {
             set_axis(ref y_axis, value, y_axis_property_changed);
             OnPropertyChanged(nameof(SelectedYAxisChoice));
+            OnPropertyChanged(nameof(IsEditorYAxisLinearScale));
+            OnPropertyChanged(nameof(IsEditorYAxisLogicleScale));
         }
     }
 
@@ -289,6 +331,7 @@ public sealed class MainWindowViewModel : NotifyBase
 
             XAxis.ChannelName = value.Name;
             OnPropertyChanged();
+            refresh_axis_menu_state();
         }
     }
 
@@ -302,6 +345,7 @@ public sealed class MainWindowViewModel : NotifyBase
 
             YAxis.ChannelName = value.Name;
             OnPropertyChanged();
+            refresh_axis_menu_state();
         }
     }
 
@@ -309,6 +353,90 @@ public sealed class MainWindowViewModel : NotifyBase
     {
         get => status_text;
         set => SetField(ref status_text, value);
+    }
+
+    public bool IsPageEditorMode
+    {
+        get => is_page_editor_mode;
+        set
+        {
+            if (!SetField(ref is_page_editor_mode, value))
+                return;
+            OnPropertyChanged(nameof(IsDefaultAnalysisMode));
+            StatusText = value
+                ? "Page editor: drag gate definitions or sample populations onto the canvas"
+                : "Analysis view";
+        }
+    }
+
+    public bool IsDefaultAnalysisMode => !IsPageEditorMode;
+
+    public PagePlotElement? SelectedPageElement
+    {
+        get => selected_page_element;
+        set
+        {
+            unsubscribe_selected_page_menu_element();
+            if (!SetField(ref selected_page_element, value))
+            {
+                subscribe_selected_page_menu_element();
+                return;
+            }
+            subscribe_selected_page_menu_element();
+            refresh_selected_page_axis_choices();
+            OnPropertyChanged(nameof(HasSelectedPageElement));
+            OnPropertyChanged(nameof(SelectedPageXAxisChoice));
+            OnPropertyChanged(nameof(SelectedPageYAxisChoice));
+            refresh_selected_page_menu_state();
+            if (DeletePageElementCommand is RelayCommand relay)
+                relay.RaiseCanExecuteChanged();
+        }
+    }
+
+    public bool HasSelectedPageElement => SelectedPageElement is not null;
+
+    public PageLayout? SelectedPageLayout
+    {
+        get => selected_page_layout;
+        set
+        {
+            if (!SetField(ref selected_page_layout, value))
+                return;
+            SelectedPageElement = selected_page_layout?.Elements.LastOrDefault();
+            OnPropertyChanged(nameof(PageElements));
+            if (RenameLayoutCommand is RelayCommand rename_layout)
+                rename_layout.RaiseCanExecuteChanged();
+        }
+    }
+
+    public AxisChoice? SelectedPageXAxisChoice
+    {
+        get => selected_page_element is null ? null : SelectedPageAxisChoices.FirstOrDefault(choice => choice.Name == selected_page_element.XAxis.ChannelName);
+        set
+        {
+            if (selected_page_element is null || value is null || selected_page_element.XAxis.ChannelName == value.Name)
+                return;
+            selected_page_element.XAxis.ChannelName = value.Name;
+            apply_page_axis_channel_defaults(selected_page_element.XAxis);
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(SelectedPageElement));
+            refresh_axis_menu_state();
+        }
+    }
+
+    public AxisChoice? SelectedPageYAxisChoice
+    {
+        get => selected_page_element is null ? null : SelectedPageAxisChoices.FirstOrDefault(choice => choice.Name == selected_page_element.YAxis.ChannelName);
+        set
+        {
+            if (selected_page_element is null || value is null || selected_page_element.YAxis.ChannelName == value.Name)
+                return;
+            selected_page_element.YAxis.ChannelName = value.Name;
+            apply_page_axis_channel_defaults(selected_page_element.YAxis);
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(SelectedPageElement));
+            refresh_axis_menu_state();
+        }
     }
 
     public void AddFiles(IEnumerable<string> file_paths)
@@ -383,11 +511,15 @@ public sealed class MainWindowViewModel : NotifyBase
     {
         Workspace.Name = loaded.Name;
         Workspace.Groups.Clear();
+        Workspace.PageLayouts.Clear();
         foreach (var group in loaded.Groups)
         {
             group.RecalculateSamples();
             Workspace.Groups.Add(group);
         }
+        foreach (var layout in loaded.PageLayouts)
+            Workspace.PageLayouts.Add(layout);
+        ensure_default_layout();
 
         project_expansion_state.Clear();
         SelectedNode = null;
@@ -396,6 +528,8 @@ public sealed class MainWindowViewModel : NotifyBase
         SelectedGate = null;
         SelectedPopulation = null;
         SelectedCompensation = null;
+        SelectedPageLayout = Workspace.PageLayouts.FirstOrDefault();
+        SelectedPageElement = selected_page_layout?.Elements.LastOrDefault();
         next_gate_number = Math.Max(1, count_gates(Workspace.Groups.SelectMany(group => group.Gates)) + 1);
         if (selected_group is not null)
             reset_axes_from_group(selected_group);
@@ -458,6 +592,16 @@ public sealed class MainWindowViewModel : NotifyBase
         raise_command_states();
     }
 
+    private void create_layout()
+    {
+        var layout = new PageLayout { Name = next_layout_name() };
+        Workspace.PageLayouts.Add(layout);
+        SelectedPageLayout = layout;
+        IsPageEditorMode = true;
+        refresh_project_tree();
+        raise_command_states();
+    }
+
     private async Task rename_selected_group_async()
     {
         if (selected_group is null || RequestTextInputAsync is null)
@@ -483,6 +627,35 @@ public sealed class MainWindowViewModel : NotifyBase
         selected_gate.Name = name.Trim();
         refresh_project_tree();
         OnPropertyChanged(nameof(SelectedGateName));
+    }
+
+    private async Task rename_selected_layout_async()
+    {
+        if (selected_page_layout is null || RequestTextInputAsync is null)
+            return;
+
+        string? name = await RequestTextInputAsync("Rename layout", selected_page_layout.Name);
+        if (string.IsNullOrWhiteSpace(name))
+            return;
+
+        selected_page_layout.Name = name.Trim();
+        refresh_project_tree();
+    }
+
+    private void ensure_default_layout()
+    {
+        if (Workspace.PageLayouts.Count == 0)
+            Workspace.PageLayouts.Add(new PageLayout { Name = next_layout_name() });
+        selected_page_layout ??= Workspace.PageLayouts[0];
+        OnPropertyChanged(nameof(PageElements));
+    }
+
+    private string next_layout_name()
+    {
+        int index = Workspace.PageLayouts.Count + 1;
+        while (Workspace.PageLayouts.Any(layout => layout.Name == $"Layout {index}"))
+            index++;
+        return $"Layout {index}";
     }
 
     private void concatenate_selected_group()
@@ -743,6 +916,14 @@ public sealed class MainWindowViewModel : NotifyBase
                 apply_root_axis_context();
                 refresh_plot_gates();
                 break;
+            case ProjectNodeKind.LayoutFolder:
+                IsPageEditorMode = true;
+                SelectedPageLayout = Workspace.PageLayouts.FirstOrDefault();
+                break;
+            case ProjectNodeKind.Layout:
+                IsPageEditorMode = true;
+                SelectedPageLayout = node.Layout;
+                break;
             case ProjectNodeKind.GateFolder:
                 if (node.Group is not null)
                     SelectedGroup = node.Group;
@@ -908,7 +1089,10 @@ public sealed class MainWindowViewModel : NotifyBase
         {
             apply_axis_channel_defaults(XAxis);
             OnPropertyChanged(nameof(SelectedXAxisChoice));
+            refresh_axis_menu_state();
         }
+        OnPropertyChanged(nameof(IsEditorXAxisLinearScale));
+        OnPropertyChanged(nameof(IsEditorXAxisLogicleScale));
         sync_selected_gate_preferred_view();
         refresh_plot_gates();
     }
@@ -919,7 +1103,10 @@ public sealed class MainWindowViewModel : NotifyBase
         {
             apply_axis_channel_defaults(YAxis);
             OnPropertyChanged(nameof(SelectedYAxisChoice));
+            refresh_axis_menu_state();
         }
+        OnPropertyChanged(nameof(IsEditorYAxisLinearScale));
+        OnPropertyChanged(nameof(IsEditorYAxisLogicleScale));
         sync_selected_gate_preferred_view();
         refresh_plot_gates();
     }
@@ -1026,8 +1213,30 @@ public sealed class MainWindowViewModel : NotifyBase
                 AxisChoices.Add(new AxisChoice(channel.Name, channel.Label));
         }
 
+        refresh_selected_page_axis_choices();
         OnPropertyChanged(nameof(SelectedXAxisChoice));
         OnPropertyChanged(nameof(SelectedYAxisChoice));
+        refresh_axis_menu_state();
+    }
+
+    private void refresh_selected_page_axis_choices()
+    {
+        SelectedPageAxisChoices.Clear();
+        if (selected_page_element?.Group is { } group)
+        {
+            foreach (var channel in group.Channels)
+                SelectedPageAxisChoices.Add(new AxisChoice(channel.Name, channel.Label));
+        }
+        else
+        {
+            foreach (var choice in AxisChoices)
+                SelectedPageAxisChoices.Add(choice);
+        }
+
+        OnPropertyChanged(nameof(SelectedPageAxisChoices));
+        OnPropertyChanged(nameof(SelectedPageXAxisChoice));
+        OnPropertyChanged(nameof(SelectedPageYAxisChoice));
+        refresh_axis_menu_state();
     }
 
     private void refresh_plot_gates()
@@ -1056,6 +1265,10 @@ public sealed class MainWindowViewModel : NotifyBase
         capture_project_expansion_state();
         project_roots.Clear();
         var workspace_node = create_project_node(ProjectNodeKind.Workspace, Workspace.Name, "workspace", depth: 0);
+        var layouts_node = create_project_node(ProjectNodeKind.LayoutFolder, "Layouts", "workspace:layouts", depth: 1);
+        foreach (var layout in Workspace.PageLayouts)
+            layouts_node.Children.Add(create_project_node(ProjectNodeKind.Layout, layout.Name, $"workspace:layout:{layout.Id}", layout: layout, count: layout.Elements.Count, depth: 2));
+        workspace_node.Children.Add(layouts_node);
         foreach (var group in Workspace.Groups)
         {
             string group_key = $"group:{group.Id}";
@@ -1104,11 +1317,12 @@ public sealed class MainWindowViewModel : NotifyBase
         StatisticDefinition? statistic_definition = null,
         StatisticResult? statistic_result = null,
         CompensationMatrix? compensation = null,
+        PageLayout? layout = null,
         int? count = null,
         bool is_applied_compensation = false,
         int depth = 0)
     {
-        return new ProjectNode(kind, name, key, group, sample, gate, population, statistic_definition, statistic_result, compensation, count, is_applied_compensation, depth)
+        return new ProjectNode(kind, name, key, group, sample, gate, population, statistic_definition, statistic_result, compensation, layout, count, is_applied_compensation, depth)
         {
             IsExpanded = project_expansion_state.TryGetValue(key, out bool is_expanded) ? is_expanded : true
         };
@@ -1287,6 +1501,7 @@ public sealed class MainWindowViewModel : NotifyBase
         {
             RenameGroupCommand,
             RenameGateCommand,
+            RenameLayoutCommand,
             ConcatenateSamplesCommand,
             ApplyCompensationCommand,
             EditCompensationCommand,
@@ -1402,12 +1617,186 @@ public sealed class MainWindowViewModel : NotifyBase
                 yield return child;
         }
     }
+
+    private void add_page_element(PageDropRequest? request)
+    {
+        ensure_default_layout();
+        if (request?.Node is not { } node)
+            return;
+        if (node.Kind is not (ProjectNodeKind.Gate or ProjectNodeKind.Population) || node.Gate is null || node.Group is null)
+            return;
+
+        var gate = node.Gate;
+        bool has_preferred_view = !string.IsNullOrWhiteSpace(gate.PreferredXChannel);
+        var x_axis = new AxisSettings
+        {
+            ChannelName = has_preferred_view ? gate.PreferredXChannel : gate.XChannel,
+            Minimum = has_preferred_view ? gate.PreferredXMinimum : gate.XMinimum,
+            Maximum = has_preferred_view ? gate.PreferredXMaximum : gate.XMaximum,
+            Scale = (has_preferred_view ? gate.PreferredXScale : gate.XScale).Clone()
+        };
+        var y_axis = new AxisSettings
+        {
+            ChannelName = has_preferred_view ? gate.PreferredYChannel ?? gate.YChannel ?? "" : gate.YChannel ?? "",
+            Minimum = has_preferred_view ? gate.PreferredYMinimum : gate.YMinimum,
+            Maximum = has_preferred_view ? gate.PreferredYMaximum : gate.YMaximum,
+            Scale = (has_preferred_view ? gate.PreferredYScale : gate.YScale).Clone()
+        };
+
+        if (string.IsNullOrWhiteSpace(x_axis.ChannelName))
+            x_axis = XAxisClone();
+        if (string.IsNullOrWhiteSpace(y_axis.ChannelName))
+            y_axis = YAxisClone();
+
+        var element = new PagePlotElement
+        {
+            Group = node.Group,
+            Sample = node.Kind == ProjectNodeKind.Population ? node.Sample : null,
+            Gate = gate,
+            Population = node.Kind == ProjectNodeKind.Population ? node.Population : null,
+            XAxis = x_axis,
+            YAxis = y_axis,
+            X = Math.Clamp(request.PagePoint.X - 130, 0, 740),
+            Y = Math.Clamp(request.PagePoint.Y - 130, 0, 500),
+            Size = 260,
+            Title = node.Kind == ProjectNodeKind.Population && node.Sample is not null
+                ? $"{node.Sample.Name} - {node.Name}"
+                : $"{node.Group.Name} - {gate.Name}",
+            PlotMode = gate.IsOneDimensional ? PlotMode.Histogram : EffectivePlotMode,
+            ShowGridlines = ShowGridlines,
+            ShowOutlierPoints = ShowOutlierPoints,
+            ShowTickLabels = false,
+            UsePseudocolor = true,
+            ContourLevelCount = ContourLevelCount,
+            DensitySmoothing = DensitySmoothing
+        };
+        PageElements.Add(element);
+        SelectedPageElement = element;
+        refresh_project_tree();
+        StatusText = $"Added page plot: {element.Title}";
+    }
+
+    private AxisSettings XAxisClone() =>
+        new() { ChannelName = XAxis.ChannelName, Minimum = XAxis.Minimum, Maximum = XAxis.Maximum, Scale = XAxis.Scale.Clone() };
+
+    private AxisSettings YAxisClone() =>
+        new() { ChannelName = YAxis.ChannelName, Minimum = YAxis.Minimum, Maximum = YAxis.Maximum, Scale = YAxis.Scale.Clone() };
+
+    private void delete_selected_page_element()
+    {
+        if (selected_page_element is null)
+            return;
+        PageElements.Remove(selected_page_element);
+        SelectedPageElement = PageElements.LastOrDefault();
+        refresh_project_tree();
+    }
+
+    private void apply_page_axis_channel_defaults(AxisSettings axis)
+    {
+        var channel = selected_page_element?.Group?.Channels.FirstOrDefault(item => item.Name == axis.ChannelName)
+            ?? selected_group?.Channels.FirstOrDefault(item => item.Name == axis.ChannelName);
+        if (channel is null)
+            return;
+        axis.Minimum = 0;
+        axis.Maximum = channel.Maximum;
+    }
+
+    private void refresh_selected_page_menu_state()
+    {
+        OnPropertyChanged(nameof(IsLayoutDensityPlotMode));
+        OnPropertyChanged(nameof(IsLayoutDotplotPlotMode));
+        OnPropertyChanged(nameof(IsLayoutContourPlotMode));
+        OnPropertyChanged(nameof(IsLayoutZebraPlotMode));
+        OnPropertyChanged(nameof(IsLayoutHistogramPlotMode));
+        OnPropertyChanged(nameof(IsLayoutXAxisLinearScale));
+        OnPropertyChanged(nameof(IsLayoutXAxisLogicleScale));
+        OnPropertyChanged(nameof(IsLayoutYAxisLinearScale));
+        OnPropertyChanged(nameof(IsLayoutYAxisLogicleScale));
+    }
+
+    private void subscribe_selected_page_menu_element()
+    {
+        subscribed_page_menu_element = selected_page_element;
+        if (subscribed_page_menu_element is null)
+            return;
+
+        subscribed_page_menu_element.PropertyChanged += selected_page_menu_element_changed;
+        subscribed_page_menu_element.XAxis.PropertyChanged += selected_page_menu_axis_changed;
+        subscribed_page_menu_element.YAxis.PropertyChanged += selected_page_menu_axis_changed;
+    }
+
+    private void unsubscribe_selected_page_menu_element()
+    {
+        if (subscribed_page_menu_element is null)
+            return;
+
+        subscribed_page_menu_element.PropertyChanged -= selected_page_menu_element_changed;
+        subscribed_page_menu_element.XAxis.PropertyChanged -= selected_page_menu_axis_changed;
+        subscribed_page_menu_element.YAxis.PropertyChanged -= selected_page_menu_axis_changed;
+        subscribed_page_menu_element = null;
+    }
+
+    private void selected_page_menu_element_changed(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(PagePlotElement.PlotMode))
+            refresh_selected_page_menu_state();
+    }
+
+    private void selected_page_menu_axis_changed(object? sender, PropertyChangedEventArgs e)
+    {
+        refresh_selected_page_menu_state();
+        if (ReferenceEquals(sender, selected_page_element?.XAxis))
+        {
+            OnPropertyChanged(nameof(SelectedPageXAxisChoice));
+            refresh_axis_menu_state();
+        }
+        if (ReferenceEquals(sender, selected_page_element?.YAxis))
+        {
+            OnPropertyChanged(nameof(SelectedPageYAxisChoice));
+            refresh_axis_menu_state();
+        }
+    }
+
+    private void refresh_axis_menu_state()
+    {
+        foreach (var choice in AxisChoices)
+        {
+            choice.IsEditorXSelected = choice.Name == XAxis.ChannelName;
+            choice.IsEditorYSelected = choice.Name == YAxis.ChannelName;
+        }
+
+        foreach (var choice in SelectedPageAxisChoices)
+        {
+            choice.IsLayoutXSelected = selected_page_element is not null && choice.Name == selected_page_element.XAxis.ChannelName;
+            choice.IsLayoutYSelected = selected_page_element is not null && choice.Name == selected_page_element.YAxis.ChannelName;
+        }
+    }
 }
 
-public sealed record AxisChoice(string Name, string Label)
+public sealed record PageDropRequest(ProjectNode Node, Point PagePoint);
+
+public sealed class AxisChoice : NotifyBase
 {
+    private bool is_editor_x_selected;
+    private bool is_editor_y_selected;
+    private bool is_layout_x_selected;
+    private bool is_layout_y_selected;
+
+    public AxisChoice(string name, string label)
+    {
+        Name = name;
+        Label = label;
+    }
+
+    public string Name { get; }
+    public string Label { get; }
     public bool HasLabel => !string.IsNullOrWhiteSpace(Label);
     public string DisplayLabel => HasLabel ? Label : Name;
+    public bool IsEditorXSelected { get => is_editor_x_selected; set => SetField(ref is_editor_x_selected, value); }
+    public bool IsEditorYSelected { get => is_editor_y_selected; set => SetField(ref is_editor_y_selected, value); }
+    public bool IsLayoutXSelected { get => is_layout_x_selected; set => SetField(ref is_layout_x_selected, value); }
+    public bool IsLayoutYSelected { get => is_layout_y_selected; set => SetField(ref is_layout_y_selected, value); }
+    public override string ToString() => DisplayLabel;
 }
 
 public sealed class ChannelRow : NotifyBase
@@ -1444,6 +1833,8 @@ public sealed class ChannelRow : NotifyBase
 public enum ProjectNodeKind
 {
     Workspace,
+    LayoutFolder,
+    Layout,
     Group,
     GateFolder,
     Gate,
@@ -1470,6 +1861,7 @@ public sealed class ProjectNode : NotifyBase
     public StatisticDefinition? StatisticDefinition { get; }
     public StatisticResult? StatisticResult { get; }
     public CompensationMatrix? Compensation { get; }
+    public PageLayout? Layout { get; }
     public int? Count { get; }
     public bool IsAppliedCompensation { get; }
     public int Depth { get; }
@@ -1486,6 +1878,7 @@ public sealed class ProjectNode : NotifyBase
         StatisticDefinition? statistic_definition = null,
         StatisticResult? statistic_result = null,
         CompensationMatrix? compensation = null,
+        PageLayout? layout = null,
         int? count = null,
         bool is_applied_compensation = false,
         int depth = 0)
@@ -1500,6 +1893,7 @@ public sealed class ProjectNode : NotifyBase
         StatisticDefinition = statistic_definition;
         StatisticResult = statistic_result;
         Compensation = compensation;
+        Layout = layout;
         Count = count;
         IsAppliedCompensation = is_applied_compensation;
         Depth = depth;
@@ -1534,6 +1928,8 @@ public sealed class ProjectNode : NotifyBase
     public string IconPath => Kind switch
     {
         ProjectNodeKind.Workspace => "avares://gated/Resources/workspace.svg",
+        ProjectNodeKind.LayoutFolder => "avares://gated/Resources/table-edit.svg",
+        ProjectNodeKind.Layout => "avares://gated/Resources/table-edit.svg",
         ProjectNodeKind.Group => "avares://gated/Resources/group.svg",
         ProjectNodeKind.GateFolder => "avares://gated/Resources/gates.svg",
         ProjectNodeKind.Gate => "avares://gated/Resources/gate.svg",
@@ -1557,6 +1953,8 @@ public sealed class ProjectNode : NotifyBase
     public string NodeIconText => Kind switch
     {
         ProjectNodeKind.Workspace => "W",
+        ProjectNodeKind.LayoutFolder => "L",
+        ProjectNodeKind.Layout => "P",
         ProjectNodeKind.Group => "G",
         ProjectNodeKind.GateFolder => "F",
         ProjectNodeKind.Gate => "g",

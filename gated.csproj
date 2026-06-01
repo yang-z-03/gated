@@ -119,6 +119,14 @@
       <AvaloniaResource Include="Resources\zoom-in.svg" />
       <None Remove="Resources\zoom-out.svg" />
       <AvaloniaResource Include="Resources\zoom-out.svg" />
+      <None Remove="Resources\delete.svg" />
+      <AvaloniaResource Include="Resources\delete.svg" />
+      <None Remove="Resources\export.svg" />
+      <AvaloniaResource Include="Resources\export.svg" />
+      <None Remove="Resources\threshold.svg" />
+      <AvaloniaResource Include="Resources\threshold.svg" />
+      <None Remove="Resources\range.svg" />
+      <AvaloniaResource Include="Resources\range.svg" />
       <None Remove="gated.ico" />
       <AvaloniaResource Include="gated.ico" />
     </ItemGroup>

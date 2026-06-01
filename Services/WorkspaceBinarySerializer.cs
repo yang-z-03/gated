@@ -10,7 +10,7 @@ namespace gated.Services;
 public sealed class WorkspaceBinarySerializer
 {
     private const uint magic = 0x44544731;
-    private const int version = 2;
+    private const int version = 4;
 
     public void Save(FlowWorkspace workspace, string file_path)
     {
@@ -22,6 +22,8 @@ public sealed class WorkspaceBinarySerializer
         writer.Write(workspace.Groups.Count);
         foreach (var group in workspace.Groups)
             write_group(writer, group);
+
+        write_page_layouts(writer, workspace);
     }
 
     public FlowWorkspace Load(string file_path)
@@ -39,6 +41,11 @@ public sealed class WorkspaceBinarySerializer
         int group_count = reader.ReadInt32();
         for (int index = 0; index < group_count; index++)
             workspace.Groups.Add(read_group(reader, file_version));
+
+        if (file_version == 3)
+            read_page_elements(reader, workspace, new PageLayout { Name = "Layout 1" }, includes_gate_options: false);
+        else if (file_version >= 4)
+            read_page_layouts(reader, workspace);
 
         return workspace;
     }
@@ -280,6 +287,228 @@ public sealed class WorkspaceBinarySerializer
         return CompensationMatrix.Create(name, channel_names, values);
     }
 
+    private static void write_page_layouts(BinaryWriter writer, FlowWorkspace workspace)
+    {
+        writer.Write(workspace.PageLayouts.Count);
+        foreach (var layout in workspace.PageLayouts)
+        {
+            write_string(writer, layout.Name);
+            write_page_elements(writer, workspace, layout);
+        }
+    }
+
+    private static void read_page_layouts(BinaryReader reader, FlowWorkspace workspace)
+    {
+        int layout_count = reader.ReadInt32();
+        for (int index = 0; index < layout_count; index++)
+        {
+            var layout = new PageLayout { Name = read_string(reader) };
+            read_page_elements(reader, workspace, layout, includes_gate_options: true);
+        }
+    }
+
+    private static void write_page_elements(BinaryWriter writer, FlowWorkspace workspace, PageLayout layout)
+    {
+        var serializable = layout.Elements
+            .Select(element => (Element: element, Reference: create_page_reference(workspace, element)))
+            .Where(item => item.Reference is not null)
+            .ToArray();
+
+        writer.Write(serializable.Length);
+        foreach (var item in serializable)
+        {
+            var element = item.Element;
+            var reference = item.Reference!.Value;
+            writer.Write(reference.GroupIndex);
+            writer.Write(reference.SampleIndex);
+            writer.Write(reference.GatePath.Length);
+            foreach (int gate_index in reference.GatePath)
+                writer.Write(gate_index);
+            writer.Write(reference.HasPopulation);
+            writer.Write((int)reference.PopulationRegion);
+
+            writer.Write(element.X);
+            writer.Write(element.Y);
+            writer.Write(element.Size);
+            write_string(writer, element.Title);
+            writer.Write((int)element.PlotMode);
+            writer.Write(element.ShowGridlines);
+            writer.Write(element.ShowOutlierPoints);
+            writer.Write(element.ShowTickLabels);
+            writer.Write(element.UsePseudocolor);
+            writer.Write(element.ShowGates);
+            writer.Write(element.ShowGateAnnotations);
+            writer.Write(element.ContourLevelCount);
+            writer.Write(element.DensitySmoothing);
+            write_axis_settings(writer, element.XAxis);
+            write_axis_settings(writer, element.YAxis);
+        }
+    }
+
+    private static void read_page_elements(BinaryReader reader, FlowWorkspace workspace, PageLayout layout, bool includes_gate_options)
+    {
+        int count = reader.ReadInt32();
+        for (int index = 0; index < count; index++)
+        {
+            int group_index = reader.ReadInt32();
+            int sample_index = reader.ReadInt32();
+            int path_length = reader.ReadInt32();
+            var gate_path = new int[path_length];
+            for (int path_index = 0; path_index < path_length; path_index++)
+                gate_path[path_index] = reader.ReadInt32();
+            bool has_population = reader.ReadBoolean();
+            var population_region = (PopulationRegion)reader.ReadInt32();
+
+            double x = reader.ReadDouble();
+            double y = reader.ReadDouble();
+            double size = reader.ReadDouble();
+            string title = read_string(reader);
+            var plot_mode = (PlotMode)reader.ReadInt32();
+            bool show_gridlines = reader.ReadBoolean();
+            bool show_outlier_points = reader.ReadBoolean();
+            bool show_tick_labels = reader.ReadBoolean();
+            bool use_pseudocolor = reader.ReadBoolean();
+            bool show_gates = includes_gate_options ? reader.ReadBoolean() : true;
+            bool show_gate_annotations = includes_gate_options ? reader.ReadBoolean() : true;
+            int contour_level_count = reader.ReadInt32();
+            int density_smoothing = reader.ReadInt32();
+            var x_axis = read_axis_settings(reader);
+            var y_axis = read_axis_settings(reader);
+
+            if (group_index < 0 || group_index >= workspace.Groups.Count)
+                continue;
+
+            var group = workspace.Groups[group_index];
+            var sample = sample_index >= 0 && sample_index < group.Samples.Count
+                ? group.Samples[sample_index]
+                : null;
+            var gate = resolve_gate_path(group, gate_path);
+            if (gate is null)
+                continue;
+
+            var population = has_population && sample is not null
+                ? find_population(sample.Populations, gate, population_region)
+                : null;
+
+            layout.Elements.Add(new PagePlotElement
+            {
+                Group = group,
+                Sample = sample,
+                Gate = gate,
+                Population = population,
+                XAxis = x_axis,
+                YAxis = y_axis,
+                X = x,
+                Y = y,
+                Size = size,
+                Title = title,
+                PlotMode = plot_mode,
+                ShowGridlines = show_gridlines,
+                ShowOutlierPoints = show_outlier_points,
+                ShowTickLabels = show_tick_labels,
+                UsePseudocolor = use_pseudocolor,
+                ShowGates = show_gates,
+                ShowGateAnnotations = show_gate_annotations,
+                ContourLevelCount = contour_level_count,
+                DensitySmoothing = density_smoothing
+            });
+        }
+        workspace.PageLayouts.Add(layout);
+    }
+
+    private static PageElementReference? create_page_reference(FlowWorkspace workspace, PagePlotElement element)
+    {
+        if (element.Group is null || element.Gate is null)
+            return null;
+
+        int group_index = workspace.Groups.IndexOf(element.Group);
+        if (group_index < 0)
+            return null;
+
+        if (!try_create_gate_path(element.Group.Gates, element.Gate, [], out var gate_path))
+            return null;
+
+        int sample_index = element.Sample is null ? -1 : element.Group.Samples.IndexOf(element.Sample);
+        if (element.Sample is not null && sample_index < 0)
+            return null;
+
+        return new PageElementReference(
+            group_index,
+            sample_index,
+            gate_path,
+            element.Population is not null,
+            element.Population?.Region ?? PopulationRegion.Primary);
+    }
+
+    private static bool try_create_gate_path(IReadOnlyList<GateDefinition> gates, GateDefinition target, int[] prefix, out int[] path)
+    {
+        for (int index = 0; index < gates.Count; index++)
+        {
+            var gate = gates[index];
+            var current = prefix.Append(index).ToArray();
+            if (ReferenceEquals(gate, target))
+            {
+                path = current;
+                return true;
+            }
+
+            if (try_create_gate_path(gate.Children, target, current, out path))
+                return true;
+        }
+
+        path = [];
+        return false;
+    }
+
+    private static GateDefinition? resolve_gate_path(FlowGroup group, IReadOnlyList<int> path)
+    {
+        if (path.Count == 0)
+            return null;
+
+        IReadOnlyList<GateDefinition> gates = group.Gates;
+        GateDefinition? gate = null;
+        foreach (int index in path)
+        {
+            if (index < 0 || index >= gates.Count)
+                return null;
+            gate = gates[index];
+            gates = gate.Children;
+        }
+
+        return gate;
+    }
+
+    private static PopulationResult? find_population(IEnumerable<PopulationResult> populations, GateDefinition gate, PopulationRegion region)
+    {
+        foreach (var population in populations)
+        {
+            if (population.Gate == gate && population.Region == region)
+                return population;
+            var child = find_population(population.Children, gate, region);
+            if (child is not null)
+                return child;
+        }
+
+        return null;
+    }
+
+    private static void write_axis_settings(BinaryWriter writer, AxisSettings axis)
+    {
+        write_string(writer, axis.ChannelName);
+        writer.Write(axis.Minimum);
+        writer.Write(axis.Maximum);
+        write_axis_scale(writer, axis.Scale);
+    }
+
+    private static AxisSettings read_axis_settings(BinaryReader reader) =>
+        new()
+        {
+            ChannelName = read_string(reader),
+            Minimum = reader.ReadDouble(),
+            Maximum = reader.ReadDouble(),
+            Scale = read_axis_scale(reader)
+        };
+
     private static void write_statistics(BinaryWriter writer, IReadOnlyCollection<StatisticDefinition> statistics)
     {
         writer.Write(statistics.Count);
@@ -330,4 +559,11 @@ public sealed class WorkspaceBinarySerializer
 
     private static string read_string(BinaryReader reader) =>
         reader.ReadString();
+
+    private readonly record struct PageElementReference(
+        int GroupIndex,
+        int SampleIndex,
+        int[] GatePath,
+        bool HasPopulation,
+        PopulationRegion PopulationRegion);
 }

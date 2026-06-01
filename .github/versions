@@ -1,0 +1,5 @@
+<repository>
+  <version major="0" minor="19" patch="2">
+    <archive href="https://github.com/yang-z-03/gated/releases/download/0-19/gated-0-19-2.zip" extract="."/>
+  </version>
+</repository>
