@@ -19,8 +19,12 @@ public partial class App : Application
             var window = new MainWindow();
             desktop.MainWindow = window;
             var args = desktop.Args ?? [];
-            if (args.Length > 0)
-                window.Opened += async (_, _) => await window.OpenCommandLineFilesAsync(args);
+            window.Opened += async (_, _) =>
+            {
+                if (args.Length > 0)
+                    await window.OpenCommandLineFilesAsync(args);
+                await window.CheckForUpdatesAtStartupAsync();
+            };
         }
 
         base.OnFrameworkInitializationCompleted();

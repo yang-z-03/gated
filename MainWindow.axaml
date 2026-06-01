@@ -243,6 +243,7 @@
                 <MenuItem Header="Number of events" Command="{Binding AddCountStatisticCommand}" />
             </MenuItem>
             <MenuItem Header="_Help">
+                <MenuItem Header="Check for updates" Click="check_for_updates_menu_item_click" />
                 <MenuItem Header="About Gated" Click="about_menu_item_click" />
             </MenuItem>
         </Menu>

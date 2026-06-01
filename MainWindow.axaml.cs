@@ -22,6 +22,13 @@ using gated.Services;
 
 namespace gated;
 
+internal enum UpdateDialogChoice
+{
+    Cancel,
+    Update,
+    SuppressForOneWeek
+}
+
 public partial class MainWindow : Window
 {
     private readonly MainWindowViewModel view_model = new();
@@ -184,6 +191,202 @@ public partial class MainWindow : Window
     {
         await new AboutWindow().ShowDialog(this);
     }
+
+    private async void check_for_updates_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        await check_for_updates(is_manual_check: true, suppress_connection_errors: false);
+    }
+
+    public async Task CheckForUpdatesAtStartupAsync()
+    {
+        await check_for_updates(is_manual_check: false, suppress_connection_errors: true);
+    }
+
+    private async Task check_for_updates(bool is_manual_check, bool suppress_connection_errors)
+    {
+        try
+        {
+            var manager = new UpdateManager();
+            var status = await manager.GetUpdateStatusAsync();
+            if (status.Update is null)
+            {
+                if (is_manual_check)
+                    await show_message_dialog("No updates found", build_update_status_text(status));
+                return;
+            }
+
+            if (!is_manual_check && is_update_suppressed(status.Update.Latest.Version))
+                return;
+
+            string changelog;
+            try
+            {
+                changelog = await manager.DownloadChangelogAsync(status.Update.Latest);
+            }
+            catch (Exception exception)
+            {
+                changelog = $"Unable to load changelog: {exception.Message}";
+            }
+
+            var choice = await show_update_available_dialog(status, changelog);
+            if (choice == UpdateDialogChoice.Update)
+                await install_update(manager, status.Update);
+            else if (choice == UpdateDialogChoice.SuppressForOneWeek)
+                suppress_update_for_one_week(status.Update.Latest.Version);
+        }
+        catch (Exception exception)
+        {
+            if (!suppress_connection_errors)
+                await show_message_dialog("Update check failed", exception.Message);
+        }
+    }
+
+    private async Task install_update(UpdateManager manager, UpdateInfo update)
+    {
+        var dialog = new ProgressDialog("Preparing update ...", $"Gated {update.Latest.Version}");
+        var progress = new Progress<UpdateProgress>(status => dialog.SetProgress(status.Title, status.Detail, status.Fraction));
+        var dialog_task = dialog.ShowDialog(this);
+
+        try
+        {
+            await Task.Yield();
+            string manifest_path = await manager.DownloadUpdateAsync(update, progress);
+            dialog.SetProgress("Preparing updater ...", "Gated will close and restart after extraction.", null);
+            manager.LaunchUpdater(manifest_path);
+
+            if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+                desktop.Shutdown();
+            else
+                Close();
+        }
+        catch (Exception exception)
+        {
+            dialog.Close();
+            await dialog_task;
+            await show_message_dialog("Update failed", exception.Message);
+            return;
+        }
+
+        dialog.Close();
+        await dialog_task;
+    }
+
+    private async Task<UpdateDialogChoice> show_update_available_dialog(UpdateCheckResult status, string changelog)
+    {
+        var update = status.Update ?? throw new ArgumentException("Update status does not contain an update.", nameof(status));
+        var changelog_box = new TextBox
+        {
+            Text = string.IsNullOrWhiteSpace(changelog) ? "No changelog is available for this version." : changelog,
+            IsReadOnly = true,
+            AcceptsReturn = true,
+            TextWrapping = TextWrapping.Wrap,
+            MinHeight = 180,
+            MaxHeight = 280,
+            Foreground = new SolidColorBrush(Color.FromRgb(218, 221, 228)),
+            Background = new SolidColorBrush(Color.FromRgb(38, 38, 38))
+        };
+
+        var dialog = new Window
+        {
+            Title = "Update available",
+            Width = 640,
+            MinWidth = 460,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = Background,
+            SizeToContent = SizeToContent.Height,
+            Content = new StackPanel
+            {
+                Margin = new Thickness(16),
+                Spacing = 12,
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = "Update available",
+                        FontWeight = FontWeight.SemiBold,
+                        Foreground = Brushes.White
+                    },
+                    new TextBlock
+                    {
+                        Text = $"Gated {update.Latest.Version} is available.\n\n{build_update_status_text(status)}",
+                        TextWrapping = TextWrapping.Wrap,
+                        Foreground = new SolidColorBrush(Color.FromRgb(218, 221, 228))
+                    },
+                    new TextBlock
+                    {
+                        Text = "Changelog",
+                        FontWeight = FontWeight.SemiBold,
+                        Foreground = Brushes.White
+                    },
+                    changelog_box,
+                    new StackPanel
+                    {
+                        Orientation = Avalonia.Layout.Orientation.Horizontal,
+                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                        Spacing = 8,
+                        Children =
+                        {
+                            new Button { Content = "Suppress for 1 week", MinWidth = 140 },
+                            new Button { Content = "Cancel", MinWidth = 80 },
+                            new Button { Content = "Update", MinWidth = 96, IsDefault = true }
+                        }
+                    }
+                }
+            }
+        };
+
+        var buttons = ((StackPanel)((StackPanel)dialog.Content).Children[4]).Children;
+        ((Button)buttons[0]).Click += (_, _) => dialog.Close(UpdateDialogChoice.SuppressForOneWeek);
+        ((Button)buttons[1]).Click += (_, _) => dialog.Close(UpdateDialogChoice.Cancel);
+        ((Button)buttons[2]).Click += (_, _) => dialog.Close(UpdateDialogChoice.Update);
+        return await dialog.ShowDialog<UpdateDialogChoice>(this);
+    }
+
+    private static string build_update_status_text(UpdateCheckResult status)
+    {
+        string latest_remote = status.LatestRemote?.Version.ToString() ?? "not available";
+        string compatible = status.LatestCompatible?.Version.ToString() ?? "none";
+        return $"Current version: {status.Current}\nMost updated remote version: {latest_remote}\nLatest compatible version: {compatible}\nCurrent OS: {status.System.DisplayName}";
+    }
+
+    private static bool is_update_suppressed(AppVersion version)
+    {
+        try
+        {
+            string path = update_suppression_path();
+            if (!File.Exists(path))
+                return false;
+
+            string[] parts = File.ReadAllText(path).Split('|');
+            if (parts.Length != 2 ||
+                !AppVersion.TryParse(parts[0], out var suppressed_version) ||
+                !long.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out long ticks))
+                return false;
+
+            return suppressed_version.CompareTo(version) == 0 && DateTimeOffset.UtcNow < new DateTimeOffset(ticks, TimeSpan.Zero);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static void suppress_update_for_one_week(AppVersion version)
+    {
+        try
+        {
+            string path = update_suppression_path();
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            var until = DateTimeOffset.UtcNow.AddDays(7);
+            File.WriteAllText(path, $"{version}|{until.UtcTicks}");
+        }
+        catch
+        {
+        }
+    }
+
+    private static string update_suppression_path() =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Gated", "update-suppression.txt");
 
     private async Task show_message_dialog(string title, string message)
     {

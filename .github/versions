@@ -1,5 +1,10 @@
 <repository>
-  <version major="0" minor="19" patch="2">
+  <version major="0" minor="19" patch="2" platform="windows" minimal="7">
     <archive href="https://github.com/yang-z-03/gated/releases/download/0-19/gated-0-19-2.zip" extract="."/>
+    <info href="https://raw.githubusercontent.com/yang-z-03/gated/refs/heads/master/.github/logs/0-19-2.changes" />
+  </version>
+  <version major="0" minor="20" patch="4" platform="windows" minimal="7">
+    <archive href="https://github.com/yang-z-03/gated/releases/download/0-20-4/gated-0-20-4.zip" extract="."/>
+    <info href="https://raw.githubusercontent.com/yang-z-03/gated/refs/heads/master/.github/logs/0-20-4.changes" />
   </version>
 </repository>
