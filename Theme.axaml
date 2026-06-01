@@ -28,6 +28,7 @@
                 <ResourceInclude Source="avares://gated/Styles/ToogleButton.axaml" />
                 <ResourceInclude Source="avares://gated/Styles/Expander.axaml" />
                 <ResourceInclude Source="avares://gated/Styles/DataGrid.axaml" />
+                <ResourceInclude Source="avares://gated/Styles/ProgressBar.axaml" />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Styles.Resources>

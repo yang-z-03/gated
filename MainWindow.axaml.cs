@@ -18,6 +18,7 @@ using gated.Controls;
 using Avalonia.Interactivity;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Markup.Xaml.MarkupExtensions;
 using gated.Services;
 
 namespace gated;
@@ -250,6 +251,7 @@ public partial class MainWindow : Window
         try
         {
             await Task.Yield();
+            await manager.EnsureUpdaterCurrentAsync(progress);
             string manifest_path = await manager.DownloadUpdateAsync(update, progress);
             dialog.SetProgress("Preparing updater ...", "Gated will close and restart after extraction.", null);
             manager.LaunchUpdater(manifest_path);
@@ -274,16 +276,23 @@ public partial class MainWindow : Window
     private async Task<UpdateDialogChoice> show_update_available_dialog(UpdateCheckResult status, string changelog)
     {
         var update = status.Update ?? throw new ArgumentException("Update status does not contain an update.", nameof(status));
-        var changelog_box = new TextBox
+        var changelog_text = new TextBlock
         {
             Text = string.IsNullOrWhiteSpace(changelog) ? "No changelog is available for this version." : changelog,
-            IsReadOnly = true,
-            AcceptsReturn = true,
             TextWrapping = TextWrapping.Wrap,
-            MinHeight = 180,
-            MaxHeight = 280,
             Foreground = new SolidColorBrush(Color.FromRgb(218, 221, 228)),
-            Background = new SolidColorBrush(Color.FromRgb(38, 38, 38))
+        };
+        changelog_text.Bind(TextBlock.FontFamilyProperty, new DynamicResourceExtension("SemiFontFamilyFixed"));
+
+        var changelog_viewer = new ScrollViewer
+        {
+            Content = changelog_text,
+            MinHeight = 180,
+            MaxHeight = 200,
+            Padding = new Thickness(10),
+            Background = new SolidColorBrush(Color.FromRgb(38, 38, 38)),
+            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+            VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto
         };
 
         var dialog = new Window
@@ -297,7 +306,7 @@ public partial class MainWindow : Window
             Content = new StackPanel
             {
                 Margin = new Thickness(16),
-                Spacing = 12,
+                Spacing = 6,
                 Children =
                 {
                     new TextBlock
@@ -308,22 +317,32 @@ public partial class MainWindow : Window
                     },
                     new TextBlock
                     {
-                        Text = $"Gated {update.Latest.Version} is available.\n\n{build_update_status_text(status)}",
+                        Text = $"Gated {update.Latest.Version} is available.",
                         TextWrapping = TextWrapping.Wrap,
                         Foreground = new SolidColorBrush(Color.FromRgb(218, 221, 228))
                     },
                     new TextBlock
                     {
+                        Text = build_update_status_text(status),
+                        TextWrapping = TextWrapping.Wrap,
+                        FontSize = 12,
+                        LineHeight = 18,
+                        Foreground = new SolidColorBrush(Color.FromRgb(180, 180, 180))
+                    },
+                    new TextBlock
+                    {
                         Text = "Changelog",
                         FontWeight = FontWeight.SemiBold,
-                        Foreground = Brushes.White
+                        Foreground = Brushes.White,
+                        Margin = new Thickness(0, 12, 0, 4)
                     },
-                    changelog_box,
+                    changelog_viewer,
                     new StackPanel
                     {
                         Orientation = Avalonia.Layout.Orientation.Horizontal,
                         HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
                         Spacing = 8,
+                        Margin = new Thickness(0, 12, 0, 0),
                         Children =
                         {
                             new Button { Content = "Suppress for 1 week", MinWidth = 140 },
@@ -335,7 +354,7 @@ public partial class MainWindow : Window
             }
         };
 
-        var buttons = ((StackPanel)((StackPanel)dialog.Content).Children[4]).Children;
+        var buttons = ((StackPanel)((StackPanel)dialog.Content).Children[5]).Children;
         ((Button)buttons[0]).Click += (_, _) => dialog.Close(UpdateDialogChoice.SuppressForOneWeek);
         ((Button)buttons[1]).Click += (_, _) => dialog.Close(UpdateDialogChoice.Cancel);
         ((Button)buttons[2]).Click += (_, _) => dialog.Close(UpdateDialogChoice.Update);

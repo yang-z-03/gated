@@ -8,7 +8,6 @@ using System.Linq;
 using System.Net.Http;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml.Linq;
@@ -18,6 +17,7 @@ namespace gated.Services;
 public sealed class UpdateManager
 {
     public const string VersionsUrl = "https://raw.githubusercontent.com/yang-z-03/gated/refs/heads/master/.github/versions";
+    public const string UpdaterManifestUrl = "https://raw.githubusercontent.com/yang-z-03/gated/refs/heads/master/.github/updater";
 
     private static readonly HttpClient http_client = new()
     {
@@ -32,16 +32,7 @@ public sealed class UpdateManager
 
     public async Task<UpdateCheckResult> GetUpdateStatusAsync(CancellationToken cancellation_token = default)
     {
-        using var response = await http_client.GetAsync(VersionsUrl, cancellation_token);
-        response.EnsureSuccessStatusCode();
-
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellation_token);
-        var document = await XDocument.LoadAsync(stream, LoadOptions.None, cancellation_token);
-        var versions = document.Root?.Elements("version")
-            .Select(parse_version)
-            .OrderBy(version => version.Version)
-            .ToArray() ?? [];
-
+        var versions = await fetch_versions_async(VersionsUrl, cancellation_token);
         var current = GetCurrentVersion();
         var os = GetCurrentSystemInfo();
         var latest_remote = versions.LastOrDefault();
@@ -61,9 +52,71 @@ public sealed class UpdateManager
         if (version.InfoHref is null)
             return "No changelog is available for this version.";
 
+        await ensure_connection_async(version.InfoHref, cancellation_token);
         using var response = await http_client.GetAsync(version.InfoHref, cancellation_token);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsStringAsync(cancellation_token);
+    }
+
+    public async Task EnsureUpdaterCurrentAsync(
+        IProgress<UpdateProgress>? progress = null,
+        CancellationToken cancellation_token = default)
+    {
+        if (!OperatingSystem.IsWindows())
+            throw new PlatformNotSupportedException("Automatic replacement is currently supported on Windows.");
+
+        string updater_path = get_updater_path();
+        progress?.Report(new UpdateProgress("Checking updater ...", "Fetching updater manifest.", null));
+        var versions = await fetch_versions_async(UpdaterManifestUrl, cancellation_token);
+        var system = GetCurrentSystemInfo();
+        var latest = versions
+            .Where(version => version.Archives.Count > 0)
+            .Where(version => version.IsCompatibleWith(system))
+            .OrderBy(version => version.Version)
+            .LastOrDefault();
+
+        if (latest is null)
+            throw new InvalidDataException("Updater manifest does not contain a compatible updater.");
+
+        var installed = get_installed_updater_version(updater_path);
+        if (File.Exists(updater_path) && installed.CompareTo(latest.Version) >= 0)
+        {
+            progress?.Report(new UpdateProgress("Checking updater ...", $"Updater {installed} is current.", 1));
+            return;
+        }
+
+        progress?.Report(new UpdateProgress("Updating updater ...", $"Installing updater {latest.Version}.", null));
+        string staging_root = Path.Combine(Path.GetTempPath(), "gated-updater-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture));
+        string extract_root = Path.Combine(staging_root, "extract");
+        Directory.CreateDirectory(staging_root);
+        Directory.CreateDirectory(extract_root);
+
+        try
+        {
+            for (int i = 0; i < latest.Archives.Count; i++)
+            {
+                var archive = latest.Archives[i];
+                string path = Path.Combine(staging_root, $"updater-{i + 1}.zip");
+                await download_archive(archive, path, i, latest.Archives.Count, progress, cancellation_token, "Downloading updater ...");
+                string extract_path = safe_combine(extract_root, archive.ExtractPath);
+                Directory.CreateDirectory(extract_path);
+                ZipFile.ExtractToDirectory(path, extract_path, overwriteFiles: true);
+            }
+
+            copy_directory(extract_root, Path.GetDirectoryName(updater_path)!);
+            if (!File.Exists(updater_path))
+                throw new FileNotFoundException("Updater package did not contain update.exe.", updater_path);
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(staging_root, recursive: true);
+            }
+            catch
+            {
+            }
+        }
     }
 
     public async Task<string> DownloadUpdateAsync(
@@ -79,7 +132,7 @@ public sealed class UpdateManager
         {
             var archive = update.Latest.Archives[i];
             string path = Path.Combine(staging_root, $"archive-{i + 1}.zip");
-            await download_archive(archive, path, i, update.Latest.Archives.Count, progress, cancellation_token);
+            await download_archive(archive, path, i, update.Latest.Archives.Count, progress, cancellation_token, "Downloading update ...");
             archives.Add(new StagedArchive(path, archive.ExtractPath));
         }
 
@@ -98,28 +151,23 @@ public sealed class UpdateManager
     public void LaunchUpdater(string manifest_path)
     {
         if (!OperatingSystem.IsWindows())
-            throw new PlatformNotSupportedException("Automatic extraction is currently supported on Windows.");
+            throw new PlatformNotSupportedException("Automatic replacement is currently supported on Windows.");
 
-        string? app_path = Environment.ProcessPath;
-        if (string.IsNullOrWhiteSpace(app_path))
-            throw new InvalidOperationException("Unable to locate the running application executable.");
-
-        string script_path = Path.Combine(Path.GetDirectoryName(manifest_path)!, "apply-update.ps1");
-        File.WriteAllText(script_path, create_windows_updater_script(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        string app_path = get_application_path();
+        string updater_path = get_updater_path();
+        if (!File.Exists(updater_path))
+            throw new FileNotFoundException("The updater executable was not found.", updater_path);
 
         var start_info = new ProcessStartInfo
         {
-            FileName = "powershell.exe",
+            FileName = updater_path,
             UseShellExecute = true,
             Arguments = string.Join(" ", new[]
             {
-                "-NoProfile",
-                "-ExecutionPolicy", "Bypass",
-                "-STA",
-                "-File", quote(script_path),
-                "-ManifestPath", quote(manifest_path),
-                "-AppPath", quote(app_path),
-                "-ParentPid", Environment.ProcessId.ToString(CultureInfo.InvariantCulture)
+                "--manifest", quote(manifest_path),
+                "--app", quote(app_path),
+                "--updater", quote(updater_path),
+                "--parent-pid", Environment.ProcessId.ToString(CultureInfo.InvariantCulture)
             })
         };
         Process.Start(start_info);
@@ -144,37 +192,55 @@ public sealed class UpdateManager
         int archive_index,
         int archive_count,
         IProgress<UpdateProgress>? progress,
-        CancellationToken cancellation_token)
+        CancellationToken cancellation_token,
+        string title)
     {
-        progress?.Report(new UpdateProgress("Downloading update ...", $"Archive {archive_index + 1} of {archive_count}", 0));
+        progress?.Report(new UpdateProgress(title, $"Archive {archive_index + 1} of {archive_count}", 0));
+        await ensure_connection_async(archive.Href, cancellation_token);
         using var response = await http_client.GetAsync(archive.Href, HttpCompletionOption.ResponseHeadersRead, cancellation_token);
         response.EnsureSuccessStatusCode();
 
         long? length = response.Content.Headers.ContentLength;
         await using var source = await response.Content.ReadAsStreamAsync(cancellation_token);
-        await using var target = File.Create(target_path);
         var buffer = new byte[1024 * 64];
         long total_read = 0;
 
-        while (true)
+        await using (var target = File.Create(target_path))
         {
-            int read = await source.ReadAsync(buffer, cancellation_token);
-            if (read == 0)
-                break;
+            while (true)
+            {
+                int read = await source.ReadAsync(buffer, cancellation_token);
+                if (read == 0)
+                    break;
 
-            await target.WriteAsync(buffer.AsMemory(0, read), cancellation_token);
-            total_read += read;
+                await target.WriteAsync(buffer.AsMemory(0, read), cancellation_token);
+                total_read += read;
 
-            double? fraction = length > 0 ? (double)total_read / length.Value : null;
-            progress?.Report(new UpdateProgress(
-                "Downloading update ...",
-                $"{Path.GetFileName(archive.Href.LocalPath)} ({format_bytes(total_read)}{(length > 0 ? " / " + format_bytes(length.Value) : "")})",
-                fraction));
+                double? fraction = length > 0 ? (double)total_read / length.Value : null;
+                progress?.Report(new UpdateProgress(
+                    title,
+                    $"{Path.GetFileName(archive.Href.LocalPath)} ({format_bytes(total_read)}{(length > 0 ? " / " + format_bytes(length.Value) : "")})",
+                    fraction));
+            }
         }
 
         using var zip = ZipFile.OpenRead(target_path);
         if (zip.Entries.Count == 0)
             throw new InvalidDataException("Downloaded update archive is empty.");
+    }
+
+    private static async Task<UpdateVersion[]> fetch_versions_async(string url, CancellationToken cancellation_token)
+    {
+        await ensure_connection_async(new Uri(url), cancellation_token);
+        using var response = await http_client.GetAsync(url, cancellation_token);
+        response.EnsureSuccessStatusCode();
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellation_token);
+        var document = await XDocument.LoadAsync(stream, LoadOptions.None, cancellation_token);
+        return document.Root?.Elements("version")
+            .Select(parse_version)
+            .OrderBy(version => version.Version)
+            .ToArray() ?? [];
     }
 
     private static UpdateVersion parse_version(XElement element)
@@ -219,6 +285,79 @@ public sealed class UpdateManager
         return string.IsNullOrWhiteSpace(path) ? "." : path;
     }
 
+    private static string get_application_path()
+    {
+        string? app_path = Environment.ProcessPath;
+        if (string.IsNullOrWhiteSpace(app_path))
+            throw new InvalidOperationException("Unable to locate the running application executable.");
+
+        return app_path;
+    }
+
+    private static string get_updater_path() =>
+        Path.Combine(Path.GetDirectoryName(get_application_path())!, "update.exe");
+
+    private static AppVersion get_installed_updater_version(string updater_path)
+    {
+        if (!File.Exists(updater_path))
+            return new AppVersion(0, 0, 0);
+
+        var version_info = FileVersionInfo.GetVersionInfo(updater_path);
+        if (AppVersion.TryParse(version_info.ProductVersion, out var product_version))
+            return product_version;
+        if (AppVersion.TryParse(version_info.FileVersion, out var file_version))
+            return file_version;
+
+        return new AppVersion(0, 0, 0);
+    }
+
+    private static async Task ensure_connection_async(Uri uri, CancellationToken cancellation_token)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Head, uri);
+        using var response = await http_client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellation_token);
+        if (response.StatusCode == System.Net.HttpStatusCode.MethodNotAllowed)
+        {
+            using var fallback = await http_client.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cancellation_token);
+            fallback.EnsureSuccessStatusCode();
+            return;
+        }
+
+        response.EnsureSuccessStatusCode();
+    }
+
+    private static string safe_combine(string root, string relative_path)
+    {
+        string combined = Path.GetFullPath(Path.Combine(root, relative_path));
+        string full_root = Path.GetFullPath(root);
+        if (!full_root.EndsWith(Path.DirectorySeparatorChar))
+            full_root += Path.DirectorySeparatorChar;
+
+        if (!combined.Equals(Path.GetFullPath(root), StringComparison.OrdinalIgnoreCase) &&
+            !combined.StartsWith(full_root, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Archive extract path is outside the target directory.");
+
+        return combined;
+    }
+
+    private static void copy_directory(string source_root, string target_root)
+    {
+        foreach (string directory in Directory.EnumerateDirectories(source_root, "*", SearchOption.AllDirectories))
+        {
+            string relative = Path.GetRelativePath(source_root, directory);
+            Directory.CreateDirectory(Path.Combine(target_root, relative));
+        }
+
+        foreach (string source in Directory.EnumerateFiles(source_root, "*", SearchOption.AllDirectories))
+        {
+            string relative = Path.GetRelativePath(source_root, source);
+            string target = Path.Combine(target_root, relative);
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            if (File.Exists(target))
+                File.SetAttributes(target, FileAttributes.Normal);
+            File.Copy(source, target, overwrite: true);
+        }
+    }
+
     private static string format_bytes(long bytes)
     {
         string[] units = ["B", "KB", "MB", "GB"];
@@ -233,131 +372,7 @@ public sealed class UpdateManager
         return $"{value:0.#} {units[unit]}";
     }
 
-    private static string quote(string value) => "'" + value.Replace("'", "''", StringComparison.Ordinal) + "'";
-
-    private static string create_windows_updater_script() =>
-        """
-        param(
-            [Parameter(Mandatory=$true)][string]$ManifestPath,
-            [Parameter(Mandatory=$true)][string]$AppPath,
-            [Parameter(Mandatory=$true)][int]$ParentPid
-        )
-
-        Add-Type -AssemblyName PresentationFramework
-        Add-Type -AssemblyName System.IO.Compression.FileSystem
-
-        $ErrorActionPreference = "Stop"
-        $installRoot = [System.IO.Path]::GetDirectoryName($AppPath)
-        $document = [xml](Get-Content -LiteralPath $ManifestPath)
-        $archives = @($document.update.archive)
-
-        function Test-InsidePath([string]$Path, [string]$Root) {
-            $fullPath = [System.IO.Path]::GetFullPath($Path)
-            $fullRoot = [System.IO.Path]::GetFullPath($Root)
-            if ($fullPath.Equals($fullRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
-                return $true
-            }
-            if (!$fullRoot.EndsWith([System.IO.Path]::DirectorySeparatorChar)) {
-                $fullRoot += [System.IO.Path]::DirectorySeparatorChar
-            }
-            return $fullPath.StartsWith($fullRoot, [System.StringComparison]::OrdinalIgnoreCase)
-        }
-
-        $window = New-Object Windows.Window
-        $window.Title = "Updating Gated"
-        $window.Width = 460
-        $window.Height = 170
-        $window.WindowStartupLocation = "CenterScreen"
-        $window.ResizeMode = "NoResize"
-        $window.Background = "#303030"
-
-        $panel = New-Object Windows.Controls.StackPanel
-        $panel.Margin = "22"
-        $panel.VerticalAlignment = "Center"
-        $panel.Orientation = "Vertical"
-
-        $title = New-Object Windows.Controls.TextBlock
-        $title.Text = "Installing update ..."
-        $title.Foreground = "White"
-        $title.FontWeight = "SemiBold"
-        $title.Margin = "0,0,0,10"
-
-        $subtitle = New-Object Windows.Controls.TextBlock
-        $subtitle.Text = "Waiting for Gated to close."
-        $subtitle.Foreground = "#DADDE4"
-        $subtitle.TextWrapping = "Wrap"
-        $subtitle.Margin = "0,0,0,12"
-
-        $progress = New-Object Windows.Controls.ProgressBar
-        $progress.Minimum = 0
-        $progress.Maximum = 100
-        $progress.Height = 18
-        $progress.Value = 0
-
-        $panel.Children.Add($title) | Out-Null
-        $panel.Children.Add($subtitle) | Out-Null
-        $panel.Children.Add($progress) | Out-Null
-        $window.Content = $panel
-
-        $window.Add_ContentRendered({
-            try {
-                try {
-                    $parent = Get-Process -Id $ParentPid -ErrorAction Stop
-                    $parent.WaitForExit()
-                } catch { }
-
-                $totalEntries = 0
-                foreach ($archive in $archives) {
-                    $zip = [System.IO.Compression.ZipFile]::OpenRead($archive.path)
-                    $totalEntries += $zip.Entries.Count
-                    $zip.Dispose()
-                }
-                if ($totalEntries -eq 0) { throw "Update archive did not contain files." }
-
-                $completed = 0
-                foreach ($archive in $archives) {
-                    $extractRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($installRoot, [string]$archive.extract))
-                    if (!(Test-InsidePath $extractRoot $installRoot)) {
-                        throw "Archive extract path is outside the installation directory."
-                    }
-
-                    $zip = [System.IO.Compression.ZipFile]::OpenRead($archive.path)
-                    try {
-                        foreach ($entry in $zip.Entries) {
-                            $target = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($extractRoot, $entry.FullName))
-                            if (!(Test-InsidePath $target $extractRoot)) {
-                                throw "Archive entry is outside the target directory."
-                            }
-
-                            if ([string]::IsNullOrEmpty($entry.Name)) {
-                                [System.IO.Directory]::CreateDirectory($target) | Out-Null
-                            } else {
-                                [System.IO.Directory]::CreateDirectory([System.IO.Path]::GetDirectoryName($target)) | Out-Null
-                                $subtitle.Text = "Extracting " + $entry.FullName
-                                [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $target, $true)
-                            }
-
-                            $completed += 1
-                            $progress.Value = [Math]::Min(100, [Math]::Round(($completed / $totalEntries) * 100))
-                            [Windows.Threading.Dispatcher]::CurrentDispatcher.Invoke([Action]{}, [Windows.Threading.DispatcherPriority]::Background)
-                        }
-                    } finally {
-                        $zip.Dispose()
-                    }
-                }
-
-                $subtitle.Text = "Restarting Gated ..."
-                Start-Process -FilePath $AppPath -WorkingDirectory $installRoot
-                $window.Close()
-            } catch {
-                $title.Text = "Update failed"
-                $subtitle.Text = $_.Exception.Message
-                $progress.Visibility = "Collapsed"
-            }
-        })
-
-        $window.ShowDialog() | Out-Null
-        """;
+    private static string quote(string value) => "\"" + value.Replace("\"", "\\\"", StringComparison.Ordinal) + "\"";
 }
 
 public readonly record struct AppVersion(int Major, int Minor, int Patch) : IComparable<AppVersion>
@@ -450,5 +465,5 @@ public sealed record UpdateCheckResult(
 
 public sealed record SystemInfo(string Platform, Version OsVersion, string Description)
 {
-    public string DisplayName => $"{Platform} {OsVersion} ({Description})";
+    public string DisplayName => $"{Description}";
 }

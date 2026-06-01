@@ -2,6 +2,8 @@
 Microsoft Visual Studio Solution File, Format Version 12.00
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "gated", "gated.csproj", "{43C63FC4-3A4A-4CCC-8C56-AB80CEE5754C}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "update", "Updater\update.csproj", "{D60322C3-FAAF-4E5C-962D-7B4D73E4CA6F}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -12,5 +14,9 @@ Global
 		{43C63FC4-3A4A-4CCC-8C56-AB80CEE5754C}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{43C63FC4-3A4A-4CCC-8C56-AB80CEE5754C}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{43C63FC4-3A4A-4CCC-8C56-AB80CEE5754C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D60322C3-FAAF-4E5C-962D-7B4D73E4CA6F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D60322C3-FAAF-4E5C-962D-7B4D73E4CA6F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D60322C3-FAAF-4E5C-962D-7B4D73E4CA6F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D60322C3-FAAF-4E5C-962D-7B4D73E4CA6F}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

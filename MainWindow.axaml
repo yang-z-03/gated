@@ -122,11 +122,11 @@
                               Classes="PageModeSwitch"
                               IsChecked="{Binding IsPageEditorMode, Mode=TwoWay}" />
                 <Button Width="30" Height="30" Margin="5 5 0 5" Click="window_minimize" Classes="Title">
-                  <TextBlock IsHitTestVisible="False" FontFamily="Segoe Fluent Icons" Text="&#xe1d8;" 
+                  <TextBlock IsHitTestVisible="False" FontFamily="{DynamicResource SemiFontFamilyIcon}" Text="&#xe1d8;" 
                              HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="14"/>
                 </Button>
                 <Button Width="30" Height="30" Margin="5 5 5 5" Click="window_close" Classes="Close">
-                  <TextBlock IsHitTestVisible="False" FontFamily="Segoe Fluent Icons" Text="&#xe10a;" 
+                  <TextBlock IsHitTestVisible="False" FontFamily="{DynamicResource SemiFontFamilyIcon}" Text="&#xe10a;" 
                              HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="14"/>
                 </Button>
               </StackPanel>

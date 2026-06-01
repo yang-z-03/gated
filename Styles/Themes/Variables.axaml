@@ -73,11 +73,16 @@
     
     <!-- default font family -->
     <FontFamily x:Key="SemiFontFamilyRegular">
-        Adobe Clean, Adwaita Sans, Roboto, Helvetica Neue Std, Helvetica Neue, Helvetica, Arial, Simsun
+        Adobe Clean, Inter, SF Pro Text, Roboto, Segoe UI, Microsoft Yahei UI, Helvetica Neue Std, 
+        Helvetica Neue, Helvetica, Arial, Simsun
     </FontFamily>
     
     <FontFamily x:Key="SemiFontFamilyFixed">
         IBM Plex Mono, Jetbrains Mono, Consolas
+    </FontFamily>
+
+    <FontFamily x:Key="SemiFontFamilyIcon">
+        avares://gated/Fonts#Segoe Fluent Icons
     </FontFamily>
     
 </ResourceDictionary>
