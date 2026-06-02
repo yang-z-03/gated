@@ -170,11 +170,19 @@
                 <MenuItem Header="Histogram" ToggleType="Radio" IsChecked="{Binding IsHistogramPlotMode, Mode=OneWay}" Click="histogram_menu_item_click" />
                 <Separator />
                 <MenuItem Header="Show outlier points" ToggleType="CheckBox" IsChecked="{Binding ShowOutlierPoints, Mode=TwoWay}" />
+                <MenuItem Header="Draw large dots" ToggleType="CheckBox" IsChecked="{Binding DrawLargeDots, Mode=TwoWay}" />
                 <MenuItem Header="Show gridlines" ToggleType="CheckBox" IsChecked="{Binding ShowGridlines, Mode=TwoWay}" />
                 <MenuItem Header="Show gate annotations" ToggleType="CheckBox" IsChecked="{Binding ShowGateAnnotations, Mode=TwoWay}" />
                 <Separator />
                 <MenuItem x:Name="editor_x_channel_menu" Header="X selected channel" />
                 <MenuItem x:Name="editor_y_channel_menu" Header="Y selected channel" />
+                <MenuItem x:Name="editor_color_channel_menu" Header="Dot color" />
+                <MenuItem Header="Dot color palette">
+                    <MenuItem Header="Viridis" Click="viridis_color_menu_item_click" />
+                    <MenuItem Header="Plasma" Click="plasma_color_menu_item_click" />
+                    <MenuItem Header="Turbo" Click="turbo_color_menu_item_click" />
+                    <MenuItem Header="Gray" Click="gray_color_menu_item_click" />
+                </MenuItem>
                 <MenuItem Header="X axis scale">
                     <MenuItem Header="Linear" ToggleType="Radio" IsChecked="{Binding IsEditorXAxisLinearScale, Mode=TwoWay}" />
                     <MenuItem Header="Logicle" ToggleType="Radio" IsChecked="{Binding IsEditorXAxisLogicleScale, Mode=TwoWay}" />
@@ -195,6 +203,7 @@
                 <MenuItem Header="Histogram" ToggleType="Radio" IsEnabled="{Binding HasSelectedPageElement}" IsChecked="{Binding IsLayoutHistogramPlotMode, Mode=TwoWay}" />
                 <Separator />
                 <MenuItem Header="Show outlier points" ToggleType="CheckBox" IsEnabled="{Binding HasSelectedPageElement}" IsChecked="{Binding SelectedPageElement.ShowOutlierPoints, Mode=TwoWay}" />
+                <MenuItem Header="Draw large dots" ToggleType="CheckBox" IsEnabled="{Binding HasSelectedPageElement}" IsChecked="{Binding SelectedPageElement.DrawLargeDots, Mode=TwoWay}" />
                 <MenuItem Header="Show gridlines" ToggleType="CheckBox" IsEnabled="{Binding HasSelectedPageElement}" IsChecked="{Binding SelectedPageElement.ShowGridlines, Mode=TwoWay}" />
                 <MenuItem Header="Show tick labels" ToggleType="CheckBox" IsEnabled="{Binding HasSelectedPageElement}" IsChecked="{Binding SelectedPageElement.ShowTickLabels, Mode=TwoWay}" />
                 <MenuItem Header="Density pseudocolor" ToggleType="CheckBox" IsEnabled="{Binding HasSelectedPageElement}" IsChecked="{Binding SelectedPageElement.UsePseudocolor, Mode=TwoWay}" />
@@ -203,6 +212,13 @@
                 <Separator />
                 <MenuItem x:Name="layout_x_channel_menu" Header="X selected channel" IsEnabled="{Binding HasSelectedPageElement}" />
                 <MenuItem x:Name="layout_y_channel_menu" Header="Y selected channel" IsEnabled="{Binding HasSelectedPageElement}" />
+                <MenuItem x:Name="layout_color_channel_menu" Header="Dot color" IsEnabled="{Binding HasSelectedPageElement}" />
+                <MenuItem Header="Dot color palette" IsEnabled="{Binding HasSelectedPageElement}">
+                    <MenuItem Header="Viridis" Click="layout_viridis_color_menu_item_click" />
+                    <MenuItem Header="Plasma" Click="layout_plasma_color_menu_item_click" />
+                    <MenuItem Header="Turbo" Click="layout_turbo_color_menu_item_click" />
+                    <MenuItem Header="Gray" Click="layout_gray_color_menu_item_click" />
+                </MenuItem>
                 <MenuItem Header="X axis scale" IsEnabled="{Binding HasSelectedPageElement}">
                     <MenuItem Header="Linear" ToggleType="Radio" IsChecked="{Binding IsLayoutXAxisLinearScale, Mode=TwoWay}" />
                     <MenuItem Header="Logicle" ToggleType="Radio" IsChecked="{Binding IsLayoutXAxisLogicleScale, Mode=TwoWay}" />
@@ -241,6 +257,16 @@
                 <MenuItem Header="Frequency of parent population" Command="{Binding AddFrequencyOfParentStatisticCommand}" />
                 <MenuItem Header="Frequency of all" Command="{Binding AddFrequencyOfAllStatisticCommand}" />
                 <MenuItem Header="Number of events" Command="{Binding AddCountStatisticCommand}" />
+                <Separator />
+                <MenuItem Header="Create integration job" Command="{Binding CreateIntegrationJobCommand}" />
+                <MenuItem Header="Rename integration job" Command="{Binding RenameIntegrationJobCommand}" />
+                <Separator />
+                <MenuItem Header="Run integration" Command="{Binding RunIntegrationJobCommand}" />
+                <MenuItem Header="Build kNN graph" Command="{Binding RunIntegrationJobKnnCommand}" />
+                <MenuItem Header="Run UMAP" Command="{Binding RunIntegrationJobUmapCommand}" />
+                <MenuItem Header="Run Leiden" Command="{Binding RunIntegrationJobLeidenCommand}" />
+                <MenuItem Header="Run FlowSOM" Command="{Binding RunIntegrationJobFlowSomCommand}" />
+                <MenuItem Header="Cancel integration job" Command="{Binding CancelIntegrationJobCommand}" />
             </MenuItem>
             <MenuItem Header="_Help">
                 <MenuItem Header="Check for updates" Click="check_for_updates_menu_item_click" />
@@ -325,8 +351,10 @@
                                                Population="{Binding PlotPopulation}"
                                                XAxis="{Binding XAxis}"
                                                YAxis="{Binding YAxis}"
+                                               DotColor="{Binding DotColor}"
                                                PlotMode="{Binding EffectivePlotMode}"
                                                ShowOutlierPoints="{Binding ShowOutlierPoints}"
+                                               DrawLargeDots="{Binding DrawLargeDots}"
                                                ShowGridlines="{Binding ShowGridlines}"
                                                ShowGateAnnotations="{Binding ShowGateAnnotations}"
                                                ContourLevelCount="{Binding ContourLevelCount}"
@@ -376,7 +404,7 @@
                                     </StackPanel>
                                 </Expander>
 
-                                <Expander Header="X axis" IsExpanded="True">
+                                <Expander Header="X axis" IsExpanded="False">
                                     <StackPanel Spacing="8" Margin="0,8,0,16">
                                         <TextBlock Margin="0,4,0,-4" Foreground="{DynamicResource SemiColorText2}" Text="Selected channel" />
                                         <ComboBox Classes='Small'
@@ -486,6 +514,28 @@
 
                                 <Expander Header="Plot style" IsExpanded="True">
                                     <StackPanel Spacing="8" Margin="0,8,0,16">
+                                        <TextBlock Margin="0,4,0,-4" Foreground="{DynamicResource SemiColorText2}" Text="Dot color" />
+                                        <ComboBox Classes='Small'
+                                                  ItemsSource="{Binding ColorChoices}"
+                                                  SelectedItem="{Binding SelectedDotColorChoice}">
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <TextBlock IsVisible="{Binding HasLabel}" Foreground="{DynamicResource SemiColorText0}" FontWeight="SemiBold" Text="{Binding Label}" />
+                                                        <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="{Binding Name}" />
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
+
+                                        <TextBlock Margin="0,4,0,-4" Foreground="{DynamicResource SemiColorText2}" Text="Color palette" />
+                                        <ComboBox Classes='Small'
+                                                  ItemsSource="{Binding PlotColorPaletteChoices}"
+                                                  SelectedItem="{Binding DotColor.Palette}" />
+
+                                        <CheckBox Content="Draw large dots" Margin="0 4 0 0"
+                                                  IsChecked="{Binding DrawLargeDots}" />
+
                                         <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
                                             <StackPanel>
                                                 <TextBlock Margin="0,4" Foreground="{DynamicResource SemiColorText2}" Text="Contour levels" />
@@ -640,6 +690,8 @@
                                               IsChecked="{Binding SelectedPageElement.ShowGridlines}" />
                                     <CheckBox Content="Show outlier points"
                                               IsChecked="{Binding SelectedPageElement.ShowOutlierPoints}" />
+                                    <CheckBox Content="Draw large dots"
+                                              IsChecked="{Binding SelectedPageElement.DrawLargeDots}" />
                                     <CheckBox Content="Show tick labels"
                                               IsChecked="{Binding SelectedPageElement.ShowTickLabels}" />
                                     <CheckBox Content="Density pseudocolor"
@@ -648,6 +700,25 @@
                                               IsChecked="{Binding SelectedPageElement.ShowGates}" />
                                     <CheckBox Content="Show gate annotations"
                                               IsChecked="{Binding SelectedPageElement.ShowGateAnnotations}" />
+
+                                    <TextBlock Margin="0,4,0,-4" Foreground="{DynamicResource SemiColorText2}" Text="Dot color" />
+                                    <ComboBox Classes="Small"
+                                              ItemsSource="{Binding SelectedPageColorChoices}"
+                                              SelectedItem="{Binding SelectedPageDotColorChoice, Mode=TwoWay}">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                                    <TextBlock IsVisible="{Binding HasLabel}" Foreground="{DynamicResource SemiColorText0}" FontWeight="SemiBold" Text="{Binding Label}" />
+                                                    <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="{Binding Name}" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+
+                                    <TextBlock Margin="0,4,0,-4" Foreground="{DynamicResource SemiColorText2}" Text="Color palette" />
+                                    <ComboBox Classes="Small"
+                                              ItemsSource="{Binding PlotColorPaletteChoices}"
+                                              SelectedItem="{Binding SelectedPageElement.DotColor.Palette}" />
 
                                     <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
                                         <StackPanel>
@@ -769,6 +840,332 @@
                         </StackPanel>
                     </ScrollViewer>
                 </Border>
+            </Grid>
+
+            <Grid Grid.Column="2"
+                  IsVisible="{Binding IsIntegrationJobMode}"
+                  Background="{DynamicResource SemiColorBackground1}">
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                              VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="24"
+                                Spacing="14"
+                                MaxWidth="650"
+                                HorizontalAlignment="Center"
+                                Background="{DynamicResource SemiColorBackground1}">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                            <StackPanel Margin="0 12 0 0">
+                                <TextBlock Foreground="{DynamicResource SemiColorText1}" Text="Integration and dimensionality reduction" />
+                                <TextBox Margin="0,8,0,16"
+                                         FontSize="20"
+                                         Padding="6"
+                                         FontWeight="Light"
+                                         Text="{Binding SelectedIntegrationJobName, UpdateSourceTrigger=PropertyChanged}" />
+                            </StackPanel>
+                        </Grid>
+
+                        <Border IsVisible="{Binding SelectedIntegrationJob.HasWarning}"
+                                BorderBrush="#B7791F"
+                                BorderThickness="1"
+                                CornerRadius="6"
+                                Padding="10"
+                                Background="#2A2112">
+                            <TextBlock Foreground="#F6C56B" TextWrapping="Wrap"
+                                       Text="{Binding SelectedIntegrationJob.WarningText}" />
+                        </Border>
+
+                        <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Select populations and channels" 
+                                   Margin="0,0,0,-16"/>
+                        <Grid ColumnDefinitions="*,*" ColumnSpacing="14">
+                            
+                            <StackPanel Spacing="8" Margin="0,8,0,12">
+                                <Border Height="300"
+                                        BorderBrush="{DynamicResource SemiColorBorder}"
+                                        BorderThickness="1"
+                                        CornerRadius="6"
+                                        Background="#1e1e1e" Padding="8"
+                                        ClipToBounds="True">
+                                    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" Height="284">
+                                            <controls:IntegrationJobPopulationTreeView Nodes="{Binding SelectedIntegrationJob.Populations}"
+                                                                                       SelectionChangedCommand="{Binding IntegrationPopulationSelectionChangedCommand}"
+                                                                                       IsReadOnly="{Binding IsSelectedIntegrationJobConfigReadOnly}" />
+                                    </ScrollViewer>
+                                </Border>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="1" Spacing="8" Margin="0,8,0,12">
+                                <Border Height="300"
+                                        BorderBrush="{DynamicResource SemiColorBorder}"
+                                        BorderThickness="1"
+                                        CornerRadius="6"
+                                        Background="#1e1e1e" Padding="8"
+                                        ClipToBounds="True">
+                                    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" Height="284">
+                                        <controls:IntegrationJobFeatureListView Items="{Binding SelectedIntegrationJob.Features}"
+                                                                                SelectionChangedCommand="{Binding IntegrationFeatureSelectionChangedCommand}"
+                                                                                IsReadOnly="{Binding IsSelectedIntegrationJobConfigReadOnly}" />
+                                    </ScrollViewer>
+                                </Border>
+                            </StackPanel>
+                        </Grid>
+
+                        <StackPanel Spacing="8">
+                            <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Sample metadata" />
+                            <DataGrid MaxHeight="220"
+                                      AutoGenerateColumns="False"
+                                      CanUserReorderColumns="True"
+                                      CanUserSortColumns="False"
+                                      CanUserResizeColumns="True"
+                                      GridLinesVisibility="Horizontal"
+                                      HeadersVisibility="Column"
+                                      ItemsSource="{Binding SelectedIntegrationJob.SampleMetadata}">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Sample" Binding="{Binding SampleName}" Width="100" IsReadOnly="True" />
+                                    <DataGridTextColumn Header="Group" Binding="{Binding GroupName}" Width="100" IsReadOnly="True" />
+                                    <DataGridTextColumn Header="Batch" Binding="{Binding Batch, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="100" />
+                                    <DataGridTextColumn Header="Condition" Binding="{Binding Condition, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="160" />
+                                    <DataGridTextColumn Header="Notes" Binding="{Binding Notes, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="*" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </StackPanel>
+
+                        <StackPanel Margin="0,8,0,12" Spacing="12">
+                            <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Pipeline" />
+                                <ProgressBar Height="5"
+                                             Minimum="0"
+                                             Maximum="1"
+                                             Value="{Binding SelectedIntegrationJob.ProgressFraction}"
+                                             IsVisible="{Binding SelectedIntegrationJob.IsRunning}" />
+                                <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="{Binding SelectedIntegrationJob.ProgressText}" IsVisible="{Binding SelectedIntegrationJob.IsRunning}" />
+                                <Expander Header="Normalization and integration options" IsExpanded="False">
+                                    <StackPanel Margin="0,8,0,12" Spacing="8">
+                                        <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="8">
+                                            <StackPanel>
+                                                <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Logicle T" Margin="0 0 0 8"/>
+                                                <TextBox Text="{Binding SelectedIntegrationJob.LogicleT, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1">
+                                                <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Logicle W" Margin="0 0 0 8"/>
+                                                <TextBox Text="{Binding SelectedIntegrationJob.LogicleW, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2">
+                                                <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Logicle M" Margin="0 0 0 8"/>
+                                                <TextBox Text="{Binding SelectedIntegrationJob.LogicleM, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="3">
+                                                <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Logicle A" Margin="0 0 0 8"/>
+                                                <TextBox Text="{Binding SelectedIntegrationJob.LogicleA, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                        </Grid>
+                                        <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="8">
+                                            <StackPanel>
+                                                <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Quantiles" Margin="0 0 0 8"/>
+                                                <TextBox Text="{Binding SelectedIntegrationJob.CytoNormOptions.QuantileCount, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1">
+                                                <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Minimum cells" Margin="0 0 0 8"/>
+                                                <TextBox Text="{Binding SelectedIntegrationJob.CytoNormOptions.MinimumCellsPerCluster, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2">
+                                                <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Goal" Margin="0 0 0 8"/>
+                                                <ComboBox Classes="Small" ItemsSource="{Binding CytoNormGoalChoices}" SelectedItem="{Binding SelectedIntegrationJob.CytoNormOptions.Goal}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="3">
+                                                <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Goal batch" Margin="0 0 0 8"/>
+                                                <TextBox Text="{Binding SelectedIntegrationJob.CytoNormOptions.GoalBatch, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </StackPanel>
+                                </Expander>
+
+                                <Expander Header="kNN and UMAP options" IsExpanded="False">
+                                    <StackPanel Margin="0,8,0,12" Spacing="8">
+                                        <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="8">
+                                            <StackPanel>
+                                                <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="kNN neighbors" Margin="0 0 0 8"/>
+                                                <TextBox Text="{Binding SelectedIntegrationJob.KnnOptions.NeighborCount, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1">
+                                                <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Distance" Margin="0 0 0 8"/>
+                                                <ComboBox Classes="Small" ItemsSource="{Binding KnnDistanceChoices}" SelectedItem="{Binding SelectedIntegrationJob.KnnOptions.Distance}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2">
+                                                <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Search" Margin="0 0 0 8"/>
+                                                <ComboBox Classes="Small" ItemsSource="{Binding KnnSearchChoices}" SelectedItem="{Binding SelectedIntegrationJob.KnnOptions.SearchMethod}" />
+                                            </StackPanel>
+                                            <CheckBox Grid.Column="3" VerticalAlignment="Bottom" Content="Mutual" IsChecked="{Binding SelectedIntegrationJob.KnnOptions.Mutual}" />
+                                        </Grid>
+                                        <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="8">
+                                            <StackPanel>
+                                                <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="NNDescent iters" Margin="0 0 0 8"/>
+                                                <TextBox Text="{Binding SelectedIntegrationJob.KnnOptions.IterationCount, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1">
+                                                <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Max candidates" Margin="0 0 0 8"/>
+                                                <TextBox Text="{Binding SelectedIntegrationJob.KnnOptions.MaxCandidates, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2">
+                                                <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="UMAP dims" Margin="0 0 0 8"/>
+                                                <TextBox Text="{Binding SelectedIntegrationJob.UmapOptions.Dimensions, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="3">
+                                                <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="UMAP neighbors" Margin="0 0 0 8"/>
+                                                <TextBox Text="{Binding SelectedIntegrationJob.UmapOptions.NeighborCount, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                        </Grid>
+                                        <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="8">
+                                            <StackPanel>
+                                                <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="UMAP epochs" Margin="0 0 0 8"/>
+                                                <TextBox Text="{Binding SelectedIntegrationJob.UmapOptions.EpochCount, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </StackPanel>
+                                </Expander>
+
+                                <Expander Header="Leiden and FlowSOM options" IsExpanded="False">
+                                    <StackPanel Margin="0,8,0,12" Spacing="8">
+                                        <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="8">
+                                            <StackPanel>
+                                                <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Leiden resolution" Margin="0 0 0 8"/>
+                                                <TextBox Text="{Binding SelectedIntegrationJob.LeidenOptions.Resolution, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1">
+                                                <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Leiden iters" Margin="0 0 0 8"/>
+                                                <TextBox Text="{Binding SelectedIntegrationJob.LeidenOptions.IterationCount, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2">
+                                                <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Randomness" Margin="0 0 0 8"/>
+                                                <TextBox Text="{Binding SelectedIntegrationJob.LeidenOptions.Randomness, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="3">
+                                                <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Seed" Margin="0 0 0 8"/>
+                                                <TextBox Text="{Binding SelectedIntegrationJob.LeidenOptions.Seed, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                        </Grid>
+                                        <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="8">
+                                            <StackPanel>
+                                                <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="SOM X" Margin="0 0 0 8"/>
+                                                <TextBox Text="{Binding SelectedIntegrationJob.FlowSomOptions.Som.XDimension, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1">
+                                                <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="SOM Y" Margin="0 0 0 8"/>
+                                                <TextBox Text="{Binding SelectedIntegrationJob.FlowSomOptions.Som.YDimension, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2">
+                                                <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="SOM iters" Margin="0 0 0 8"/>
+                                                <TextBox Text="{Binding SelectedIntegrationJob.FlowSomOptions.Som.IterationCount, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="3">
+                                                <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Distance" Margin="0 0 0 8"/>
+                                                <ComboBox Classes="Small" ItemsSource="{Binding FlowSomDistanceChoices}" SelectedItem="{Binding SelectedIntegrationJob.FlowSomOptions.Distance}" />
+                                            </StackPanel>
+                                        </Grid>
+                                        <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="8">
+                                            <StackPanel>
+                                                <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Alpha start" Margin="0 0 0 8"/>
+                                                <TextBox Text="{Binding SelectedIntegrationJob.FlowSomOptions.Som.AlphaStart, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1">
+                                                <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Alpha end" Margin="0 0 0 8"/>
+                                                <TextBox Text="{Binding SelectedIntegrationJob.FlowSomOptions.Som.AlphaEnd, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2">
+                                                <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Radius end" Margin="0 0 0 8"/>
+                                                <TextBox Text="{Binding SelectedIntegrationJob.FlowSomOptions.Som.RadiusEnd, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="3">
+                                                <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Radius start" Margin="0 0 0 8"/>
+                                                <TextBox Text="{Binding SelectedIntegrationJob.FlowSomOptions.Som.RadiusStart, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                        </Grid>
+                                        <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="8">
+                                            <StackPanel>
+                                                <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="SOM seed" Margin="0 0 0 8"/>
+                                                <TextBox Text="{Binding SelectedIntegrationJob.FlowSomOptions.Som.Seed, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1">
+                                                <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Meta resolution" Margin="0 0 0 8"/>
+                                                <TextBox Text="{Binding SelectedIntegrationJob.FlowSomOptions.MetaClustering.Resolution, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2">
+                                                <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Meta iters" Margin="0 0 0 8"/>
+                                                <TextBox Text="{Binding SelectedIntegrationJob.FlowSomOptions.MetaClustering.IterationCount, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="3">
+                                                <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Meta seed" Margin="0 0 0 8"/>
+                                                <TextBox Text="{Binding SelectedIntegrationJob.FlowSomOptions.MetaClustering.Seed, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </StackPanel>
+                                </Expander>
+
+                                <DockPanel Margin="0 12 0 24">
+                                <WrapPanel IsEnabled="{Binding IsIntegrationJobIdle}" DockPanel.Dock="Left">
+                                    <Button Classes="Small" Margin="0,0,8,8" Command="{Binding RunIntegrationJobCommand}">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/run.svg}" />
+                                            <TextBlock Text="Integrate" />
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Classes="Small" Margin="0,0,8,8" Command="{Binding RunIntegrationJobKnnCommand}">
+                                        <TextBlock Text="Build kNN" />
+                                    </Button>
+                                    <Button Classes="Small" Margin="0,0,8,8" Command="{Binding RunIntegrationJobUmapCommand}">
+                                        <TextBlock Text="Run UMAP" />
+                                    </Button>
+                                    <Button Classes="Small" Margin="0,0,8,8" Command="{Binding RunIntegrationJobLeidenCommand}">
+                                        <TextBlock Text="Run Leiden" />
+                                    </Button>
+                                    <Button Classes="Small" Margin="0,0,8,8" Command="{Binding RunIntegrationJobFlowSomCommand}">
+                                        <TextBlock Text="Run FlowSOM" />
+                                    </Button>
+                                </WrapPanel>
+                                <Button DockPanel.Dock="Right" Classes="Small" HorizontalAlignment="Left" Margin="0,0,0,8" Command="{Binding CancelIntegrationJobCommand}">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                      <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/stop.svg}" />
+                                      <TextBlock Text="Stop" />
+                                    </StackPanel>
+                                </Button>
+                                <Grid/>
+                                </DockPanel>
+                            </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+
+            <Grid Grid.Column="2"
+                  IsVisible="{Binding IsWorkspaceMetadataMode}"
+                  Background="{DynamicResource SemiColorBackground1}">
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                              VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="24"
+                                Spacing="14"
+                                MaxWidth="650"
+                                HorizontalAlignment="Center">
+                        <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Workspace metadata" />
+                        <DataGrid MaxHeight="520"
+                                  AutoGenerateColumns="False"
+                                  CanUserReorderColumns="False"
+                                  CanUserResizeColumns="True"
+                                  CanUserSortColumns="True"
+                                  GridLinesVisibility="Horizontal"
+                                  HeadersVisibility="Column"
+                                  ItemsSource="{Binding WorkspaceSampleMetadata}">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Sample" Binding="{Binding SampleName}" Width="130" IsReadOnly="True" />
+                                <DataGridTextColumn Header="Group" Binding="{Binding GroupName}" Width="100" IsReadOnly="True" />
+                                <DataGridTextColumn Header="Batch" Binding="{Binding Batch, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="100" />
+                                <DataGridTextColumn Header="Condition" Binding="{Binding Condition, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="110" />
+                                <DataGridTextColumn Header="Notes" Binding="{Binding Notes, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="*" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                        <Button HorizontalAlignment="Left" Command="{Binding ApplyWorkspaceMetadataCommand}">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/ok.svg}" />
+                                <TextBlock Text="Apply metadata" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </ScrollViewer>
             </Grid>
         </Grid>
     </DockPanel>

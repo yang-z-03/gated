@@ -44,7 +44,9 @@ public partial class MainWindow : Window
         view_model.RequestCompensationEditorAsync = show_compensation_editor_dialog;
         view_model.PropertyChanged += view_model_property_changed;
         view_model.AxisChoices.CollectionChanged += channel_choices_collection_changed;
+        view_model.ColorChoices.CollectionChanged += channel_choices_collection_changed;
         view_model.SelectedPageAxisChoices.CollectionChanged += channel_choices_collection_changed;
+        view_model.SelectedPageColorChoices.CollectionChanged += channel_choices_collection_changed;
         update_statistics_columns();
         update_channel_menus();
         update_page_editor_viewport_size();
@@ -74,8 +76,10 @@ public partial class MainWindow : Window
             update_statistics_columns();
         if (e.PropertyName is nameof(MainWindowViewModel.SelectedXAxisChoice)
             or nameof(MainWindowViewModel.SelectedYAxisChoice)
+            or nameof(MainWindowViewModel.SelectedDotColorChoice)
             or nameof(MainWindowViewModel.SelectedPageXAxisChoice)
-            or nameof(MainWindowViewModel.SelectedPageYAxisChoice))
+            or nameof(MainWindowViewModel.SelectedPageYAxisChoice)
+            or nameof(MainWindowViewModel.SelectedPageDotColorChoice))
             update_channel_menus();
     }
 
@@ -552,8 +556,10 @@ public partial class MainWindow : Window
     {
         populate_channel_menu(editor_x_channel_menu, view_model.AxisChoices, view_model.SelectedXAxisChoice, editor_x_channel_menu_item_click);
         populate_channel_menu(editor_y_channel_menu, view_model.AxisChoices, view_model.SelectedYAxisChoice, editor_y_channel_menu_item_click);
+        populate_channel_menu(editor_color_channel_menu, view_model.ColorChoices, view_model.SelectedDotColorChoice, editor_color_channel_menu_item_click);
         populate_channel_menu(layout_x_channel_menu, view_model.SelectedPageAxisChoices, view_model.SelectedPageXAxisChoice, layout_x_channel_menu_item_click);
         populate_channel_menu(layout_y_channel_menu, view_model.SelectedPageAxisChoices, view_model.SelectedPageYAxisChoice, layout_y_channel_menu_item_click);
+        populate_channel_menu(layout_color_channel_menu, view_model.SelectedPageColorChoices, view_model.SelectedPageDotColorChoice, layout_color_channel_menu_item_click);
     }
 
     private void editor_x_channel_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -568,6 +574,12 @@ public partial class MainWindow : Window
             view_model.SelectedYAxisChoice = choice;
     }
 
+    private void editor_color_channel_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if ((e.Source as MenuItem)?.Tag is AxisChoice choice)
+            view_model.SelectedDotColorChoice = choice;
+    }
+
     private void layout_x_channel_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if ((e.Source as MenuItem)?.Tag is AxisChoice choice)
@@ -578,6 +590,42 @@ public partial class MainWindow : Window
     {
         if ((e.Source as MenuItem)?.Tag is AxisChoice choice)
             view_model.SelectedPageYAxisChoice = choice;
+    }
+
+    private void layout_color_channel_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if ((e.Source as MenuItem)?.Tag is AxisChoice choice)
+            view_model.SelectedPageDotColorChoice = choice;
+    }
+
+    private void viridis_color_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
+        view_model.DotColor.Palette = PlotColorPalette.Viridis;
+
+    private void plasma_color_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
+        view_model.DotColor.Palette = PlotColorPalette.Plasma;
+
+    private void turbo_color_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
+        view_model.DotColor.Palette = PlotColorPalette.Turbo;
+
+    private void gray_color_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
+        view_model.DotColor.Palette = PlotColorPalette.Gray;
+
+    private void layout_viridis_color_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
+        set_selected_page_palette(PlotColorPalette.Viridis);
+
+    private void layout_plasma_color_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
+        set_selected_page_palette(PlotColorPalette.Plasma);
+
+    private void layout_turbo_color_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
+        set_selected_page_palette(PlotColorPalette.Turbo);
+
+    private void layout_gray_color_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
+        set_selected_page_palette(PlotColorPalette.Gray);
+
+    private void set_selected_page_palette(PlotColorPalette palette)
+    {
+        if (view_model.SelectedPageElement is not null)
+            view_model.SelectedPageElement.DotColor.Palette = palette;
     }
 
     private static void populate_channel_menu(MenuItem menu, IEnumerable<AxisChoice> choices, AxisChoice? selected, EventHandler<RoutedEventArgs> click)

@@ -13,10 +13,10 @@ public interface IMatrixClusterer
 
 public sealed class LeidenClusteringOptions
 {
-    public double Resolution { get; init; } = CPMClusteringAlgorithm.DefaultResolution;
-    public int IterationCount { get; init; } = IterativeCPMClusteringAlgorithm.DefaultNIterations;
-    public double Randomness { get; init; } = LeidenAlgorithm.DefaultRandomness;
-    public int? Seed { get; init; } = 187;
+    public double Resolution { get; set; } = CPMClusteringAlgorithm.DefaultResolution;
+    public int IterationCount { get; set; } = IterativeCPMClusteringAlgorithm.DefaultNIterations;
+    public double Randomness { get; set; } = LeidenAlgorithm.DefaultRandomness;
+    public int? Seed { get; set; } = 187;
 }
 
 public static class LeidenClustering
@@ -33,9 +33,9 @@ public static class LeidenClustering
 
 public sealed class FlowSomClustererOptions
 {
-    public FlowSomOptions Som { get; init; } = new();
-    public LeidenClusteringOptions MetaClustering { get; init; } = new() { Resolution = 0.05 };
-    public FlowSomDistance Distance { get; init; } = FlowSomDistance.Euclidean;
+    public FlowSomOptions Som { get; set; } = new();
+    public LeidenClusteringOptions MetaClustering { get; set; } = new() { Resolution = 0.05 };
+    public FlowSomDistance Distance { get; set; } = FlowSomDistance.Euclidean;
 }
 
 public sealed class FlowSomClusterer : IMatrixClusterer

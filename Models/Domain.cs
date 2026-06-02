@@ -35,6 +35,14 @@ public enum PlotMode
     Histogram
 }
 
+public enum PlotColorPalette
+{
+    Viridis,
+    Plasma,
+    Turbo,
+    Gray
+}
+
 public enum GatingTool
 {
     View,
@@ -266,6 +274,40 @@ public sealed class AxisSettings : NotifyBase
     }
 }
 
+public sealed class DotColorSettings : NotifyBase
+{
+    private string channel_name = "";
+    private PlotColorPalette palette = PlotColorPalette.Viridis;
+
+    public string ChannelName
+    {
+        get => channel_name;
+        set => SetField(ref channel_name, value ?? "");
+    }
+
+    public PlotColorPalette Palette
+    {
+        get => palette;
+        set => SetField(ref palette, value);
+    }
+
+    public bool HasChannel => !string.IsNullOrWhiteSpace(channel_name);
+}
+
+public sealed class GateViewOptions
+{
+    public string XChannel { get; set; } = "";
+    public string? YChannel { get; set; }
+    public double XMinimum { get; set; }
+    public double XMaximum { get; set; } = 262144.0;
+    public AxisScale XScale { get; set; } = new();
+    public double YMinimum { get; set; }
+    public double YMaximum { get; set; } = 262144.0;
+    public AxisScale YScale { get; set; } = new();
+
+    public bool HasView => !string.IsNullOrWhiteSpace(XChannel);
+}
+
 public sealed class GateDefinition : NotifyBase
 {
     private string name = "Gate";
@@ -275,7 +317,7 @@ public sealed class GateDefinition : NotifyBase
     private bool is_selected;
     private bool is_tree_expanded = true;
 
-    public Guid Id { get; } = Guid.NewGuid();
+    public Guid Id { get; init; } = Guid.NewGuid();
     public ObservableCollection<Point> Vertices { get; } = new();
     public ObservableCollection<GateDefinition> Children { get; } = new();
     public ObservableCollection<StatisticDefinition> Statistics { get; } = new();
@@ -293,6 +335,7 @@ public sealed class GateDefinition : NotifyBase
     public double PreferredYMaximum { get; set; } = 262144.0;
     public AxisScale PreferredXScale { get; set; } = new();
     public AxisScale PreferredYScale { get; set; } = new();
+    public Dictionary<string, GateViewOptions> SamplePreferredViews { get; } = new(StringComparer.Ordinal);
     public PopulationRegion ParentPopulationRegion { get; set; } = PopulationRegion.Primary;
     public GateDefinition? Parent { get; set; }
 
@@ -436,7 +479,7 @@ public sealed class CompensationMatrix : NotifyBase
     private string name = "Compensation";
     private float[,] values = new float[0, 0];
 
-    public Guid Id { get; } = Guid.NewGuid();
+    public Guid Id { get; init; } = Guid.NewGuid();
     public IReadOnlyList<string> ChannelNames { get; private set; } = Array.Empty<string>();
 
     public string Name
@@ -503,7 +546,7 @@ public sealed class FlowSample : NotifyBase
     private string name = "";
     private float[,] compensated_events = new float[0, 0];
 
-    public Guid Id { get; } = Guid.NewGuid();
+    public Guid Id { get; init; } = Guid.NewGuid();
 
     public string Name
     {
@@ -515,6 +558,7 @@ public sealed class FlowSample : NotifyBase
     public float[,] RawEvents { get; private init; } = new float[0, 0];
     public ObservableCollection<PopulationResult> Populations { get; } = new();
     public Dictionary<string, float[]> Embeddings { get; } = new();
+    public Dictionary<string, string> Metadata { get; } = new();
     public CompensationMatrix? DefaultCompensation { get; set; }
 
     public float[,] CompensatedEvents
@@ -732,7 +776,7 @@ public sealed class FlowGroup : NotifyBase
     private CompensationMatrix? applied_compensation;
     private bool applied_compensation_is_manual;
 
-    public Guid Id { get; } = Guid.NewGuid();
+    public Guid Id { get; init; } = Guid.NewGuid();
 
     public string Name
     {
@@ -849,6 +893,7 @@ public sealed class FlowWorkspace : NotifyBase
 
     public ObservableCollection<FlowGroup> Groups { get; } = new();
     public ObservableCollection<PageLayout> PageLayouts { get; } = new();
+    public ObservableCollection<IntegrationJob> IntegrationJobs { get; } = new();
 }
 
 public abstract class NotifyBase : INotifyPropertyChanged

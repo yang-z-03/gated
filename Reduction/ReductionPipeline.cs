@@ -4,9 +4,9 @@ namespace gated.Reduction;
 
 public sealed class UmapReductionOptions
 {
-    public int Dimensions { get; init; } = 2;
-    public int NeighborCount { get; init; } = 15;
-    public int? EpochCount { get; init; }
+    public int Dimensions { get; set; } = 2;
+    public int NeighborCount { get; set; } = 15;
+    public int? EpochCount { get; set; }
 }
 
 public interface IReductionPipelineState

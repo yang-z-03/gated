@@ -16,15 +16,15 @@ public sealed record FlowSomMapResult(int[] NodeIds, double[] Distances);
 
 public sealed class FlowSomOptions
 {
-    public int XDimension { get; init; } = 10;
-    public int YDimension { get; init; } = 10;
-    public int IterationCount { get; init; } = 10;
-    public double AlphaStart { get; init; } = 0.05;
-    public double AlphaEnd { get; init; } = 0.01;
-    public double? RadiusStart { get; init; }
-    public double RadiusEnd { get; init; }
-    public FlowSomDistance Distance { get; init; } = FlowSomDistance.Euclidean;
-    public int? Seed { get; init; } = 42;
+    public int XDimension { get; set; } = 10;
+    public int YDimension { get; set; } = 10;
+    public int IterationCount { get; set; } = 10;
+    public double AlphaStart { get; set; } = 0.05;
+    public double AlphaEnd { get; set; } = 0.01;
+    public double? RadiusStart { get; set; }
+    public double RadiusEnd { get; set; }
+    public FlowSomDistance Distance { get; set; } = FlowSomDistance.Euclidean;
+    public int? Seed { get; set; } = 42;
 }
 
 public static class FlowSom

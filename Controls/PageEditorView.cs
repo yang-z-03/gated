@@ -272,7 +272,9 @@ public sealed class PageEditorView : Control
             element.ShowGates,
             element.ShowGateAnnotations,
             element.XAxis.ChannelName,
-            element.YAxis.ChannelName);
+            element.YAxis.ChannelName,
+            element.DotColor.ChannelName,
+            element.DotColor.Palette);
 
     private WriteableBitmap? create_density_bitmap(PagePlotElement element)
     {
@@ -283,7 +285,7 @@ public sealed class PageEditorView : Control
         var pixels = new byte[raster_size * raster_size * 4];
         if (element.PlotMode == PlotMode.Dotplot)
         {
-            add_dotplot_pixels(pixels, grid.Value.density, grid.Value.total_count);
+            add_dotplot_pixels(pixels, grid.Value.density, grid.Value.colors, grid.Value.total_count, element.DrawLargeDots);
             return create_bitmap(pixels);
         }
 
@@ -294,7 +296,7 @@ public sealed class PageEditorView : Control
         if (element.PlotMode == PlotMode.Zebra)
             normalized = smooth_density(normalized, element.DensitySmoothing);
         if (element.PlotMode == PlotMode.Zebra && element.ShowOutlierPoints)
-            add_dotplot_pixels(pixels, grid.Value.density, grid.Value.total_count);
+            add_dotplot_pixels(pixels, grid.Value.density, grid.Value.colors, grid.Value.total_count, element.DrawLargeDots);
 
         for (int x = 0; x < raster_size; x++)
         for (int y = 0; y < raster_size; y++)
@@ -313,7 +315,7 @@ public sealed class PageEditorView : Control
     {
         var pixels = new byte[raster_size * raster_size * 4];
         if (element.ShowOutlierPoints)
-            add_dotplot_pixels(pixels, density, total_count);
+            add_dotplot_pixels(pixels, density, null, total_count, element.DrawLargeDots);
 
         var smoothed = smooth_density(normalized, element.DensitySmoothing);
         double[] levels = contour_levels(element.ContourLevelCount);
@@ -338,6 +340,7 @@ public sealed class PageEditorView : Control
             element.IsHistogram,
             element.PlotMode,
             element.ShowOutlierPoints,
+            element.DrawLargeDots,
             element.UsePseudocolor,
             element.ShowGates,
             element.ShowGateAnnotations,
@@ -359,6 +362,8 @@ public sealed class PageEditorView : Control
             element.YAxis.LogicleDecades,
             element.YAxis.LogicleLinearizationWidth,
             element.YAxis.LogicleNegativeDecades,
+            element.DotColor.ChannelName,
+            element.DotColor.Palette,
             element.Sample?.Id,
             element.Gate?.Id,
             element.Population?.Region);
@@ -378,12 +383,12 @@ public sealed class PageEditorView : Control
 
         foreach (var sample in samples)
         {
-            int x_index = sample.GetChannelIndex(element.XAxis.ChannelName);
-            if (x_index < 0)
+            var x_values = sample.GetChannelValues(element.XAxis.ChannelName);
+            if (x_values.Length == 0)
                 continue;
             foreach (int index in resolve_event_indices(element, sample))
             {
-                int bin = to_bin(sample.CompensatedEvents[index, x_index], element.XAxis, x_minimum, x_span);
+                int bin = to_bin(x_values[index], element.XAxis, x_minimum, x_span);
                 if (bin < 0)
                     continue;
                 max_count = Math.Max(max_count, ++bins[bin]);
@@ -403,13 +408,15 @@ public sealed class PageEditorView : Control
         return create_bitmap(pixels);
     }
 
-    private (int[,] density, int max_density, int total_count)? create_density_grid(PagePlotElement element)
+    private (int[,] density, Color?[,] colors, int max_density, int total_count)? create_density_grid(PagePlotElement element)
     {
         var samples = resolve_samples(element).ToArray();
         if (samples.Length == 0)
             return null;
 
         var density = new int[raster_size, raster_size];
+        var color_sums = should_color_dots(element) ? new double[raster_size, raster_size] : null;
+        var color_counts = should_color_dots(element) ? new int[raster_size, raster_size] : null;
         int max_density = 0;
         int total_count = 0;
         double x_minimum = element.XAxis.Scale.Transform(element.XAxis.Minimum);
@@ -421,23 +428,34 @@ public sealed class PageEditorView : Control
 
         foreach (var sample in samples)
         {
-            int x_index = sample.GetChannelIndex(element.XAxis.ChannelName);
-            int y_index = sample.GetChannelIndex(element.YAxis.ChannelName);
-            if (x_index < 0 || y_index < 0)
+            var x_values = sample.GetChannelValues(element.XAxis.ChannelName);
+            var y_values = sample.GetChannelValues(element.YAxis.ChannelName);
+            var color_values = should_color_dots(element) ? sample.GetChannelValues(element.DotColor.ChannelName) : [];
+            if (x_values.Length == 0 || y_values.Length == 0)
                 continue;
 
             foreach (int index in resolve_event_indices(element, sample))
             {
-                int x_bin = to_bin(sample.CompensatedEvents[index, x_index], element.XAxis, x_minimum, x_span);
-                int y_bin = to_bin(sample.CompensatedEvents[index, y_index], element.YAxis, y_minimum, y_span);
+                int x_bin = to_bin(x_values[index], element.XAxis, x_minimum, x_span);
+                int y_bin = to_bin(y_values[index], element.YAxis, y_minimum, y_span);
                 if (x_bin < 0 || y_bin < 0)
                     continue;
                 total_count++;
                 max_density = Math.Max(max_density, ++density[x_bin, y_bin]);
+                if (color_sums is not null &&
+                    color_counts is not null &&
+                    index >= 0 &&
+                    index < color_values.Length &&
+                    !float.IsNaN(color_values[index]) &&
+                    !float.IsInfinity(color_values[index]))
+                {
+                    color_sums[x_bin, y_bin] += color_values[index];
+                    color_counts[x_bin, y_bin]++;
+                }
             }
         }
 
-        return max_density == 0 ? null : (density, max_density, total_count);
+        return max_density == 0 ? null : (density, create_dot_colors(element, color_sums, color_counts), max_density, total_count);
     }
 
     private void draw_axes(DrawingContext context, PagePlotElement element, Rect bounds, Rect plot_rect)
@@ -751,6 +769,7 @@ public sealed class PageEditorView : Control
             element.PropertyChanged += page_element_property_changed;
             element.XAxis.PropertyChanged += page_element_property_changed;
             element.YAxis.PropertyChanged += page_element_property_changed;
+            element.DotColor.PropertyChanged += page_element_property_changed;
         }
     }
 
@@ -761,6 +780,7 @@ public sealed class PageEditorView : Control
             element.PropertyChanged -= page_element_property_changed;
             element.XAxis.PropertyChanged -= page_element_property_changed;
             element.YAxis.PropertyChanged -= page_element_property_changed;
+            element.DotColor.PropertyChanged -= page_element_property_changed;
         }
         subscribed_page_elements = [];
     }
@@ -802,7 +822,11 @@ public sealed class PageEditorView : Control
 
     private static int to_bin(double value, AxisSettings axis, double transformed_minimum, double transformed_span)
     {
+        if (double.IsNaN(value) || double.IsInfinity(value))
+            return -1;
         double normalized = (axis.Scale.Transform(value) - transformed_minimum) / transformed_span;
+        if (double.IsNaN(normalized) || double.IsInfinity(normalized))
+            return -1;
         if (normalized < 0 || normalized > 1)
             return -1;
         return Math.Clamp((int)(normalized * (raster_size - 1)), 0, raster_size - 1);
@@ -846,6 +870,43 @@ public sealed class PageEditorView : Control
             if (density[x, y] > 0)
                 normalized[x, y] = Math.Log(1 + density[x, y]) / denominator;
         return normalized;
+    }
+
+    private static bool should_color_dots(PagePlotElement element) =>
+        element.DotColor.HasChannel && element.PlotMode == PlotMode.Dotplot;
+
+    private static Color?[,] create_dot_colors(PagePlotElement element, double[,]? color_sums, int[,]? color_counts)
+    {
+        if (color_sums is null || color_counts is null)
+            return new Color?[raster_size, raster_size];
+
+        double minimum = double.PositiveInfinity;
+        double maximum = double.NegativeInfinity;
+        for (int x = 0; x < raster_size; x++)
+        for (int y = 0; y < raster_size; y++)
+        {
+            if (color_counts[x, y] <= 0)
+                continue;
+            double value = color_sums[x, y] / color_counts[x, y];
+            minimum = Math.Min(minimum, value);
+            maximum = Math.Max(maximum, value);
+        }
+
+        if (double.IsInfinity(minimum) || maximum <= minimum)
+            return new Color?[raster_size, raster_size];
+
+        var colors = new Color?[raster_size, raster_size];
+        for (int x = 0; x < raster_size; x++)
+        for (int y = 0; y < raster_size; y++)
+        {
+            if (color_counts[x, y] <= 0)
+                continue;
+            double value = color_sums[x, y] / color_counts[x, y];
+            double normalized = Math.Clamp((value - minimum) / (maximum - minimum), 0, 1);
+            colors[x, y] = palette_color(normalized, element.DotColor.Palette);
+        }
+
+        return colors;
     }
 
     private static double[,] smooth_density(double[,] source, int passes)
@@ -895,13 +956,19 @@ public sealed class PageEditorView : Control
         return result;
     }
 
-    private static void add_dotplot_pixels(byte[] pixels, int[,] density, int total_count)
+    private static void add_dotplot_pixels(byte[] pixels, int[,] density, Color?[,]? colors, int total_count, bool large_dots)
     {
-        double threshold = total_count * 0.00001;
+        double threshold = large_dots ? 0 : total_count * 0.00001;
         for (int x = 0; x < raster_size; x++)
         for (int y = 0; y < raster_size; y++)
             if (density[x, y] > threshold)
-                set_pixel(pixels, x, raster_size - 1 - y, Colors.Black);
+            {
+                var color = colors?[x, y] ?? Colors.Black;
+                if (large_dots)
+                    set_pixel_rect(pixels, x, raster_size - 1 - y, 2, color);
+                else
+                    set_pixel(pixels, x, raster_size - 1 - y, color);
+            }
     }
 
     private static void add_filled_contour_pixels(byte[] pixels, double[,] normalized_density, double[] levels)
@@ -1031,6 +1098,56 @@ public sealed class PageEditorView : Control
         return Color.FromRgb(255, Convert.ToByte(220 - (value - 0.75) * 260), 40);
     }
 
+    private static Color palette_color(double value, PlotColorPalette palette)
+    {
+        value = Math.Clamp(value, 0, 1);
+        return palette switch
+        {
+            PlotColorPalette.Gray => Color.FromRgb(to_byte(30 + value * 220), to_byte(30 + value * 220), to_byte(30 + value * 220)),
+            PlotColorPalette.Plasma => interpolate_palette(value, [
+                Color.FromRgb(13, 8, 135),
+                Color.FromRgb(126, 3, 168),
+                Color.FromRgb(204, 71, 120),
+                Color.FromRgb(248, 149, 64),
+                Color.FromRgb(240, 249, 33)
+            ]),
+            PlotColorPalette.Turbo => interpolate_palette(value, [
+                Color.FromRgb(48, 18, 59),
+                Color.FromRgb(61, 111, 225),
+                Color.FromRgb(48, 204, 90),
+                Color.FromRgb(246, 214, 69),
+                Color.FromRgb(180, 31, 35)
+            ]),
+            _ => interpolate_palette(value, [
+                Color.FromRgb(68, 1, 84),
+                Color.FromRgb(59, 82, 139),
+                Color.FromRgb(33, 145, 140),
+                Color.FromRgb(94, 201, 98),
+                Color.FromRgb(253, 231, 37)
+            ])
+        };
+    }
+
+    private static Color interpolate_palette(double value, Color[] colors)
+    {
+        if (colors.Length == 0)
+            return Colors.Black;
+        if (colors.Length == 1)
+            return colors[0];
+        double scaled = value * (colors.Length - 1);
+        int index = Math.Clamp((int)Math.Floor(scaled), 0, colors.Length - 2);
+        double t = scaled - index;
+        var first = colors[index];
+        var second = colors[index + 1];
+        return Color.FromRgb(
+            to_byte(first.R + (second.R - first.R) * t),
+            to_byte(first.G + (second.G - first.G) * t),
+            to_byte(first.B + (second.B - first.B) * t));
+    }
+
+    private static byte to_byte(double value) =>
+        Convert.ToByte(Math.Clamp((int)Math.Round(value), 0, 255));
+
     private static WriteableBitmap create_bitmap(byte[] pixels)
     {
         var bitmap = new WriteableBitmap(new PixelSize(raster_size, raster_size), new Vector(96, 96), PixelFormat.Bgra8888, AlphaFormat.Premul);
@@ -1048,11 +1165,21 @@ public sealed class PageEditorView : Control
 
     private static void set_pixel(byte[] pixels, int x, int y, Color color)
     {
+        if (x < 0 || x >= raster_size || y < 0 || y >= raster_size)
+            return;
+
         int offset = (y * raster_size + x) * 4;
         pixels[offset] = color.B;
         pixels[offset + 1] = color.G;
         pixels[offset + 2] = color.R;
         pixels[offset + 3] = color.A;
+    }
+
+    private static void set_pixel_rect(byte[] pixels, int center_x, int center_y, int radius, Color color)
+    {
+        for (int y = center_y - radius; y <= center_y + radius; y++)
+        for (int x = center_x - radius; x <= center_x + radius; x++)
+            set_pixel(pixels, x, y, color);
     }
 
     private static IEnumerable<double> major_axis_ticks(AxisSettings axis)

@@ -40,11 +40,17 @@ public sealed class FlowPlotView : Control
     public static readonly StyledProperty<AxisSettings?> YAxisProperty =
         AvaloniaProperty.Register<FlowPlotView, AxisSettings?>(nameof(YAxis));
 
+    public static readonly StyledProperty<DotColorSettings?> DotColorProperty =
+        AvaloniaProperty.Register<FlowPlotView, DotColorSettings?>(nameof(DotColor));
+
     public static readonly StyledProperty<PlotMode> PlotModeProperty =
         AvaloniaProperty.Register<FlowPlotView, PlotMode>(nameof(PlotMode), PlotMode.Density);
 
     public static readonly StyledProperty<bool> ShowOutlierPointsProperty =
         AvaloniaProperty.Register<FlowPlotView, bool>(nameof(ShowOutlierPoints), true);
+
+    public static readonly StyledProperty<bool> DrawLargeDotsProperty =
+        AvaloniaProperty.Register<FlowPlotView, bool>(nameof(DrawLargeDots));
 
     public static readonly StyledProperty<bool> ShowGridlinesProperty =
         AvaloniaProperty.Register<FlowPlotView, bool>(nameof(ShowGridlines), true);
@@ -81,6 +87,7 @@ public sealed class FlowPlotView : Control
     private readonly List<FlowSample> subscribed_group_samples = new();
     private AxisSettings? subscribed_x_axis;
     private AxisSettings? subscribed_y_axis;
+    private DotColorSettings? subscribed_dot_color;
     private WriteableBitmap? cached_plot_bitmap;
     private PlotMode cached_plot_mode;
     private bool cached_histogram;
@@ -95,8 +102,10 @@ public sealed class FlowPlotView : Control
             PopulationProperty,
             XAxisProperty,
             YAxisProperty,
+            DotColorProperty,
             PlotModeProperty,
             ShowOutlierPointsProperty,
+            DrawLargeDotsProperty,
             ShowGridlinesProperty,
             ShowGateAnnotationsProperty,
             ContourLevelCountProperty,
@@ -148,6 +157,12 @@ public sealed class FlowPlotView : Control
         set => SetValue(YAxisProperty, value);
     }
 
+    public DotColorSettings? DotColor
+    {
+        get => GetValue(DotColorProperty);
+        set => SetValue(DotColorProperty, value);
+    }
+
     public PlotMode PlotMode
     {
         get => GetValue(PlotModeProperty);
@@ -158,6 +173,12 @@ public sealed class FlowPlotView : Control
     {
         get => GetValue(ShowOutlierPointsProperty);
         set => SetValue(ShowOutlierPointsProperty, value);
+    }
+
+    public bool DrawLargeDots
+    {
+        get => GetValue(DrawLargeDotsProperty);
+        set => SetValue(DrawLargeDotsProperty, value);
     }
 
     public bool ShowGridlines
@@ -238,6 +259,8 @@ public sealed class FlowPlotView : Control
             resubscribe_axis(ref subscribed_x_axis, XAxis);
         if (change.Property == YAxisProperty)
             resubscribe_axis(ref subscribed_y_axis, YAxis);
+        if (change.Property == DotColorProperty)
+            resubscribe_dot_color(DotColor);
         if (change.Property == ActiveToolProperty)
             clear_pending_gate();
         if (change.Property == XAxisProperty || change.Property == YAxisProperty)
@@ -249,8 +272,10 @@ public sealed class FlowPlotView : Control
             || change.Property == PopulationProperty
             || change.Property == XAxisProperty
             || change.Property == YAxisProperty
+            || change.Property == DotColorProperty
             || change.Property == PlotModeProperty
             || change.Property == ShowOutlierPointsProperty
+            || change.Property == DrawLargeDotsProperty
             || change.Property == DensitySmoothingProperty
             || change.Property == ContourLevelCountProperty)
             invalidate_plot_cache();
@@ -358,7 +383,7 @@ public sealed class FlowPlotView : Control
             return;
 
         if (ShowOutlierPoints)
-            context.DrawImage(create_dotplot_bitmap(grid.Value.density, grid.Value.total_count), plot_rect);
+            context.DrawImage(create_dotplot_bitmap(grid.Value.density, grid.Value.colors, grid.Value.total_count, DrawLargeDots), plot_rect);
 
         var normalized_density = smooth_density(normalized_density_grid(grid.Value.density, grid.Value.max_density), DensitySmoothing);
         double[] levels = contour_levels(ContourLevelCount);
@@ -446,14 +471,14 @@ public sealed class FlowPlotView : Control
             return null;
 
         if (PlotMode == PlotMode.Dotplot)
-            return create_dotplot_bitmap(grid.Value.density, grid.Value.total_count);
+            return create_dotplot_bitmap(grid.Value.density, grid.Value.colors, grid.Value.total_count, DrawLargeDots);
 
         var normalized_density = normalized_density_grid(grid.Value.density, grid.Value.max_density);
         if (PlotMode == PlotMode.Zebra)
             normalized_density = smooth_density(normalized_density, DensitySmoothing);
         var pixels = new byte[density_size * density_size * 4];
         if (PlotMode == PlotMode.Zebra && ShowOutlierPoints)
-            add_dotplot_pixels(pixels, grid.Value.density, grid.Value.total_count);
+            add_dotplot_pixels(pixels, grid.Value.density, grid.Value.colors, grid.Value.total_count, DrawLargeDots);
 
         for (int x_bin = 0; x_bin < density_size; x_bin++)
         for (int y_bin = 0; y_bin < density_size; y_bin++)
@@ -468,13 +493,15 @@ public sealed class FlowPlotView : Control
         return create_bitmap(pixels);
     }
 
-    private (int[,] density, int max_density, int total_count)? create_density_grid()
+    private (int[,] density, Color?[,] colors, int max_density, int total_count)? create_density_grid()
     {
         var samples = resolve_samples().ToArray();
         if (samples.Length == 0 || XAxis is null || YAxis is null)
             return null;
 
         var density = new int[density_size, density_size];
+        var color_sums = should_color_dots() ? new double[density_size, density_size] : null;
+        var color_counts = should_color_dots() ? new int[density_size, density_size] : null;
         int max_density = 0;
         int total_count = 0;
         double x_minimum = XAxis.Scale.Transform(XAxis.Minimum);
@@ -486,15 +513,16 @@ public sealed class FlowPlotView : Control
 
         foreach (var sample in samples)
         {
-            int x_index = sample.GetChannelIndex(XAxis.ChannelName);
-            int y_index = sample.GetChannelIndex(YAxis.ChannelName);
-            if (x_index < 0 || y_index < 0)
+            var x_values = sample.GetChannelValues(XAxis.ChannelName);
+            var y_values = sample.GetChannelValues(YAxis.ChannelName);
+            var color_values = should_color_dots() ? sample.GetChannelValues(DotColor!.ChannelName) : [];
+            if (x_values.Length == 0 || y_values.Length == 0)
                 continue;
 
             foreach (int index in resolve_event_indices(sample))
             {
-                int x_bin = to_bin(sample.CompensatedEvents[index, x_index], XAxis, x_minimum, x_span);
-                int y_bin = to_bin(sample.CompensatedEvents[index, y_index], YAxis, y_minimum, y_span);
+                int x_bin = to_bin(x_values[index], XAxis, x_minimum, x_span);
+                int y_bin = to_bin(y_values[index], YAxis, y_minimum, y_span);
                 if (x_bin < 0 || y_bin < 0)
                     continue;
 
@@ -502,10 +530,20 @@ public sealed class FlowPlotView : Control
                 int value = ++density[x_bin, y_bin];
                 if (value > max_density)
                     max_density = value;
+                if (color_sums is not null &&
+                    color_counts is not null &&
+                    index >= 0 &&
+                    index < color_values.Length &&
+                    !float.IsNaN(color_values[index]) &&
+                    !float.IsInfinity(color_values[index]))
+                {
+                    color_sums[x_bin, y_bin] += color_values[index];
+                    color_counts[x_bin, y_bin]++;
+                }
             }
         }
 
-        return max_density == 0 ? null : (density, max_density, total_count);
+        return max_density == 0 ? null : (density, create_dot_colors(color_sums, color_counts), max_density, total_count);
     }
 
     private static double[,] normalized_density_grid(int[,] density, int max_density)
@@ -523,23 +561,64 @@ public sealed class FlowPlotView : Control
         return normalized_density;
     }
 
-    private static WriteableBitmap create_dotplot_bitmap(int[,] density, int total_count)
+    private bool should_color_dots() =>
+        DotColor is { HasChannel: true } && PlotMode == PlotMode.Dotplot;
+
+    private Color?[,] create_dot_colors(double[,]? color_sums, int[,]? color_counts)
+    {
+        if (color_sums is null || color_counts is null || DotColor is null)
+            return new Color?[density_size, density_size];
+
+        double minimum = double.PositiveInfinity;
+        double maximum = double.NegativeInfinity;
+        for (int x = 0; x < density_size; x++)
+        for (int y = 0; y < density_size; y++)
+        {
+            if (color_counts[x, y] <= 0)
+                continue;
+            double value = color_sums[x, y] / color_counts[x, y];
+            minimum = Math.Min(minimum, value);
+            maximum = Math.Max(maximum, value);
+        }
+
+        if (double.IsInfinity(minimum) || maximum <= minimum)
+            return new Color?[density_size, density_size];
+
+        var colors = new Color?[density_size, density_size];
+        for (int x = 0; x < density_size; x++)
+        for (int y = 0; y < density_size; y++)
+        {
+            if (color_counts[x, y] <= 0)
+                continue;
+            double value = color_sums[x, y] / color_counts[x, y];
+            double normalized = Math.Clamp((value - minimum) / (maximum - minimum), 0, 1);
+            colors[x, y] = palette_color(normalized, DotColor.Palette);
+        }
+
+        return colors;
+    }
+
+    private static WriteableBitmap create_dotplot_bitmap(int[,] density, Color?[,]? colors, int total_count, bool large_dots)
     {
         var pixels = new byte[density_size * density_size * 4];
-        add_dotplot_pixels(pixels, density, total_count);
+        add_dotplot_pixels(pixels, density, colors, total_count, large_dots);
         return create_bitmap(pixels);
     }
 
-    private static void add_dotplot_pixels(byte[] pixels, int[,] density, int total_count)
+    private static void add_dotplot_pixels(byte[] pixels, int[,] density, Color?[,]? colors, int total_count, bool large_dots)
     {
-        double threshold = total_count * 0.00001;
+        double threshold = large_dots ? 0 : total_count * 0.00001;
         for (int x_bin = 0; x_bin < density_size; x_bin++)
         for (int y_bin = 0; y_bin < density_size; y_bin++)
         {
             if (density[x_bin, y_bin] <= threshold)
                 continue;
 
-            set_pixel(pixels, x_bin, density_size - 1 - y_bin, Colors.Black);
+            var color = colors?[x_bin, y_bin] ?? Colors.Black;
+            if (large_dots)
+                set_pixel_rect(pixels, x_bin, density_size - 1 - y_bin, 2, color);
+            else
+                set_pixel(pixels, x_bin, density_size - 1 - y_bin, color);
         }
     }
 
@@ -558,13 +637,13 @@ public sealed class FlowPlotView : Control
 
         foreach (var sample in samples)
         {
-            int x_index = sample.GetChannelIndex(XAxis.ChannelName);
-            if (x_index < 0)
+            var x_values = sample.GetChannelValues(XAxis.ChannelName);
+            if (x_values.Length == 0)
                 continue;
 
             foreach (int index in resolve_event_indices(sample))
             {
-                int bin = to_bin(sample.CompensatedEvents[index, x_index], XAxis, x_minimum, x_span);
+                int bin = to_bin(x_values[index], XAxis, x_minimum, x_span);
                 if (bin < 0)
                     continue;
 
@@ -862,7 +941,11 @@ public sealed class FlowPlotView : Control
 
     private int to_bin(double value, AxisSettings axis, double transformed_minimum, double transformed_span)
     {
+        if (double.IsNaN(value) || double.IsInfinity(value))
+            return -1;
         double normalized = (axis.Scale.Transform(value) - transformed_minimum) / transformed_span;
+        if (double.IsNaN(normalized) || double.IsInfinity(normalized))
+            return -1;
         if (normalized < 0 || normalized > 1)
             return -1;
 
@@ -1150,6 +1233,56 @@ public sealed class FlowPlotView : Control
         return density_color(value);
     }
 
+    private static Color palette_color(double value, PlotColorPalette palette)
+    {
+        value = Math.Clamp(value, 0, 1);
+        return palette switch
+        {
+            PlotColorPalette.Gray => Color.FromRgb(to_byte(30 + value * 220), to_byte(30 + value * 220), to_byte(30 + value * 220)),
+            PlotColorPalette.Plasma => interpolate_palette(value, [
+                Color.FromRgb(13, 8, 135),
+                Color.FromRgb(126, 3, 168),
+                Color.FromRgb(204, 71, 120),
+                Color.FromRgb(248, 149, 64),
+                Color.FromRgb(240, 249, 33)
+            ]),
+            PlotColorPalette.Turbo => interpolate_palette(value, [
+                Color.FromRgb(48, 18, 59),
+                Color.FromRgb(61, 111, 225),
+                Color.FromRgb(48, 204, 90),
+                Color.FromRgb(246, 214, 69),
+                Color.FromRgb(180, 31, 35)
+            ]),
+            _ => interpolate_palette(value, [
+                Color.FromRgb(68, 1, 84),
+                Color.FromRgb(59, 82, 139),
+                Color.FromRgb(33, 145, 140),
+                Color.FromRgb(94, 201, 98),
+                Color.FromRgb(253, 231, 37)
+            ])
+        };
+    }
+
+    private static Color interpolate_palette(double value, Color[] colors)
+    {
+        if (colors.Length == 0)
+            return Colors.Black;
+        if (colors.Length == 1)
+            return colors[0];
+        double scaled = value * (colors.Length - 1);
+        int index = Math.Clamp((int)Math.Floor(scaled), 0, colors.Length - 2);
+        double t = scaled - index;
+        var first = colors[index];
+        var second = colors[index + 1];
+        return Color.FromRgb(
+            to_byte(first.R + (second.R - first.R) * t),
+            to_byte(first.G + (second.G - first.G) * t),
+            to_byte(first.B + (second.B - first.B) * t));
+    }
+
+    private static byte to_byte(double value) =>
+        Convert.ToByte(Math.Clamp((int)Math.Round(value), 0, 255));
+
     private void draw_text(DrawingContext context, string text, Point origin, double size, Color color, bool bolded = false)
     {
         var typeface = current_typeface();
@@ -1364,6 +1497,19 @@ public sealed class FlowPlotView : Control
     private void axis_property_changed(object? sender, PropertyChangedEventArgs e) =>
         invalidate_plot_cache();
 
+    private void resubscribe_dot_color(DotColorSettings? new_dot_color)
+    {
+        if (subscribed_dot_color is not null)
+            subscribed_dot_color.PropertyChanged -= dot_color_property_changed;
+
+        subscribed_dot_color = new_dot_color;
+        if (subscribed_dot_color is not null)
+            subscribed_dot_color.PropertyChanged += dot_color_property_changed;
+    }
+
+    private void dot_color_property_changed(object? sender, PropertyChangedEventArgs e) =>
+        invalidate_plot_cache();
+
     private void invalidate_plot_cache()
     {
         cached_plot_bitmap = null;
@@ -1393,10 +1539,20 @@ public sealed class FlowPlotView : Control
 
     private static void set_pixel(byte[] pixels, int x, int y, Color color)
     {
+        if (x < 0 || x >= density_size || y < 0 || y >= density_size)
+            return;
+
         int offset = (y * density_size + x) * 4;
         pixels[offset] = color.B;
         pixels[offset + 1] = color.G;
         pixels[offset + 2] = color.R;
         pixels[offset + 3] = color.A;
+    }
+
+    private static void set_pixel_rect(byte[] pixels, int center_x, int center_y, int radius, Color color)
+    {
+        for (int y = center_y - radius; y <= center_y + radius; y++)
+        for (int x = center_x - radius; x <= center_x + radius; x++)
+            set_pixel(pixels, x, y, color);
     }
 }

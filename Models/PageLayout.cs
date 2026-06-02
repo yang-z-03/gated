@@ -29,6 +29,7 @@ public sealed class PagePlotElement : NotifyBase
     private bool show_outlier_points = true;
     private bool show_tick_labels;
     private bool use_pseudocolor = true;
+    private bool draw_large_dots;
     private bool show_gates = true;
     private bool show_gate_annotations = true;
     private int contour_level_count = 10;
@@ -41,6 +42,7 @@ public sealed class PagePlotElement : NotifyBase
     public PopulationResult? Population { get; init; }
     public AxisSettings XAxis { get; init; } = new();
     public AxisSettings YAxis { get; init; } = new();
+    public DotColorSettings DotColor { get; init; } = new();
 
     public double X
     {
@@ -94,6 +96,12 @@ public sealed class PagePlotElement : NotifyBase
     {
         get => use_pseudocolor;
         set => SetField(ref use_pseudocolor, value);
+    }
+
+    public bool DrawLargeDots
+    {
+        get => draw_large_dots;
+        set => SetField(ref draw_large_dots, value);
     }
 
     public bool ShowGates

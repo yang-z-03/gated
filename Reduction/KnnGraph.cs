@@ -19,13 +19,15 @@ public enum KnnSearchMethod
 
 public sealed class KnnGraphOptions
 {
-    public int NeighborCount { get; init; } = 15;
-    public KnnDistanceMetric Distance { get; init; } = KnnDistanceMetric.Euclidean;
-    public KnnSearchMethod SearchMethod { get; init; } = KnnSearchMethod.NNDescent;
-    public bool Mutual { get; init; }
-    public int? IterationCount { get; init; }
-    public int? MaxCandidates { get; init; }
-    public IProvideRandomValues? Random { get; init; }
+    public int NeighborCount { get; set; } = 15;
+    public KnnDistanceMetric Distance { get; set; } = KnnDistanceMetric.Euclidean;
+    public KnnSearchMethod SearchMethod { get; set; } = KnnSearchMethod.NNDescent;
+    public bool Mutual { get; set; }
+    public int? IterationCount { get; set; }
+    public int? MaxCandidates { get; set; }
+    public IProvideRandomValues? Random { get; set; }
+    public Action<double, string>? Progress { get; set; }
+    public Func<bool>? IsCancellationRequested { get; set; }
 }
 
 public sealed class KnnGraphResult
@@ -54,19 +56,21 @@ public static class KnnGraphBuilder
         int rows = data.GetLength(0);
         int k = Math.Min(options.NeighborCount, Math.Max(0, rows - 1));
         var (indices, distances) = options.SearchMethod == KnnSearchMethod.Exact
-            ? exact_neighbors(data, k, options.Distance)
+            ? exact_neighbors(data, k, options)
             : nn_descent_neighbors(data, k, options);
 
         return new KnnGraphResult(indices, distances, BuildNetwork(indices, distances, rows, options.Mutual));
     }
 
-    private static (int[][] Indices, float[][] Distances) exact_neighbors(float[,] data, int k, KnnDistanceMetric metric)
+    private static (int[][] Indices, float[][] Distances) exact_neighbors(float[,] data, int k, KnnGraphOptions options)
     {
         int rows = data.GetLength(0);
         var indices = new int[rows][];
         var distances = new float[rows][];
         for (int row = 0; row < rows; row++)
         {
+            throw_if_cancelled(options);
+            options.Progress?.Invoke(rows <= 1 ? 1 : row / (double)(rows - 1), $"Exact kNN row {row + 1:N0} of {rows:N0}");
             var candidates = new (int Index, float Distance)[rows - 1];
             int write = 0;
             for (int other = 0; other < rows; other++)
@@ -74,7 +78,7 @@ public static class KnnGraphBuilder
                 if (row == other)
                     continue;
 
-                candidates[write++] = (other, distance(data, row, other, metric));
+                candidates[write++] = (other, distance(data, row, other, options.Distance));
             }
 
             Array.Sort(candidates, static (left, right) =>
@@ -121,9 +125,20 @@ public static class KnnGraphBuilder
             leaf_array,
             nn_descent_k,
             nIters: iteration_count,
-            maxCandidates: options.MaxCandidates ?? 50);
+            maxCandidates: options.MaxCandidates ?? 50,
+            startingIteration: (iteration, total) =>
+            {
+                throw_if_cancelled(options);
+                options.Progress?.Invoke(total == 0 ? 1 : iteration / (double)total, $"NNDescent iteration {iteration + 1:N0} of {total:N0}");
+            });
 
         return remove_self_and_fill(data, raw_indices, raw_distances, k, options.Distance);
+    }
+
+    private static void throw_if_cancelled(KnnGraphOptions options)
+    {
+        if (options.IsCancellationRequested?.Invoke() == true)
+            throw new OperationCanceledException("kNN graph construction cancelled.");
     }
 
     private static (int[][] Indices, float[][] Distances) remove_self_and_fill(

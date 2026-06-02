@@ -1,0 +1,9 @@
+Version 0.21.0
+
+- Dimensionality reduction and clustering infrastructure
+- Added nearest neighbor graph search via NNDescent and brute force
+- Added network analysis
+- Added FlowSOM unsupervised clustering
+- Added data integration via CytoNorm
+- Plotting supports visualization of embeddings and coloring
+- Plotting supports show large dots for sparse data visualization

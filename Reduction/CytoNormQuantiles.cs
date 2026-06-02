@@ -12,13 +12,13 @@ public enum CytoNormGoal
 
 public sealed class CytoNormOptions
 {
-    public int QuantileCount { get; init; } = 99;
-    public double[]? Quantiles { get; init; }
-    public int MinimumCellsPerCluster { get; init; } = 50;
-    public CytoNormGoal Goal { get; init; } = CytoNormGoal.BatchMean;
-    public int? GoalBatch { get; init; }
-    public double[]? Limits { get; init; }
-    public FlowSomClustererOptions FlowSom { get; init; } = new();
+    public int QuantileCount { get; set; } = 99;
+    public double[]? Quantiles { get; set; }
+    public int MinimumCellsPerCluster { get; set; } = 50;
+    public CytoNormGoal Goal { get; set; } = CytoNormGoal.BatchMean;
+    public int? GoalBatch { get; set; }
+    public double[]? Limits { get; set; }
+    public FlowSomClustererOptions FlowSom { get; set; } = new();
 }
 
 public sealed class ExpressionQuantiles

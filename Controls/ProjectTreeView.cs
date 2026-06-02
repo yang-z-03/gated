@@ -237,6 +237,10 @@ public sealed class ProjectTreeView : Control
                 icon.Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri("avares://gated/Resources/workspace.svg")));
                 break;
 
+            case ProjectNodeKind.Metadata:
+                icon.Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri("avares://gated/Resources/table-edit.svg")));
+                break;
+
             case ProjectNodeKind.Group:
                 icon.Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri("avares://gated/Resources/group.svg")));
                 break;
@@ -244,6 +248,12 @@ public sealed class ProjectTreeView : Control
             case ProjectNodeKind.LayoutFolder:
             case ProjectNodeKind.Layout:
                 icon.Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri("avares://gated/Resources/table-edit.svg")));
+                break;
+
+            case ProjectNodeKind.IntegrationJobFolder:
+            case ProjectNodeKind.IntegrationJob:
+            case ProjectNodeKind.Embedding:
+                icon.Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri("avares://gated/Resources/embedding.svg")));
                 break;
 
             case ProjectNodeKind.GateFolder:
