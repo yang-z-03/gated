@@ -433,6 +433,7 @@ public partial class MainWindow : Window
                     {
                         Text = message,
                         TextWrapping = TextWrapping.Wrap,
+                        LineHeight = 18,
                         Foreground = new SolidColorBrush(Color.FromRgb(218, 221, 228))
                     },
                     new StackPanel

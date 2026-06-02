@@ -112,7 +112,7 @@
     </Window.Styles>
 
     <DockPanel x:Name="window">
-        <Border DockPanel.Dock="Top" Background="#252530" BorderThickness="0,0,0,0" BorderBrush="#252530">
+        <Border DockPanel.Dock="Top" Background="#252530" BorderThickness="0,0,0,0" BorderBrush="#505050">
           <Grid Height="40">
             <Rectangle Fill="#252530" PointerPressed="title_bar_pressed"/>
             <DockPanel>
@@ -603,7 +603,7 @@
                                     <TextBlock VerticalAlignment="Center" Text="SVG" />
                                     </StackPanel>
                                 </Button>
-                                <Button Command="{Binding DeletePageElementCommand}" Classes="Small Danger">
+                                <Button Command="{Binding DeletePageElementCommand}" Classes="Small">
                                     <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/delete.svg}" />
                                 </Button>
                             </StackPanel>

@@ -15,7 +15,7 @@
     <StaticResource x:Key="MenuFlyoutFontSize" ResourceKey="SemiFontSizeRegular" />
     <StaticResource x:Key="MenuFlyoutFontWeight" ResourceKey="SemiFontWeightRegular" />
     <!--  Menu item  -->
-    <Thickness x:Key="TopLevelMenuItemPadding">10 0</Thickness>
+    <Thickness x:Key="TopLevelMenuItemPadding">10 -2</Thickness>
     <StaticResource x:Key="TopLevelMenuItemMinHeight" ResourceKey="SemiHeightControlSmall" />
     <Thickness x:Key="MenuItemPadding">8 3</Thickness>
     <StaticResource x:Key="MenuItemCornerRadius" ResourceKey="SemiBorderRadiusSmall" />
