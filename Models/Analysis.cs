@@ -17,20 +17,26 @@ public static class GateEvaluator
         if (gate.Kind is GateKind.Merge or GateKind.Exclude or GateKind.Overlap)
             return parent_indices.ToArray();
 
-        var x_values = sample.GetChannelValues(gate.XChannel);
+        var x_values = sample.GetNormalizedChannelValues(gate.XChannel, gate.XMinimum, gate.XMaximum, gate.XScale);
         if (x_values.Length == 0)
             return Array.Empty<int>();
 
         float[]? y_values = null;
         if (!gate.IsOneDimensional && gate.YChannel is not null)
-            y_values = sample.GetChannelValues(gate.YChannel);
+        {
+            y_values = sample.GetNormalizedChannelValues(gate.YChannel, gate.YMinimum, gate.YMaximum, gate.YScale);
+            if (y_values.Length == 0)
+                return Array.Empty<int>();
+        }
+
+        var normalized_vertices = normalized_gate_vertices(gate);
 
         var selected = new List<int>(parent_indices.Length);
         foreach (int row in parent_indices)
         {
             double x_value = x_values[row];
             double y_value = y_values is null ? 0 : y_values[row];
-            if (Contains(gate, region, x_value, y_value))
+            if (contains_normalized(gate, region, normalized_vertices, x_value, y_value))
                 selected.Add(row);
         }
 
@@ -50,6 +56,19 @@ public static class GateEvaluator
         double normalized_x = normalize_x(gate, x_value);
         double normalized_y = gate.IsOneDimensional ? 0 : normalize_y(gate, y_value);
         var normalized_vertices = normalized_gate_vertices(gate);
+        return contains_normalized(gate, region, normalized_vertices, normalized_x, normalized_y);
+    }
+
+    private static bool contains_normalized(
+        GateDefinition gate,
+        PopulationRegion region,
+        IReadOnlyList<Point> normalized_vertices,
+        double normalized_x,
+        double normalized_y)
+    {
+        if (normalized_vertices.Count == 0)
+            return true;
+
         return gate.Kind switch
         {
             GateKind.Polygon => contains_polygon(normalized_vertices, normalized_x, normalized_y),

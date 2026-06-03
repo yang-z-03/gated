@@ -545,6 +545,9 @@ public sealed class FlowSample : NotifyBase
 {
     private string name = "";
     private float[,] compensated_events = new float[0, 0];
+    private CompensationMatrix? applied_compensation_cache;
+    private bool has_applied_compensation_cache;
+    private readonly Dictionary<NormalizedChannelCacheKey, float[]> normalized_channel_cache = new();
 
     public Guid Id { get; init; } = Guid.NewGuid();
 
@@ -604,6 +607,63 @@ public sealed class FlowSample : NotifyBase
         return selected;
     }
 
+    public float[] GetNormalizedChannelValues(string channel_name, double minimum, double maximum, AxisScale scale)
+    {
+        var key = new NormalizedChannelCacheKey(
+            channel_name,
+            minimum,
+            maximum,
+            scale.Kind,
+            scale.Logicle.T,
+            scale.Logicle.W,
+            scale.Logicle.M,
+            scale.Logicle.A);
+        if (normalized_channel_cache.TryGetValue(key, out var cached))
+            return cached;
+
+        var source = GetChannelValues(channel_name);
+        if (source.Length == 0)
+        {
+            normalized_channel_cache[key] = Array.Empty<float>();
+            return Array.Empty<float>();
+        }
+
+        double transformed_minimum;
+        double transformed_maximum;
+        LogicleTransform? transform = null;
+        if (scale.Kind == CoordinateScaleKind.Linear)
+        {
+            transformed_minimum = minimum;
+            transformed_maximum = maximum;
+        }
+        else
+        {
+            transform = new LogicleTransform(scale.Logicle);
+            transformed_minimum = transform.Transform(minimum);
+            transformed_maximum = transform.Transform(maximum);
+        }
+
+        double transformed_span = transformed_maximum - transformed_minimum;
+        if (transformed_span <= 0)
+        {
+            var empty_span_values = new float[source.Length];
+            normalized_channel_cache[key] = empty_span_values;
+            return empty_span_values;
+        }
+
+        var normalized = new float[source.Length];
+        for (int index = 0; index < source.Length; index++)
+        {
+            double transformed = transform is null ? source[index] : transform.Transform(source[index]);
+            normalized[index] = Convert.ToSingle((transformed - transformed_minimum) / transformed_span);
+        }
+
+        normalized_channel_cache[key] = normalized;
+        return normalized;
+    }
+
+    public void InvalidateNormalizedChannelCache() => normalized_channel_cache.Clear();
+
     private static float[] select_values(float[] values, int[]? event_indices)
     {
         if (event_indices is null)
@@ -628,6 +688,18 @@ public sealed class FlowSample : NotifyBase
 
     public void ApplyCompensation(CompensationMatrix? matrix)
     {
+        ApplyCompensation(matrix, force: false);
+    }
+
+    public void ApplyCompensation(CompensationMatrix? matrix, bool force)
+    {
+        if (!force && has_applied_compensation_cache && ReferenceEquals(applied_compensation_cache, matrix))
+            return;
+
+        applied_compensation_cache = matrix;
+        has_applied_compensation_cache = true;
+        normalized_channel_cache.Clear();
+
         if (matrix is null || matrix.Values.GetLength(0) == 0)
         {
             CompensatedEvents = (float[,])RawEvents.Clone();
@@ -723,9 +795,9 @@ public sealed class FlowSample : NotifyBase
         return true;
     }
 
-    public void Recalculate(FlowGroup group)
+    public void Recalculate(FlowGroup group, bool force_compensation = false)
     {
-        ApplyCompensation(group.AppliedCompensation);
+        ApplyCompensation(group.AppliedCompensation, force_compensation);
         Populations.Clear();
         var all_indices = Enumerable.Range(0, EventCount).ToArray();
         foreach (var gate in group.Gates)
@@ -876,10 +948,25 @@ public sealed class FlowGroup : NotifyBase
 
     public void RecalculateSamples()
     {
+        RecalculateSamples(force_compensation: false);
+    }
+
+    public void RecalculateSamples(bool force_compensation)
+    {
         foreach (var sample in Samples)
-            sample.Recalculate(this);
+            sample.Recalculate(this, force_compensation);
     }
 }
+
+internal readonly record struct NormalizedChannelCacheKey(
+    string ChannelName,
+    double Minimum,
+    double Maximum,
+    CoordinateScaleKind ScaleKind,
+    double LogicleTopOfScale,
+    double LogicleLinearizationWidth,
+    double LogicleDecades,
+    double LogicleNegativeDecades);
 
 public sealed class FlowWorkspace : NotifyBase
 {

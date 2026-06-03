@@ -186,6 +186,8 @@ public sealed class IntegrationJobRunner
                 write_cluster(sample, group, job.LeidenClusters, job.LeidenKey);
             if ((output is OutputKind.All or OutputKind.FlowSom) && job.WriteFlowSom && job.FlowSomClusters is not null)
                 write_cluster(sample, group, job.FlowSomClusters, job.FlowSomKey);
+
+            sample.InvalidateNormalizedChannelCache();
         }
 
         job.WarningText = "";

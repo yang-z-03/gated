@@ -12,6 +12,7 @@ using Avalonia.Controls.Templates;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using gated.Models;
 using gated.ViewModels;
 using gated.Controls;
@@ -33,7 +34,9 @@ internal enum UpdateDialogChoice
 public partial class MainWindow : Window
 {
     private readonly MainWindowViewModel view_model = new();
+    private readonly Dictionary<MenuItem, ChannelMenuState> channel_menu_states = new();
     private string? current_workspace_path;
+    private bool channel_menu_update_pending;
 
     public MainWindow()
     {
@@ -55,6 +58,7 @@ public partial class MainWindow : Window
             if (e.Property == BoundsProperty)
                 update_page_editor_viewport_size();
         };
+        AddHandler(KeyDownEvent, window_key_down, RoutingStrategies.Tunnel);
         DragDrop.SetAllowDrop(this, true);
         DragDrop.AddDragOverHandler(this, drag_over);
         DragDrop.AddDropHandler(this, drop_files);
@@ -80,11 +84,24 @@ public partial class MainWindow : Window
             or nameof(MainWindowViewModel.SelectedPageXAxisChoice)
             or nameof(MainWindowViewModel.SelectedPageYAxisChoice)
             or nameof(MainWindowViewModel.SelectedPageDotColorChoice))
-            update_channel_menus();
+            request_update_channel_menus();
     }
 
     private void channel_choices_collection_changed(object? sender, NotifyCollectionChangedEventArgs e) =>
-        update_channel_menus();
+        request_update_channel_menus();
+
+    private void request_update_channel_menus()
+    {
+        if (channel_menu_update_pending)
+            return;
+
+        channel_menu_update_pending = true;
+        Dispatcher.UIThread.Post(() =>
+        {
+            channel_menu_update_pending = false;
+            update_channel_menus();
+        });
+    }
 
     private void update_page_editor_viewport_size()
     {
@@ -117,7 +134,33 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void open_fcs_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private async void window_key_down(object? sender, KeyEventArgs e)
+    {
+        if (e.KeyModifiers == KeyModifiers.Control && e.Key == Key.O)
+        {
+            e.Handled = true;
+            await open_fcs_files_async();
+            return;
+        }
+
+        if (e.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Shift) && e.Key == Key.O)
+        {
+            e.Handled = true;
+            await open_workspace_async();
+            return;
+        }
+
+        if (e.KeyModifiers == KeyModifiers.Control && e.Key == Key.S)
+        {
+            e.Handled = true;
+            await save_workspace_async();
+        }
+    }
+
+    private async void open_fcs_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
+        await open_fcs_files_async();
+
+    private async Task open_fcs_files_async()
     {
         var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
@@ -136,7 +179,10 @@ public partial class MainWindow : Window
             target_group: null);
     }
 
-    private async void open_workspace_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private async void open_workspace_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
+        await open_workspace_async();
+
+    private async Task open_workspace_async()
     {
         var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
@@ -157,7 +203,10 @@ public partial class MainWindow : Window
         await load_workspace_with_progress(path);
     }
 
-    private async void save_workspace_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private async void save_workspace_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
+        await save_workspace_async();
+
+    private async Task save_workspace_async()
     {
         string? path = current_workspace_path;
         if (string.IsNullOrWhiteSpace(path))
@@ -628,20 +677,40 @@ public partial class MainWindow : Window
             view_model.SelectedPageElement.DotColor.Palette = palette;
     }
 
-    private static void populate_channel_menu(MenuItem menu, IEnumerable<AxisChoice> choices, AxisChoice? selected, EventHandler<RoutedEventArgs> click)
+    private void populate_channel_menu(MenuItem menu, IEnumerable<AxisChoice> choices, AxisChoice? selected, EventHandler<RoutedEventArgs> click)
     {
+        var choice_list = choices as IReadOnlyList<AxisChoice> ?? choices.ToArray();
+        string selected_name = selected?.Name ?? "";
+        if (channel_menu_states.TryGetValue(menu, out var state) &&
+            state.Matches(choice_list, click))
+        {
+            update_channel_menu_selection(menu, selected_name);
+            return;
+        }
+
         menu.Items.Clear();
-        foreach (var choice in choices)
+        foreach (var choice in choice_list)
         {
             var item = new MenuItem
             {
                 Header = create_channel_menu_header(choice),
                 ToggleType = MenuItemToggleType.Radio,
-                IsChecked = selected?.Name == choice.Name,
+                IsChecked = selected_name == choice.Name,
                 Tag = choice
             };
             item.Click += click;
             menu.Items.Add(item);
+        }
+
+        channel_menu_states[menu] = new ChannelMenuState(choice_list, click);
+    }
+
+    private static void update_channel_menu_selection(MenuItem menu, string selected_name)
+    {
+        foreach (var item in menu.Items.OfType<MenuItem>())
+        {
+            if (item.Tag is AxisChoice choice)
+                item.IsChecked = selected_name == choice.Name;
         }
     }
 
@@ -670,6 +739,33 @@ public partial class MainWindow : Window
         });
 
         return panel;
+    }
+
+    private sealed class ChannelMenuState
+    {
+        private readonly EventHandler<RoutedEventArgs> click;
+        private readonly (string Name, string Label)[] choices;
+
+        public ChannelMenuState(IReadOnlyList<AxisChoice> choices, EventHandler<RoutedEventArgs> click)
+        {
+            this.click = click;
+            this.choices = choices.Select(choice => (choice.Name, choice.Label)).ToArray();
+        }
+
+        public bool Matches(IReadOnlyList<AxisChoice> current_choices, EventHandler<RoutedEventArgs> current_click)
+        {
+            if (!ReferenceEquals(click, current_click) || choices.Length != current_choices.Count)
+                return false;
+
+            for (int index = 0; index < choices.Length; index++)
+            {
+                var current = current_choices[index];
+                if (choices[index].Name != current.Name || choices[index].Label != current.Label)
+                    return false;
+            }
+
+            return true;
+        }
     }
 
     private void swap_axes_button_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>

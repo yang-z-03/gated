@@ -9,6 +9,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Controls.Documents;
+using Avalonia.Rendering;
 using gated.ViewModels;
 using Avalonia.Svg.Skia;
 using Avalonia.Platform;
@@ -16,7 +17,7 @@ using gated.Models;
 
 namespace gated.Controls;
 
-public sealed class ProjectTreeView : Control
+public sealed class ProjectTreeView : Control, ICustomHitTest
 {
     public static readonly StyledProperty<INotifyCollectionChanged?> NodesProperty =
         AvaloniaProperty.Register<ProjectTreeView, INotifyCollectionChanged?>(nameof(Nodes));
@@ -68,6 +69,8 @@ public sealed class ProjectTreeView : Control
 
     public ProjectNode? GetNodeAt(Point point) => node_at(point.Y);
 
+    public bool HitTest(Point point) => new Rect(Bounds.Size).Contains(point);
+
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
@@ -87,6 +90,8 @@ public sealed class ProjectTreeView : Control
         pressed_point = point;
         drag_started = false;
 
+        select_node(node);
+
         double chevron_left = 8 + node.Depth * indent_width;
         bool on_chevron = point.X >= chevron_left && point.X <= chevron_left + chevron_width + 4;
         if (node.HasChildren && on_chevron)
@@ -94,8 +99,6 @@ public sealed class ProjectTreeView : Control
             if (ToggleNodeCommand?.CanExecute(node) == true)
                 ToggleNodeCommand.Execute(node);
         }
-        else if (SelectNodeCommand?.CanExecute(node) == true)
-            SelectNodeCommand.Execute(node);
 
         e.Handled = true;
     }
@@ -174,6 +177,12 @@ public sealed class ProjectTreeView : Control
             return null;
 
         return nodes[index];
+    }
+
+    private void select_node(ProjectNode node)
+    {
+        if (SelectNodeCommand?.CanExecute(node) == true)
+            SelectNodeCommand.Execute(node);
     }
 
     private void draw_header(DrawingContext context, Rect bounds)

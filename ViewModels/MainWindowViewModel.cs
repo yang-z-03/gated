@@ -1403,7 +1403,7 @@ public sealed class MainWindowViewModel : NotifyBase
         if (!updated)
             return;
 
-        selected_group.RecalculateSamples();
+        selected_group.RecalculateSamples(force_compensation: true);
         refresh_project_tree();
         refresh_plot_gates();
         refresh_selected_statistics();

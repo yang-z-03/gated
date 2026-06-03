@@ -36,8 +36,8 @@
             <Italic Foreground="#e0e0e0">fitness of a particular purpose</Italic>. See the 
             GNU General Public License for details.
         </TextBlock>
-        <Label HorizontalAlignment="Center" Margin="0 5 0 5" FontSize="12" Foreground="#f0f0f0" FontWeight="Regular">
-            0.22.0
+        <Label x:Name="version" HorizontalAlignment="Center" Margin="0 5 0 5" FontSize="12" Foreground="#f0f0f0" FontWeight="Regular">
+            Version
         </Label>
     </StackPanel>
 </Window>
