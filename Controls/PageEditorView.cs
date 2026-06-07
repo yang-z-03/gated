@@ -45,6 +45,8 @@ public sealed class PageEditorView : Control
     private const double bottom_axis_label_space = 30;
     private const double bottom_tick_label_space = 18;
     private const double workspace_margin = 60;
+    private const double minimum_workspace_width = 1800;
+    private const double minimum_workspace_height = 1200;
     private const int raster_size = 260;
     private PagePlotElement? captured_element;
     private Point drag_start_page;
@@ -57,6 +59,8 @@ public sealed class PageEditorView : Control
     private Size content_extent;
     private double? active_vertical_snap_guide;
     private double? active_horizontal_snap_guide;
+    private readonly Dictionary<Guid, (string Key, DensityGrid? Grid)> density_grid_cache = new();
+    private readonly Dictionary<Guid, (string Key, ContourGeometry? Geometry)> contour_geometry_cache = new();
     private readonly Dictionary<Guid, (string Key, WriteableBitmap? Bitmap)> plot_bitmap_cache = new();
     private readonly Dictionary<Guid, (string Key, RenderTargetBitmap Bitmap)> element_bitmap_cache = new();
 
@@ -234,6 +238,8 @@ public sealed class PageEditorView : Control
         var plot_bitmap = get_plot_bitmap(element);
         if (plot_bitmap is not null)
             context.DrawImage(plot_bitmap, plot_rect);
+        if (element.PlotMode == PlotMode.Contour)
+            draw_contours(context, element, plot_rect);
 
         draw_axes(context, element, bounds, plot_rect);
         if (element.ShowGates)
@@ -274,29 +280,30 @@ public sealed class PageEditorView : Control
             element.XAxis.ChannelName,
             element.YAxis.ChannelName,
             element.DotColor.ChannelName,
-            element.DotColor.Palette);
+            element.DotColor.Palette,
+            element.DotColor.UseLogScale);
 
     private WriteableBitmap? create_density_bitmap(PagePlotElement element)
     {
-        var grid = create_density_grid(element);
+        var grid = get_density_grid(element);
         if (grid is null)
             return null;
 
         var pixels = new byte[raster_size * raster_size * 4];
         if (element.PlotMode == PlotMode.Dotplot)
         {
-            add_dotplot_pixels(pixels, grid.Value.density, grid.Value.colors, grid.Value.total_count, element.DrawLargeDots);
+            add_dotplot_pixels(pixels, grid.Density, grid.Colors, grid.TotalCount, element.DrawLargeDots);
             return create_bitmap(pixels);
         }
 
-        var normalized = normalized_density_grid(grid.Value.density, grid.Value.max_density);
+        var normalized = normalized_density_grid(grid.Density, grid.MaxDensity);
         if (element.PlotMode == PlotMode.Contour)
-            return create_contour_bitmap(element, grid.Value.density, grid.Value.total_count, normalized);
+            return create_contour_bitmap(element, grid.Density, grid.TotalCount, normalized);
 
         if (element.PlotMode == PlotMode.Zebra)
             normalized = smooth_density(normalized, element.DensitySmoothing);
         if (element.PlotMode == PlotMode.Zebra && element.ShowOutlierPoints)
-            add_dotplot_pixels(pixels, grid.Value.density, grid.Value.colors, grid.Value.total_count, element.DrawLargeDots);
+            add_dotplot_pixels(pixels, grid.Density, grid.Colors, grid.TotalCount, element.DrawLargeDots);
 
         for (int x = 0; x < raster_size; x++)
         for (int y = 0; y < raster_size; y++)
@@ -320,7 +327,6 @@ public sealed class PageEditorView : Control
         var smoothed = smooth_density(normalized, element.DensitySmoothing);
         double[] levels = contour_levels(element.ContourLevelCount);
         add_filled_contour_pixels(pixels, smoothed, levels);
-        add_contour_pixels(pixels, smoothed, levels);
         return create_bitmap(pixels);
     }
 
@@ -342,10 +348,85 @@ public sealed class PageEditorView : Control
             element.ShowOutlierPoints,
             element.DrawLargeDots,
             element.UsePseudocolor,
-            element.ShowGates,
-            element.ShowGateAnnotations,
             element.ContourLevelCount,
             element.DensitySmoothing,
+            density_grid_key(element));
+
+    private static string contour_geometry_key(PagePlotElement element) =>
+        string.Join("|",
+            density_grid_key(element),
+            element.ContourLevelCount,
+            element.DensitySmoothing);
+
+    private DensityGrid? get_density_grid(PagePlotElement element)
+    {
+        string key = density_grid_key(element);
+        if (density_grid_cache.TryGetValue(element.Id, out var cached) && cached.Key == key)
+            return cached.Grid;
+
+        var grid = create_density_grid(element);
+        density_grid_cache[element.Id] = (key, grid);
+        return grid;
+    }
+
+    private void draw_contours(DrawingContext context, PagePlotElement element, Rect plot_rect)
+    {
+        var geometry = get_contour_geometry(element);
+        if (geometry is null)
+            return;
+
+        var pen = new Pen(Brushes.Black, 0.8);
+        foreach (var segment in geometry.Segments)
+            context.DrawLine(pen, density_to_screen(segment.Start, plot_rect), density_to_screen(segment.End, plot_rect));
+    }
+
+    private ContourGeometry? get_contour_geometry(PagePlotElement element)
+    {
+        string key = contour_geometry_key(element);
+        if (contour_geometry_cache.TryGetValue(element.Id, out var cached) && cached.Key == key)
+            return cached.Geometry;
+
+        var grid = get_density_grid(element);
+        if (grid is null)
+        {
+            contour_geometry_cache[element.Id] = (key, null);
+            return null;
+        }
+
+        var normalized = smooth_density(normalized_density_grid(grid.Density, grid.MaxDensity), element.DensitySmoothing);
+        var segments = create_contour_segments(normalized, contour_levels(element.ContourLevelCount));
+        var geometry = new ContourGeometry(segments);
+        contour_geometry_cache[element.Id] = (key, geometry);
+        return geometry;
+    }
+
+    private static IReadOnlyList<ContourSegment> create_contour_segments(double[,] density, double[] levels)
+    {
+        var segments = new List<ContourSegment>();
+        foreach (double level in levels)
+            add_contour_level_segments(segments, density, level);
+        return segments;
+    }
+
+    private static void add_contour_level_segments(List<ContourSegment> segments, double[,] density, double level)
+    {
+        for (int x = 0; x < raster_size - 1; x++)
+        for (int y = 0; y < raster_size - 1; y++)
+        {
+            var points = contour_cell_points(density[x, y], density[x + 1, y], density[x + 1, y + 1], density[x, y + 1], x, y, level);
+            for (int index = 0; index + 1 < points.Count; index += 2)
+                segments.Add(new ContourSegment(points[index], points[index + 1]));
+        }
+    }
+
+    private static Point density_to_screen(Point point, Rect plot_rect) =>
+        new(
+            plot_rect.Left + point.X / (raster_size - 1) * plot_rect.Width,
+            plot_rect.Bottom - point.Y / (raster_size - 1) * plot_rect.Height);
+
+    private static string density_grid_key(PagePlotElement element) =>
+        string.Join("|",
+            element.IsHistogram,
             element.XAxis.ChannelName,
             element.XAxis.Minimum,
             element.XAxis.Maximum,
@@ -362,8 +443,8 @@ public sealed class PageEditorView : Control
             element.YAxis.LogicleDecades,
             element.YAxis.LogicleLinearizationWidth,
             element.YAxis.LogicleNegativeDecades,
-            element.DotColor.ChannelName,
-            element.DotColor.Palette,
+            should_color_dots(element) ? element.DotColor.ChannelName : "",
+            should_color_dots(element) ? element.DotColor.UseLogScale : false,
             element.Sample?.Id,
             element.Gate?.Id,
             element.Population?.Region);
@@ -408,7 +489,7 @@ public sealed class PageEditorView : Control
         return create_bitmap(pixels);
     }
 
-    private (int[,] density, Color?[,] colors, int max_density, int total_count)? create_density_grid(PagePlotElement element)
+    private DensityGrid? create_density_grid(PagePlotElement element)
     {
         var samples = resolve_samples(element).ToArray();
         if (samples.Length == 0)
@@ -449,13 +530,13 @@ public sealed class PageEditorView : Control
                     !float.IsNaN(color_values[index]) &&
                     !float.IsInfinity(color_values[index]))
                 {
-                    color_sums[x_bin, y_bin] += color_values[index];
+                    color_sums[x_bin, y_bin] += transform_dot_color_value(color_values[index], element.DotColor.UseLogScale);
                     color_counts[x_bin, y_bin]++;
                 }
             }
         }
 
-        return max_density == 0 ? null : (density, create_dot_colors(element, color_sums, color_counts), max_density, total_count);
+        return max_density == 0 ? null : new DensityGrid(density, create_dot_colors(element, color_sums, color_counts), max_density, total_count);
     }
 
     private void draw_axes(DrawingContext context, PagePlotElement element, Rect bounds, Rect plot_rect)
@@ -711,8 +792,8 @@ public sealed class PageEditorView : Control
     private Size workspace_size()
     {
         return new Size(
-            Math.Max(ViewportSize.Width, content_extent.Width),
-            Math.Max(ViewportSize.Height, content_extent.Height));
+            Math.Max(Math.Max(ViewportSize.Width, minimum_workspace_width), content_extent.Width),
+            Math.Max(Math.Max(ViewportSize.Height, minimum_workspace_height), content_extent.Height));
     }
 
     private static Size export_size_for(IReadOnlyList<PagePlotElement> elements)
@@ -755,6 +836,8 @@ public sealed class PageEditorView : Control
     {
         unsubscribe_page_elements();
         subscribe_page_elements();
+        density_grid_cache.Clear();
+        contour_geometry_cache.Clear();
         plot_bitmap_cache.Clear();
         element_bitmap_cache.Clear();
         update_content_extent();
@@ -789,8 +872,17 @@ public sealed class PageEditorView : Control
     {
         if (sender is PagePlotElement element)
         {
-            if (e.PropertyName is not (nameof(PagePlotElement.X) or nameof(PagePlotElement.Y) or nameof(PagePlotElement.Size) or nameof(PagePlotElement.Title) or nameof(PagePlotElement.ShowTickLabels)))
+            if (page_property_affects_density_grid(e.PropertyName))
+            {
+                density_grid_cache.Remove(element.Id);
+                contour_geometry_cache.Remove(element.Id);
                 plot_bitmap_cache.Remove(element.Id);
+            }
+            else if (page_property_affects_plot_bitmap(e.PropertyName))
+            {
+                contour_geometry_cache.Remove(element.Id);
+                plot_bitmap_cache.Remove(element.Id);
+            }
 
             if (captured_element is null && e.PropertyName is nameof(PagePlotElement.X) or nameof(PagePlotElement.Y) or nameof(PagePlotElement.Size))
                 update_content_extent();
@@ -801,6 +893,18 @@ public sealed class PageEditorView : Control
         {
             foreach (var owner in subscribed_page_elements.Where(item => ReferenceEquals(item.XAxis, axis) || ReferenceEquals(item.YAxis, axis)))
             {
+                density_grid_cache.Remove(owner.Id);
+                contour_geometry_cache.Remove(owner.Id);
+                plot_bitmap_cache.Remove(owner.Id);
+                element_bitmap_cache.Remove(owner.Id);
+            }
+        }
+        else if (sender is DotColorSettings dot_color)
+        {
+            foreach (var owner in subscribed_page_elements.Where(item => ReferenceEquals(item.DotColor, dot_color)))
+            {
+                density_grid_cache.Remove(owner.Id);
+                contour_geometry_cache.Remove(owner.Id);
                 plot_bitmap_cache.Remove(owner.Id);
                 element_bitmap_cache.Remove(owner.Id);
             }
@@ -808,6 +912,22 @@ public sealed class PageEditorView : Control
 
         InvalidateVisual();
     }
+
+    private static bool page_property_affects_density_grid(string? property_name) =>
+        property_name is null
+        or nameof(PagePlotElement.PlotMode)
+        or nameof(PagePlotElement.DotColor)
+        or nameof(PagePlotElement.Sample)
+        or nameof(PagePlotElement.Gate)
+        or nameof(PagePlotElement.Population);
+
+    private static bool page_property_affects_plot_bitmap(string? property_name) =>
+        property_name is nameof(PagePlotElement.PlotMode)
+        or nameof(PagePlotElement.ShowOutlierPoints)
+        or nameof(PagePlotElement.DrawLargeDots)
+        or nameof(PagePlotElement.UsePseudocolor)
+        or nameof(PagePlotElement.ContourLevelCount)
+        or nameof(PagePlotElement.DensitySmoothing);
 
     private void update_content_extent()
     {
@@ -909,6 +1029,9 @@ public sealed class PageEditorView : Control
         return colors;
     }
 
+    private static double transform_dot_color_value(double value, bool use_log_scale) =>
+        use_log_scale ? Math.Log10(1 + Math.Max(0, value)) : value;
+
     private static double[,] smooth_density(double[,] source, int passes)
     {
         passes = Math.Clamp(passes, 0, 12);
@@ -987,23 +1110,6 @@ public sealed class PageEditorView : Control
         }
     }
 
-    private static void add_contour_pixels(byte[] pixels, double[,] density, double[] levels)
-    {
-        foreach (double level in levels)
-            add_contour_level_pixels(pixels, density, level);
-    }
-
-    private static void add_contour_level_pixels(byte[] pixels, double[,] density, double level)
-    {
-        for (int x = 0; x < raster_size - 1; x++)
-        for (int y = 0; y < raster_size - 1; y++)
-        {
-            var points = contour_cell_points(density[x, y], density[x + 1, y], density[x + 1, y + 1], density[x, y + 1], x, y, level);
-            for (int index = 0; index + 1 < points.Count; index += 2)
-                draw_raster_line(pixels, points[index], points[index + 1], Colors.Black);
-        }
-    }
-
     private static List<Point> contour_cell_points(double bottom_left, double bottom_right, double top_right, double top_left, int x, int y, double level)
     {
         var points = new List<Point>(4);
@@ -1032,37 +1138,6 @@ public sealed class PageEditorView : Control
         for (int index = 0; index < count; index++)
             levels[index] = 0.08 + 0.88 * (index + 1) / (count + 1);
         return levels;
-    }
-
-    private static void draw_raster_line(byte[] pixels, Point start, Point end, Color color)
-    {
-        int x0 = Math.Clamp((int)Math.Round(start.X), 0, raster_size - 1);
-        int y0 = Math.Clamp(raster_size - 1 - (int)Math.Round(start.Y), 0, raster_size - 1);
-        int x1 = Math.Clamp((int)Math.Round(end.X), 0, raster_size - 1);
-        int y1 = Math.Clamp(raster_size - 1 - (int)Math.Round(end.Y), 0, raster_size - 1);
-        int dx = Math.Abs(x1 - x0);
-        int sx = x0 < x1 ? 1 : -1;
-        int dy = -Math.Abs(y1 - y0);
-        int sy = y0 < y1 ? 1 : -1;
-        int error = dx + dy;
-
-        while (true)
-        {
-            set_pixel(pixels, x0, y0, color);
-            if (x0 == x1 && y0 == y1)
-                return;
-            int twice_error = 2 * error;
-            if (twice_error >= dy)
-            {
-                error += dy;
-                x0 += sx;
-            }
-            if (twice_error <= dx)
-            {
-                error += dx;
-                y0 += sy;
-            }
-        }
     }
 
     private static Color plot_color(double value, PagePlotElement element)
@@ -1445,4 +1520,10 @@ public sealed class PageEditorView : Control
         public override void Render(DrawingContext context) =>
             owner.draw_page_element_content(context, element, new Rect(size));
     }
+
+    private sealed record DensityGrid(int[,] Density, Color?[,] Colors, int MaxDensity, int TotalCount);
+
+    private sealed record ContourGeometry(IReadOnlyList<ContourSegment> Segments);
+
+    private readonly record struct ContourSegment(Point Start, Point End);
 }

@@ -88,6 +88,8 @@ public sealed class FlowPlotView : Control
     private AxisSettings? subscribed_x_axis;
     private AxisSettings? subscribed_y_axis;
     private DotColorSettings? subscribed_dot_color;
+    private string? cached_contour_key;
+    private ContourGeometry? cached_contour_geometry;
     private WriteableBitmap? cached_plot_bitmap;
     private PlotMode cached_plot_mode;
     private bool cached_histogram;
@@ -286,30 +288,33 @@ public sealed class FlowPlotView : Control
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         base.OnPointerMoved(e);
+        var pointer = e.GetPosition(this);
         if (dragging_pending_vertex_index >= 0 && pending_gate is not null)
         {
-            var pending_data_point = one_dimensional_point_if_needed(pending_gate.Kind, screen_to_data(e.GetPosition(this)));
+            var pending_data_point = one_dimensional_point_if_needed(pending_gate.Kind, screen_to_data(pointer));
             pending_gate.Vertices[dragging_pending_vertex_index] = pending_data_point;
             has_pending_preview_point = false;
             InvalidateVisual();
             return;
         }
 
-        if (pending_gate is not null && plot_rect.Contains(e.GetPosition(this)))
+        if (plot_rect.Contains(pointer) && (pending_gate is not null || ActiveTool is not GatingTool.View))
         {
-            pending_preview_point = screen_to_data(e.GetPosition(this));
+            pending_preview_point = screen_to_data(pointer);
             has_pending_preview_point = true;
             InvalidateVisual();
         }
 
         if (dragging_vertex_index < 0 || dragging_gate is null || XAxis is null || YAxis is null)
+        {
+            Cursor = find_nearest_vertex(pointer, out _) >= 0 ? new Cursor(StandardCursorType.Hand) : Cursor.Default;
             return;
+        }
 
-        var pointer = e.GetPosition(this);
         var data_point = screen_to_data(pointer);
         if (dragging_vertex_index < dragging_gate.Vertices.Count)
         {
-            dragging_gate.Vertices[dragging_vertex_index] = data_point;
+            dragging_gate.Vertices[dragging_vertex_index] = adjusted_drag_vertex(dragging_gate, dragging_vertex_index, data_point);
             gate_was_edited = true;
             InvalidateVisual();
         }
@@ -362,12 +367,13 @@ public sealed class FlowPlotView : Control
 
         if (is_histogram_mode())
             draw_plot_bitmap(context, true);
-        else if (PlotMode == PlotMode.Contour)
-            draw_contour_plot(context);
         else draw_density(context);
+        if (PlotMode == PlotMode.Contour)
+            draw_contours(context);
 
         draw_axes(context);
         draw_gates(context);
+        draw_active_tool_preview(context);
         draw_pending_gate(context);
     }
 
@@ -376,27 +382,8 @@ public sealed class FlowPlotView : Control
         draw_plot_bitmap(context, false);
     }
 
-    private void draw_contour_plot(DrawingContext context)
+    private static void add_filled_contour_pixels(byte[] pixels, double[,] normalized_density, double[] levels)
     {
-        var grid = create_density_grid();
-        if (grid is null)
-            return;
-
-        if (ShowOutlierPoints)
-            context.DrawImage(create_dotplot_bitmap(grid.Value.density, grid.Value.colors, grid.Value.total_count, DrawLargeDots), plot_rect);
-
-        var normalized_density = smooth_density(normalized_density_grid(grid.Value.density, grid.Value.max_density), DensitySmoothing);
-        double[] levels = contour_levels(ContourLevelCount);
-        context.DrawImage(create_filled_contour_bitmap(normalized_density, levels), plot_rect);
-
-        var pen = new Pen(Brushes.Black, 0.8);
-        foreach (double level in levels)
-            draw_contour_level(context, normalized_density, level, pen);
-    }
-
-    private static WriteableBitmap create_filled_contour_bitmap(double[,] normalized_density, double[] levels)
-    {
-        var pixels = new byte[density_size * density_size * 4];
         for (int x_bin = 0; x_bin < density_size; x_bin++)
         for (int y_bin = 0; y_bin < density_size; y_bin++)
         {
@@ -408,19 +395,6 @@ public sealed class FlowPlotView : Control
             double normalized_level = (level_index + 1.0) / levels.Length;
             byte shade = Convert.ToByte(250 - normalized_level * 210);
             set_pixel(pixels, x_bin, density_size - 1 - y_bin, Color.FromRgb(shade, shade, shade));
-        }
-
-        return create_bitmap(pixels);
-    }
-
-    private void draw_contour_level(DrawingContext context, double[,] density, double level, Pen pen)
-    {
-        for (int x = 0; x < density_size - 1; x++)
-        for (int y = 0; y < density_size - 1; y++)
-        {
-            var points = contour_cell_points(density[x, y], density[x + 1, y], density[x + 1, y + 1], density[x, y + 1], x, y, level);
-            for (int index = 0; index + 1 < points.Count; index += 2)
-                context.DrawLine(pen, density_to_screen(points[index]), density_to_screen(points[index + 1]));
         }
     }
 
@@ -444,6 +418,82 @@ public sealed class FlowPlotView : Control
 
         double t = Math.Clamp((level - first_value) / (second_value - first_value), 0, 1);
         points.Add(new Point(first.X + (second.X - first.X) * t, first.Y + (second.Y - first.Y) * t));
+    }
+
+    private void draw_contours(DrawingContext context)
+    {
+        var geometry = get_contour_geometry();
+        if (geometry is null)
+            return;
+
+        var pen = new Pen(Brushes.Black, 0.8);
+        foreach (var segment in geometry.Segments)
+            context.DrawLine(pen, density_to_screen(segment.Start), density_to_screen(segment.End));
+    }
+
+    private ContourGeometry? get_contour_geometry()
+    {
+        string key = contour_geometry_key();
+        if (cached_contour_geometry is not null && cached_contour_key == key)
+            return cached_contour_geometry;
+
+        var grid = create_density_grid();
+        if (grid is null)
+        {
+            cached_contour_key = key;
+            cached_contour_geometry = null;
+            return null;
+        }
+
+        var normalized = smooth_density(normalized_density_grid(grid.Value.density, grid.Value.max_density), DensitySmoothing);
+        var segments = create_contour_segments(normalized, contour_levels(ContourLevelCount));
+        cached_contour_key = key;
+        cached_contour_geometry = new ContourGeometry(segments);
+        return cached_contour_geometry;
+    }
+
+    private string contour_geometry_key() =>
+        string.Join("|",
+            PlotMode,
+            DensitySmoothing,
+            ContourLevelCount,
+            XAxis?.ChannelName,
+            XAxis?.Minimum,
+            XAxis?.Maximum,
+            XAxis?.ScaleKind,
+            XAxis?.LogicleTopOfScale,
+            XAxis?.LogicleDecades,
+            XAxis?.LogicleLinearizationWidth,
+            XAxis?.LogicleNegativeDecades,
+            YAxis?.ChannelName,
+            YAxis?.Minimum,
+            YAxis?.Maximum,
+            YAxis?.ScaleKind,
+            YAxis?.LogicleTopOfScale,
+            YAxis?.LogicleDecades,
+            YAxis?.LogicleLinearizationWidth,
+            YAxis?.LogicleNegativeDecades,
+            Sample?.Id,
+            Gate?.Id,
+            Population?.Region);
+
+    private static IReadOnlyList<ContourSegment> create_contour_segments(double[,] density, double[] levels)
+    {
+        var segments = new List<ContourSegment>();
+        foreach (double level in levels)
+            add_contour_level_segments(segments, density, level);
+        return segments;
+    }
+
+    private static void add_contour_level_segments(List<ContourSegment> segments, double[,] density, double level)
+    {
+        for (int x = 0; x < density_size - 1; x++)
+        for (int y = 0; y < density_size - 1; y++)
+        {
+            var points = contour_cell_points(density[x, y], density[x + 1, y], density[x + 1, y + 1], density[x, y + 1], x, y, level);
+            for (int index = 0; index + 1 < points.Count; index += 2)
+                segments.Add(new ContourSegment(points[index], points[index + 1]));
+        }
     }
 
     private Point density_to_screen(Point point) =>
@@ -474,9 +524,20 @@ public sealed class FlowPlotView : Control
             return create_dotplot_bitmap(grid.Value.density, grid.Value.colors, grid.Value.total_count, DrawLargeDots);
 
         var normalized_density = normalized_density_grid(grid.Value.density, grid.Value.max_density);
+        var pixels = new byte[density_size * density_size * 4];
+        if (PlotMode == PlotMode.Contour)
+        {
+            if (ShowOutlierPoints)
+                add_dotplot_pixels(pixels, grid.Value.density, grid.Value.colors, grid.Value.total_count, DrawLargeDots);
+
+            normalized_density = smooth_density(normalized_density, DensitySmoothing);
+            double[] levels = contour_levels(ContourLevelCount);
+            add_filled_contour_pixels(pixels, normalized_density, levels);
+            return create_bitmap(pixels);
+        }
+
         if (PlotMode == PlotMode.Zebra)
             normalized_density = smooth_density(normalized_density, DensitySmoothing);
-        var pixels = new byte[density_size * density_size * 4];
         if (PlotMode == PlotMode.Zebra && ShowOutlierPoints)
             add_dotplot_pixels(pixels, grid.Value.density, grid.Value.colors, grid.Value.total_count, DrawLargeDots);
 
@@ -537,7 +598,7 @@ public sealed class FlowPlotView : Control
                     !float.IsNaN(color_values[index]) &&
                     !float.IsInfinity(color_values[index]))
                 {
-                    color_sums[x_bin, y_bin] += color_values[index];
+                    color_sums[x_bin, y_bin] += transform_dot_color_value(color_values[index], DotColor!.UseLogScale);
                     color_counts[x_bin, y_bin]++;
                 }
             }
@@ -597,6 +658,9 @@ public sealed class FlowPlotView : Control
 
         return colors;
     }
+
+    private static double transform_dot_color_value(double value, bool use_log_scale) =>
+        use_log_scale ? Math.Log10(1 + Math.Max(0, value)) : value;
 
     private static WriteableBitmap create_dotplot_bitmap(int[,] density, Color?[,]? colors, int total_count, bool large_dots)
     {
@@ -678,10 +742,17 @@ public sealed class FlowPlotView : Control
     {
         if (Gates is not null)
             foreach (var gate in Gates)
-                yield return gate;
+                if (!is_gate_hidden_by_plot_mode(gate))
+                    yield return gate;
         else if (Gate is not null)
-            yield return Gate;
+        {
+            if (!is_gate_hidden_by_plot_mode(Gate))
+                yield return Gate;
+        }
     }
+
+    private bool is_gate_hidden_by_plot_mode(GateDefinition gate) =>
+        PlotMode == PlotMode.Histogram && !gate.IsOneDimensional;
 
     private void draw_gate(DrawingContext context, GateDefinition gate)
     {
@@ -706,12 +777,8 @@ public sealed class FlowPlotView : Control
                 context.DrawLine(pen, new Point(point.X, plot_rect.Top), new Point(point.X, plot_rect.Bottom));
             }
         }
-        else if (gate.Kind is GateKind.Quadrant or GateKind.CurlyQuadrant)
-        {
-            var point = data_to_screen(gate.Vertices[0]);
-            context.DrawLine(pen, new Point(point.X, plot_rect.Top), new Point(point.X, plot_rect.Bottom));
-            context.DrawLine(pen, new Point(plot_rect.Left, point.Y), new Point(plot_rect.Right, point.Y));
-        }
+        else if (gate.Kind is GateKind.Quadrant or GateKind.CurlyQuadrant or GateKind.OffsetQuadrant)
+            draw_quadrant_gate(context, gate, pen);
         else
         {
             for (int index = 0; index < gate.Vertices.Count; index++)
@@ -720,6 +787,13 @@ public sealed class FlowPlotView : Control
                 var next = data_to_screen(gate.Vertices[(index + 1) % gate.Vertices.Count]);
                 context.DrawLine(pen, current, next);
             }
+        }
+
+        if (gate.Kind is GateKind.Threshold or GateKind.Range or GateKind.Quadrant or GateKind.CurlyQuadrant or GateKind.OffsetQuadrant)
+        {
+            if (ShowGateAnnotations)
+                draw_gate_annotation(context, gate);
+            return;
         }
 
         foreach (var vertex in gate.Vertices)
@@ -774,6 +848,16 @@ public sealed class FlowPlotView : Control
                 context.DrawLine(pen, new Point(preview.X, plot_rect.Top), new Point(preview.X, plot_rect.Bottom));
             }
         }
+        else if (pending_gate.Kind is GateKind.Threshold)
+        {
+            var point = data_to_screen(pending_gate.Vertices[0]);
+            context.DrawLine(pen, new Point(point.X, plot_rect.Top), new Point(point.X, plot_rect.Bottom));
+        }
+        else if (pending_gate.Kind is GateKind.Quadrant or GateKind.CurlyQuadrant or GateKind.OffsetQuadrant)
+            draw_quadrant_gate(context, pending_gate, pen);
+
+        if (pending_gate.Kind is GateKind.Threshold or GateKind.Range or GateKind.Quadrant or GateKind.CurlyQuadrant or GateKind.OffsetQuadrant)
+            return;
 
         foreach (var vertex in pending_gate.Vertices)
         {
@@ -783,6 +867,125 @@ public sealed class FlowPlotView : Control
             context.DrawRectangle(null, handle_stroke, rect);
         }
     }
+
+    private void draw_active_tool_preview(DrawingContext context)
+    {
+        if (!has_pending_preview_point || XAxis is null || YAxis is null)
+            return;
+        if (ActiveTool is GatingTool.View or GatingTool.Polygon or GatingTool.Rectangle or GatingTool.Range)
+            return;
+
+        var gate = create_empty_gate(active_tool_gate_kind());
+        gate.Vertices.Add(one_dimensional_point_if_needed(gate.Kind, pending_preview_point));
+        if (gate.Kind == GateKind.OffsetQuadrant)
+        {
+            gate.Vertices.Add(pending_preview_point);
+            gate.Vertices.Add(pending_preview_point);
+        }
+
+        var pen = new Pen(new SolidColorBrush(Color.FromArgb(180, 20, 133, 255)), 1.2, DashStyle.Dash);
+        if (gate.Kind == GateKind.Threshold)
+        {
+            var point = data_to_screen(gate.Vertices[0]);
+            context.DrawLine(pen, new Point(point.X, plot_rect.Top), new Point(point.X, plot_rect.Bottom));
+        }
+        else
+            draw_quadrant_gate(context, gate, pen);
+    }
+
+    private void draw_quadrant_gate(DrawingContext context, GateDefinition gate, Pen pen)
+    {
+        if (gate.Vertices.Count == 0)
+            return;
+
+        var center = data_to_screen(gate.Vertices[0]);
+        if (gate.Kind == GateKind.CurlyQuadrant)
+        {
+            draw_curly_quadrant(context, center, pen);
+            return;
+        }
+
+        if (gate.Kind == GateKind.OffsetQuadrant)
+        {
+            double top_x = data_to_screen(gate.Vertices.Count > 1 ? gate.Vertices[1] : gate.Vertices[0]).X;
+            double bottom_x = data_to_screen(gate.Vertices.Count > 2 ? gate.Vertices[2] : gate.Vertices[0]).X;
+            context.DrawLine(pen, new Point(top_x, plot_rect.Top), new Point(top_x, center.Y));
+            context.DrawLine(pen, new Point(bottom_x, center.Y), new Point(bottom_x, plot_rect.Bottom));
+            context.DrawLine(pen, new Point(plot_rect.Left, center.Y), new Point(plot_rect.Right, center.Y));
+            return;
+        }
+
+        context.DrawLine(pen, new Point(center.X, plot_rect.Top), new Point(center.X, plot_rect.Bottom));
+        context.DrawLine(pen, new Point(plot_rect.Left, center.Y), new Point(plot_rect.Right, center.Y));
+    }
+
+    private void draw_curly_quadrant(DrawingContext context, Point center, Pen pen)
+    {
+        if (XAxis is null || YAxis is null)
+        {
+            context.DrawLine(pen, new Point(center.X, center.Y), new Point(center.X, plot_rect.Bottom));
+            context.DrawLine(pen, new Point(plot_rect.Left, center.Y), new Point(center.X, center.Y));
+            return;
+        }
+
+        var data_center = screen_to_data(center);
+        context.DrawLine(pen, data_to_screen(new Point(data_center.X, data_center.Y)), data_to_screen(new Point(data_center.X, YAxis.Minimum)));
+        context.DrawLine(pen, data_to_screen(new Point(XAxis.Minimum, data_center.Y)), data_to_screen(new Point(data_center.X, data_center.Y)));
+        draw_sampled_log_slope_curve(
+            context,
+            pen,
+            data_center.Y,
+            YAxis.Maximum,
+            value => new Point(swapped_log_slope_boundary(data_center.X, data_center.Y, value, 0.1), value));
+        draw_sampled_log_slope_curve(
+            context,
+            pen,
+            data_center.X,
+            XAxis.Maximum,
+            value => new Point(value, log_slope_boundary(data_center.X, data_center.Y, value, 0.1)));
+    }
+
+    private void draw_sampled_log_slope_curve(DrawingContext context, Pen pen, double minimum, double maximum, Func<double, Point> point_factory)
+    {
+        const int steps = 48;
+        Point? previous = null;
+        for (int index = 0; index <= steps; index++)
+        {
+            double t = index / (double)steps;
+            double value = minimum + (maximum - minimum) * t;
+            var screen = data_to_screen(point_factory(value));
+            if (!plot_rect.Intersects(new Rect(screen.X - 1, screen.Y - 1, 2, 2)))
+            {
+                previous = null;
+                continue;
+            }
+
+            if (previous is { } start)
+                context.DrawLine(pen, start, screen);
+            previous = screen;
+        }
+    }
+
+    private static double log_slope_boundary(double anchor_x, double anchor_y, double x_value, double slope)
+    {
+        double x0 = positive(anchor_x);
+        double y0 = positive(anchor_y);
+        double x = positive(x_value);
+        double intercept = Math.Log(y0) - slope * Math.Log(x0);
+        return Math.Exp(slope * Math.Log(x) + intercept);
+    }
+
+    private static double swapped_log_slope_boundary(double anchor_x, double anchor_y, double y_value, double slope)
+    {
+        double x0 = positive(anchor_x);
+        double y0 = positive(anchor_y);
+        double y = positive(y_value);
+        double intercept = Math.Log(x0) - slope * Math.Log(y0);
+        return Math.Exp(slope * Math.Log(y) + intercept);
+    }
+
+    private static double positive(double value) =>
+        Math.Max(value, 1e-6);
 
     private void draw_gate_annotation(DrawingContext context, GateDefinition gate)
     {
@@ -817,7 +1020,7 @@ public sealed class FlowPlotView : Control
             label,
             CultureInfo.CurrentCulture,
             FlowDirection.LeftToRight,
-            Typeface.Default,
+            current_typeface(),
             12,
             Brushes.White);
         var background = new Rect(origin.X - 6, origin.Y - 4, text.Width + 12, text.Height + 8);
@@ -887,11 +1090,13 @@ public sealed class FlowPlotView : Control
             draw_vertical_centered_text(context, YAxis.ChannelName ?? "", new Point(plot_rect.Left - 62, plot_rect.Top + plot_rect.Height / 2), 14, Color.FromRgb(190, 198, 210));
         }
 
-        draw_text(
-            context, XAxis.ChannelName ?? "", 
-            new Point(plot_rect.Left + plot_rect.Width / 2 - 18, plot_rect.Bottom + 34), 14, 
-            Color.FromRgb(190, 198, 210), bolded: true
-        );
+        draw_centered_text(
+            context,
+            XAxis.ChannelName ?? "",
+            new Point(plot_rect.Left + plot_rect.Width / 2, plot_rect.Bottom + 34),
+            14,
+            Color.FromRgb(190, 198, 210),
+            bolded: true);
     }
 
     private IEnumerable<FlowSample> resolve_samples()
@@ -978,6 +1183,16 @@ public sealed class FlowPlotView : Control
             return;
         }
 
+        if (pending_gate.Kind == GateKind.OffsetQuadrant)
+        {
+            pending_gate.Vertices.Clear();
+            pending_gate.Vertices.Add(data_point);
+            pending_gate.Vertices.Add(data_point);
+            pending_gate.Vertices.Add(data_point);
+            commit_created_gate(pending_gate);
+            return;
+        }
+
         if (pending_gate.Kind is GateKind.Rectangle or GateKind.Range && pending_gate.Vertices.Count == 0)
         {
             pending_gate.Vertices.Add(one_dimensional_point_if_needed(pending_gate.Kind, data_point));
@@ -1021,7 +1236,7 @@ public sealed class FlowPlotView : Control
         new()
         {
             XChannel = XAxis?.ChannelName ?? "",
-            YChannel = kind is GateKind.Threshold or GateKind.Range ? null : YAxis?.ChannelName,
+            YChannel = kind is GateKind.Threshold or GateKind.Range or GateKind.Merge or GateKind.Exclude or GateKind.Overlap ? null : YAxis?.ChannelName,
             Kind = kind
         };
 
@@ -1032,6 +1247,7 @@ public sealed class FlowPlotView : Control
             GatingTool.Rectangle => GateKind.Rectangle,
             GatingTool.Quadrant => GateKind.Quadrant,
             GatingTool.CurlyQuadrant => GateKind.CurlyQuadrant,
+            GatingTool.OffsetQuadrant => GateKind.OffsetQuadrant,
             GatingTool.Threshold => GateKind.Threshold,
             GatingTool.Range => GateKind.Range,
             _ => GateKind.Rectangle
@@ -1039,6 +1255,22 @@ public sealed class FlowPlotView : Control
 
     private static Point one_dimensional_point_if_needed(GateKind kind, Point point) =>
         kind is GateKind.Threshold or GateKind.Range ? new Point(point.X, 0) : point;
+
+    private static Point adjusted_drag_vertex(GateDefinition gate, int index, Point point)
+    {
+        if (gate.Kind is GateKind.Threshold or GateKind.Range)
+            return new Point(point.X, 0);
+        if (gate.Kind is GateKind.Quadrant or GateKind.CurlyQuadrant)
+            return point;
+        if (gate.Kind == GateKind.OffsetQuadrant)
+        {
+            if (index == 0)
+                return new Point(gate.Vertices[0].X, point.Y);
+            return new Point(point.X, gate.Vertices[0].Y);
+        }
+
+        return point;
+    }
 
     private static bool points_are_nearly_equal(Point first, Point second) =>
         Math.Abs(first.X - second.X) < 0.000001 && Math.Abs(first.Y - second.Y) < 0.000001;
@@ -1116,11 +1348,7 @@ public sealed class FlowPlotView : Control
             for (int index = 0; index < gate.Vertices.Count; index++)
             {
                 var vertex = data_to_screen(gate.Vertices[index]);
-                double distance = gate.Kind is GateKind.Threshold or GateKind.Range
-                    ? Math.Abs(vertex.X - point.X)
-                    : gate.Kind is GateKind.Quadrant or GateKind.CurlyQuadrant
-                    ? Math.Min(Math.Abs(vertex.X - point.X), Math.Abs(vertex.Y - point.Y))
-                    : Math.Sqrt(Math.Pow(vertex.X - point.X, 2) + Math.Pow(vertex.Y - point.Y, 2));
+                double distance = line_gate_distance(gate, index, point, vertex);
                 if (distance < best_distance)
                 {
                     best_distance = distance;
@@ -1131,6 +1359,23 @@ public sealed class FlowPlotView : Control
         }
 
         return best_index;
+    }
+
+    private double line_gate_distance(GateDefinition gate, int index, Point pointer, Point vertex)
+    {
+        if (gate.Kind is GateKind.Threshold or GateKind.Range)
+            return Math.Abs(vertex.X - pointer.X);
+        if (gate.Kind is GateKind.Quadrant or GateKind.CurlyQuadrant)
+            return Math.Min(Math.Abs(vertex.X - pointer.X), Math.Abs(vertex.Y - pointer.Y));
+        if (gate.Kind == GateKind.OffsetQuadrant)
+        {
+            var center = data_to_screen(gate.Vertices[0]);
+            return index == 0
+                ? Math.Abs(center.Y - pointer.Y)
+                : Math.Abs(vertex.X - pointer.X);
+        }
+
+        return Math.Sqrt(Math.Pow(vertex.X - pointer.X, 2) + Math.Pow(vertex.Y - pointer.Y, 2));
     }
 
     private static Color density_color(double value)
@@ -1297,15 +1542,15 @@ public sealed class FlowPlotView : Control
         context.DrawText(formatted, origin);
     }
 
-    private void draw_centered_text(DrawingContext context, string text, Point origin, double size, Color color)
+    private void draw_centered_text(DrawingContext context, string text, Point origin, double size, Color color, bool bolded = false)
     {
-        var formatted = create_formatted_text(text, size, color);
+        var formatted = create_formatted_text(text, size, color, bolded);
         context.DrawText(formatted, new Point(origin.X - formatted.Width / 2, origin.Y));
     }
 
     private void draw_right_aligned_text(DrawingContext context, string text, Point origin, double size, Color color)
     {
-        var formatted = create_formatted_text(text, size, color);
+        var formatted = create_formatted_text(text, size, color, bolded: true);
         context.DrawText(formatted, new Point(origin.X - formatted.Width, origin.Y));
     }
 
@@ -1482,6 +1727,8 @@ public sealed class FlowPlotView : Control
     {
         if (e.PropertyName is nameof(FlowSample.CompensatedEvents) or null or "")
             invalidate_plot_cache();
+        else if (e.PropertyName == nameof(FlowSample.Populations))
+            InvalidateVisual();
     }
 
     private void resubscribe_axis(ref AxisSettings? old_axis, AxisSettings? new_axis)
@@ -1513,6 +1760,8 @@ public sealed class FlowPlotView : Control
     private void invalidate_plot_cache()
     {
         cached_plot_bitmap = null;
+        cached_contour_key = null;
+        cached_contour_geometry = null;
         InvalidateVisual();
     }
 
@@ -1555,4 +1804,8 @@ public sealed class FlowPlotView : Control
         for (int x = center_x - radius; x <= center_x + radius; x++)
             set_pixel(pixels, x, y, color);
     }
+
+    private sealed record ContourGeometry(IReadOnlyList<ContourSegment> Segments);
+
+    private readonly record struct ContourSegment(Point Start, Point End);
 }

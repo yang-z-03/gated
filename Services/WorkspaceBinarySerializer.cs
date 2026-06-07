@@ -11,7 +11,7 @@ namespace gated.Services;
 public sealed class WorkspaceBinarySerializer
 {
     private const uint magic = 0x44544731;
-    private const int version = 8;
+    private const int version = 10;
 
     public void Save(FlowWorkspace workspace, string file_path)
     {
@@ -26,6 +26,7 @@ public sealed class WorkspaceBinarySerializer
 
         write_page_layouts(writer, workspace);
         write_integration_jobs(writer, workspace);
+        write_recent_file_paths(writer, workspace);
     }
 
     public FlowWorkspace Load(string file_path)
@@ -51,6 +52,9 @@ public sealed class WorkspaceBinarySerializer
 
         if (file_version >= 5)
             read_integration_jobs(reader, workspace);
+
+        if (file_version >= 9)
+            read_recent_file_paths(reader, workspace);
 
         return workspace;
     }
@@ -233,6 +237,14 @@ public sealed class WorkspaceBinarySerializer
         write_statistics(writer, gate.Statistics);
 
         writer.Write(gate.IsTreeExpanded);
+        writer.Write(gate.BooleanFirstGateId.HasValue);
+        if (gate.BooleanFirstGateId.HasValue)
+            writer.Write(gate.BooleanFirstGateId.Value.ToByteArray());
+        writer.Write((int)gate.BooleanFirstRegion);
+        writer.Write(gate.BooleanSecondGateId.HasValue);
+        if (gate.BooleanSecondGateId.HasValue)
+            writer.Write(gate.BooleanSecondGateId.Value.ToByteArray());
+        writer.Write((int)gate.BooleanSecondRegion);
 
         writer.Write(gate.Children.Count);
         foreach (var child in gate.Children)
@@ -285,6 +297,15 @@ public sealed class WorkspaceBinarySerializer
         read_statistics(reader, gate.Statistics);
         if (file_version >= 2)
             gate.IsTreeExpanded = reader.ReadBoolean();
+        if (file_version >= 10)
+        {
+            if (reader.ReadBoolean())
+                gate.BooleanFirstGateId = new Guid(reader.ReadBytes(16));
+            gate.BooleanFirstRegion = (PopulationRegion)reader.ReadInt32();
+            if (reader.ReadBoolean())
+                gate.BooleanSecondGateId = new Guid(reader.ReadBytes(16));
+            gate.BooleanSecondRegion = (PopulationRegion)reader.ReadInt32();
+        }
 
         int child_count = reader.ReadInt32();
         for (int index = 0; index < child_count; index++)
@@ -626,6 +647,7 @@ public sealed class WorkspaceBinarySerializer
             write_axis_settings(writer, element.YAxis);
             write_string(writer, element.DotColor.ChannelName);
             writer.Write((int)element.DotColor.Palette);
+            writer.Write(element.DotColor.UseLogScale);
         }
     }
 
@@ -666,6 +688,7 @@ public sealed class WorkspaceBinarySerializer
                 dot_color_channel = read_string(reader);
                 dot_color_palette = (PlotColorPalette)reader.ReadInt32();
             }
+            bool dot_color_use_log_scale = file_version >= 9 && reader.ReadBoolean();
 
             if (group_index < 0 || group_index >= workspace.Groups.Count)
                 continue;
@@ -690,7 +713,7 @@ public sealed class WorkspaceBinarySerializer
                 Population = population,
                 XAxis = x_axis,
                 YAxis = y_axis,
-                DotColor = new DotColorSettings { ChannelName = dot_color_channel, Palette = dot_color_palette },
+                DotColor = new DotColorSettings { ChannelName = dot_color_channel, Palette = dot_color_palette, UseLogScale = dot_color_use_log_scale },
                 X = x,
                 Y = y,
                 Size = size,
@@ -708,6 +731,24 @@ public sealed class WorkspaceBinarySerializer
             });
         }
         workspace.PageLayouts.Add(layout);
+    }
+
+    private static void write_recent_file_paths(BinaryWriter writer, FlowWorkspace workspace)
+    {
+        writer.Write(workspace.RecentFilePaths.Count);
+        foreach (string path in workspace.RecentFilePaths)
+            write_string(writer, path);
+    }
+
+    private static void read_recent_file_paths(BinaryReader reader, FlowWorkspace workspace)
+    {
+        int count = reader.ReadInt32();
+        for (int index = 0; index < count; index++)
+        {
+            string path = read_string(reader);
+            if (!string.IsNullOrWhiteSpace(path))
+                workspace.RecentFilePaths.Add(path);
+        }
     }
 
     private static PageElementReference? create_page_reference(FlowWorkspace workspace, PagePlotElement element)

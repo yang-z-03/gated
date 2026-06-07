@@ -1,5 +1,6 @@
 
-# Gated: Flow Cytometry Analyser
+
+# ![Icon](gated-32.png) Gated: Flow Cytometry Analyser
 
 Gated is a free, light-weight and elegant analyser and visualizer of FCS data.
 It is a cross-platform application with supports of:
@@ -9,13 +10,33 @@ It is a cross-platform application with supports of:
 - Hierarchial gating
 - Common statistical analysis of sub-populations
 - Plotting and visual style customization
+- Data normalization, integration and dimensionality reduction built-in
+- Layout editor for graphics export
 - Embedded data package format for reproducible analysis and sharing
+
+### Installation
+
+See the releases for compiled binary packages for **Windows x64 (.Net 10)**
+[Download Releases](https://github.com/yang-z-03/gated/releases)
+
+This is the portable software package that you could decompress anywhere without
+administrator previlege and run the application. The software will try to update
+itself if newer versions are released if there are network connection from the GitHub
+repository releases.
+
+### Screenshots
+
+Population hierarchy
 
 ![GUI snapshot](.github/gui.png)
 
-Graphic layout editor and exporting
+Layout editor
 
 ![Layout editor](.github/layout.png)
+
+Data normalization and integration
+
+![Data normalization and integration](.github/integration.png)
 
 ### Licensing
 

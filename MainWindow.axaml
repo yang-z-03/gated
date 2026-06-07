@@ -3,7 +3,7 @@
         xmlns:controls="using:gated.Controls"
         x:Class="gated.MainWindow"
         x:CompileBindings="False"
-        Width="1600" Height="900"
+        Width="1600" Height="920"
         MinWidth="1100" MinHeight="700"
         Title="Gated"
 
@@ -109,6 +109,62 @@
         <Style Selector="ToggleButton.PageModeSwitch:pressed /template/ Border#PART_Thumb">
             <Setter Property="Background" Value="#D8DBE5" />
         </Style>
+        <Style Selector="RadioButton.GateToolButton">
+            <Setter Property="Width" Value="44" />
+            <Setter Property="Height" Value="44" />
+            <Setter Property="Padding" Value="7" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border Name="PART_Border"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="{TemplateBinding CornerRadius}">
+                        <ContentPresenter Name="PART_ContentPresenter"
+                                          Content="{TemplateBinding Content}"
+                                          ContentTemplate="{TemplateBinding ContentTemplate}"
+                                          HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                                          Margin="{TemplateBinding Padding}" />
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="RadioButton.GateToolButton:pointerover">
+            <Setter Property="Background" Value="{DynamicResource SemiColorBackground2}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource SemiColorBorder}" />
+        </Style>
+        <Style Selector="RadioButton.GateToolButton:checked">
+            <Setter Property="Background" Value="#2D5FA8" />
+            <Setter Property="BorderBrush" Value="#6EA8FE" />
+        </Style>
+        <Style Selector="RadioButton.GateToolButton:checked:pointerover">
+            <Setter Property="Background" Value="#356DBD" />
+            <Setter Property="BorderBrush" Value="#9DC4FF" />
+        </Style>
+        <Style Selector="RadioButton.GateToolButton:disabled">
+            <Setter Property="Opacity" Value="0.32" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="Cursor" Value="No" />
+        </Style>
+        <Style Selector="ComboBox.SampleSwitcher">
+            <Setter Property="Height" Value="32" />
+            <Setter Property="MinWidth" Value="180" />
+            <Setter Property="Padding" Value="8,0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="{DynamicResource SemiColorText0}" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+        <Style Selector="ComboBox.SampleSwitcher:pointerover">
+            <Setter Property="Background" Value="{DynamicResource SemiColorBackground2}" />
+        </Style>
     </Window.Styles>
 
     <DockPanel x:Name="window">
@@ -145,21 +201,24 @@
 
         <Menu DockPanel.Dock="Top" Background="#252530">
             <MenuItem Header="_File">
-                <MenuItem Header="Open workspace ..." InputGesture="Ctrl+Shift+O" Click="open_workspace_menu_item_click" />
-                <MenuItem Header="Open FCS ..." InputGesture="Ctrl+O" Click="open_fcs_menu_item_click" />
-                <MenuItem Header="Save workspace ..." InputGesture="Ctrl+S" Click="save_workspace_menu_item_click" />
+                <MenuItem Header="Open workspace ..." InputGesture="Ctrl + Shift + O" Click="open_workspace_menu_item_click" />
+                <MenuItem Header="Open FCS ..." InputGesture="Ctrl + O" Click="open_fcs_menu_item_click" />
+                <MenuItem Header="Save workspace ..." InputGesture="Ctrl + S" Click="save_workspace_menu_item_click" />
+                <MenuItem Header="Rename workspace" Command="{Binding RenameWorkspaceCommand}" InputGesture="F2" />
+                <Separator />
+                <MenuItem x:Name="recent_items_menu" Header="Recent items" />
             </MenuItem>
             <MenuItem Header="_Samples">
-                <MenuItem Header="Create group" Command="{Binding CreateGroupCommand}" />
-                <MenuItem Header="Rename group" Command="{Binding RenameGroupCommand}" />
-                <MenuItem Header="Delete group" Command="{Binding DeleteSelectedCommand}" />
+                <MenuItem Header="Create group" Command="{Binding CreateGroupCommand}" InputGesture="Ctrl + G"/>
+                <MenuItem Header="Rename group" Command="{Binding RenameGroupCommand}" InputGesture="F2"/>
+                <MenuItem Header="Delete group" Command="{Binding DeleteSelectedCommand}" InputGesture="Delete"/>
                 <Separator />
                 <MenuItem Header="Append samples to groups" Click="open_fcs_menu_item_click" />
-                <MenuItem Header="Delete selected samples" Command="{Binding DeleteSelectedCommand}" />
+                <MenuItem Header="Delete selected samples" Command="{Binding DeleteSelectedCommand}" InputGesture="Delete"/>
                 <MenuItem Header="Concatenate" Command="{Binding ConcatenateSamplesCommand}" />
                 <MenuItem Header="Select equivalent nodes" IsEnabled="False" />
-                <MenuItem Header="Expand" Command="{Binding ExpandProjectTreeCommand}" />
-                <MenuItem Header="Collapse" Command="{Binding CollapseProjectTreeCommand}" />
+                <MenuItem Header="Expand" Command="{Binding ExpandProjectTreeCommand}" InputGesture="Ctrl + E"/>
+                <MenuItem Header="Collapse" Command="{Binding CollapseProjectTreeCommand}" InputGesture="Ctrl + R"/>
                 <MenuItem Header="Channel settings ..." IsEnabled="False" />
             </MenuItem>
             <MenuItem Header="_Plotting" IsEnabled="{Binding IsDefaultAnalysisMode}">
@@ -177,6 +236,7 @@
                 <MenuItem x:Name="editor_x_channel_menu" Header="X selected channel" />
                 <MenuItem x:Name="editor_y_channel_menu" Header="Y selected channel" />
                 <MenuItem x:Name="editor_color_channel_menu" Header="Dot color" />
+                <MenuItem Header="Coloring in log scale" ToggleType="CheckBox" IsChecked="{Binding DotColor.UseLogScale, Mode=TwoWay}" />
                 <MenuItem Header="Dot color palette">
                     <MenuItem Header="Viridis" Click="viridis_color_menu_item_click" />
                     <MenuItem Header="Plasma" Click="plasma_color_menu_item_click" />
@@ -193,8 +253,8 @@
                 </MenuItem>
             </MenuItem>
             <MenuItem Header="_Layouts" IsEnabled="{Binding IsPageEditorMode}">
-                <MenuItem Header="Create layout" Command="{Binding CreateLayoutCommand}" />
-                <MenuItem Header="Rename layout" Command="{Binding RenameLayoutCommand}" />
+                <MenuItem Header="Create layout" Command="{Binding CreateLayoutCommand}" InputGesture="Ctrl + L"/>
+                <MenuItem Header="Rename layout" Command="{Binding RenameLayoutCommand}" InputGesture="F2"/>
                 <Separator />
                 <MenuItem Header="Density" ToggleType="Radio" IsEnabled="{Binding HasSelectedPageElement}" IsChecked="{Binding IsLayoutDensityPlotMode, Mode=TwoWay}" />
                 <MenuItem Header="Dotplot" ToggleType="Radio" IsEnabled="{Binding HasSelectedPageElement}" IsChecked="{Binding IsLayoutDotplotPlotMode, Mode=TwoWay}" />
@@ -213,6 +273,7 @@
                 <MenuItem x:Name="layout_x_channel_menu" Header="X selected channel" IsEnabled="{Binding HasSelectedPageElement}" />
                 <MenuItem x:Name="layout_y_channel_menu" Header="Y selected channel" IsEnabled="{Binding HasSelectedPageElement}" />
                 <MenuItem x:Name="layout_color_channel_menu" Header="Dot color" IsEnabled="{Binding HasSelectedPageElement}" />
+                <MenuItem Header="Coloring in log scale" ToggleType="CheckBox" IsEnabled="{Binding HasSelectedPageElement}" IsChecked="{Binding SelectedPageElement.DotColor.UseLogScale, Mode=TwoWay}" />
                 <MenuItem Header="Dot color palette" IsEnabled="{Binding HasSelectedPageElement}">
                     <MenuItem Header="Viridis" Click="layout_viridis_color_menu_item_click" />
                     <MenuItem Header="Plasma" Click="layout_plasma_color_menu_item_click" />
@@ -230,23 +291,24 @@
             </MenuItem>
             <MenuItem Header="_Gating" IsEnabled="{Binding IsDefaultAnalysisMode}">
                 <MenuItem Header="View" ToggleType="Radio" IsChecked="{Binding IsViewTool, Mode=OneWay}" Click="view_tool_menu_item_click" />
-                <MenuItem Header="Polygon gate" ToggleType="Radio" IsChecked="{Binding IsPolygonTool, Mode=OneWay}" Click="polygon_tool_menu_item_click" />
-                <MenuItem Header="Rectangle gate" ToggleType="Radio" IsChecked="{Binding IsRectangleTool, Mode=OneWay}" Click="rectangle_tool_menu_item_click" />
-                <MenuItem Header="Quad gate" ToggleType="Radio" IsChecked="{Binding IsQuadrantTool, Mode=OneWay}" Click="quadrant_tool_menu_item_click" />
-                <MenuItem Header="Curly quad gate" ToggleType="Radio" IsChecked="{Binding IsCurlyQuadrantTool, Mode=OneWay}" Click="curly_quadrant_tool_menu_item_click" />
-                <MenuItem Header="Threshold gate" ToggleType="Radio" IsChecked="{Binding IsThresholdTool, Mode=OneWay}" Click="threshold_tool_menu_item_click" />
-                <MenuItem Header="Range gate" ToggleType="Radio" IsChecked="{Binding IsRangeTool, Mode=OneWay}" Click="range_tool_menu_item_click" />
+                <MenuItem Header="Polygon gate" ToggleType="Radio" IsEnabled="{Binding CanCreateTwoDimensionalGate}" IsChecked="{Binding IsPolygonTool, Mode=OneWay}" Click="polygon_tool_menu_item_click" />
+                <MenuItem Header="Rectangle gate" ToggleType="Radio" IsEnabled="{Binding CanCreateTwoDimensionalGate}" IsChecked="{Binding IsRectangleTool, Mode=OneWay}" Click="rectangle_tool_menu_item_click" />
+                <MenuItem Header="Quad gate" ToggleType="Radio" IsEnabled="{Binding CanCreateTwoDimensionalGate}" IsChecked="{Binding IsQuadrantTool, Mode=OneWay}" Click="quadrant_tool_menu_item_click" />
+                <MenuItem Header="Curly quad gate" ToggleType="Radio" IsEnabled="{Binding CanCreateTwoDimensionalGate}" IsChecked="{Binding IsCurlyQuadrantTool, Mode=OneWay}" Click="curly_quadrant_tool_menu_item_click" />
+                <MenuItem Header="Offset quad gate" ToggleType="Radio" IsEnabled="{Binding CanCreateTwoDimensionalGate}" IsChecked="{Binding IsOffsetQuadrantTool, Mode=OneWay}" Click="offset_quadrant_tool_menu_item_click" />
+                <MenuItem Header="Threshold gate" ToggleType="Radio" IsEnabled="{Binding CanCreateOneDimensionalGate}" IsChecked="{Binding IsThresholdTool, Mode=OneWay}" Click="threshold_tool_menu_item_click" />
+                <MenuItem Header="Range gate" ToggleType="Radio" IsEnabled="{Binding CanCreateOneDimensionalGate}" IsChecked="{Binding IsRangeTool, Mode=OneWay}" Click="range_tool_menu_item_click" />
                 <Separator />
-                <MenuItem Header="Merge" IsEnabled="False" />
-                <MenuItem Header="Exclude" IsEnabled="False" />
-                <MenuItem Header="Overlap" IsEnabled="False" />
+                <MenuItem Header="Merge" Command="{Binding AddMergeGateCommand}" />
+                <MenuItem Header="Exclude" Command="{Binding AddExcludeGateCommand}" />
+                <MenuItem Header="Overlap" Command="{Binding AddOverlapGateCommand}" />
                 <Separator />
-                <MenuItem Header="Rename gate" Command="{Binding RenameGateCommand}" />
-                <MenuItem Header="Delete selected gate" Command="{Binding DeleteSelectedCommand}" />
+                <MenuItem Header="Rename gate" Command="{Binding RenameGateCommand}" InputGesture="F2"/>
+                <MenuItem Header="Delete selected gate" Command="{Binding DeleteSelectedCommand}" InputGesture="Delete"/>
             </MenuItem>
             <MenuItem Header="_Compensation">
-                <MenuItem Header="Apply selected compensation" Command="{Binding ApplyCompensationCommand}" />
-                <MenuItem Header="Compensation table editor ..." Command="{Binding EditCompensationCommand}" />
+                <MenuItem Header="Apply selected compensation" Command="{Binding ApplyCompensationCommand}"/>
+                <MenuItem Header="Compensation table editor ..." Command="{Binding EditCompensationCommand}" InputGesture="Ctrl + P"/>
             </MenuItem>
             <MenuItem Header="_Statistics">
                 <MenuItem Header="Mean" Command="{Binding AddMeanStatisticCommand}" />
@@ -259,7 +321,7 @@
                 <MenuItem Header="Number of events" Command="{Binding AddCountStatisticCommand}" />
                 <Separator />
                 <MenuItem Header="Create integration job" Command="{Binding CreateIntegrationJobCommand}" />
-                <MenuItem Header="Rename integration job" Command="{Binding RenameIntegrationJobCommand}" />
+                <MenuItem Header="Rename integration job" Command="{Binding RenameIntegrationJobCommand}" InputGesture="F2"/>
                 <Separator />
                 <MenuItem Header="Run integration" Command="{Binding RunIntegrationJobCommand}" />
                 <MenuItem Header="Build kNN graph" Command="{Binding RunIntegrationJobKnnCommand}" />
@@ -269,8 +331,8 @@
                 <MenuItem Header="Cancel integration job" Command="{Binding CancelIntegrationJobCommand}" />
             </MenuItem>
             <MenuItem Header="_Help">
-                <MenuItem Header="Check for updates" Click="check_for_updates_menu_item_click" />
-                <MenuItem Header="About Gated" Click="about_menu_item_click" />
+                <MenuItem Header="Check for updates ..." Click="check_for_updates_menu_item_click" />
+                <MenuItem Header="About Gated ..." Click="about_menu_item_click" />
             </MenuItem>
         </Menu>
 
@@ -323,24 +385,71 @@
                                 BorderBrush="{DynamicResource SemiColorBorder}"
                                 BorderThickness="1"
                                 Background="{DynamicResource SemiColorBackground0}">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <Button Width="44" Height="44" Click="view_tool_menu_item_click">
+                            <DockPanel LastChildFill="False">
+                              <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Spacing="8">
+                                <RadioButton GroupName="GateTools" Classes="GateToolButton" IsChecked="{Binding IsViewTool, Mode=OneWay}" Click="view_tool_menu_item_click">
                                     <Image Width="28" Height="28" Source="{SvgImage avares://gated/Resources/pointer.svg}" />
-                                </Button>
-                                <Button Width="44" Height="44" Click="polygon_tool_menu_item_click">
+                                </RadioButton>
+                                <RadioButton GroupName="GateTools" Classes="GateToolButton" IsChecked="{Binding IsPolygonTool, Mode=OneWay}" IsEnabled="{Binding CanCreateTwoDimensionalGate}" Click="polygon_tool_menu_item_click">
                                     <Image Width="28" Height="28" Source="{SvgImage avares://gated/Resources/polygon.svg}" />
-                                </Button>
-                                <Button Width="44" Height="44" Click="quadrant_tool_menu_item_click">
+                                </RadioButton>
+                                <RadioButton GroupName="GateTools" Classes="GateToolButton" IsChecked="{Binding IsQuadrantTool, Mode=OneWay}" IsEnabled="{Binding CanCreateTwoDimensionalGate}" Click="quadrant_tool_menu_item_click">
                                     <Image Width="28" Height="28" Source="{SvgImage avares://gated/Resources/cross.svg}" />
-                                </Button>
-                                <Button Width="44" Height="44" Click="threshold_tool_menu_item_click">
+                                </RadioButton>
+                                <RadioButton GroupName="GateTools" Classes="GateToolButton" IsChecked="{Binding IsThresholdTool, Mode=OneWay}" IsEnabled="{Binding CanCreateOneDimensionalGate}" Click="threshold_tool_menu_item_click">
                                     <Image Width="28" Height="28" Source="{SvgImage avares://gated/Resources/threshold.svg}" />
-                                </Button>
-                                <Button Width="44" Height="44" Click="range_tool_menu_item_click">
+                                </RadioButton>
+                                <RadioButton GroupName="GateTools" Classes="GateToolButton" IsChecked="{Binding IsRangeTool, Mode=OneWay}" IsEnabled="{Binding CanCreateOneDimensionalGate}" Click="range_tool_menu_item_click">
                                     <Image Width="28" Height="28" Source="{SvgImage avares://gated/Resources/range.svg}" />
+                                </RadioButton>
+                              </StackPanel>
+                              <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6" Margin="18,0,0,0" VerticalAlignment="Center">
+                                <Button Classes="Small" Width="32" Height="32" Padding="6" Command="{Binding SelectPreviousEquivalentSampleCommand}">
+                                    <Image Width="18" Height="18" Source="{SvgImage avares://gated/Resources/left.svg}" />
                                 </Button>
-                                <TextBlock Margin="18,0,8,0" VerticalAlignment="Center" Foreground="{DynamicResource SemiColorText2}" Text="{Binding ActiveTool}" />
-                            </StackPanel>
+                                <ComboBox Width="210"
+                                          Classes="SampleSwitcher"
+                                          VerticalAlignment="Center"
+                                          ItemsSource="{Binding EquivalentSampleChoices}"
+                                          SelectedItem="{Binding SelectedEquivalentSampleChoice, Mode=TwoWay}">
+                                    <ComboBox.SelectionBoxItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding SampleName}"
+                                                           FontSize="14"
+                                                           FontWeight="SemiBold"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           Foreground="{DynamicResource SemiColorText0}"
+                                                           VerticalAlignment="Center" />
+                                                <TextBlock Text="{Binding CountText}"
+                                                           IsVisible="{Binding HasCount}"
+                                                           FontSize="11"
+                                                           Foreground="{DynamicResource SemiColorText2}"
+                                                           VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ComboBox.SelectionBoxItemTemplate>
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <TextBlock Text="{Binding SampleName}"
+                                                           FontSize="14"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource SemiColorText0}" />
+                                                <TextBlock Text="{Binding CountText}"
+                                                           IsVisible="{Binding HasCount}"
+                                                           FontSize="11"
+                                                           Foreground="{DynamicResource SemiColorText2}"
+                                                           VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
+                                <Button Classes="Small" Width="32" Height="32" Padding="6" Command="{Binding SelectNextEquivalentSampleCommand}">
+                                    <Image Width="18" Height="18" Source="{SvgImage avares://gated/Resources/right.svg}" />
+                                </Button>
+                              </StackPanel>
+                            </DockPanel>
                         </Border>
 
                         <controls:FlowPlotView Grid.Row="1" Margin="16"
@@ -392,7 +501,6 @@
                                                                     Binding="{Binding Name}" />
                                                 <DataGridTextColumn Header="Label"
                                                                     Width="95"
-                                                                    Foreground="White"
                                                                     FontWeight="Bold"
                                                                     Binding="{Binding Label, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                                                 <DataGridTextColumn Header="Maximum"
@@ -548,6 +656,8 @@
                                         <ComboBox Classes='Small'
                                                   ItemsSource="{Binding PlotColorPaletteChoices}"
                                                   SelectedItem="{Binding DotColor.Palette}" />
+                                        <CheckBox Content="Coloring in log scale" Margin="0,4,0,0"
+                                                  IsChecked="{Binding DotColor.UseLogScale}" />
 
                                         <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
                                             <StackPanel>
@@ -732,6 +842,8 @@
                                     <ComboBox Classes="Small"
                                               ItemsSource="{Binding PlotColorPaletteChoices}"
                                               SelectedItem="{Binding SelectedPageElement.DotColor.Palette}" />
+                                    <CheckBox Content="Coloring in log scale"
+                                              IsChecked="{Binding SelectedPageElement.DotColor.UseLogScale}" />
 
                                     <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
                                         <StackPanel>

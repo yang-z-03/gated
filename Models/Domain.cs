@@ -19,6 +19,7 @@ public enum GateKind
     Rectangle,
     Quadrant,
     CurlyQuadrant,
+    OffsetQuadrant,
     Threshold,
     Range,
     Merge,
@@ -50,6 +51,7 @@ public enum GatingTool
     Rectangle,
     Quadrant,
     CurlyQuadrant,
+    OffsetQuadrant,
     Threshold,
     Range
 }
@@ -60,7 +62,12 @@ public enum PopulationRegion
     TopRight,
     TopLeft,
     BottomRight,
-    BottomLeft
+    BottomLeft,
+    More,
+    Less,
+    InRange,
+    BelowRange,
+    AboveRange
 }
 
 public enum StatisticKind
@@ -278,6 +285,7 @@ public sealed class DotColorSettings : NotifyBase
 {
     private string channel_name = "";
     private PlotColorPalette palette = PlotColorPalette.Viridis;
+    private bool use_log_scale;
 
     public string ChannelName
     {
@@ -289,6 +297,12 @@ public sealed class DotColorSettings : NotifyBase
     {
         get => palette;
         set => SetField(ref palette, value);
+    }
+
+    public bool UseLogScale
+    {
+        get => use_log_scale;
+        set => SetField(ref use_log_scale, value);
     }
 
     public bool HasChannel => !string.IsNullOrWhiteSpace(channel_name);
@@ -338,6 +352,10 @@ public sealed class GateDefinition : NotifyBase
     public Dictionary<string, GateViewOptions> SamplePreferredViews { get; } = new(StringComparer.Ordinal);
     public PopulationRegion ParentPopulationRegion { get; set; } = PopulationRegion.Primary;
     public GateDefinition? Parent { get; set; }
+    public Guid? BooleanFirstGateId { get; set; }
+    public PopulationRegion BooleanFirstRegion { get; set; } = PopulationRegion.Primary;
+    public Guid? BooleanSecondGateId { get; set; }
+    public PopulationRegion BooleanSecondRegion { get; set; } = PopulationRegion.Primary;
 
     public string Name
     {
@@ -375,8 +393,32 @@ public sealed class GateDefinition : NotifyBase
         set => SetField(ref is_tree_expanded, value);
     }
 
-    public bool IsOneDimensional => Kind is GateKind.Threshold or GateKind.Range || string.IsNullOrWhiteSpace(YChannel);
-    public bool HasLinkedPopulations => Kind is GateKind.Quadrant or GateKind.CurlyQuadrant;
+    public bool IsOneDimensional => !IsBooleanCombination && (Kind is GateKind.Threshold or GateKind.Range || string.IsNullOrWhiteSpace(YChannel));
+    public bool HasLinkedPopulations => Kind is GateKind.Quadrant or GateKind.CurlyQuadrant or GateKind.OffsetQuadrant or GateKind.Threshold or GateKind.Range;
+    public bool IsBooleanCombination => Kind is GateKind.Merge or GateKind.Exclude or GateKind.Overlap;
+
+    public IReadOnlyList<PopulationRegion> PopulationRegions => Kind switch
+    {
+        GateKind.Quadrant or GateKind.CurlyQuadrant or GateKind.OffsetQuadrant =>
+        [
+            PopulationRegion.TopRight,
+            PopulationRegion.TopLeft,
+            PopulationRegion.BottomRight,
+            PopulationRegion.BottomLeft
+        ],
+        GateKind.Threshold =>
+        [
+            PopulationRegion.More,
+            PopulationRegion.Less
+        ],
+        GateKind.Range =>
+        [
+            PopulationRegion.InRange,
+            PopulationRegion.BelowRange,
+            PopulationRegion.AboveRange
+        ],
+        _ => [PopulationRegion.Primary]
+    };
 }
 
 public sealed class StatisticDefinition
@@ -455,6 +497,7 @@ public sealed class PopulationResult : NotifyBase
     public GateDefinition Gate { get; init; } = new();
     public PopulationRegion Region { get; init; } = PopulationRegion.Primary;
     public int[] EventIndices { get; set; } = Array.Empty<int>();
+    public ObservableCollection<string> AvailableEmbeddingNames { get; } = new();
     public ObservableCollection<PopulationResult> Children { get; } = new();
     public ObservableCollection<StatisticResult> Statistics { get; } = new();
 
@@ -464,6 +507,11 @@ public sealed class PopulationResult : NotifyBase
         PopulationRegion.TopLeft => $"{Gate.Name}: Top left",
         PopulationRegion.BottomRight => $"{Gate.Name}: Bottom right",
         PopulationRegion.BottomLeft => $"{Gate.Name}: Bottom left",
+        PopulationRegion.More => $"{Gate.Name}: More",
+        PopulationRegion.Less => $"{Gate.Name}: Less",
+        PopulationRegion.InRange => $"{Gate.Name}: In range",
+        PopulationRegion.BelowRange => $"{Gate.Name}: Below range",
+        PopulationRegion.AboveRange => $"{Gate.Name}: Above range",
         _ => Gate.Name
     };
 
@@ -803,6 +851,7 @@ public sealed class FlowSample : NotifyBase
         foreach (var gate in group.Gates)
         foreach (var population in build_population_results(group, gate, all_indices, all_indices.Length))
             Populations.Add(population);
+        OnPropertyChanged(nameof(Populations));
     }
 
     private PopulationResult build_population(FlowGroup group, GateDefinition gate, int[] parent_indices, int all_count)
@@ -812,8 +861,9 @@ public sealed class FlowSample : NotifyBase
 
     private PopulationResult build_population(FlowGroup group, GateDefinition gate, PopulationRegion region, int[] parent_indices, int all_count)
     {
-        var event_indices = GateEvaluator.Apply(this, gate, region, parent_indices);
+        var event_indices = GateEvaluator.Apply(this, group, gate, region, parent_indices);
         var result = new PopulationResult { Gate = gate, Region = region, EventIndices = event_indices, EventCount = event_indices.Length };
+        refresh_population_embedding_names(result);
         foreach (var definition in gate.Statistics)
             result.Statistics.Add(StatisticsCalculator.Calculate(this, definition, event_indices, parent_indices.Length, all_count));
         foreach (var child in gate.Children)
@@ -827,18 +877,37 @@ public sealed class FlowSample : NotifyBase
         return result;
     }
 
+    public void RefreshPopulationEmbeddingNames()
+    {
+        foreach (var population in Populations)
+            refresh_population_embedding_names_recursive(population);
+    }
+
+    private void refresh_population_embedding_names_recursive(PopulationResult population)
+    {
+        refresh_population_embedding_names(population);
+        foreach (var child in population.Children)
+            refresh_population_embedding_names_recursive(child);
+    }
+
+    private void refresh_population_embedding_names(PopulationResult population)
+    {
+        population.AvailableEmbeddingNames.Clear();
+        foreach (var embedding in Embeddings)
+        {
+            if (population.EventIndices.Any(index =>
+                index >= 0 &&
+                index < embedding.Value.Length &&
+                !float.IsNaN(embedding.Value[index]) &&
+                !float.IsInfinity(embedding.Value[index])))
+                population.AvailableEmbeddingNames.Add(embedding.Key);
+        }
+    }
+
     private IEnumerable<PopulationResult> build_population_results(FlowGroup group, GateDefinition gate, int[] parent_indices, int all_count)
     {
-        if (!gate.HasLinkedPopulations)
-        {
-            yield return build_population(group, gate, PopulationRegion.Primary, parent_indices, all_count);
-            yield break;
-        }
-
-        yield return build_population(group, gate, PopulationRegion.TopRight, parent_indices, all_count);
-        yield return build_population(group, gate, PopulationRegion.TopLeft, parent_indices, all_count);
-        yield return build_population(group, gate, PopulationRegion.BottomRight, parent_indices, all_count);
-        yield return build_population(group, gate, PopulationRegion.BottomLeft, parent_indices, all_count);
+        foreach (var region in gate.PopulationRegions)
+            yield return build_population(group, gate, region, parent_indices, all_count);
     }
 }
 
@@ -981,6 +1050,7 @@ public sealed class FlowWorkspace : NotifyBase
     public ObservableCollection<FlowGroup> Groups { get; } = new();
     public ObservableCollection<PageLayout> PageLayouts { get; } = new();
     public ObservableCollection<IntegrationJob> IntegrationJobs { get; } = new();
+    public ObservableCollection<string> RecentFilePaths { get; } = new();
 }
 
 public abstract class NotifyBase : INotifyPropertyChanged

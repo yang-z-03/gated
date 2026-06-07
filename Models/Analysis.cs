@@ -14,8 +14,16 @@ public static class GateEvaluator
 
     public static int[] Apply(FlowSample sample, GateDefinition gate, PopulationRegion region, int[] parent_indices)
     {
+        return Apply(sample, null, gate, region, parent_indices);
+    }
+
+    public static int[] Apply(FlowSample sample, FlowGroup? group, GateDefinition gate, PopulationRegion region, int[] parent_indices)
+    {
         if (gate.Kind is GateKind.Merge or GateKind.Exclude or GateKind.Overlap)
-            return parent_indices.ToArray();
+            return apply_boolean_gate(sample, group, gate, parent_indices);
+
+        if (gate.Kind == GateKind.CurlyQuadrant)
+            return apply_curly_quadrant(sample, gate, region, parent_indices);
 
         var x_values = sample.GetNormalizedChannelValues(gate.XChannel, gate.XMinimum, gate.XMaximum, gate.XScale);
         if (x_values.Length == 0)
@@ -53,6 +61,9 @@ public static class GateEvaluator
         if (gate.Vertices.Count == 0)
             return true;
 
+        if (gate.Kind == GateKind.CurlyQuadrant)
+            return contains_curly_quadrant(gate.Vertices[0], x_value, y_value, region);
+
         double normalized_x = normalize_x(gate, x_value);
         double normalized_y = gate.IsOneDimensional ? 0 : normalize_y(gate, y_value);
         var normalized_vertices = normalized_gate_vertices(gate);
@@ -73,12 +84,93 @@ public static class GateEvaluator
         {
             GateKind.Polygon => contains_polygon(normalized_vertices, normalized_x, normalized_y),
             GateKind.Rectangle => contains_rectangle(normalized_vertices, normalized_x, normalized_y),
-            GateKind.Threshold => normalized_x >= normalized_vertices[0].X,
-            GateKind.Range => contains_range(normalized_vertices, normalized_x),
+            GateKind.Threshold => contains_threshold(normalized_vertices, normalized_x, region),
+            GateKind.Range => contains_range(normalized_vertices, normalized_x, region),
             GateKind.Quadrant => contains_quadrant(normalized_vertices[0], normalized_x, normalized_y, region),
-            GateKind.CurlyQuadrant => contains_quadrant(normalized_vertices[0], normalized_x, normalized_y, region),
+            GateKind.OffsetQuadrant => contains_offset_quadrant(normalized_vertices, normalized_x, normalized_y, region),
             _ => true
         };
+    }
+
+    private static int[] apply_curly_quadrant(FlowSample sample, GateDefinition gate, PopulationRegion region, int[] parent_indices)
+    {
+        if (gate.YChannel is null || gate.Vertices.Count == 0)
+            return Array.Empty<int>();
+
+        var x_values = sample.GetChannelValues(gate.XChannel);
+        var y_values = sample.GetChannelValues(gate.YChannel);
+        if (x_values.Length == 0 || y_values.Length == 0)
+            return Array.Empty<int>();
+
+        var selected = new List<int>(parent_indices.Length);
+        foreach (int row in parent_indices)
+        {
+            if (row < 0 || row >= x_values.Length || row >= y_values.Length)
+                continue;
+            if (contains_curly_quadrant(gate.Vertices[0], x_values[row], y_values[row], region))
+                selected.Add(row);
+        }
+
+        return selected.ToArray();
+    }
+
+    private static int[] apply_boolean_gate(FlowSample sample, FlowGroup? group, GateDefinition gate, int[] parent_indices)
+    {
+        if (group is null || gate.BooleanFirstGateId is null || gate.BooleanSecondGateId is null)
+            return Array.Empty<int>();
+
+        var first_gate = find_gate(group.Gates, gate.BooleanFirstGateId.Value);
+        var second_gate = find_gate(group.Gates, gate.BooleanSecondGateId.Value);
+        if (first_gate is null || second_gate is null)
+            return Array.Empty<int>();
+
+        var all_indices = Enumerable.Range(0, sample.EventCount).ToArray();
+        var first = evaluate_gate_population(sample, group, first_gate, gate.BooleanFirstRegion, all_indices, []);
+        var second = evaluate_gate_population(sample, group, second_gate, gate.BooleanSecondRegion, all_indices, []);
+        var first_set = first.ToHashSet();
+        var second_set = second.ToHashSet();
+        var parent_set = parent_indices.ToHashSet();
+        IEnumerable<int> result = gate.Kind switch
+        {
+            GateKind.Exclude => first_set.Where(index => !second_set.Contains(index)),
+            GateKind.Overlap => first_set.Where(second_set.Contains),
+            _ => first_set.Concat(second_set).Distinct()
+        };
+
+        return result.Where(parent_set.Contains).OrderBy(index => index).ToArray();
+    }
+
+    private static int[] evaluate_gate_population(
+        FlowSample sample,
+        FlowGroup group,
+        GateDefinition gate,
+        PopulationRegion region,
+        int[] root_indices,
+        HashSet<Guid> active)
+    {
+        if (!active.Add(gate.Id))
+            return Array.Empty<int>();
+
+        int[] parent_indices = root_indices;
+        if (gate.Parent is not null)
+            parent_indices = evaluate_gate_population(sample, group, gate.Parent, gate.ParentPopulationRegion, root_indices, active);
+
+        active.Remove(gate.Id);
+        return Apply(sample, group, gate, region, parent_indices);
+    }
+
+    private static GateDefinition? find_gate(IEnumerable<GateDefinition> gates, Guid id)
+    {
+        foreach (var gate in gates)
+        {
+            if (gate.Id == id)
+                return gate;
+            var child = find_gate(gate.Children, id);
+            if (child is not null)
+                return child;
+        }
+
+        return null;
     }
 
     private static Point[] normalized_gate_vertices(GateDefinition gate) =>
@@ -140,14 +232,25 @@ public static class GateEvaluator
         return x_value >= min_x && x_value <= max_x && y_value >= min_y && y_value <= max_y;
     }
 
-    private static bool contains_range(IReadOnlyList<Point> vertices, double x_value)
+    private static bool contains_threshold(IReadOnlyList<Point> vertices, double x_value, PopulationRegion region)
+    {
+        bool more = x_value >= vertices[0].X;
+        return region == PopulationRegion.Less ? !more : more;
+    }
+
+    private static bool contains_range(IReadOnlyList<Point> vertices, double x_value, PopulationRegion region)
     {
         if (vertices.Count < 2)
-            return x_value >= vertices[0].X;
+            return contains_threshold(vertices, x_value, region);
 
         double min_x = Math.Min(vertices[0].X, vertices[1].X);
         double max_x = Math.Max(vertices[0].X, vertices[1].X);
-        return x_value >= min_x && x_value <= max_x;
+        return region switch
+        {
+            PopulationRegion.BelowRange => x_value < min_x,
+            PopulationRegion.AboveRange => x_value > max_x,
+            _ => x_value >= min_x && x_value <= max_x
+        };
     }
 
     private static bool contains_quadrant(Point center, double x_value, double y_value, PopulationRegion region)
@@ -160,6 +263,60 @@ public static class GateEvaluator
             _ => x_value >= center.X && y_value >= center.Y
         };
     }
+
+    private static bool contains_offset_quadrant(IReadOnlyList<Point> vertices, double x_value, double y_value, PopulationRegion region)
+    {
+        var center = vertices[0];
+        double top_x = vertices.Count > 1 ? vertices[1].X : center.X;
+        double bottom_x = vertices.Count > 2 ? vertices[2].X : center.X;
+        double x_boundary = y_value >= center.Y ? top_x : bottom_x;
+        return region switch
+        {
+            PopulationRegion.TopLeft => x_value < x_boundary && y_value >= center.Y,
+            PopulationRegion.BottomRight => x_value >= x_boundary && y_value < center.Y,
+            PopulationRegion.BottomLeft => x_value < x_boundary && y_value < center.Y,
+            _ => x_value >= x_boundary && y_value >= center.Y
+        };
+    }
+
+    private static bool contains_curly_quadrant(Point center, double x_value, double y_value, PopulationRegion region)
+    {
+        double x_boundary = y_value >= center.Y
+            ? swapped_log_slope_boundary(center.X, center.Y, y_value, 0.1)
+            : center.X;
+        double y_boundary = x_value >= center.X
+            ? log_slope_boundary(center.X, center.Y, x_value, 0.1)
+            : center.Y;
+
+        return region switch
+        {
+            PopulationRegion.TopLeft => x_value < x_boundary && y_value >= center.Y,
+            PopulationRegion.BottomRight => x_value >= center.X && y_value < y_boundary,
+            PopulationRegion.BottomLeft => x_value < center.X && y_value < center.Y,
+            _ => x_value >= x_boundary && y_value >= y_boundary
+        };
+    }
+
+    private static double log_slope_boundary(double anchor_x, double anchor_y, double x_value, double slope)
+    {
+        double x0 = positive(anchor_x);
+        double y0 = positive(anchor_y);
+        double x = positive(x_value);
+        double intercept = Math.Log(y0) - slope * Math.Log(x0);
+        return Math.Exp(slope * Math.Log(x) + intercept);
+    }
+
+    private static double swapped_log_slope_boundary(double anchor_x, double anchor_y, double y_value, double slope)
+    {
+        double x0 = positive(anchor_x);
+        double y0 = positive(anchor_y);
+        double y = positive(y_value);
+        double intercept = Math.Log(x0) - slope * Math.Log(y0);
+        return Math.Exp(slope * Math.Log(y) + intercept);
+    }
+
+    private static double positive(double value) =>
+        Math.Max(value, 1e-6);
 }
 
 public static class StatisticsCalculator

@@ -1,0 +1,11 @@
+Version 0.24.0
+
+- Fix error in population derivation in multi-subset gates
+- Dotplot coloring can now handle log-scale
+- Compensation equipped with a live preview
+- Shortcut keys for renaming and deletion
+- Fix visualization errors for 1D and 2D plots
+- Fix channel selection errors for statistics derivation
+- Performance issues for contour plots now handles cache
+- Adding, renaming and editing now handling shortcut keys
+- Render errors with X axis labels and channel naming data grid

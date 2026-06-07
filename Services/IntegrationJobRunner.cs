@@ -183,9 +183,9 @@ public sealed class IntegrationJobRunner
             if ((output is OutputKind.All or OutputKind.Umap) && job.WriteUmap && job.UmapEmbedding is not null)
                 write_embedding(sample, group, job.UmapEmbedding, job);
             if ((output is OutputKind.All or OutputKind.Leiden) && job.WriteLeiden && job.LeidenClusters is not null)
-                write_cluster(sample, group, job.LeidenClusters, job.LeidenKey);
+                write_cluster(sample, group, job.LeidenClusters, job, job.LeidenKey);
             if ((output is OutputKind.All or OutputKind.FlowSom) && job.WriteFlowSom && job.FlowSomClusters is not null)
-                write_cluster(sample, group, job.FlowSomClusters, job.FlowSomKey);
+                write_cluster(sample, group, job.FlowSomClusters, job, job.FlowSomKey);
 
             sample.InvalidateNormalizedChannelCache();
         }
@@ -399,14 +399,16 @@ public sealed class IntegrationJobRunner
         float[,] embedding,
         IntegrationJob job)
     {
+        var row_array = rows.ToArray();
         string[] keys = [job.UmapXKey, job.UmapYKey, job.UmapZKey];
         int dimensions = Math.Min(embedding.GetLength(1), keys.Length);
         for (int dimension = 0; dimension < dimensions; dimension++)
         {
             var values = fill_nan(sample.EventCount);
-            foreach (var row in rows)
+            foreach (var row in row_array)
                 values[row.EventIndex] = embedding[row.GlobalIndex, dimension];
             sample.Embeddings[keys[dimension]] = values;
+            tag_population_embedding_names(sample, job, keys[dimension]);
         }
     }
 
@@ -414,12 +416,33 @@ public sealed class IntegrationJobRunner
         FlowSample sample,
         IEnumerable<(Guid SampleId, int EventIndex, int GlobalIndex)> rows,
         int[] clusters,
+        IntegrationJob job,
         string key)
     {
+        var row_array = rows.ToArray();
         var values = fill_nan(sample.EventCount);
-        foreach (var row in rows)
+        foreach (var row in row_array)
             values[row.EventIndex] = clusters[row.GlobalIndex];
         sample.Embeddings[key] = values;
+        tag_population_embedding_names(sample, job, key);
+    }
+
+    private static void tag_population_embedding_names(
+        FlowSample sample,
+        IntegrationJob job,
+        string key)
+    {
+        var regions = job.RowMap
+            .Where(row => row.SampleId == sample.Id)
+            .Select(row => (row.GateId, row.Region))
+            .Distinct()
+            .ToArray();
+        foreach (var item in regions)
+        {
+            var population = find_population(sample, item.GateId, item.Region);
+            if (population is not null && !population.AvailableEmbeddingNames.Contains(key))
+                population.AvailableEmbeddingNames.Add(key);
+        }
     }
 
     private static float[] fill_nan(int length)

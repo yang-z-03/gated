@@ -44,14 +44,17 @@ public partial class MainWindow : Window
         DataContext = view_model;
         view_model.RequestTextInputAsync = show_text_input_dialog;
         view_model.RequestChoiceInputAsync = show_choice_input_dialog;
+        view_model.RequestBooleanGateInputAsync = show_boolean_gate_input_dialog;
         view_model.RequestCompensationEditorAsync = show_compensation_editor_dialog;
         view_model.PropertyChanged += view_model_property_changed;
         view_model.AxisChoices.CollectionChanged += channel_choices_collection_changed;
         view_model.ColorChoices.CollectionChanged += channel_choices_collection_changed;
         view_model.SelectedPageAxisChoices.CollectionChanged += channel_choices_collection_changed;
         view_model.SelectedPageColorChoices.CollectionChanged += channel_choices_collection_changed;
+        view_model.RecentFilePaths.CollectionChanged += recent_file_paths_collection_changed;
         update_statistics_columns();
         update_channel_menus();
+        update_recent_items_menu();
         update_page_editor_viewport_size();
         page_editor_scroll.PropertyChanged += (_, e) =>
         {
@@ -90,6 +93,9 @@ public partial class MainWindow : Window
     private void channel_choices_collection_changed(object? sender, NotifyCollectionChangedEventArgs e) =>
         request_update_channel_menus();
 
+    private void recent_file_paths_collection_changed(object? sender, NotifyCollectionChangedEventArgs e) =>
+        update_recent_items_menu();
+
     private void request_update_channel_menus()
     {
         if (channel_menu_update_pending)
@@ -107,6 +113,60 @@ public partial class MainWindow : Window
     {
         page_editor.ViewportSize = page_editor_scroll.Bounds.Size;
     }
+
+    private void update_recent_items_menu()
+    {
+        recent_items_menu.Items.Clear();
+        if (view_model.RecentFilePaths.Count == 0)
+        {
+            recent_items_menu.Items.Add(new MenuItem { Header = "(No recent items)", IsEnabled = false });
+        }
+        else
+        {
+            foreach (string path in view_model.RecentFilePaths)
+            {
+                var item = new MenuItem
+                {
+                    Header = path,
+                    Tag = path
+                };
+                item.Click += recent_file_menu_item_click;
+                recent_items_menu.Items.Add(item);
+            }
+        }
+
+        recent_items_menu.Items.Add(new Separator());
+        var clear_item = new MenuItem
+        {
+            Header = "Clear file history",
+            IsEnabled = view_model.RecentFilePaths.Count > 0
+        };
+        clear_item.Click += clear_recent_files_menu_item_click;
+        recent_items_menu.Items.Add(clear_item);
+    }
+
+    private async void recent_file_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if ((sender as MenuItem)?.Tag is not string path)
+            return;
+
+        if (!File.Exists(path))
+        {
+            await show_message_dialog("Recent item unavailable", $"The file could not be found:{Environment.NewLine}{path}");
+            return;
+        }
+
+        if (path.EndsWith(".gated", StringComparison.OrdinalIgnoreCase))
+        {
+            await load_workspace_with_progress(path);
+            return;
+        }
+
+        await import_fcs_files([path], "Failed to open recent item", target_group: selected_import_target_group());
+    }
+
+    private void clear_recent_files_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
+        view_model.ClearRecentFilePaths();
 
     private void update_statistics_columns()
     {
@@ -154,8 +214,78 @@ public partial class MainWindow : Window
         {
             e.Handled = true;
             await save_workspace_async();
+            return;
+        }
+
+        if (e.KeyModifiers == KeyModifiers.Control && e.Key == Key.G)
+        {
+            execute_shortcut_command(view_model.CreateGroupCommand, e);
+            return;
+        }
+
+        if (e.KeyModifiers == KeyModifiers.Control && e.Key == Key.L)
+        {
+            execute_shortcut_command(view_model.CreateLayoutCommand, e);
+            return;
+        }
+
+        if (e.KeyModifiers == KeyModifiers.Control && e.Key == Key.E)
+        {
+            execute_shortcut_command(view_model.ExpandProjectTreeCommand, e);
+            return;
+        }
+
+        if (e.KeyModifiers == KeyModifiers.Control && e.Key == Key.R)
+        {
+            execute_shortcut_command(view_model.CollapseProjectTreeCommand, e);
+            return;
+        }
+
+        if (e.KeyModifiers == KeyModifiers.Control && e.Key == Key.P)
+        {
+            if (view_model.EditCompensationCommand.CanExecute(null))
+            {
+                e.Handled = true;
+                view_model.EditCompensationCommand.Execute(null);
+            }
+            return;
+        }
+
+        if (e.KeyModifiers == KeyModifiers.None && e.Key == Key.Delete)
+        {
+            if (can_delete_with_shortcut() && view_model.DeleteSelectedCommand.CanExecute(null))
+            {
+                e.Handled = true;
+                view_model.DeleteSelectedCommand.Execute(null);
+            }
+            return;
+        }
+
+        if (e.KeyModifiers == KeyModifiers.None && e.Key == Key.F2)
+        {
+            if (view_model.RenameSelectedNodeCommand.CanExecute(null))
+            {
+                e.Handled = true;
+                view_model.RenameSelectedNodeCommand.Execute(null);
+            }
         }
     }
+
+    private static void execute_shortcut_command(System.Windows.Input.ICommand command, KeyEventArgs e)
+    {
+        if (!command.CanExecute(null))
+            return;
+
+        e.Handled = true;
+        command.Execute(null);
+    }
+
+    private bool can_delete_with_shortcut() =>
+        view_model.SelectedNode?.Kind is ProjectNodeKind.Group
+            or ProjectNodeKind.Sample
+            or ProjectNodeKind.Gate
+            or ProjectNodeKind.GatePopulationSlot
+            or ProjectNodeKind.Population;
 
     private async void open_fcs_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
         await open_fcs_files_async();
@@ -176,7 +306,13 @@ public partial class MainWindow : Window
         await import_fcs_files(
             files.Select(file => file.Path.LocalPath),
             "Failed to open FCS files",
-            target_group: null);
+            target_group: selected_import_target_group());
+    }
+
+    private FlowGroup? selected_import_target_group()
+    {
+        var node = view_model.SelectedNode;
+        return node?.Kind == ProjectNodeKind.Workspace ? null : node?.Group;
     }
 
     private async void open_workspace_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
@@ -418,7 +554,12 @@ public partial class MainWindow : Window
     {
         string latest_remote = status.LatestRemote?.Version.ToString() ?? "not available";
         string compatible = status.LatestCompatible?.Version.ToString() ?? "none";
-        return $"Current version: {status.Current}\nMost updated remote version: {latest_remote}\nLatest compatible version: {compatible}\nCurrent OS: {status.System.DisplayName}";
+        return (
+            $"Current version: {status.Current}\n" +
+            $"Most updated remote version: {latest_remote}\n" +
+            $"Latest compatible version: {compatible}\n" +
+            $"Current OS: {status.System.DisplayName}"
+        );
     }
 
     private static bool is_update_suppressed(AppVersion version)
@@ -538,6 +679,7 @@ public partial class MainWindow : Window
                 view_model.LoadWorkspace(workspace, path);
             });
             current_workspace_path = path;
+            view_model.AddRecentFilePaths([path]);
         }
         catch (Exception exception)
         {
@@ -594,6 +736,9 @@ public partial class MainWindow : Window
 
     private void curly_quadrant_tool_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
         view_model.ActiveTool = GatingTool.CurlyQuadrant;
+
+    private void offset_quadrant_tool_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
+        view_model.ActiveTool = GatingTool.OffsetQuadrant;
 
     private void threshold_tool_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
         view_model.ActiveTool = GatingTool.Threshold;
@@ -847,6 +992,7 @@ public partial class MainWindow : Window
                 view_model.AddFiles(file_paths);
             else
                 view_model.AddFilesToGroup(file_paths, target_group);
+            view_model.AddRecentFilePaths(file_paths);
         }
         catch (Exception exception)
         {
@@ -1083,22 +1229,111 @@ public partial class MainWindow : Window
         return await dialog.ShowDialog<string?>(this);
     }
 
+    private async Task<BooleanGateSelection?> show_boolean_gate_input_dialog(string title, System.Collections.Generic.IReadOnlyList<BooleanPopulationChoice> choices)
+    {
+        ComboBox make_combo() => new()
+        {
+            ItemsSource = choices,
+            Classes = { "Small" },
+            SelectedIndex = choices.Count > 0 ? 0 : -1,
+            MinWidth = 320,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
+            ItemTemplate = new FuncDataTemplate<BooleanPopulationChoice>((choice, _) => new TextBlock
+            {
+                Text = choice?.DisplayName ?? "",
+                Foreground = Brushes.White
+            })
+        };
+
+        var first_input = make_combo();
+        var second_input = make_combo();
+        if (choices.Count > 1)
+            second_input.SelectedIndex = 1;
+
+        var dialog = new Window
+        {
+            Title = title,
+            Width = 460,
+            MinWidth = 400,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = Background,
+            SizeToContent = SizeToContent.Height,
+            Content = new StackPanel
+            {
+                Margin = new Thickness(16),
+                Spacing = 12,
+                Children =
+                {
+                    new TextBlock { Text = title },
+                    new TextBlock { Text = "First population", Foreground = new SolidColorBrush(Color.FromRgb(164, 168, 178)) },
+                    first_input,
+                    new TextBlock { Text = "Second population", Foreground = new SolidColorBrush(Color.FromRgb(164, 168, 178)) },
+                    second_input,
+                    new StackPanel
+                    {
+                        Orientation = Avalonia.Layout.Orientation.Horizontal,
+                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                        Spacing = 8,
+                        Children =
+                        {
+                            new Button { Content = "Cancel", MinWidth = 80, IsCancel = true },
+                            new Button { Content = "OK", MinWidth = 80, IsDefault = true }
+                        }
+                    }
+                }
+            }
+        };
+
+        var buttons = ((StackPanel)((StackPanel)dialog.Content).Children[5]).Children;
+        ((Button)buttons[0]).Click += (_, _) => dialog.Close(null);
+        ((Button)buttons[1]).Click += (_, _) =>
+        {
+            if (first_input.SelectedItem is BooleanPopulationChoice first &&
+                second_input.SelectedItem is BooleanPopulationChoice second)
+                dialog.Close(new BooleanGateSelection(first, second));
+            else dialog.Close(null);
+        };
+        first_input.AttachedToVisualTree += (_, _) => first_input.Focus();
+
+        return await dialog.ShowDialog<BooleanGateSelection?>(this);
+    }
+
     private async Task<bool> show_compensation_editor_dialog(CompensationMatrix compensation)
     {
         var values = (float[,])compensation.Values.Clone();
         var channels = compensation.ChannelNames.ToArray();
+        var group = view_model.SelectedGroup;
+        var population_choices = build_compensation_preview_population_choices(group).ToArray();
         var name_box = new TextBox
         {
             Text = compensation.Name,
             MinWidth = 280,
             Margin = new Thickness(0, 4, 0, 4)
         };
+        var population_box = new ComboBox
+        {
+            ItemsSource = population_choices,
+            SelectedIndex = population_choices.Length > 0 ? 0 : -1,
+            Classes = { "Small" },
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch
+        };
+        var preview = new CompensationPreviewView
+        {
+            Margin = new Thickness(0, 8, 0, 16)
+        };
+
+        double text_width = Math.Max(80, channels.DefaultIfEmpty("").Max(channel => channel.Length) * 8 + 24);
+        double matrix_table_width = text_width + channels.Length * 85 + 28;
+        double preview_table_width = 82 + Math.Max(0, channels.Length - 1) * 96 + 28;
+        double preview_table_height = 28 + Math.Max(0, channels.Length - 1) * 96;
+        double preview_viewport_height = preview_table_height + 16 <= 500 ? preview_table_height + 16 : 500;
+        double dialog_width = Math.Clamp(Math.Max(matrix_table_width, preview_table_width) + 48, 520, 1300);
 
         var table = new Grid
         {
             RowSpacing = 5,
             ColumnSpacing = 5,
-            Margin = new Thickness(0, 16, 0, 0)
+            Margin = new Thickness(0, 16, 0, 16)
         };
         table.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
         for (int column = 0; column < channels.Length; column++)
@@ -1155,12 +1390,69 @@ public partial class MainWindow : Window
             Foreground = Brushes.IndianRed,
             IsVisible = false
         };
+        void update_preview()
+        {
+            if (!try_read_compensation_inputs(inputs, channels, values, error_text, show_errors: false, out var preview_values))
+                return;
+
+            preview.Configure(group, channels, preview_values, population_box.SelectedItem as CompensationPreviewPopulationChoice);
+        }
+
+        foreach (var input in inputs.Values)
+            input.GetObservable(TextBox.TextProperty).Subscribe(_ => update_preview());
+        
+        population_box.SelectionChanged += (_, _) => update_preview();
+        update_preview();
+        var matrix_scroll = new ScrollViewer
+        {
+            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+            VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+            MaxHeight = 500,
+            Content = table
+        };
+        var preview_scroll = new ScrollViewer
+        {
+            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+            VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+            Background = new SolidColorBrush(Color.FromRgb(30, 30, 30)),
+            Height = preview_viewport_height,
+            Content = preview
+        };
+        var preview_expander = new Expander
+        {
+            Header = "Preview",
+            IsExpanded = true,
+            Margin = new Thickness(0, 12, 0, 16),
+            Content = new StackPanel
+            {
+                Spacing = 8,
+                Children =
+                {
+                    new StackPanel
+                    {
+                        Orientation = Avalonia.Layout.Orientation.Horizontal,
+                        Spacing = 10,
+                        Children =
+                        {
+                            new TextBlock
+                            {
+                                Text = "Population",
+                                Foreground = new SolidColorBrush(Color.FromRgb(164, 168, 178)),
+                                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
+                            },
+                            population_box
+                        }
+                    },
+                    preview_scroll
+                }
+            }
+        };
 
         var dialog = new Window
         {
             Title = "Compensation table editor",
-            Width = Math.Clamp(180 + channels.Length * 100, 520, 1100),
-            Height = Math.Clamp(240 + channels.Length * 38, 360, 760),
+            Width = dialog_width,
+            SizeToContent = SizeToContent.Height,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Background = Background,
             Content = new Grid
@@ -1170,7 +1462,8 @@ public partial class MainWindow : Window
                 {
                     new RowDefinition(GridLength.Auto),
                     new RowDefinition(GridLength.Auto),
-                    new RowDefinition(new GridLength(1, GridUnitType.Star)),
+                    new RowDefinition(GridLength.Auto),
+                    new RowDefinition(GridLength.Auto),
                     new RowDefinition(GridLength.Auto),
                     new RowDefinition(GridLength.Auto)
                 },
@@ -1178,12 +1471,8 @@ public partial class MainWindow : Window
                 {
                     new TextBlock { Text = "Name", Foreground = new SolidColorBrush(Color.FromRgb(164, 168, 178)) },
                     name_box,
-                    new ScrollViewer
-                    {
-                        HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
-                        VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
-                        Content = table
-                    },
+                    matrix_scroll,
+                    preview_expander,
                     error_text,
                     new StackPanel
                     {
@@ -1203,41 +1492,100 @@ public partial class MainWindow : Window
         var grid = (Grid)dialog.Content;
         Grid.SetRow(name_box, 1);
         Grid.SetRow((Control)grid.Children[2], 2);
-        Grid.SetRow(error_text, 3);
-        Grid.SetRow((Control)grid.Children[4], 4);
+        Grid.SetRow((Control)grid.Children[3], 3);
+        Grid.SetRow(error_text, 4);
+        Grid.SetRow((Control)grid.Children[5], 5);
 
-        var buttons = ((StackPanel)grid.Children[4]).Children;
+        var buttons = ((StackPanel)grid.Children[5]).Children;
         ((Button)buttons[0]).Click += (_, _) => dialog.Close(false);
         ((Button)buttons[1]).Click += (_, _) =>
         {
-            for (int row = 0; row < channels.Length; row++)
-            for (int column = 0; column < channels.Length; column++)
-            {
-                if (row == column)
-                {
-                    values[row, column] = 1.0f;
-                    continue;
-                }
-
-                string? text = inputs[(row, column)].Text;
-                if (float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out float parsed))
-                {
-                    values[row, column] = parsed / 100.0f;
-                    continue;
-                }
-
-                error_text.Text = $"Invalid number at {channels[row]} / {channels[column]}.";
-                error_text.IsVisible = true;
+            if (!try_read_compensation_inputs(inputs, channels, values, error_text, show_errors: true, out var parsed_values))
                 return;
-            }
 
             compensation.Name = string.IsNullOrWhiteSpace(name_box.Text) ? compensation.Name : name_box.Text.Trim();
-            compensation.ReplaceValues(values);
+            compensation.ReplaceValues(parsed_values);
             dialog.Close(true);
         };
 
         return await dialog.ShowDialog<bool>(this);
     }
+
+    private static bool try_read_compensation_inputs(
+        IReadOnlyDictionary<(int Row, int Column), TextBox> inputs,
+        IReadOnlyList<string> channels,
+        float[,] fallback_values,
+        TextBlock error_text,
+        bool show_errors,
+        out float[,] parsed_values)
+    {
+        parsed_values = (float[,])fallback_values.Clone();
+        for (int row = 0; row < channels.Count; row++)
+        for (int column = 0; column < channels.Count; column++)
+        {
+            if (row == column)
+            {
+                parsed_values[row, column] = 1.0f;
+                continue;
+            }
+
+            string? text = inputs[(row, column)].Text;
+            if (float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out float parsed))
+            {
+                parsed_values[row, column] = parsed / 100.0f;
+                continue;
+            }
+
+            if (show_errors)
+            {
+                error_text.Text = $"Invalid number at {channels[row]} / {channels[column]}.";
+                error_text.IsVisible = true;
+            }
+            return false;
+        }
+
+        error_text.IsVisible = false;
+        return true;
+    }
+
+    private static IEnumerable<CompensationPreviewPopulationChoice> build_compensation_preview_population_choices(FlowGroup? group)
+    {
+        yield return new CompensationPreviewPopulationChoice("All events", null, PopulationRegion.Primary);
+        if (group is null)
+            yield break;
+
+        foreach (var gate in all_preview_gates(group.Gates))
+        foreach (var region in gate.PopulationRegions)
+            yield return new CompensationPreviewPopulationChoice(
+                gate.PopulationRegions.Count == 1 ? gate.Name : $"{gate.Name}: {population_region_name(region)}",
+                gate.Id,
+                region);
+    }
+
+    private static IEnumerable<GateDefinition> all_preview_gates(IEnumerable<GateDefinition> gates)
+    {
+        foreach (var gate in gates)
+        {
+            yield return gate;
+            foreach (var child in all_preview_gates(gate.Children))
+                yield return child;
+        }
+    }
+
+    private static string population_region_name(PopulationRegion region) =>
+        region switch
+        {
+            PopulationRegion.TopRight => "Top right",
+            PopulationRegion.TopLeft => "Top left",
+            PopulationRegion.BottomRight => "Bottom right",
+            PopulationRegion.BottomLeft => "Bottom left",
+            PopulationRegion.More => "More",
+            PopulationRegion.Less => "Less",
+            PopulationRegion.InRange => "In range",
+            PopulationRegion.BelowRange => "Below range",
+            PopulationRegion.AboveRange => "Above range",
+            _ => "Population"
+        };
 
     private static string format_compensation_percent(float value)
     {

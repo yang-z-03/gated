@@ -46,6 +46,8 @@ public sealed class MainWindowViewModel : NotifyBase
     private bool is_page_editor_mode;
     private PagePlotElement? selected_page_element;
     private PagePlotElement? subscribed_page_menu_element;
+    private EquivalentSampleChoice? selected_equivalent_sample_choice;
+    private bool syncing_equivalent_sample_choices;
 
     public FlowWorkspace Workspace { get; } = new();
     public ObservableCollection<ProjectNode> ProjectNodes { get; } = new();
@@ -54,6 +56,7 @@ public sealed class MainWindowViewModel : NotifyBase
     public ObservableCollection<AxisChoice> ColorChoices { get; } = new();
     public ObservableCollection<AxisChoice> SelectedPageAxisChoices { get; } = new();
     public ObservableCollection<AxisChoice> SelectedPageColorChoices { get; } = new();
+    public ObservableCollection<EquivalentSampleChoice> EquivalentSampleChoices { get; } = new();
     private DataTable statistic_table = new();
     public ObservableCollection<GateDefinition> PlotGates { get; } = new();
     public ObservableCollection<PagePlotElement> PageElements => selected_page_layout?.Elements ?? empty_page_elements;
@@ -66,16 +69,19 @@ public sealed class MainWindowViewModel : NotifyBase
     public ObservableCollection<CytoNormGoal> CytoNormGoalChoices { get; } = new(Enum.GetValues<CytoNormGoal>());
     public ObservableCollection<FlowSomDistance> FlowSomDistanceChoices { get; } = new(Enum.GetValues<FlowSomDistance>());
     public ObservableCollection<IntegrationJobSampleMetadata> WorkspaceSampleMetadata { get; } = new();
+    public ObservableCollection<string> RecentFilePaths => Workspace.RecentFilePaths;
     public DataView StatisticTableView => statistic_table.DefaultView;
     public DataTable StatisticTable => statistic_table;
 
     public ICommand CreateGroupCommand { get; }
     public ICommand CreateLayoutCommand { get; }
     public ICommand CreateIntegrationJobCommand { get; }
+    public ICommand RenameWorkspaceCommand { get; }
     public ICommand RenameIntegrationJobCommand { get; }
     public ICommand RenameGroupCommand { get; }
     public ICommand RenameGateCommand { get; }
     public ICommand RenameLayoutCommand { get; }
+    public ICommand RenameSelectedNodeCommand { get; }
     public ICommand ConcatenateSamplesCommand { get; }
     public ICommand ApplyCompensationCommand { get; }
     public ICommand EditCompensationCommand { get; }
@@ -84,8 +90,12 @@ public sealed class MainWindowViewModel : NotifyBase
     public ICommand DeleteSelectedCommand { get; }
     public ICommand AddPolygonGateCommand { get; }
     public ICommand AddRectangleGateCommand { get; }
+    public ICommand AddOffsetQuadrantGateCommand { get; }
     public ICommand AddThresholdGateCommand { get; }
     public ICommand AddRangeGateCommand { get; }
+    public ICommand AddMergeGateCommand { get; }
+    public ICommand AddExcludeGateCommand { get; }
+    public ICommand AddOverlapGateCommand { get; }
     public ICommand AddMeanStatisticCommand { get; }
     public ICommand AddMedianStatisticCommand { get; }
     public ICommand AddGeometricMeanStatisticCommand { get; }
@@ -111,29 +121,40 @@ public sealed class MainWindowViewModel : NotifyBase
     public ICommand ApplyWorkspaceMetadataCommand { get; }
     public ICommand IntegrationPopulationSelectionChangedCommand { get; }
     public ICommand IntegrationFeatureSelectionChangedCommand { get; }
+    public ICommand SelectPreviousEquivalentSampleCommand { get; }
+    public ICommand SelectNextEquivalentSampleCommand { get; }
     public Func<string, string, Task<string?>>? RequestTextInputAsync { get; set; }
     public Func<string, IReadOnlyList<AxisChoice>, Task<string?>>? RequestChoiceInputAsync { get; set; }
+    public Func<string, IReadOnlyList<BooleanPopulationChoice>, Task<BooleanGateSelection?>>? RequestBooleanGateInputAsync { get; set; }
     public Func<CompensationMatrix, Task<bool>>? RequestCompensationEditorAsync { get; set; }
 
     public MainWindowViewModel()
     {
+        foreach (string path in RecentFileStore.Load())
+            Workspace.RecentFilePaths.Add(path);
         CreateGroupCommand = new RelayCommand(_ => create_group());
         CreateLayoutCommand = new RelayCommand(_ => create_layout());
         CreateIntegrationJobCommand = new RelayCommand(_ => create_integration_job(), _ => Workspace.Groups.Any(group => group.Samples.Count > 0));
+        RenameWorkspaceCommand = new RelayCommand(_ => _ = rename_workspace_async());
         RenameIntegrationJobCommand = new RelayCommand(_ => _ = rename_selected_integration_job_async(), _ => selected_integration_job is not null);
         RenameGroupCommand = new RelayCommand(_ => _ = rename_selected_group_async(), _ => selected_group is not null);
         RenameGateCommand = new RelayCommand(_ => _ = rename_selected_gate_async(), _ => selected_gate is not null);
         RenameLayoutCommand = new RelayCommand(_ => _ = rename_selected_layout_async(), _ => selected_page_layout is not null);
+        RenameSelectedNodeCommand = new RelayCommand(_ => _ = rename_selected_node_async(), _ => can_rename_selected_node());
         ConcatenateSamplesCommand = new RelayCommand(_ => concatenate_selected_group(), _ => selected_group?.Samples.Count > 1);
         ApplyCompensationCommand = new RelayCommand(_ => apply_selected_compensation(), _ => selected_group is not null && selected_compensation is not null);
         EditCompensationCommand = new RelayCommand(_ => _ = edit_selected_compensation_async(), _ => selected_group is not null && selected_compensation is not null);
         ExpandProjectTreeCommand = new RelayCommand(_ => set_project_tree_expanded(true));
         CollapseProjectTreeCommand = new RelayCommand(_ => set_project_tree_expanded(false));
         DeleteSelectedCommand = new RelayCommand(_ => delete_selected());
-        AddPolygonGateCommand = new RelayCommand(_ => _ = add_gate_async(GateKind.Polygon));
-        AddRectangleGateCommand = new RelayCommand(_ => _ = add_gate_async(GateKind.Rectangle));
-        AddThresholdGateCommand = new RelayCommand(_ => _ = add_gate_async(GateKind.Threshold));
-        AddRangeGateCommand = new RelayCommand(_ => _ = add_gate_async(GateKind.Range));
+        AddPolygonGateCommand = new RelayCommand(_ => _ = add_gate_async(GateKind.Polygon), _ => can_create_gate_kind(GateKind.Polygon));
+        AddRectangleGateCommand = new RelayCommand(_ => _ = add_gate_async(GateKind.Rectangle), _ => can_create_gate_kind(GateKind.Rectangle));
+        AddOffsetQuadrantGateCommand = new RelayCommand(_ => _ = add_gate_async(GateKind.OffsetQuadrant), _ => can_create_gate_kind(GateKind.OffsetQuadrant));
+        AddThresholdGateCommand = new RelayCommand(_ => _ = add_gate_async(GateKind.Threshold), _ => can_create_gate_kind(GateKind.Threshold));
+        AddRangeGateCommand = new RelayCommand(_ => _ = add_gate_async(GateKind.Range), _ => can_create_gate_kind(GateKind.Range));
+        AddMergeGateCommand = new RelayCommand(_ => _ = add_boolean_gate_async(GateKind.Merge), _ => CanCreateAnyGate && boolean_population_choices().Count >= 2);
+        AddExcludeGateCommand = new RelayCommand(_ => _ = add_boolean_gate_async(GateKind.Exclude), _ => CanCreateAnyGate && boolean_population_choices().Count >= 2);
+        AddOverlapGateCommand = new RelayCommand(_ => _ = add_boolean_gate_async(GateKind.Overlap), _ => CanCreateAnyGate && boolean_population_choices().Count >= 2);
         AddMeanStatisticCommand = new RelayCommand(_ => _ = add_statistic_async(StatisticKind.Mean), _ => selected_group is not null);
         AddMedianStatisticCommand = new RelayCommand(_ => _ = add_statistic_async(StatisticKind.Median), _ => selected_group is not null);
         AddGeometricMeanStatisticCommand = new RelayCommand(_ => _ = add_statistic_async(StatisticKind.GeometricMean), _ => selected_group is not null);
@@ -159,6 +180,8 @@ public sealed class MainWindowViewModel : NotifyBase
         ApplyWorkspaceMetadataCommand = new RelayCommand(_ => CommitWorkspaceSampleMetadata(), _ => IsWorkspaceMetadataMode);
         IntegrationPopulationSelectionChangedCommand = new RelayCommand(_ => UpdateIntegrationJobPopulationSelectionStates());
         IntegrationFeatureSelectionChangedCommand = new RelayCommand(_ => UpdateIntegrationJobFeatureSelectionStates());
+        SelectPreviousEquivalentSampleCommand = new RelayCommand(_ => select_relative_equivalent_sample(-1), _ => EquivalentSampleChoices.Count > 1);
+        SelectNextEquivalentSampleCommand = new RelayCommand(_ => select_relative_equivalent_sample(1), _ => EquivalentSampleChoices.Count > 1);
         ensure_default_layout();
         refresh_project_tree();
         refresh_selection_sidebars();
@@ -192,6 +215,7 @@ public sealed class MainWindowViewModel : NotifyBase
                 return;
 
             refresh_selection_sidebars();
+            refresh_equivalent_sample_choices();
         }
     }
 
@@ -203,6 +227,7 @@ public sealed class MainWindowViewModel : NotifyBase
             if (!SetField(ref selected_sample, value))
                 return;
             refresh_axis_choices();
+            refresh_equivalent_sample_choices();
         }
     }
 
@@ -217,8 +242,12 @@ public sealed class MainWindowViewModel : NotifyBase
             OnPropertyChanged(nameof(SelectedGateName));
             OnPropertyChanged(nameof(EffectivePlotMode));
             OnPropertyChanged(nameof(IsYAxisEnabled));
+            OnPropertyChanged(nameof(CanCreateAnyGate));
+            OnPropertyChanged(nameof(CanCreateOneDimensionalGate));
+            OnPropertyChanged(nameof(CanCreateTwoDimensionalGate));
             raise_command_states();
             refresh_selected_statistics();
+            refresh_equivalent_sample_choices();
         }
     }
 
@@ -230,14 +259,34 @@ public sealed class MainWindowViewModel : NotifyBase
             if (!SetField(ref selected_population, value))
                 return;
             OnPropertyChanged(nameof(PlotPopulation));
+            OnPropertyChanged(nameof(CanCreateAnyGate));
+            OnPropertyChanged(nameof(CanCreateOneDimensionalGate));
+            OnPropertyChanged(nameof(CanCreateTwoDimensionalGate));
+            enforce_active_tool_allowed();
             refresh_axis_choices();
             refresh_selected_statistics();
+            refresh_equivalent_sample_choices();
         }
     }
 
     public GateDefinition? PlotGate => selected_gate;
     public PopulationResult? PlotPopulation => selected_population;
     public string SelectedGateName => PlotGate?.Name ?? "No gate selected";
+
+    public EquivalentSampleChoice? SelectedEquivalentSampleChoice
+    {
+        get => selected_equivalent_sample_choice;
+        set
+        {
+            if (ReferenceEquals(selected_equivalent_sample_choice, value))
+                return;
+
+            selected_equivalent_sample_choice = value;
+            OnPropertyChanged();
+            if (!syncing_equivalent_sample_choices && value is not null)
+                select_equivalent_sample(value);
+        }
+    }
 
     public CompensationMatrix? SelectedCompensation
     {
@@ -264,6 +313,9 @@ public sealed class MainWindowViewModel : NotifyBase
             OnPropertyChanged(nameof(IsContourPlotMode));
             OnPropertyChanged(nameof(IsZebraPlotMode));
             OnPropertyChanged(nameof(IsHistogramPlotMode));
+            OnPropertyChanged(nameof(CanCreateOneDimensionalGate));
+            OnPropertyChanged(nameof(CanCreateTwoDimensionalGate));
+            enforce_active_tool_allowed();
             refresh_plot_gates();
         }
     }
@@ -296,15 +348,17 @@ public sealed class MainWindowViewModel : NotifyBase
         set
         {
             if (!SetField(ref active_tool, value))
+            {
+                refresh_active_tool_state();
                 return;
+            }
+            if (!can_use_gating_tool(active_tool))
+            {
+                active_tool = GatingTool.View;
+                OnPropertyChanged();
+            }
 
-            OnPropertyChanged(nameof(IsViewTool));
-            OnPropertyChanged(nameof(IsPolygonTool));
-            OnPropertyChanged(nameof(IsRectangleTool));
-            OnPropertyChanged(nameof(IsQuadrantTool));
-            OnPropertyChanged(nameof(IsCurlyQuadrantTool));
-            OnPropertyChanged(nameof(IsThresholdTool));
-            OnPropertyChanged(nameof(IsRangeTool));
+            refresh_active_tool_state();
         }
     }
 
@@ -313,8 +367,51 @@ public sealed class MainWindowViewModel : NotifyBase
     public bool IsRectangleTool => ActiveTool == GatingTool.Rectangle;
     public bool IsQuadrantTool => ActiveTool == GatingTool.Quadrant;
     public bool IsCurlyQuadrantTool => ActiveTool == GatingTool.CurlyQuadrant;
+    public bool IsOffsetQuadrantTool => ActiveTool == GatingTool.OffsetQuadrant;
     public bool IsThresholdTool => ActiveTool == GatingTool.Threshold;
     public bool IsRangeTool => ActiveTool == GatingTool.Range;
+    public bool CanCreateAnyGate => selected_node?.Kind is ProjectNodeKind.GateFolder
+            or ProjectNodeKind.Sample
+            or ProjectNodeKind.Population
+            or ProjectNodeKind.GatePopulationSlot ||
+        selected_node?.Kind == ProjectNodeKind.Gate && selected_gate?.PopulationRegions.Count == 1;
+    public bool CanCreateOneDimensionalGate => CanCreateAnyGate && EffectivePlotMode == PlotMode.Histogram;
+    public bool CanCreateTwoDimensionalGate => CanCreateAnyGate && EffectivePlotMode != PlotMode.Histogram;
+
+    private bool can_use_gating_tool(GatingTool tool) =>
+        tool == GatingTool.View ||
+        can_create_gate_kind(gate_kind_for_tool(tool));
+
+    private static GateKind gate_kind_for_tool(GatingTool tool) =>
+        tool switch
+        {
+            GatingTool.Polygon => GateKind.Polygon,
+            GatingTool.Rectangle => GateKind.Rectangle,
+            GatingTool.Quadrant => GateKind.Quadrant,
+            GatingTool.CurlyQuadrant => GateKind.CurlyQuadrant,
+            GatingTool.OffsetQuadrant => GateKind.OffsetQuadrant,
+            GatingTool.Threshold => GateKind.Threshold,
+            GatingTool.Range => GateKind.Range,
+            _ => GateKind.Rectangle
+        };
+
+    private void enforce_active_tool_allowed()
+    {
+        if (!can_use_gating_tool(active_tool))
+            ActiveTool = GatingTool.View;
+    }
+
+    private void refresh_active_tool_state()
+    {
+        OnPropertyChanged(nameof(IsViewTool));
+        OnPropertyChanged(nameof(IsPolygonTool));
+        OnPropertyChanged(nameof(IsRectangleTool));
+        OnPropertyChanged(nameof(IsQuadrantTool));
+        OnPropertyChanged(nameof(IsCurlyQuadrantTool));
+        OnPropertyChanged(nameof(IsOffsetQuadrantTool));
+        OnPropertyChanged(nameof(IsThresholdTool));
+        OnPropertyChanged(nameof(IsRangeTool));
+    }
 
     public bool ShowOutlierPoints
     {
@@ -639,6 +736,34 @@ public sealed class MainWindowViewModel : NotifyBase
         refresh_selected_statistics();
         StatusText = loaded_count == 0 ? StatusText : $"Loaded {loaded_count} FCS sample(s)";
         raise_command_states();
+    }
+
+    public void AddRecentFilePaths(IEnumerable<string> file_paths)
+    {
+        foreach (string file_path in file_paths.Where(path => !string.IsNullOrWhiteSpace(path)))
+        {
+            string normalized = normalize_recent_file_path(file_path);
+            for (int index = Workspace.RecentFilePaths.Count - 1; index >= 0; index--)
+            {
+                if (string.Equals(Workspace.RecentFilePaths[index], normalized, StringComparison.OrdinalIgnoreCase))
+                    Workspace.RecentFilePaths.RemoveAt(index);
+            }
+
+            Workspace.RecentFilePaths.Insert(0, normalized);
+        }
+
+        while (Workspace.RecentFilePaths.Count > 20)
+            Workspace.RecentFilePaths.RemoveAt(Workspace.RecentFilePaths.Count - 1);
+
+        RecentFileStore.Save(Workspace.RecentFilePaths);
+        OnPropertyChanged(nameof(RecentFilePaths));
+    }
+
+    public void ClearRecentFilePaths()
+    {
+        Workspace.RecentFilePaths.Clear();
+        RecentFileStore.Save(Workspace.RecentFilePaths);
+        OnPropertyChanged(nameof(RecentFilePaths));
     }
 
     public void SaveWorkspace(string file_path)
@@ -1269,6 +1394,19 @@ public sealed class MainWindowViewModel : NotifyBase
         refresh_project_tree();
     }
 
+    private async Task rename_workspace_async()
+    {
+        if (RequestTextInputAsync is null)
+            return;
+
+        string? name = await RequestTextInputAsync("Rename workspace", Workspace.Name);
+        if (string.IsNullOrWhiteSpace(name))
+            return;
+
+        Workspace.Name = name.Trim();
+        refresh_project_tree();
+    }
+
     private async Task rename_selected_gate_async()
     {
         if (selected_gate is null || RequestTextInputAsync is null)
@@ -1307,6 +1445,79 @@ public sealed class MainWindowViewModel : NotifyBase
 
         selected_integration_job.Name = name.Trim();
         OnPropertyChanged(nameof(SelectedIntegrationJobName));
+        refresh_project_tree();
+    }
+
+    private bool can_rename_selected_node() =>
+        selected_node?.Kind is ProjectNodeKind.Group
+            or ProjectNodeKind.Workspace
+            or ProjectNodeKind.Compensation
+            or ProjectNodeKind.Layout
+            or ProjectNodeKind.IntegrationJob
+            or ProjectNodeKind.Gate
+            or ProjectNodeKind.GatePopulationSlot
+            or ProjectNodeKind.Population
+            or ProjectNodeKind.Sample;
+
+    private async Task rename_selected_node_async()
+    {
+        if (selected_node is null || RequestTextInputAsync is null)
+            return;
+
+        switch (selected_node.Kind)
+        {
+            case ProjectNodeKind.Group:
+                await rename_selected_group_async();
+                break;
+            case ProjectNodeKind.Workspace:
+                await rename_workspace_async();
+                break;
+            case ProjectNodeKind.Compensation:
+                await rename_selected_compensation_async();
+                break;
+            case ProjectNodeKind.Layout:
+                await rename_selected_layout_async();
+                break;
+            case ProjectNodeKind.IntegrationJob:
+                await rename_selected_integration_job_async();
+                break;
+            case ProjectNodeKind.Gate:
+            case ProjectNodeKind.GatePopulationSlot:
+            case ProjectNodeKind.Population:
+                await rename_selected_gate_async();
+                break;
+            case ProjectNodeKind.Sample:
+                await rename_selected_sample_async();
+                break;
+        }
+    }
+
+    private async Task rename_selected_compensation_async()
+    {
+        if (selected_compensation is null || RequestTextInputAsync is null)
+            return;
+
+        string? name = await RequestTextInputAsync("Rename compensation matrix", selected_compensation.Name);
+        if (string.IsNullOrWhiteSpace(name))
+            return;
+
+        selected_compensation.Name = name.Trim();
+        refresh_project_tree();
+    }
+
+    private async Task rename_selected_sample_async()
+    {
+        if (selected_sample is null || RequestTextInputAsync is null)
+            return;
+
+        string? name = await RequestTextInputAsync("Rename sample", selected_sample.Name);
+        if (string.IsNullOrWhiteSpace(name))
+            return;
+
+        string old_name = selected_sample.Name;
+        selected_sample.Name = name.Trim();
+        if (selected_group is not null)
+            rename_sample_preferred_views(selected_group, old_name, selected_sample.Name);
         refresh_project_tree();
     }
 
@@ -1359,23 +1570,30 @@ public sealed class MainWindowViewModel : NotifyBase
 
     private void delete_selected()
     {
+        var group_to_recalculate = selected_group;
         if (selected_node?.Kind == ProjectNodeKind.Sample && selected_group is not null && selected_sample is not null)
         {
             remove_sample_preferred_views(selected_group, selected_sample.Name);
             selected_group.Samples.Remove(selected_sample);
         }
-        else if (selected_node?.Kind == ProjectNodeKind.Gate && selected_group is not null && selected_gate is not null)
+        else if (selected_node?.Kind is ProjectNodeKind.Gate or ProjectNodeKind.GatePopulationSlot && selected_group is not null && selected_gate is not null)
+            remove_gate(selected_group, selected_gate);
+        else if (selected_node?.Kind == ProjectNodeKind.Population && selected_group is not null && selected_gate is not null)
             remove_gate(selected_group, selected_gate);
         else if (selected_node?.Kind == ProjectNodeKind.Group && selected_group is not null)
+        {
             Workspace.Groups.Remove(selected_group);
+            group_to_recalculate = null;
+        }
         else if (selected_node?.Kind == ProjectNodeKind.IntegrationJob && selected_integration_job is not null)
             Workspace.IntegrationJobs.Remove(selected_integration_job);
 
+        group_to_recalculate?.RecalculateSamples();
         selected_group = Workspace.Groups.FirstOrDefault();
         selected_sample = selected_group?.Samples.FirstOrDefault();
         selected_gate = selected_group?.Gates.FirstOrDefault();
+        selected_population = null;
         selected_integration_job = null;
-        selected_group?.RecalculateSamples();
         refresh_project_tree();
         refresh_selection_sidebars();
         refresh_plot_gates();
@@ -1427,6 +1645,20 @@ public sealed class MainWindowViewModel : NotifyBase
             gate.SamplePreferredViews.Remove(sample_name);
     }
 
+    private static void rename_sample_preferred_views(FlowGroup group, string old_name, string new_name)
+    {
+        if (old_name == new_name)
+            return;
+
+        foreach (var gate in all_gates(group.Gates))
+        {
+            if (!gate.SamplePreferredViews.Remove(old_name, out var view))
+                continue;
+
+            gate.SamplePreferredViews[new_name] = view;
+        }
+    }
+
     private static IEnumerable<GateDefinition> all_gates(IEnumerable<GateDefinition> gates)
     {
         foreach (var gate in gates)
@@ -1449,6 +1681,8 @@ public sealed class MainWindowViewModel : NotifyBase
     {
         if (selected_group is null || selected_group.Channels.Count == 0)
             return;
+        if (!can_create_gate_kind(kind))
+            return;
 
         var first = get_default_x_channel(selected_group)!;
         var second = get_default_y_channel(selected_group, first);
@@ -1457,8 +1691,8 @@ public sealed class MainWindowViewModel : NotifyBase
             Name = await request_gate_name_async(),
             Kind = kind,
             XChannel = XAxis.ChannelName,
-            YChannel = kind is GateKind.Threshold or GateKind.Range ? null : YAxis.ChannelName,
-            ParentPopulationRegion = selected_population?.Region ?? PopulationRegion.Primary
+            YChannel = kind is GateKind.Threshold or GateKind.Range or GateKind.Merge or GateKind.Exclude or GateKind.Overlap ? null : YAxis.ChannelName,
+            ParentPopulationRegion = current_parent_population_region()
         };
         copy_current_view_to_gate(gate);
 
@@ -1469,10 +1703,18 @@ public sealed class MainWindowViewModel : NotifyBase
             gate.Vertices.Add(new Avalonia.Point(first.Maximum * 0.7, second.Maximum * 0.65));
             gate.Vertices.Add(new Avalonia.Point(first.Maximum * 0.25, second.Maximum * 0.75));
         }
+        else if (kind == GateKind.OffsetQuadrant)
+        {
+            var center = new Avalonia.Point(first.Maximum * 0.5, second.Maximum * 0.5);
+            gate.Vertices.Add(center);
+            gate.Vertices.Add(new Avalonia.Point(first.Maximum * 0.6, center.Y));
+            gate.Vertices.Add(new Avalonia.Point(first.Maximum * 0.4, center.Y));
+        }
         else
         {
             gate.Vertices.Add(new Avalonia.Point(first.Maximum * 0.25, second.Maximum * 0.25));
-            gate.Vertices.Add(new Avalonia.Point(first.Maximum * 0.75, second.Maximum * 0.75));
+            if (kind is not GateKind.Threshold and not GateKind.Quadrant and not GateKind.CurlyQuadrant)
+                gate.Vertices.Add(new Avalonia.Point(first.Maximum * 0.75, second.Maximum * 0.75));
         }
 
         gate.Statistics.Add(new StatisticDefinition { Kind = StatisticKind.NumberOfEvents, ChannelName = gate.XChannel });
@@ -1490,6 +1732,93 @@ public sealed class MainWindowViewModel : NotifyBase
         refresh_plot_gates();
         refresh_selected_statistics();
         raise_command_states();
+    }
+
+    private async Task add_boolean_gate_async(GateKind kind)
+    {
+        if (selected_group is null)
+            return;
+        if (!CanCreateAnyGate)
+            return;
+
+        var choices = boolean_population_choices();
+        if (choices.Count < 2)
+            return;
+
+        var selection = RequestBooleanGateInputAsync is null
+            ? new BooleanGateSelection(choices[0], choices[1])
+            : await RequestBooleanGateInputAsync($"{kind} populations", choices);
+        if (selection is null)
+            return;
+
+        var gate = new GateDefinition
+        {
+            Name = await request_gate_name_async(),
+            Kind = kind,
+            XChannel = XAxis.ChannelName,
+            ParentPopulationRegion = current_parent_population_region(),
+            BooleanFirstGateId = selection.First.GateId,
+            BooleanFirstRegion = selection.First.Region,
+            BooleanSecondGateId = selection.Second.GateId,
+            BooleanSecondRegion = selection.Second.Region
+        };
+        apply_boolean_gate_view_from_first_population(gate, selection.First);
+        gate.Statistics.Add(new StatisticDefinition { Kind = StatisticKind.NumberOfEvents, ChannelName = gate.XChannel });
+        gate.Statistics.Add(new StatisticDefinition { Kind = StatisticKind.FrequencyOfParent, ChannelName = gate.XChannel });
+
+        var siblings = selected_gate is null ? selected_group.Gates : selected_gate.Children;
+        gate.Parent = selected_gate;
+        siblings.Add(gate);
+        SelectedGate = gate;
+        selected_group.RecalculateSamples();
+        refresh_project_tree();
+        refresh_plot_gates();
+        refresh_selected_statistics();
+        StatusText = $"{kind} boolean gate created";
+        raise_command_states();
+    }
+
+    private void apply_boolean_gate_view_from_first_population(GateDefinition gate, BooleanPopulationChoice first_population)
+    {
+        if (selected_group is null)
+            return;
+
+        var source_gate = all_gates(selected_group.Gates).FirstOrDefault(item => item.Id == first_population.GateId);
+        if (source_gate is null)
+        {
+            copy_current_view_to_gate(gate);
+            return;
+        }
+
+        gate.XChannel = source_gate.XChannel;
+        gate.XMinimum = source_gate.XMinimum;
+        gate.XMaximum = source_gate.XMaximum;
+        gate.XScale = source_gate.XScale.Clone();
+        gate.YChannel = source_gate.YChannel;
+        gate.YMinimum = source_gate.YMinimum;
+        gate.YMaximum = source_gate.YMaximum;
+        gate.YScale = source_gate.YScale.Clone();
+        gate.PreferredXChannel = string.IsNullOrWhiteSpace(source_gate.PreferredXChannel) ? source_gate.XChannel : source_gate.PreferredXChannel;
+        gate.PreferredXMinimum = string.IsNullOrWhiteSpace(source_gate.PreferredXChannel) ? source_gate.XMinimum : source_gate.PreferredXMinimum;
+        gate.PreferredXMaximum = string.IsNullOrWhiteSpace(source_gate.PreferredXChannel) ? source_gate.XMaximum : source_gate.PreferredXMaximum;
+        gate.PreferredXScale = (string.IsNullOrWhiteSpace(source_gate.PreferredXChannel) ? source_gate.XScale : source_gate.PreferredXScale).Clone();
+        gate.PreferredYChannel = string.IsNullOrWhiteSpace(source_gate.PreferredYChannel) ? source_gate.YChannel : source_gate.PreferredYChannel;
+        gate.PreferredYMinimum = string.IsNullOrWhiteSpace(source_gate.PreferredYChannel) ? source_gate.YMinimum : source_gate.PreferredYMinimum;
+        gate.PreferredYMaximum = string.IsNullOrWhiteSpace(source_gate.PreferredYChannel) ? source_gate.YMaximum : source_gate.PreferredYMaximum;
+        gate.PreferredYScale = (string.IsNullOrWhiteSpace(source_gate.PreferredYChannel) ? source_gate.YScale : source_gate.PreferredYScale).Clone();
+
+        foreach (var item in source_gate.SamplePreferredViews)
+            gate.SamplePreferredViews[item.Key] = new GateViewOptions
+            {
+                XChannel = item.Value.XChannel,
+                YChannel = item.Value.YChannel,
+                XMinimum = item.Value.XMinimum,
+                XMaximum = item.Value.XMaximum,
+                XScale = item.Value.XScale.Clone(),
+                YMinimum = item.Value.YMinimum,
+                YMaximum = item.Value.YMaximum,
+                YScale = item.Value.YScale.Clone()
+            };
     }
 
     private async Task add_statistic_async(StatisticKind kind)
@@ -1544,8 +1873,17 @@ public sealed class MainWindowViewModel : NotifyBase
 
         var choices = new List<AxisChoice>();
         choices.AddRange(selected_group.Channels.Select(channel => new AxisChoice(channel.Name, channel.Label)));
+        if (selected_sample is not null && selected_population is not null)
+        {
+            choices.AddRange(available_embedding_axis_names(selected_sample, selected_population)
+                .Where(embedding_name => choices.All(choice => choice.Name != embedding_name))
+                .Select(embedding_name => new AxisChoice(embedding_name, "")));
+            return choices;
+        }
+
         foreach (var sample in selected_group.Samples)
-        foreach (string embedding_name in sample.Embeddings.Keys)
+        foreach (var population in sample.Populations)
+        foreach (string embedding_name in available_embedding_axis_names(sample, population))
         {
             if (choices.All(choice => choice.Name != embedding_name))
                 choices.Add(new AxisChoice(embedding_name, ""));
@@ -1554,9 +1892,47 @@ public sealed class MainWindowViewModel : NotifyBase
         return choices;
     }
 
+    private IReadOnlyList<BooleanPopulationChoice> boolean_population_choices()
+    {
+        if (selected_group is null)
+            return Array.Empty<BooleanPopulationChoice>();
+
+        var choices = new List<BooleanPopulationChoice>();
+        foreach (var gate in all_gates(selected_group.Gates).Where(gate => gate.Kind is not (GateKind.Merge or GateKind.Exclude or GateKind.Overlap)))
+        foreach (var region in gate.PopulationRegions)
+            choices.Add(new BooleanPopulationChoice(gate.Id, region, $"{gate.Name}: {population_region_name(region)}"));
+
+        return choices;
+    }
+
+    private static string population_region_name(PopulationRegion region) =>
+        region switch
+        {
+            PopulationRegion.TopRight => "Top right",
+            PopulationRegion.TopLeft => "Top left",
+            PopulationRegion.BottomRight => "Bottom right",
+            PopulationRegion.BottomLeft => "Bottom left",
+            PopulationRegion.More => "More",
+            PopulationRegion.Less => "Less",
+            PopulationRegion.InRange => "In range",
+            PopulationRegion.BelowRange => "Below range",
+            PopulationRegion.AboveRange => "Above range",
+            _ => "Population"
+        };
+
+    private int count_gate_region_events(FlowGroup group, GateDefinition gate, PopulationRegion region)
+    {
+        int count = 0;
+        foreach (var sample in group.Samples)
+            count += find_populations(sample.Populations, gate).Where(population => population.Region == region).Sum(population => population.EventCount);
+        return count;
+    }
+
     private async Task add_canvas_gate_async(GateDefinition? gate)
     {
         if (gate is null || selected_group is null)
+            return;
+        if (!can_create_gate_kind(gate.Kind))
             return;
 
         var siblings = selected_gate is null ? selected_group.Gates : selected_gate.Children;
@@ -1565,7 +1941,7 @@ public sealed class MainWindowViewModel : NotifyBase
             gate.XChannel = XAxis.ChannelName;
         if (!gate.IsOneDimensional && string.IsNullOrWhiteSpace(gate.YChannel))
             gate.YChannel = YAxis.ChannelName;
-        gate.ParentPopulationRegion = selected_population?.Region ?? PopulationRegion.Primary;
+        gate.ParentPopulationRegion = current_parent_population_region();
         copy_current_view_to_gate(gate);
 
         gate.Statistics.Add(new StatisticDefinition { Kind = StatisticKind.NumberOfEvents, ChannelName = gate.XChannel });
@@ -1579,6 +1955,15 @@ public sealed class MainWindowViewModel : NotifyBase
         StatusText = $"{gate.Kind} gate created from canvas";
         raise_command_states();
     }
+
+    private bool can_create_gate_kind(GateKind kind) =>
+        kind is GateKind.Threshold or GateKind.Range
+            ? CanCreateOneDimensionalGate
+            : CanCreateTwoDimensionalGate;
+
+    private PopulationRegion current_parent_population_region() =>
+        selected_population?.Region ??
+        (selected_node?.Kind == ProjectNodeKind.GatePopulationSlot ? selected_node.PopulationRegion : PopulationRegion.Primary);
 
     private async Task<string> request_gate_name_async()
     {
@@ -1675,24 +2060,14 @@ public sealed class MainWindowViewModel : NotifyBase
                 IsWorkspaceMetadataMode = false;
                 if (node.Group is not null)
                     SelectedGroup = node.Group;
-                SelectedSample = null;
-                SelectedPopulation = null;
-                SelectedGate = null;
                 SelectedCompensation = null;
-                apply_root_axis_context();
-                needs_plot_refresh = true;
                 break;
             case ProjectNodeKind.Compensation:
                 SelectedIntegrationJob = null;
                 IsWorkspaceMetadataMode = false;
                 if (node.Group is not null)
                     SelectedGroup = node.Group;
-                SelectedSample = null;
-                SelectedPopulation = null;
-                SelectedGate = null;
                 SelectedCompensation = node.Compensation;
-                apply_root_axis_context();
-                needs_plot_refresh = true;
                 break;
             case ProjectNodeKind.Sample:
                 SelectedIntegrationJob = null;
@@ -1716,9 +2091,25 @@ public sealed class MainWindowViewModel : NotifyBase
                 IsWorkspaceMetadataMode = false;
                 if (node.Group is not null)
                     SelectedGroup = node.Group;
-                SelectedSample = null;
-                SelectedPopulation = null;
+                SelectedSample = node.Gate?.PopulationRegions.Count == 1 ? selected_group?.Samples.FirstOrDefault() : null;
+                SelectedPopulation = node.Gate?.PopulationRegions.Count == 1
+                    ? resolve_population_for_slot(selected_sample, node.Gate, PopulationRegion.Primary)
+                    : null;
                 SelectedGate = node.Gate;
+                SelectedCompensation = null;
+                if (node.Gate is not null)
+                    apply_axis_from_gate_context(node.Gate);
+                needs_plot_refresh = true;
+                needs_statistics_refresh = true;
+                break;
+            case ProjectNodeKind.GatePopulationSlot:
+                SelectedIntegrationJob = null;
+                IsWorkspaceMetadataMode = false;
+                if (node.Group is not null)
+                    SelectedGroup = node.Group;
+                SelectedSample = selected_group?.Samples.FirstOrDefault();
+                SelectedGate = node.Gate;
+                SelectedPopulation = resolve_population_for_slot(selected_sample, node.Gate, node.PopulationRegion);
                 SelectedCompensation = null;
                 if (node.Gate is not null)
                     apply_axis_from_gate_context(node.Gate);
@@ -1763,6 +2154,10 @@ public sealed class MainWindowViewModel : NotifyBase
             !ReferenceEquals(previous_gate, selected_gate) ||
             !ReferenceEquals(previous_population, selected_population))
             refresh_selected_statistics();
+        OnPropertyChanged(nameof(CanCreateAnyGate));
+        OnPropertyChanged(nameof(CanCreateOneDimensionalGate));
+        OnPropertyChanged(nameof(CanCreateTwoDimensionalGate));
+        enforce_active_tool_allowed();
         raise_command_states();
     }
 
@@ -1985,6 +2380,7 @@ public sealed class MainWindowViewModel : NotifyBase
         if (selected_group is null)
         {
             refresh_axis_choices();
+            refresh_equivalent_sample_choices();
             return;
         }
 
@@ -1992,6 +2388,73 @@ public sealed class MainWindowViewModel : NotifyBase
             ChannelRows.Add(new ChannelRow(channel, update_channel_label));
 
         refresh_axis_choices();
+        refresh_equivalent_sample_choices();
+    }
+
+    private void refresh_equivalent_sample_choices()
+    {
+        syncing_equivalent_sample_choices = true;
+        try
+        {
+            EquivalentSampleChoices.Clear();
+            if (selected_group is not null)
+            {
+                foreach (var sample in selected_group.Samples)
+                {
+                    var equivalent_population = equivalent_population_for_sample(sample);
+                    if (selected_gate is not null && selected_population is not null && equivalent_population is null)
+                        continue;
+
+                    EquivalentSampleChoices.Add(new EquivalentSampleChoice(sample, equivalent_population));
+                }
+            }
+
+            selected_equivalent_sample_choice = EquivalentSampleChoices.FirstOrDefault(choice => ReferenceEquals(choice.Sample, selected_sample));
+            OnPropertyChanged(nameof(SelectedEquivalentSampleChoice));
+        }
+        finally
+        {
+            syncing_equivalent_sample_choices = false;
+        }
+
+        raise_command_states();
+    }
+
+    private PopulationResult? equivalent_population_for_sample(FlowSample sample)
+    {
+        if (selected_gate is null || selected_population is null)
+            return null;
+
+        return resolve_population_for_slot(sample, selected_gate, selected_population.Region);
+    }
+
+    private void select_relative_equivalent_sample(int direction)
+    {
+        if (EquivalentSampleChoices.Count == 0)
+            return;
+
+        int current_index = selected_equivalent_sample_choice is null
+            ? -1
+            : EquivalentSampleChoices.IndexOf(selected_equivalent_sample_choice);
+        int next_index = current_index < 0
+            ? 0
+            : (current_index + direction + EquivalentSampleChoices.Count) % EquivalentSampleChoices.Count;
+        SelectedEquivalentSampleChoice = EquivalentSampleChoices[next_index];
+    }
+
+    private void select_equivalent_sample(EquivalentSampleChoice choice)
+    {
+        SelectedSample = choice.Sample;
+        if (selected_gate is not null && selected_population is not null)
+            SelectedPopulation = choice.Population;
+
+        if (selected_gate is not null)
+            apply_axis_from_gate_context(selected_gate);
+
+        OnPropertyChanged(nameof(PlotPopulation));
+        refresh_axis_choices();
+        refresh_selected_statistics();
+        refresh_plot_gates();
     }
 
     private void update_channel_label(ChannelRow row, string label)
@@ -2070,19 +2533,14 @@ public sealed class MainWindowViewModel : NotifyBase
         if (sample is null || population is null)
             return Array.Empty<string>();
 
-        return sample.Embeddings
-            .Where(embedding => Workspace.IntegrationJobs.Any(job =>
-                job_outputs_key(job, embedding.Key) &&
-                job.RowMap.Any(row =>
-                    row.SampleId == sample.Id &&
-                    row.GateId == population.Gate.Id &&
-                    row.Region == population.Region)) &&
-                population.EventIndices.Any(index =>
-                index >= 0 &&
-                index < embedding.Value.Length &&
-                !float.IsNaN(embedding.Value[index]) &&
-                !float.IsInfinity(embedding.Value[index])))
-            .Select(embedding => embedding.Key)
+        return population.AvailableEmbeddingNames
+            .Where(embedding_name => sample.Embeddings.ContainsKey(embedding_name) &&
+                Workspace.IntegrationJobs.Any(job =>
+                    job_outputs_key(job, embedding_name) &&
+                    job.RowMap.Any(row =>
+                        row.SampleId == sample.Id &&
+                        row.GateId == population.Gate.Id &&
+                        row.Region == population.Region)))
             .Distinct(StringComparer.Ordinal)
             .OrderBy(name => name, StringComparer.Ordinal)
             .ToArray();
@@ -2174,11 +2632,12 @@ public sealed class MainWindowViewModel : NotifyBase
         PageLayout? layout = null,
         IntegrationJob? integration_job = null,
         string? embedding_name = null,
+        PopulationRegion population_region = PopulationRegion.Primary,
         int? count = null,
         bool is_applied_compensation = false,
         int depth = 0)
     {
-        return new ProjectNode(kind, name, key, group, sample, gate, population, statistic_definition, statistic_result, compensation, layout, integration_job, embedding_name, count, is_applied_compensation, depth)
+        return new ProjectNode(kind, name, key, group, sample, gate, population, statistic_definition, statistic_result, compensation, layout, integration_job, embedding_name, population_region, count, is_applied_compensation, depth)
         {
             IsExpanded = project_expansion_state.TryGetValue(key, out bool is_expanded) ? is_expanded : true
         };
@@ -2187,6 +2646,19 @@ public sealed class MainWindowViewModel : NotifyBase
     private void append_gate_node(ProjectNode parent, GateDefinition gate, FlowGroup group, string key, int depth)
     {
         var gate_node = create_project_node(ProjectNodeKind.Gate, gate.Name, key, gate: gate, group: group, count: count_gate_events(group, gate), depth: depth);
+        foreach (var region in gate.PopulationRegions.Where(region => region != PopulationRegion.Primary))
+        {
+            gate_node.Children.Add(create_project_node(
+                ProjectNodeKind.GatePopulationSlot,
+                $"{gate.Name}: {population_region_name(region)}",
+                $"{key}:slot:{region}",
+                gate: gate,
+                group: group,
+                population_region: region,
+                count: count_gate_region_events(group, gate, region),
+                depth: depth + 1));
+        }
+
         for (int index = 0; index < gate.Statistics.Count; index++)
         {
             var statistic = gate.Statistics[index];
@@ -2235,35 +2707,18 @@ public sealed class MainWindowViewModel : NotifyBase
     private void append_population_node(ProjectNode parent, FlowSample sample, PopulationResult population, FlowGroup group, string key, int depth)
     {
         var population_node = create_project_node(ProjectNodeKind.Population, population.DisplayName, key, group: group, sample: sample, gate: population.Gate, population: population, count: population.EventCount, depth: depth);
-        foreach (var embedding in sample.Embeddings.OrderBy(item => item.Key, StringComparer.Ordinal))
+        foreach (string embedding_name in available_embedding_axis_names(sample, population))
         {
-            bool is_job_population_output = Workspace.IntegrationJobs.Any(job =>
-                job.RowMap.Any(row =>
-                    row.SampleId == sample.Id &&
-                    row.GateId == population.Gate.Id &&
-                    row.Region == population.Region) &&
-                job_outputs_key(job, embedding.Key));
-            if (!is_job_population_output)
-                continue;
-
-            int finite_count = population.EventIndices.Count(index =>
-                index >= 0 &&
-                index < embedding.Value.Length &&
-                !float.IsNaN(embedding.Value[index]) &&
-                !float.IsInfinity(embedding.Value[index]));
-            if (finite_count == 0)
-                continue;
-
             population_node.Children.Add(create_project_node(
                 ProjectNodeKind.Embedding,
-                embedding.Key,
-                $"{key}:embedding:{embedding.Key}",
+                embedding_name,
+                $"{key}:embedding:{embedding_name}",
                 group: group,
                 sample: sample,
                 gate: population.Gate,
                 population: population,
-                embedding_name: embedding.Key,
-                count: finite_count,
+                embedding_name: embedding_name,
+                count: population.EventCount,
                 depth: depth + 1));
         }
         for (int index = 0; index < population.Statistics.Count; index++)
@@ -2357,7 +2812,7 @@ public sealed class MainWindowViewModel : NotifyBase
 
     private static void sync_project_node_expansion(ProjectNode node)
     {
-        if (node.Kind == ProjectNodeKind.Gate && node.Gate is not null)
+        if (node.Kind is ProjectNodeKind.Gate or ProjectNodeKind.GatePopulationSlot && node.Gate is not null)
             node.Gate.IsTreeExpanded = node.IsExpanded;
     }
 
@@ -2420,8 +2875,10 @@ public sealed class MainWindowViewModel : NotifyBase
         foreach (var command in new[]
         {
             RenameGroupCommand,
+            RenameWorkspaceCommand,
             RenameGateCommand,
             RenameLayoutCommand,
+            RenameSelectedNodeCommand,
             ConcatenateSamplesCommand,
             ApplyCompensationCommand,
             EditCompensationCommand,
@@ -2437,6 +2894,8 @@ public sealed class MainWindowViewModel : NotifyBase
             WriteIntegrationJobResultsCommand,
             CancelIntegrationJobCommand,
             ApplyWorkspaceMetadataCommand,
+            SelectPreviousEquivalentSampleCommand,
+            SelectNextEquivalentSampleCommand,
             AddMeanStatisticCommand,
             AddMedianStatisticCommand,
             AddGeometricMeanStatisticCommand,
@@ -2444,7 +2903,15 @@ public sealed class MainWindowViewModel : NotifyBase
             AddStandardDeviationStatisticCommand,
             AddFrequencyOfParentStatisticCommand,
             AddFrequencyOfAllStatisticCommand,
-            AddCountStatisticCommand
+            AddCountStatisticCommand,
+            AddPolygonGateCommand,
+            AddRectangleGateCommand,
+            AddOffsetQuadrantGateCommand,
+            AddThresholdGateCommand,
+            AddRangeGateCommand,
+            AddMergeGateCommand,
+            AddExcludeGateCommand,
+            AddOverlapGateCommand
         })
         {
             if (command is RelayCommand relay)
@@ -2538,6 +3005,9 @@ public sealed class MainWindowViewModel : NotifyBase
         return null;
     }
 
+    private static PopulationResult? resolve_population_for_slot(FlowSample? sample, GateDefinition? gate, PopulationRegion region) =>
+        sample is null || gate is null ? null : find_population(sample.Populations, gate, region);
+
     private static IEnumerable<PopulationResult> find_populations(IEnumerable<PopulationResult> populations, GateDefinition gate)
     {
         foreach (var population in populations)
@@ -2588,8 +3058,8 @@ public sealed class MainWindowViewModel : NotifyBase
             Population = node.Kind == ProjectNodeKind.Population ? node.Population : null,
             XAxis = x_axis,
             YAxis = y_axis,
-            X = Math.Clamp(request.PagePoint.X - 130, 0, 740),
-            Y = Math.Clamp(request.PagePoint.Y - 130, 0, 500),
+            X = Math.Max(0, request.PagePoint.X - 130),
+            Y = Math.Max(0, request.PagePoint.Y - 130),
             Size = 260,
             Title = node.Kind == ProjectNodeKind.Population && node.Sample is not null
                 ? $"{node.Sample.Name} - {node.Name}"
@@ -2639,7 +3109,19 @@ public sealed class MainWindowViewModel : NotifyBase
         new() { ChannelName = YAxis.ChannelName, Minimum = YAxis.Minimum, Maximum = YAxis.Maximum, Scale = YAxis.Scale.Clone() };
 
     private DotColorSettings DotColorClone() =>
-        new() { ChannelName = DotColor.ChannelName, Palette = DotColor.Palette };
+        new() { ChannelName = DotColor.ChannelName, Palette = DotColor.Palette, UseLogScale = DotColor.UseLogScale };
+
+    private static string normalize_recent_file_path(string file_path)
+    {
+        try
+        {
+            return System.IO.Path.GetFullPath(file_path);
+        }
+        catch
+        {
+            return file_path;
+        }
+    }
 
     private void delete_selected_page_element()
     {
@@ -2779,6 +3261,22 @@ public sealed class MainWindowViewModel : NotifyBase
 }
 
 public sealed record PageDropRequest(ProjectNode Node, Point PagePoint);
+public sealed record BooleanPopulationChoice(Guid GateId, PopulationRegion Region, string DisplayName)
+{
+    public override string ToString() => DisplayName;
+}
+
+public sealed record BooleanGateSelection(BooleanPopulationChoice First, BooleanPopulationChoice Second);
+
+public sealed record EquivalentSampleChoice(FlowSample Sample, PopulationResult? Population)
+{
+    public string SampleName => Sample.Name;
+    public string CountText => Population is null ? "" : Population.EventCount.ToString("N0");
+    public bool HasCount => Population is not null;
+    public string DisplayName => HasCount ? $"{SampleName} {CountText}" : SampleName;
+
+    public override string ToString() => DisplayName;
+}
 
 public sealed class AxisChoice : NotifyBase
 {
@@ -2850,6 +3348,7 @@ public enum ProjectNodeKind
     Group,
     GateFolder,
     Gate,
+    GatePopulationSlot,
     StatisticDefinition,
     CompensationFolder,
     Compensation,
@@ -2877,6 +3376,7 @@ public sealed class ProjectNode : NotifyBase
     public PageLayout? Layout { get; }
     public IntegrationJob? IntegrationJob { get; }
     public string? EmbeddingName { get; }
+    public PopulationRegion PopulationRegion { get; }
     public int? Count { get; }
     public bool IsAppliedCompensation { get; }
     public int Depth { get; }
@@ -2896,6 +3396,7 @@ public sealed class ProjectNode : NotifyBase
         PageLayout? layout = null,
         IntegrationJob? integration_job = null,
         string? embedding_name = null,
+        PopulationRegion population_region = PopulationRegion.Primary,
         int? count = null,
         bool is_applied_compensation = false,
         int depth = 0)
@@ -2913,6 +3414,7 @@ public sealed class ProjectNode : NotifyBase
         Layout = layout;
         IntegrationJob = integration_job;
         EmbeddingName = embedding_name;
+        PopulationRegion = population_region;
         Count = count;
         IsAppliedCompensation = is_applied_compensation;
         Depth = depth;
@@ -2955,6 +3457,7 @@ public sealed class ProjectNode : NotifyBase
         ProjectNodeKind.Group => "avares://gated/Resources/group.svg",
         ProjectNodeKind.GateFolder => "avares://gated/Resources/gates.svg",
         ProjectNodeKind.Gate => "avares://gated/Resources/gate.svg",
+        ProjectNodeKind.GatePopulationSlot => "avares://gated/Resources/subset.svg",
         ProjectNodeKind.StatisticDefinition => "avares://gated/Resources/statistics.svg",
         ProjectNodeKind.CompensationFolder => "avares://gated/Resources/matrix.svg",
         ProjectNodeKind.Compensation => IsAppliedCompensation ? "avares://gated/Resources/ok.svg" : "avares://gated/Resources/matrix.svg",
@@ -2984,6 +3487,7 @@ public sealed class ProjectNode : NotifyBase
         ProjectNodeKind.Group => "G",
         ProjectNodeKind.GateFolder => "F",
         ProjectNodeKind.Gate => "g",
+        ProjectNodeKind.GatePopulationSlot => "P",
         ProjectNodeKind.StatisticDefinition => "D",
         ProjectNodeKind.CompensationFolder => "C",
         ProjectNodeKind.Compensation => IsAppliedCompensation ? "*" : "M",
