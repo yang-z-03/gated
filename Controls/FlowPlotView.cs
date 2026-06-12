@@ -1007,12 +1007,21 @@ public sealed class FlowPlotView : Control
         if (Group is null || gate.Vertices.Count == 0)
             return;
 
+        foreach (var region in annotation_regions(gate))
+            draw_gate_region_annotation(context, gate, region);
+    }
+
+    private void draw_gate_region_annotation(DrawingContext context, GateDefinition gate, PopulationRegion region)
+    {
+        if (Group is null)
+            return;
+
         int event_count = 0;
         double parent_frequency = 0;
         int sample_count = 0;
         foreach (var sample in Group.Samples)
         {
-            var population = find_population(sample.Populations, gate);
+            var population = find_population(sample.Populations, gate, gate.HasLinkedPopulations ? region : null);
             if (population is null)
                 continue;
 
@@ -1026,11 +1035,8 @@ public sealed class FlowPlotView : Control
         if (sample_count > 0)
             parent_frequency /= sample_count;
 
-        var anchor = data_to_screen(gate.Vertices[0]);
-        var origin = new Point(
-            Math.Clamp(anchor.X + 10, plot_rect.Left + 8, plot_rect.Right - 120),
-            Math.Clamp(anchor.Y - 24, plot_rect.Top + 8, plot_rect.Bottom - 28));
-        string label = $"{gate.Name}  {event_count:N0}  {parent_frequency:0.#}%";
+        string name = gate.HasLinkedPopulations ? $"{gate.Name} {population_region_name(region)}" : gate.Name;
+        string label = $"{name}  {event_count:N0}  {parent_frequency:0.#}%";
         var text = new FormattedText(
             label,
             CultureInfo.CurrentCulture,
@@ -1038,10 +1044,73 @@ public sealed class FlowPlotView : Control
             current_typeface(),
             12,
             Brushes.White);
+        var origin = gate_annotation_origin(gate, region, text);
         var background = new Rect(origin.X - 6, origin.Y - 4, text.Width + 12, text.Height + 8);
         context.FillRectangle(new SolidColorBrush(Color.FromArgb(210, 31, 111, 235)), background, 4);
         context.DrawText(text, origin);
     }
+
+    private Point gate_annotation_origin(GateDefinition gate, PopulationRegion region, FormattedText text)
+    {
+        const double margin = 8;
+        double width = text.Width + 12;
+        double height = text.Height + 8;
+        var anchor = data_to_screen(gate.Vertices[0]);
+        double x = anchor.X + 10;
+        double y = anchor.Y - 24;
+
+        if (gate.Kind is GateKind.Quadrant or GateKind.CurlyQuadrant or GateKind.OffsetQuadrant)
+        {
+            x = region is PopulationRegion.TopRight or PopulationRegion.BottomRight
+                ? plot_rect.Right - width - margin + 6
+                : plot_rect.Left + margin + 6;
+            y = region is PopulationRegion.BottomRight or PopulationRegion.BottomLeft
+                ? plot_rect.Bottom - height - margin + 4
+                : plot_rect.Top + margin + 4;
+        }
+        else if (gate.Kind == GateKind.Range)
+        {
+            x = region switch
+            {
+                PopulationRegion.BelowRange => plot_rect.Left + margin + 6,
+                PopulationRegion.AboveRange => plot_rect.Right - width - margin + 6,
+                _ => plot_rect.Left + (plot_rect.Width - width) / 2 + 6
+            };
+            y = plot_rect.Top + margin + 4;
+        }
+        else if (gate.Kind == GateKind.Threshold)
+        {
+            x = region == PopulationRegion.More
+                ? plot_rect.Right - width - margin + 6
+                : plot_rect.Left + margin + 6;
+            y = plot_rect.Top + margin + 4;
+        }
+
+        return new Point(
+            clamp_to_range(x, plot_rect.Left + margin, plot_rect.Right - width + 6),
+            clamp_to_range(y, plot_rect.Top + margin, plot_rect.Bottom - height + 4));
+    }
+
+    private static double clamp_to_range(double value, double minimum, double maximum) =>
+        maximum < minimum ? minimum : Math.Clamp(value, minimum, maximum);
+
+    private static IReadOnlyList<PopulationRegion> annotation_regions(GateDefinition gate) =>
+        gate.HasLinkedPopulations ? gate.PopulationRegions : [PopulationRegion.Primary];
+
+    private static string population_region_name(PopulationRegion region) =>
+        region switch
+        {
+            PopulationRegion.TopRight => "top right",
+            PopulationRegion.TopLeft => "top left",
+            PopulationRegion.BottomRight => "bottom right",
+            PopulationRegion.BottomLeft => "bottom left",
+            PopulationRegion.More => "more",
+            PopulationRegion.Less => "less",
+            PopulationRegion.InRange => "in range",
+            PopulationRegion.BelowRange => "below",
+            PopulationRegion.AboveRange => "above",
+            _ => "population"
+        };
 
     private void draw_grid(DrawingContext context)
     {
@@ -1145,13 +1214,13 @@ public sealed class FlowPlotView : Control
         return sample.GetPlotEventIndices();
     }
 
-    private static PopulationResult? find_population(IEnumerable<PopulationResult> populations, GateDefinition gate)
+    private static PopulationResult? find_population(IEnumerable<PopulationResult> populations, GateDefinition gate, PopulationRegion? region = null)
     {
         foreach (var population in populations)
         {
-            if (population.Gate == gate)
+            if (population.Gate == gate && (region is null || population.Region == region))
                 return population;
-            var child = find_population(population.Children, gate);
+            var child = find_population(population.Children, gate, region);
             if (child is not null)
                 return child;
         }

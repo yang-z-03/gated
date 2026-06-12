@@ -628,7 +628,7 @@ public sealed class PageEditorView : Control
                 context.DrawLine(pen, new Point(x, plot_rect.Top), new Point(x, plot_rect.Bottom));
             }
         }
-        else if (gate.Kind is GateKind.Quadrant or GateKind.CurlyQuadrant)
+        else if (gate.Kind is GateKind.Quadrant or GateKind.CurlyQuadrant or GateKind.OffsetQuadrant)
         {
             var point = data_to_screen(gate.Vertices[0], element, plot_rect);
             context.DrawLine(pen, new Point(point.X, plot_rect.Top), new Point(point.X, plot_rect.Bottom));
@@ -649,12 +649,18 @@ public sealed class PageEditorView : Control
         if (gate.Vertices.Count == 0)
             return;
 
+        foreach (var region in annotation_regions(gate))
+            draw_gate_region_annotation(context, element, gate, region, plot_rect);
+    }
+
+    private void draw_gate_region_annotation(DrawingContext context, PagePlotElement element, GateDefinition gate, PopulationRegion region, Rect plot_rect)
+    {
         int event_count = 0;
         double parent_frequency = 0;
         int sample_count = 0;
         foreach (var sample in resolve_samples(element))
         {
-            var population = find_population(sample.Populations, gate, null);
+            var population = find_population(sample.Populations, gate, gate.HasLinkedPopulations ? region : null);
             if (population is null)
                 continue;
 
@@ -668,15 +674,73 @@ public sealed class PageEditorView : Control
         if (sample_count > 0)
             parent_frequency /= sample_count;
 
-        var anchor = data_to_screen(gate.Vertices[0], element, plot_rect);
-        var origin = new Point(
-            Math.Clamp(anchor.X + 6, plot_rect.Left + 4, plot_rect.Right - 92),
-            Math.Clamp(anchor.Y - 36, plot_rect.Top + 4, plot_rect.Bottom - 40));
-        string label = $"{gate.Name}\n{event_count:N0} ({parent_frequency:0.#}%)";
+        string name = gate.HasLinkedPopulations ? $"{gate.Name} {population_region_name(region)}" : gate.Name;
+        string label = $"{name}\n{event_count:N0} ({parent_frequency:0.#}%)";
         var text = create_formatted_text(label, 10, Colors.Black);
+        var origin = gate_annotation_origin(element, gate, region, plot_rect, text.Width + 6, text.Height + 4);
         context.FillRectangle(new SolidColorBrush(Color.FromArgb(220, 255, 255, 255)), new Rect(origin.X - 3, origin.Y - 2, text.Width + 6, text.Height + 4));
         context.DrawText(text, origin);
     }
+
+    private static Point gate_annotation_origin(PagePlotElement element, GateDefinition gate, PopulationRegion region, Rect plot_rect, double width, double height)
+    {
+        const double margin = 4;
+        var anchor = data_to_screen(gate.Vertices[0], element, plot_rect);
+        double x = anchor.X + 6;
+        double y = anchor.Y - 36;
+
+        if (gate.Kind is GateKind.Quadrant or GateKind.CurlyQuadrant or GateKind.OffsetQuadrant)
+        {
+            x = region is PopulationRegion.TopRight or PopulationRegion.BottomRight
+                ? plot_rect.Right - width - margin + 3
+                : plot_rect.Left + margin + 3;
+            y = region is PopulationRegion.BottomRight or PopulationRegion.BottomLeft
+                ? plot_rect.Bottom - height - margin + 2
+                : plot_rect.Top + margin + 2;
+        }
+        else if (gate.Kind == GateKind.Range)
+        {
+            x = region switch
+            {
+                PopulationRegion.BelowRange => plot_rect.Left + margin + 3,
+                PopulationRegion.AboveRange => plot_rect.Right - width - margin + 3,
+                _ => plot_rect.Left + (plot_rect.Width - width) / 2 + 3
+            };
+            y = plot_rect.Top + margin + 2;
+        }
+        else if (gate.Kind == GateKind.Threshold)
+        {
+            x = region == PopulationRegion.More
+                ? plot_rect.Right - width - margin + 3
+                : plot_rect.Left + margin + 3;
+            y = plot_rect.Top + margin + 2;
+        }
+
+        return new Point(
+            clamp_to_range(x, plot_rect.Left + margin, plot_rect.Right - width + 3),
+            clamp_to_range(y, plot_rect.Top + margin, plot_rect.Bottom - height + 2));
+    }
+
+    private static IReadOnlyList<PopulationRegion> annotation_regions(GateDefinition gate) =>
+        gate.HasLinkedPopulations ? gate.PopulationRegions : [PopulationRegion.Primary];
+
+    private static string population_region_name(PopulationRegion region) =>
+        region switch
+        {
+            PopulationRegion.TopRight => "top right",
+            PopulationRegion.TopLeft => "top left",
+            PopulationRegion.BottomRight => "bottom right",
+            PopulationRegion.BottomLeft => "bottom left",
+            PopulationRegion.More => "more",
+            PopulationRegion.Less => "less",
+            PopulationRegion.InRange => "in range",
+            PopulationRegion.BelowRange => "below",
+            PopulationRegion.AboveRange => "above",
+            _ => "population"
+        };
+
+    private static double clamp_to_range(double value, double minimum, double maximum) =>
+        maximum < minimum ? minimum : Math.Clamp(value, minimum, maximum);
 
     private static IEnumerable<FlowSample> resolve_samples(PagePlotElement element)
     {
@@ -1371,7 +1435,7 @@ public sealed class PageEditorView : Control
                     svg.AppendLine($"""<line x1="{x.ToString(CultureInfo.InvariantCulture)}" y1="{plot.Top.ToString(CultureInfo.InvariantCulture)}" x2="{x.ToString(CultureInfo.InvariantCulture)}" y2="{plot.Bottom.ToString(CultureInfo.InvariantCulture)}" stroke="black" stroke-width="1.4"/>""");
                 }
             }
-            else if (gate.Kind is GateKind.Quadrant or GateKind.CurlyQuadrant)
+            else if (gate.Kind is GateKind.Quadrant or GateKind.CurlyQuadrant or GateKind.OffsetQuadrant)
             {
                 var point = data_to_screen(gate.Vertices[0], element, plot);
                 svg.AppendLine($"""<line x1="{point.X.ToString(CultureInfo.InvariantCulture)}" y1="{plot.Top.ToString(CultureInfo.InvariantCulture)}" x2="{point.X.ToString(CultureInfo.InvariantCulture)}" y2="{plot.Bottom.ToString(CultureInfo.InvariantCulture)}" stroke="black" stroke-width="1.4"/>""");
@@ -1439,12 +1503,18 @@ public sealed class PageEditorView : Control
         if (gate.Vertices.Count == 0)
             return;
 
+        foreach (var region in annotation_regions(gate))
+            append_svg_gate_region_annotation(svg, element, gate, region, plot);
+    }
+
+    private static void append_svg_gate_region_annotation(StringBuilder svg, PagePlotElement element, GateDefinition gate, PopulationRegion region, Rect plot)
+    {
         int event_count = 0;
         double parent_frequency = 0;
         int sample_count = 0;
         foreach (var sample in resolve_samples(element))
         {
-            var population = find_population(sample.Populations, gate, null);
+            var population = find_population(sample.Populations, gate, gate.HasLinkedPopulations ? region : null);
             if (population is null)
                 continue;
 
@@ -1458,15 +1528,13 @@ public sealed class PageEditorView : Control
         if (sample_count > 0)
             parent_frequency /= sample_count;
 
-        var anchor = data_to_screen(gate.Vertices[0], element, plot);
+        string name = gate.HasLinkedPopulations ? $"{gate.Name} {population_region_name(region)}" : gate.Name;
         string count_line = $"{event_count:N0} ({parent_frequency:0.#}%)";
-        double text_width = Math.Max(gate.Name.Length, count_line.Length) * 5.8;
-        var origin = new Point(
-            Math.Clamp(anchor.X + 6, plot.Left + 4, plot.Right - text_width - 10),
-            Math.Clamp(anchor.Y - 36, plot.Top + 4, plot.Bottom - 28));
+        double text_width = Math.Max(name.Length, count_line.Length) * 5.8;
+        var origin = gate_annotation_origin(element, gate, region, plot, text_width + 6, 26);
 
         svg.AppendLine($"""<rect x="{(origin.X - 3).ToString(CultureInfo.InvariantCulture)}" y="{(origin.Y - 10).ToString(CultureInfo.InvariantCulture)}" width="{(text_width + 6).ToString(CultureInfo.InvariantCulture)}" height="26" fill="white" fill-opacity="0.86"/>""");
-        svg.AppendLine($"""<text x="{origin.X.ToString(CultureInfo.InvariantCulture)}" y="{origin.Y.ToString(CultureInfo.InvariantCulture)}" font-family="Arial" font-size="10" fill="black">{escape_xml(gate.Name)}</text>""");
+        svg.AppendLine($"""<text x="{origin.X.ToString(CultureInfo.InvariantCulture)}" y="{origin.Y.ToString(CultureInfo.InvariantCulture)}" font-family="Arial" font-size="10" fill="black">{escape_xml(name)}</text>""");
         svg.AppendLine($"""<text x="{origin.X.ToString(CultureInfo.InvariantCulture)}" y="{(origin.Y + 12).ToString(CultureInfo.InvariantCulture)}" font-family="Arial" font-size="10" fill="black">{escape_xml(count_line)}</text>""");
     }
 

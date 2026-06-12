@@ -1272,14 +1272,15 @@ public sealed class FlowGroup : NotifyBase
         return compensation;
     }
 
-    public void SetAppliedCompensation(CompensationMatrix compensation, bool manual)
+    public void SetAppliedCompensation(CompensationMatrix compensation, bool manual, bool recalculate = true)
     {
         if (!CompensationCandidates.Contains(compensation))
             RegisterCompensation(compensation, make_applied_if_first: false);
 
         AppliedCompensation = compensation;
         applied_compensation_is_manual |= manual;
-        RecalculateSamples();
+        if (recalculate)
+            RecalculateSamples();
     }
 
     public bool IsAppliedCompensation(CompensationMatrix compensation) =>

@@ -23,4 +23,8 @@
     <archive href="https://github.com/yang-z-03/gated/releases/download/0-24/gated-0-24-0.zip" extract="."/>
     <info href="https://raw.githubusercontent.com/yang-z-03/gated/refs/heads/master/.github/logs/0-24-0.changes" />
   </version>
+  <version major="0" minor="25" patch="3" platform="windows" minimal="7">
+    <archive href="https://github.com/yang-z-03/gated/releases/download/0-25/gated-0-25-3.zip" extract="."/>
+    <info href="https://raw.githubusercontent.com/yang-z-03/gated/refs/heads/master/.github/logs/0-25-3.changes" />
+  </version>
 </repository>

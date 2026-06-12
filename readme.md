@@ -12,6 +12,8 @@ It is a cross-platform application with supports of:
 - Plotting and visual style customization
 - Data normalization, integration and dimensionality reduction built-in
 - Layout editor for graphics export
+- Automation, macro, and scripting
+- Free access to Python backend through scripting engine
 - Embedded data package format for reproducible analysis and sharing
 
 ### Installation
@@ -23,6 +25,9 @@ This is the portable software package that you could decompress anywhere without
 administrator previlege and run the application. The software will try to update
 itself if newer versions are released if there are network connection from the GitHub
 repository releases.
+
+From 0.25.3, the binary package contains an embeddable Python runtime and are
+capable of executing arbitary code. User should only execute trusted macros and scripts.
 
 ### Screenshots
 
@@ -37,6 +42,10 @@ Layout editor
 Data normalization and integration
 
 ![Data normalization and integration](.github/integration.png)
+
+Scripting
+
+![Scripting](.github/scripting.png)
 
 ### Licensing
 

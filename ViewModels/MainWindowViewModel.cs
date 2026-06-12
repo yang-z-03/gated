@@ -62,6 +62,8 @@ public sealed class MainWindowViewModel : NotifyBase
     private CancellationTokenSource? plot_transform_preparation_cancellation;
     private bool is_gate_recalculating;
     private CancellationTokenSource? gate_recalculation_cancellation;
+    private bool is_compensation_applying;
+    private CancellationTokenSource? compensation_application_cancellation;
 
     public FlowWorkspace Workspace { get; } = new();
     public ObservableCollection<ProjectNode> ProjectNodes { get; } = new();
@@ -321,7 +323,18 @@ public sealed class MainWindowViewModel : NotifyBase
         }
     }
 
-    public bool IsEditorPlotCalculating => IsPlotTransformPreparing || IsGateRecalculating;
+    public bool IsCompensationApplying
+    {
+        get => is_compensation_applying;
+        private set
+        {
+            if (!SetField(ref is_compensation_applying, value))
+                return;
+            OnPropertyChanged(nameof(IsEditorPlotCalculating));
+        }
+    }
+
+    public bool IsEditorPlotCalculating => IsPlotTransformPreparing || IsGateRecalculating || IsCompensationApplying;
 
     public EquivalentSampleChoice? SelectedEquivalentSampleChoice
     {
@@ -854,14 +867,40 @@ public sealed class MainWindowViewModel : NotifyBase
     public void AddFiles(IEnumerable<string> file_paths)
     {
         var reader = new FcsReader();
+        var samples = file_paths.Select(file_path => reader.Read(file_path)).ToArray();
+        var groups = AddSamples(samples);
+        RecalculateImportedGroups(groups);
+        FinishSampleImport(samples.Length);
+    }
+
+    public IReadOnlyList<FlowGroup> AddSamples(IEnumerable<FlowSample> samples)
+    {
+        var groups_to_recalculate = new HashSet<FlowGroup>();
+        FlowGroup? last_group = null;
+        FlowSample? last_sample = null;
         int loaded_count = 0;
-        foreach (string file_path in file_paths)
+        foreach (var sample in samples)
         {
-            var sample = reader.Read(file_path);
-            add_sample_to_compatible_group(sample);
+            var group = add_sample_to_compatible_group(sample, recalculate: false);
+            groups_to_recalculate.Add(group);
+            last_group = group;
+            last_sample = sample;
             loaded_count++;
         }
 
+        return finish_adding_samples(groups_to_recalculate, last_group, last_sample, loaded_count);
+    }
+
+    public IReadOnlyList<FlowGroup> RecalculateImportedGroups(IEnumerable<FlowGroup> groups)
+    {
+        var recalculated_groups = groups.Distinct().ToArray();
+        foreach (var group in recalculated_groups)
+            group.RecalculateSamples();
+        return recalculated_groups;
+    }
+
+    public void FinishSampleImport(int loaded_count)
+    {
         refresh_workspace_sample_metadata();
         refresh_project_tree();
         if (loaded_count > 0 && selected_group is not null)
@@ -873,14 +912,37 @@ public sealed class MainWindowViewModel : NotifyBase
         raise_command_states();
     }
 
+    private IReadOnlyList<FlowGroup> finish_adding_samples(
+        HashSet<FlowGroup> groups_to_recalculate,
+        FlowGroup? last_group,
+        FlowSample? last_sample,
+        int loaded_count)
+    {
+        if (last_group is not null)
+            SelectedGroup = last_group;
+        if (last_sample is not null)
+            SelectedSample = last_sample;
+        return groups_to_recalculate.ToArray();
+    }
+
     public void AddFilesToGroup(IEnumerable<string> file_paths, FlowGroup target_group)
     {
         var reader = new FcsReader();
+        var samples = file_paths.Select(file_path => reader.Read(file_path)).ToArray();
+        var groups = AddSamplesToGroup(samples, target_group);
+        RecalculateImportedGroups(groups);
+        FinishSampleImport(samples.Length);
+    }
+
+    public IReadOnlyList<FlowGroup> AddSamplesToGroup(IEnumerable<FlowSample> samples, FlowGroup target_group)
+    {
         var fallback_groups = new List<FlowGroup>();
+        var groups_to_recalculate = new HashSet<FlowGroup>();
+        FlowGroup? last_group = null;
+        FlowSample? last_sample = null;
         int loaded_count = 0;
-        foreach (string file_path in file_paths)
+        foreach (var sample in samples)
         {
-            var sample = reader.Read(file_path);
             var group = target_group.CanAccept(sample)
                 ? target_group
                 : fallback_groups.FirstOrDefault(item => item.CanAccept(sample));
@@ -891,21 +953,14 @@ public sealed class MainWindowViewModel : NotifyBase
                 fallback_groups.Add(group);
             }
 
-            group.AddSample(sample);
-            SelectedGroup = group;
-            SelectedSample = sample;
+            group.AddSample(sample, recalculate: false);
+            groups_to_recalculate.Add(group);
+            last_group = group;
+            last_sample = sample;
             loaded_count++;
         }
 
-        refresh_workspace_sample_metadata();
-        refresh_project_tree();
-        if (loaded_count > 0 && selected_group is not null)
-            reset_axes_from_group(selected_group);
-        refresh_selection_sidebars();
-        refresh_plot_gates();
-        refresh_selected_statistics();
-        StatusText = loaded_count == 0 ? StatusText : $"Loaded {loaded_count} FCS sample(s)";
-        raise_command_states();
+        return finish_adding_samples(groups_to_recalculate, last_group, last_sample, loaded_count);
     }
 
     public void AddRecentFilePaths(IEnumerable<string> file_paths)
@@ -1040,6 +1095,7 @@ public sealed class MainWindowViewModel : NotifyBase
 
     private async Task recalculate_edited_gate_async(FlowGroup group, GateDefinition gate, CancellationTokenSource cancellation)
     {
+        bool succeeded = false;
         try
         {
             await Task.Run(() =>
@@ -1048,6 +1104,7 @@ public sealed class MainWindowViewModel : NotifyBase
                 if (has_external_boolean_dependency(group, gate) || !group.RecalculateGateSubtree(gate, cancellation.Token))
                     group.RecalculateSamples(force_compensation: false, cancellation.Token);
             }, cancellation.Token);
+            succeeded = true;
         }
         catch (OperationCanceledException)
         {
@@ -1081,7 +1138,8 @@ public sealed class MainWindowViewModel : NotifyBase
                 OnPropertyChanged(nameof(PlotPopulation));
                 refresh_plot_gates();
                 refresh_selected_statistics();
-                StatusText = "Gate recalculation complete";
+                if (succeeded)
+                    StatusText = "Gate recalculation complete";
             });
         }
     }
@@ -1356,7 +1414,7 @@ public sealed class MainWindowViewModel : NotifyBase
         schedule_plot_transform_preparation();
     }
 
-    private void add_sample_to_compatible_group(FlowSample sample)
+    private FlowGroup add_sample_to_compatible_group(FlowSample sample, bool recalculate = true)
     {
         var group = Workspace.Groups.FirstOrDefault(item => item.CanAccept(sample));
         if (group is null)
@@ -1365,9 +1423,14 @@ public sealed class MainWindowViewModel : NotifyBase
             Workspace.Groups.Add(group);
         }
 
-        group.AddSample(sample);
-        SelectedGroup = group;
-        SelectedSample = sample;
+        group.AddSample(sample, recalculate);
+        if (recalculate)
+        {
+            SelectedGroup = group;
+            SelectedSample = sample;
+        }
+
+        return group;
     }
 
     private void create_group()
@@ -2167,11 +2230,8 @@ public sealed class MainWindowViewModel : NotifyBase
         if (selected_group is null || selected_compensation is null)
             return;
 
-        selected_group.SetAppliedCompensation(selected_compensation, manual: true);
-        refresh_project_tree();
-        refresh_plot_gates();
-        refresh_selected_statistics();
-        StatusText = $"Applied compensation: {selected_compensation.Name}";
+        selected_group.SetAppliedCompensation(selected_compensation, manual: true, recalculate: false);
+        schedule_compensation_application(selected_group, $"Applied compensation: {selected_compensation.Name}", force_compensation: true);
     }
 
     private async Task edit_selected_compensation_async()
@@ -2183,11 +2243,69 @@ public sealed class MainWindowViewModel : NotifyBase
         if (!updated)
             return;
 
-        selected_group.RecalculateSamples(force_compensation: true);
-        refresh_project_tree();
-        refresh_plot_gates();
-        refresh_selected_statistics();
-        StatusText = $"Edited compensation: {selected_compensation.Name}";
+        schedule_compensation_application(selected_group, $"Edited compensation: {selected_compensation.Name}", force_compensation: true);
+    }
+
+    private void schedule_compensation_application(FlowGroup group, string completion_status, bool force_compensation)
+    {
+        compensation_application_cancellation?.Cancel();
+
+        var cancellation = new CancellationTokenSource();
+        compensation_application_cancellation = cancellation;
+        IsCompensationApplying = true;
+        StatusText = "Applying compensation ...";
+
+        _ = apply_compensation_async(group, completion_status, force_compensation, cancellation);
+    }
+
+    private async Task apply_compensation_async(FlowGroup group, string completion_status, bool force_compensation, CancellationTokenSource cancellation)
+    {
+        bool succeeded = false;
+        try
+        {
+            await Task.Run(() =>
+            {
+                cancellation.Token.ThrowIfCancellationRequested();
+                group.RecalculateSamples(force_compensation, cancellation.Token);
+            }, cancellation.Token);
+            succeeded = true;
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (Exception exception)
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (!ReferenceEquals(compensation_application_cancellation, cancellation))
+                    return;
+                StatusText = $"Compensation failed: {exception.Message}";
+            });
+        }
+        finally
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (!ReferenceEquals(compensation_application_cancellation, cancellation))
+                {
+                    cancellation.Dispose();
+                    return;
+                }
+
+                compensation_application_cancellation.Dispose();
+                compensation_application_cancellation = null;
+                IsCompensationApplying = false;
+                refresh_selected_population_reference();
+                refresh_project_tree();
+                OnPropertyChanged(nameof(PlotGate));
+                OnPropertyChanged(nameof(PlotPopulation));
+                refresh_plot_gates();
+                refresh_selected_statistics();
+                if (succeeded)
+                    StatusText = completion_status;
+            });
+        }
     }
 
     private static void remove_gate(FlowGroup group, GateDefinition gate)

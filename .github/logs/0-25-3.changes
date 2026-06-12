@@ -1,0 +1,10 @@
+Version 0.25.3
+
+- The infrastructure of Python extension system, Macros, and Python-backed statistics
+- Numerous optimization and profiling on duplicated re-calculations
+- Optimization for batch sample reader
+- Samples and workspaces are now loaded at least 3 times faster
+- Cacheing the transformation matrix for faster gate definition and change
+- Subtree re-calculations
+- Unified metadata system
+- This breaking update dropped support for all previous versions of workspace files

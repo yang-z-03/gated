@@ -1116,10 +1116,20 @@ public partial class MainWindow : Window
 
         try
         {
-            if (target_group is null)
-                view_model.AddFiles(file_paths);
-            else
-                view_model.AddFilesToGroup(file_paths, target_group);
+            await run_with_progress_dialog("Loading FCS files ...", fcs_import_subtitle(file_paths), async () =>
+            {
+                var samples = await Task.Run(() =>
+                {
+                    var reader = new FcsReader();
+                    return file_paths.Select(file_path => reader.Read(file_path)).ToArray();
+                });
+
+                var groups = target_group is null
+                    ? view_model.AddSamples(samples)
+                    : view_model.AddSamplesToGroup(samples, target_group);
+                await Task.Run(() => view_model.RecalculateImportedGroups(groups));
+                view_model.FinishSampleImport(samples.Length);
+            });
             view_model.AddRecentFilePaths(file_paths);
         }
         catch (Exception exception)
@@ -1128,6 +1138,11 @@ public partial class MainWindow : Window
             await show_message_dialog(failure_title, exception.Message);
         }
     }
+
+    private static string fcs_import_subtitle(IReadOnlyList<string> file_paths) =>
+        file_paths.Count == 1
+            ? file_paths[0]
+            : $"{file_paths.Count} FCS samples";
 
     private async void export_page_png_click(object? sender, RoutedEventArgs e) =>
         await export_page_bitmap("Export page as PNG", "page.png", "png", transparent_background: true);
