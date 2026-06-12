@@ -101,7 +101,6 @@ public sealed class IntegrationJob : NotifyBase
 
     public ObservableCollection<IntegrationJobPopulationSelection> Populations { get; } = new();
     public ObservableCollection<IntegrationJobFeatureSelection> Features { get; } = new();
-    public ObservableCollection<IntegrationJobSampleMetadata> SampleMetadata { get; } = new();
 
     public string BatchColumnName
     {
@@ -153,8 +152,6 @@ public sealed class IntegrationJob : NotifyBase
         WarningText = "Configuration changed. Rerun integration before downstream steps.";
         Status = IntegrationJobStatus.Warning;
     }
-
-    public void InvalidateFromGraph() { }
 
     public string[] SelectedFeatureNames => Features
         .Where(feature => feature.IsSelected && feature.IsChannel && !string.IsNullOrWhiteSpace(feature.ChannelName))
@@ -265,36 +262,6 @@ public sealed class IntegrationJobFeatureSelection : NotifyBase
     }
 
     public string DisplayName => IsChannel ? ChannelName : GroupName;
-}
-
-public sealed class IntegrationJobSampleMetadata : NotifyBase
-{
-    private string batch = "";
-    private string condition = "";
-    private string notes = "";
-
-    public Guid GroupId { get; init; }
-    public Guid SampleId { get; init; }
-    public string GroupName { get; init; } = "";
-    public string SampleName { get; init; } = "";
-
-    public string Batch
-    {
-        get => batch;
-        set => SetField(ref batch, value ?? "");
-    }
-
-    public string Condition
-    {
-        get => condition;
-        set => SetField(ref condition, value ?? "");
-    }
-
-    public string Notes
-    {
-        get => notes;
-        set => SetField(ref notes, value ?? "");
-    }
 }
 
 public sealed class IntegrationJobRowMap

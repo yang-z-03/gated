@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel;
+using System.Globalization;
 using System.Data;
 using Avalonia.Data;
 using Avalonia.Data.Core.Plugins;
@@ -52,7 +53,7 @@ public class DataRowViewPropertyAccessor : PropertyAccessorBase, IWeakEventSubsc
 
         var row = GetReferenceTarget();
         if(row is not null)
-            row[propertyName] = value;
+            row[propertyName] = convert_value(row, value);
 
         if (!eventRaised)
         {
@@ -79,6 +80,47 @@ public class DataRowViewPropertyAccessor : PropertyAccessorBase, IWeakEventSubsc
     {
         reference.TryGetTarget(out var target);
         return target as DataRowView;
+    }
+
+    private object convert_value(DataRowView row, object? value)
+    {
+        var column = row.Row.Table.Columns[propertyName];
+        if (column is null)
+            return value ?? DBNull.Value;
+
+        if (value is null || value == DBNull.Value)
+            return DBNull.Value;
+
+        if (value is string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                return DBNull.Value;
+            if (column.DataType == typeof(int))
+                return int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int int_value)
+                    ? int_value
+                    : row[propertyName];
+            if (column.DataType == typeof(double))
+                return double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double double_value)
+                    ? double_value
+                    : row[propertyName];
+            if (column.DataType == typeof(float))
+                return float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out float float_value)
+                    ? float_value
+                    : row[propertyName];
+            return text;
+        }
+
+        if (column.DataType.IsInstanceOfType(value))
+            return value;
+
+        try
+        {
+            return Convert.ChangeType(value, column.DataType, CultureInfo.InvariantCulture) ?? DBNull.Value;
+        }
+        catch
+        {
+            return row[propertyName];
+        }
     }
 
     private void SendCurrentValue()

@@ -480,18 +480,18 @@
                                                    TransformPreparing="{Binding IsEditorPlotCalculating}" />
                             <Border HorizontalAlignment="Center"
                                     VerticalAlignment="Center"
-                                    Margin="40,0,40,0"
-                                    Padding="10,7"
-                                    CornerRadius="6"
+                                    Margin="60,0,0,40"
+                                    Padding="10,10"
+                                    CornerRadius="10"
                                     Background="#262830"
                                     BorderBrush="#5F6678"
                                     BorderThickness="1"
-                                    Opacity="0.3"
+                                    Opacity="0.5"
                                     IsHitTestVisible="False"
                                     IsVisible="{Binding IsEditorPlotCalculating}">
                                 <StackPanel Orientation="Horizontal">
-                                    <controls:SpinnerView Width="18"
-                                                          Height="18"
+                                    <controls:SpinnerView Width="48"
+                                                          Height="48"
                                                           VerticalAlignment="Center" />
                                 </StackPanel>
                             </Border>
@@ -1151,40 +1151,61 @@
 
             <Grid Grid.Column="2"
                   IsVisible="{Binding IsWorkspaceMetadataMode}"
-                  Background="{DynamicResource SemiColorBackground1}"
-                  RowDefinitions="Auto,Auto,*,Auto"
-                  Margin="24">
-                <TextBlock Grid.Row="0" Foreground="{DynamicResource SemiColorText2}" Text="Workspace metadata" />
-                <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8" Margin="0,14,0,14">
-                    <Button Classes="Small" Command="{Binding AddStringMetadataColumnCommand}">
-                        <TextBlock Text="Add string" />
-                    </Button>
-                    <Button Classes="Small" Command="{Binding AddIntegerMetadataColumnCommand}">
-                        <TextBlock Text="Add integer" />
-                    </Button>
-                    <Button Classes="Small" Command="{Binding AddFloatMetadataColumnCommand}">
-                        <TextBlock Text="Add float" />
-                    </Button>
-                </StackPanel>
-                <DataGrid x:Name="workspace_metadata_grid"
-                          Grid.Row="2"
-                          AutoGenerateColumns="False"
-                          CanUserReorderColumns="False"
-                          CanUserResizeColumns="True"
-                          CanUserSortColumns="True"
-                          GridLinesVisibility="Horizontal"
-                          HeadersVisibility="Column"
-                          HorizontalAlignment="Stretch"
-                          VerticalAlignment="Stretch"
-                          HorizontalScrollBarVisibility="Auto"
-                          VerticalScrollBarVisibility="Auto"
-                          ItemsSource="{Binding WorkspaceMetadataTableView}" />
-                <Button Grid.Row="3" Classes="Small" HorizontalAlignment="Left" Margin="0,14,0,0" Command="{Binding ApplyWorkspaceMetadataCommand}">
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                        <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/ok.svg}" />
-                        <TextBlock Text="Apply metadata" />
+                  Background="{DynamicResource SemiColorBackground1}">
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                              VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="24"
+                                Spacing="14"
+                                MaxWidth="650"
+                                MinWidth="650"
+                                HorizontalAlignment="Center"
+                                Background="{DynamicResource SemiColorBackground1}">
+                        <StackPanel Margin="0 12 0 0">
+                            <TextBlock Foreground="{DynamicResource SemiColorText1}" Text="Workspace sample metadata" />
+                        </StackPanel>
+
+                        <WrapPanel Margin="0,0,0,2">
+                            <Button Classes="Small" Margin="0,0,8,8" Command="{Binding AddStringMetadataColumnCommand}">
+                                <TextBlock Text="Add string" />
+                            </Button>
+                            <Button Classes="Small" Margin="0,0,8,8" Command="{Binding AddIntegerMetadataColumnCommand}">
+                                <TextBlock Text="Add integer" />
+                            </Button>
+                            <Button Classes="Small" Margin="0,0,8,8" Command="{Binding AddFloatMetadataColumnCommand}">
+                                <TextBlock Text="Add float" />
+                            </Button>
+                        </WrapPanel>
+
+                        <Border Height="430"
+                                BorderBrush="{DynamicResource SemiColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="6"
+                                Background="#1e1e1e"
+                                Padding="8"
+                                ClipToBounds="True">
+                            <DataGrid x:Name="workspace_metadata_grid"
+                                      AutoGenerateColumns="False"
+                                      CanUserReorderColumns="False"
+                                      CanUserResizeColumns="True"
+                                      CanUserSortColumns="True"
+                                      GridLinesVisibility="Horizontal"
+                                      HeadersVisibility="Column"
+                                      Background="#1e1e1e"
+                                      HorizontalAlignment="Stretch"
+                                      VerticalAlignment="Stretch"
+                                      HorizontalScrollBarVisibility="Auto"
+                                      VerticalScrollBarVisibility="Auto"
+                                      ItemsSource="{Binding WorkspaceMetadataTableView}" />
+                        </Border>
+
+                        <Button Classes="Small" HorizontalAlignment="Left" Margin="0,0,0,24" Command="{Binding ApplyWorkspaceMetadataCommand}">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/ok.svg}" />
+                                <TextBlock Text="Apply metadata" />
+                            </StackPanel>
+                        </Button>
                     </StackPanel>
-                </Button>
+                </ScrollViewer>
             </Grid>
 
             <controls:PythonScriptEditorView Grid.Column="2"

@@ -781,6 +781,11 @@ public sealed class MainWindowViewModel : NotifyBase
             if (selected_integration_job is null)
                 return;
             string next = value ?? "";
+            if (string.IsNullOrWhiteSpace(next))
+            {
+                OnPropertyChanged();
+                return;
+            }
             if (selected_integration_job.BatchColumnName == next)
                 return;
             selected_integration_job.BatchColumnName = next;
@@ -857,6 +862,7 @@ public sealed class MainWindowViewModel : NotifyBase
             loaded_count++;
         }
 
+        refresh_workspace_sample_metadata();
         refresh_project_tree();
         if (loaded_count > 0 && selected_group is not null)
             reset_axes_from_group(selected_group);
@@ -891,6 +897,7 @@ public sealed class MainWindowViewModel : NotifyBase
             loaded_count++;
         }
 
+        refresh_workspace_sample_metadata();
         refresh_project_tree();
         if (loaded_count > 0 && selected_group is not null)
             reset_axes_from_group(selected_group);
@@ -1096,16 +1103,21 @@ public sealed class MainWindowViewModel : NotifyBase
         Python.PythonExtensionRuntime.LogReceived += capture_log;
         try
         {
+            var metadata_snapshot = snapshot_workspace_metadata();
             var context = new PythonWorkspaceContext(Workspace);
             context.execute(code);
             void refresh()
             {
                 foreach (var group in Workspace.Groups)
                     group.RecalculateSamples();
+                bool metadata_changed = !metadata_snapshot.SequenceEqual(snapshot_workspace_metadata());
                 SelectedGroup ??= Workspace.Groups.FirstOrDefault();
                 SelectedSample ??= selected_group?.Samples.FirstOrDefault();
                 refresh_project_tree();
                 refresh_selection_sidebars();
+                refresh_workspace_sample_metadata();
+                if (metadata_changed)
+                    invalidate_integration_jobs_from_metadata();
                 OnPropertyChanged(nameof(PlotGate));
                 OnPropertyChanged(nameof(PlotPopulation));
                 refresh_plot_gates();
@@ -1129,6 +1141,21 @@ public sealed class MainWindowViewModel : NotifyBase
             Python.PythonExtensionRuntime.LogReceived -= capture_log;
         }
     }
+
+    private string[] snapshot_workspace_metadata() =>
+        Workspace.Groups
+            .SelectMany(group => group.Samples.Select(sample => new
+            {
+                sample.Id,
+                Metadata = sample.Metadata
+                    .Where(item => item.Key is not ("Group" or "Sample"))
+                    .OrderBy(item => item.Key, StringComparer.Ordinal)
+                    .Select(item => $"{item.Key}={item.Value}")
+                    .ToArray()
+            }))
+            .OrderBy(item => item.Id)
+            .Select(item => $"{item.Id}:{string.Join("\u001f", item.Metadata)}")
+            .ToArray();
 
     public void ReloadScriptRepositories()
     {
@@ -1510,6 +1537,9 @@ public sealed class MainWindowViewModel : NotifyBase
             return;
         update_population_selection_states(selected_integration_job);
         refresh_integration_job_features(selected_integration_job);
+        if (selected_integration_job.HasIntegrated)
+            selected_integration_job.InvalidateFromConfiguration();
+        raise_command_states();
     }
 
     public void UpdateIntegrationJobFeatureSelectionStates()
@@ -1517,6 +1547,9 @@ public sealed class MainWindowViewModel : NotifyBase
         if (selected_integration_job is null)
             return;
         update_feature_selection_states(selected_integration_job);
+        if (selected_integration_job.HasIntegrated)
+            selected_integration_job.InvalidateFromConfiguration();
+        raise_command_states();
     }
 
     private static void update_population_selection_states(IntegrationJob job)
@@ -1674,6 +1707,7 @@ public sealed class MainWindowViewModel : NotifyBase
 
     private void rebuild_workspace_metadata_table()
     {
+        sync_identity_metadata();
         workspace_metadata_table = build_metadata_table(workspace_sample_rows());
         workspace_metadata_table.ColumnChanged += metadata_table_column_changed;
         OnPropertyChanged(nameof(WorkspaceMetadataTable));
@@ -1689,6 +1723,7 @@ public sealed class MainWindowViewModel : NotifyBase
         {
             commit_metadata_row(e.Row);
             refresh_batch_column_choices();
+            invalidate_integration_jobs_from_metadata();
         }
         finally
         {
@@ -1711,7 +1746,9 @@ public sealed class MainWindowViewModel : NotifyBase
         table.Columns.Add("__SampleId", typeof(Guid));
         table.Columns.Add("Group", typeof(string));
         table.Columns.Add("Sample", typeof(string));
-        foreach (var column in Workspace.MetadataColumns.OrderBy(item => item.Key, StringComparer.Ordinal))
+        foreach (var column in Workspace.MetadataColumns
+                     .Where(item => item.Key is not ("Group" or "Sample"))
+                     .OrderBy(item => item.Key, StringComparer.Ordinal))
             table.Columns.Add(column.Key, type_for_metadata_kind(column.Value));
 
         foreach (var (group, sample) in rows)
@@ -1721,7 +1758,7 @@ public sealed class MainWindowViewModel : NotifyBase
             row["__SampleId"] = sample.Id;
             row["Group"] = group.Name;
             row["Sample"] = sample.Name;
-            foreach (var column in Workspace.MetadataColumns)
+            foreach (var column in Workspace.MetadataColumns.Where(column => column.Key is not ("Group" or "Sample")))
             {
                 if (!sample.Metadata.TryGetValue(column.Key, out string? value) || string.IsNullOrWhiteSpace(value))
                     row[column.Key] = DBNull.Value;
@@ -1736,15 +1773,27 @@ public sealed class MainWindowViewModel : NotifyBase
 
     private void ensure_metadata_schema()
     {
+        sync_identity_metadata();
+        Workspace.MetadataColumns["Group"] = MetadataColumnKind.String;
+        Workspace.MetadataColumns["Sample"] = MetadataColumnKind.String;
         foreach (var key in Workspace.Groups
                      .SelectMany(group => group.Samples)
                      .SelectMany(sample => sample.Metadata.Keys)
-                     .Where(key => key is not ("Group" or "Sample"))
                      .Distinct(StringComparer.Ordinal)
                      .OrderBy(key => key, StringComparer.Ordinal))
         {
             if (!Workspace.MetadataColumns.ContainsKey(key))
                 Workspace.MetadataColumns[key] = infer_metadata_kind(key);
+        }
+    }
+
+    private void sync_identity_metadata()
+    {
+        foreach (var group in Workspace.Groups)
+        foreach (var sample in group.Samples)
+        {
+            sample.Metadata["Group"] = group.Name;
+            sample.Metadata["Sample"] = sample.Name;
         }
     }
 
@@ -1801,6 +1850,7 @@ public sealed class MainWindowViewModel : NotifyBase
             foreach (DataRow row in table.Rows)
                 commit_metadata_row(row);
             refresh_batch_column_choices();
+            invalidate_integration_jobs_from_metadata();
         }
         finally
         {
@@ -1816,7 +1866,7 @@ public sealed class MainWindowViewModel : NotifyBase
         if (sample is null)
             return;
 
-        foreach (var column in Workspace.MetadataColumns)
+        foreach (var column in Workspace.MetadataColumns.Where(column => column.Key is not ("Group" or "Sample")))
         {
             object value = row.Table.Columns.Contains(column.Key) ? row[column.Key] : DBNull.Value;
             if (value == DBNull.Value || value is null || string.IsNullOrWhiteSpace(Convert.ToString(value)))
@@ -1824,6 +1874,14 @@ public sealed class MainWindowViewModel : NotifyBase
             else
                 sample.Metadata[column.Key] = format_metadata_value(value, column.Value);
         }
+        sync_identity_metadata();
+    }
+
+    private void invalidate_integration_jobs_from_metadata()
+    {
+        foreach (var job in Workspace.IntegrationJobs.Where(job => job.HasIntegrated))
+            job.InvalidateFromConfiguration();
+        raise_command_states();
     }
 
     private async Task add_metadata_column_async(MetadataColumnKind kind)
@@ -1890,6 +1948,8 @@ public sealed class MainWindowViewModel : NotifyBase
             return;
 
         selected_group.Name = name.Trim();
+        sync_identity_metadata();
+        rebuild_workspace_metadata_table();
         refresh_project_tree();
     }
 
@@ -2017,6 +2077,8 @@ public sealed class MainWindowViewModel : NotifyBase
         selected_sample.Name = name.Trim();
         if (selected_group is not null)
             rename_sample_preferred_views(selected_group, old_name, selected_sample.Name);
+        sync_identity_metadata();
+        rebuild_workspace_metadata_table();
         refresh_project_tree();
     }
 
@@ -2059,6 +2121,7 @@ public sealed class MainWindowViewModel : NotifyBase
         selected_group.RecalculateSamples();
         SelectedSample = concatenated;
         SelectedPopulation = null;
+        refresh_workspace_sample_metadata();
         refresh_project_tree();
         refresh_selection_sidebars();
         refresh_plot_gates();
@@ -2841,41 +2904,64 @@ public sealed class MainWindowViewModel : NotifyBase
 
     private void copy_current_view_to_preferred_view(GateDefinition gate)
     {
+        var view = current_gate_view();
         if (selected_sample is not null && selected_population is not null)
         {
-            var sample_view = new GateViewOptions
+            if (is_strategy_gate_view_context() && selected_group is not null)
             {
-                XChannel = XAxis.ChannelName,
-                XMinimum = XAxis.Minimum,
-                XMaximum = XAxis.Maximum,
-                XScale = XAxis.Scale.Clone()
-            };
-            if (IsYAxisEnabled)
-            {
-                sample_view.YChannel = YAxis.ChannelName;
-                sample_view.YMinimum = YAxis.Minimum;
-                sample_view.YMaximum = YAxis.Maximum;
-                sample_view.YScale = YAxis.Scale.Clone();
+                foreach (var sample in selected_group.Samples)
+                    gate.SamplePreferredViews[sample.Name] = clone_gate_view(view);
+                return;
             }
-            gate.SamplePreferredViews[selected_sample.Name] = sample_view;
+
+            gate.SamplePreferredViews[selected_sample.Name] = view;
             return;
         }
 
-        gate.PreferredXChannel = XAxis.ChannelName;
-        gate.PreferredXMinimum = XAxis.Minimum;
-        gate.PreferredXMaximum = XAxis.Maximum;
-        gate.PreferredXScale = XAxis.Scale.Clone();
+        gate.PreferredXChannel = view.XChannel;
+        gate.PreferredXMinimum = view.XMinimum;
+        gate.PreferredXMaximum = view.XMaximum;
+        gate.PreferredXScale = view.XScale.Clone();
+        gate.PreferredYChannel = view.YChannel;
+        gate.PreferredYMinimum = view.YMinimum;
+        gate.PreferredYMaximum = view.YMaximum;
+        gate.PreferredYScale = view.YScale.Clone();
+    }
+
+    private bool is_strategy_gate_view_context() =>
+        selected_node?.Kind is ProjectNodeKind.Gate or ProjectNodeKind.GatePopulationSlot;
+
+    private GateViewOptions current_gate_view()
+    {
+        var view = new GateViewOptions
+        {
+            XChannel = XAxis.ChannelName,
+            XMinimum = XAxis.Minimum,
+            XMaximum = XAxis.Maximum,
+            XScale = XAxis.Scale.Clone()
+        };
         if (IsYAxisEnabled)
         {
-            gate.PreferredYChannel = YAxis.ChannelName;
-            gate.PreferredYMinimum = YAxis.Minimum;
-            gate.PreferredYMaximum = YAxis.Maximum;
-            gate.PreferredYScale = YAxis.Scale.Clone();
-            return;
+            view.YChannel = YAxis.ChannelName;
+            view.YMinimum = YAxis.Minimum;
+            view.YMaximum = YAxis.Maximum;
+            view.YScale = YAxis.Scale.Clone();
         }
-
-        gate.PreferredYChannel = null;
+        return view;
     }
+
+    private static GateViewOptions clone_gate_view(GateViewOptions view) =>
+        new()
+        {
+            XChannel = view.XChannel,
+            YChannel = view.YChannel,
+            XMinimum = view.XMinimum,
+            XMaximum = view.XMaximum,
+            XScale = view.XScale.Clone(),
+            YMinimum = view.YMinimum,
+            YMaximum = view.YMaximum,
+            YScale = view.YScale.Clone()
+        };
 
     private void sync_selected_gate_preferred_view()
     {
@@ -3480,6 +3566,13 @@ public sealed class MainWindowViewModel : NotifyBase
 
     private void select_project_node(ProjectNode? node)
     {
+        if (node?.Kind == ProjectNodeKind.Metadata && ReferenceEquals(selected_node, node))
+        {
+            refresh_workspace_sample_metadata();
+            StatusText = "Workspace sample metadata";
+            return;
+        }
+
         SelectedNode = node;
     }
 

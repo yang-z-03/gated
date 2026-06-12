@@ -11,10 +11,11 @@ namespace gated.Services;
 public sealed class WorkspaceBinarySerializer
 {
     private const uint magic = 0x44544731;
-    private const int version = 14;
+    private const int version = 25;
 
     public void Save(FlowWorkspace workspace, string file_path)
     {
+        sync_identity_metadata(workspace);
         using var stream = new FileStream(file_path, FileMode.Create, FileAccess.Write, FileShare.None);
         using var writer = new BinaryWriter(stream);
         writer.Write(magic);
@@ -38,32 +39,26 @@ public sealed class WorkspaceBinarySerializer
             throw new InvalidDataException("The file is not a Gated workspace.");
 
         int file_version = reader.ReadInt32();
-        if (file_version is < 1 or > version)
+        if (file_version != version)
             throw new NotSupportedException($"Unsupported Gated workspace version: {file_version}.");
 
         var workspace = new FlowWorkspace { Name = read_string(reader) };
         int group_count = reader.ReadInt32();
         for (int index = 0; index < group_count; index++)
-            workspace.Groups.Add(read_group(reader, file_version));
+            workspace.Groups.Add(read_group(reader));
 
-        if (file_version == 3)
-            read_page_elements(reader, workspace, new PageLayout { Name = "Layout 1" }, includes_gate_options: false, file_version);
-        else if (file_version >= 4)
-            read_page_layouts(reader, workspace, file_version);
-
-        if (file_version >= 5)
-            read_integration_jobs(reader, workspace, file_version);
-
-        if (file_version >= 9)
-            read_recent_file_paths(reader, workspace);
-        if (file_version >= 12)
-            read_metadata_columns(reader, workspace);
+        read_page_layouts(reader, workspace);
+        read_integration_jobs(reader, workspace);
+        read_recent_file_paths(reader, workspace);
+        read_metadata_columns(reader, workspace);
 
         return workspace;
     }
 
     private static void write_metadata_columns(BinaryWriter writer, FlowWorkspace workspace)
     {
+        workspace.MetadataColumns["Group"] = MetadataColumnKind.String;
+        workspace.MetadataColumns["Sample"] = MetadataColumnKind.String;
         writer.Write(workspace.MetadataColumns.Count);
         foreach (var column in workspace.MetadataColumns.OrderBy(item => item.Key, StringComparer.Ordinal))
         {
@@ -77,6 +72,19 @@ public sealed class WorkspaceBinarySerializer
         int count = reader.ReadInt32();
         for (int index = 0; index < count; index++)
             workspace.MetadataColumns[read_string(reader)] = (MetadataColumnKind)reader.ReadInt32();
+        workspace.MetadataColumns["Group"] = MetadataColumnKind.String;
+        workspace.MetadataColumns["Sample"] = MetadataColumnKind.String;
+        sync_identity_metadata(workspace);
+    }
+
+    private static void sync_identity_metadata(FlowWorkspace workspace)
+    {
+        foreach (var group in workspace.Groups)
+        foreach (var sample in group.Samples)
+        {
+            sample.Metadata["Group"] = group.Name;
+            sample.Metadata["Sample"] = sample.Name;
+        }
     }
 
     private static void write_group(BinaryWriter writer, FlowGroup group)
@@ -102,11 +110,11 @@ public sealed class WorkspaceBinarySerializer
             write_sample(writer, sample);
     }
 
-    private static FlowGroup read_group(BinaryReader reader, int file_version)
+    private static FlowGroup read_group(BinaryReader reader)
     {
-        Guid id = file_version >= 5 ? new Guid(reader.ReadBytes(16)) : Guid.NewGuid();
+        Guid id = new Guid(reader.ReadBytes(16));
         var group = new FlowGroup { Id = id, Name = read_string(reader) };
-        read_statistics(reader, group.Statistics, file_version);
+        read_statistics(reader, group.Statistics);
 
         int compensation_count = reader.ReadInt32();
         int applied_index = reader.ReadInt32();
@@ -119,11 +127,11 @@ public sealed class WorkspaceBinarySerializer
 
         int gate_count = reader.ReadInt32();
         for (int index = 0; index < gate_count; index++)
-            group.Gates.Add(read_gate(reader, parent: null, file_version));
+            group.Gates.Add(read_gate(reader, parent: null));
 
         int sample_count = reader.ReadInt32();
         for (int index = 0; index < sample_count; index++)
-            group.AddSample(read_sample(reader, file_version), recalculate: false);
+            group.AddSample(read_sample(reader), recalculate: false);
 
         group.RecalculateSamples();
         return group;
@@ -166,9 +174,9 @@ public sealed class WorkspaceBinarySerializer
         }
     }
 
-    private static FlowSample read_sample(BinaryReader reader, int file_version)
+    private static FlowSample read_sample(BinaryReader reader)
     {
-        Guid id = file_version >= 5 ? new Guid(reader.ReadBytes(16)) : Guid.NewGuid();
+        Guid id = new Guid(reader.ReadBytes(16));
         string name = read_string(reader);
         int channel_count = reader.ReadInt32();
         var channels = new List<ChannelDefinition>(channel_count);
@@ -201,12 +209,9 @@ public sealed class WorkspaceBinarySerializer
             sample.Embeddings[embedding_name] = values;
         }
 
-        if (file_version >= 5)
-        {
-            int metadata_count = reader.ReadInt32();
-            for (int index = 0; index < metadata_count; index++)
-                sample.Metadata[read_string(reader)] = read_string(reader);
-        }
+        int metadata_count = reader.ReadInt32();
+        for (int index = 0; index < metadata_count; index++)
+            sample.Metadata[read_string(reader)] = read_string(reader);
 
         return sample;
     }
@@ -271,9 +276,9 @@ public sealed class WorkspaceBinarySerializer
             write_gate(writer, child);
     }
 
-    private static GateDefinition read_gate(BinaryReader reader, GateDefinition? parent, int file_version)
+    private static GateDefinition read_gate(BinaryReader reader, GateDefinition? parent)
     {
-        Guid id = file_version >= 5 ? new Guid(reader.ReadBytes(16)) : Guid.NewGuid();
+        Guid id = new Guid(reader.ReadBytes(16));
         var gate = new GateDefinition
         {
             Id = id,
@@ -303,33 +308,26 @@ public sealed class WorkspaceBinarySerializer
         gate.PreferredYMaximum = reader.ReadDouble();
         gate.PreferredYScale = read_axis_scale(reader);
 
-        if (file_version >= 7)
-        {
-            int sample_view_count = reader.ReadInt32();
-            for (int index = 0; index < sample_view_count; index++)
-                gate.SamplePreferredViews[read_string(reader)] = read_gate_view_options(reader);
-        }
+        int sample_view_count = reader.ReadInt32();
+        for (int index = 0; index < sample_view_count; index++)
+            gate.SamplePreferredViews[read_string(reader)] = read_gate_view_options(reader);
 
         int vertex_count = reader.ReadInt32();
         for (int index = 0; index < vertex_count; index++)
             gate.Vertices.Add(new Point(reader.ReadDouble(), reader.ReadDouble()));
 
-        read_statistics(reader, gate.Statistics, file_version);
-        if (file_version >= 2)
-            gate.IsTreeExpanded = reader.ReadBoolean();
-        if (file_version >= 10)
-        {
-            if (reader.ReadBoolean())
-                gate.BooleanFirstGateId = new Guid(reader.ReadBytes(16));
-            gate.BooleanFirstRegion = (PopulationRegion)reader.ReadInt32();
-            if (reader.ReadBoolean())
-                gate.BooleanSecondGateId = new Guid(reader.ReadBytes(16));
-            gate.BooleanSecondRegion = (PopulationRegion)reader.ReadInt32();
-        }
+        read_statistics(reader, gate.Statistics);
+        gate.IsTreeExpanded = reader.ReadBoolean();
+        if (reader.ReadBoolean())
+            gate.BooleanFirstGateId = new Guid(reader.ReadBytes(16));
+        gate.BooleanFirstRegion = (PopulationRegion)reader.ReadInt32();
+        if (reader.ReadBoolean())
+            gate.BooleanSecondGateId = new Guid(reader.ReadBytes(16));
+        gate.BooleanSecondRegion = (PopulationRegion)reader.ReadInt32();
 
         int child_count = reader.ReadInt32();
         for (int index = 0; index < child_count; index++)
-            gate.Children.Add(read_gate(reader, gate, file_version));
+            gate.Children.Add(read_gate(reader, gate));
 
         return gate;
     }
@@ -409,13 +407,13 @@ public sealed class WorkspaceBinarySerializer
         }
     }
 
-    private static void read_page_layouts(BinaryReader reader, FlowWorkspace workspace, int file_version)
+    private static void read_page_layouts(BinaryReader reader, FlowWorkspace workspace)
     {
         int layout_count = reader.ReadInt32();
         for (int index = 0; index < layout_count; index++)
         {
             var layout = new PageLayout { Name = read_string(reader) };
-            read_page_elements(reader, workspace, layout, includes_gate_options: true, file_version);
+            read_page_elements(reader, workspace, layout);
         }
     }
 
@@ -476,18 +474,6 @@ public sealed class WorkspaceBinarySerializer
                 writer.Write(feature.IsChannel);
             }
 
-            writer.Write(job.SampleMetadata.Count);
-            foreach (var metadata in job.SampleMetadata)
-            {
-                writer.Write(metadata.GroupId.ToByteArray());
-                writer.Write(metadata.SampleId.ToByteArray());
-                write_string(writer, metadata.GroupName);
-                write_string(writer, metadata.SampleName);
-                write_string(writer, metadata.Batch);
-                write_string(writer, metadata.Condition);
-                write_string(writer, metadata.Notes);
-            }
-
             writer.Write(job.RowMap.Count);
             foreach (var row in job.RowMap)
             {
@@ -505,7 +491,7 @@ public sealed class WorkspaceBinarySerializer
         }
     }
 
-    private static void read_integration_jobs(BinaryReader reader, FlowWorkspace workspace, int file_version)
+    private static void read_integration_jobs(BinaryReader reader, FlowWorkspace workspace)
     {
         int job_count = reader.ReadInt32();
         for (int index = 0; index < job_count; index++)
@@ -520,18 +506,7 @@ public sealed class WorkspaceBinarySerializer
                 Logicle = read_logicle_parameters(reader),
                 CytoNormOptions = read_cytonorm_options(reader)
             };
-            if (file_version < 14)
-            {
-                _ = read_knn_options(reader);
-                _ = read_umap_options(reader);
-                _ = read_leiden_options(reader);
-                _ = read_flowsom_clusterer_options(reader);
-                _ = reader.ReadBoolean();
-                _ = reader.ReadBoolean();
-                _ = reader.ReadBoolean();
-            }
-            if (file_version >= 13)
-                job.BatchColumnName = read_string(reader);
+            job.BatchColumnName = read_string(reader);
 
             int population_count = reader.ReadInt32();
             for (int item = 0; item < population_count; item++)
@@ -577,26 +552,6 @@ public sealed class WorkspaceBinarySerializer
                 });
             }
 
-            int metadata_count = reader.ReadInt32();
-            for (int item = 0; item < metadata_count; item++)
-            {
-                job.SampleMetadata.Add(new IntegrationJobSampleMetadata
-                {
-                    GroupId = new Guid(reader.ReadBytes(16)),
-                    SampleId = new Guid(reader.ReadBytes(16)),
-                    GroupName = read_string(reader),
-                    SampleName = read_string(reader),
-                    Batch = read_string(reader),
-                    Condition = read_string(reader),
-                    Notes = read_string(reader)
-                });
-            }
-            if (file_version < 13 && string.IsNullOrWhiteSpace(job.BatchColumnName) && job.SampleMetadata.Any(row => !string.IsNullOrWhiteSpace(row.Batch)))
-            {
-                job.BatchColumnName = "Batch";
-                migrate_legacy_job_metadata(workspace, job);
-            }
-
             int row_count = reader.ReadInt32();
             for (int row = 0; row < row_count; row++)
             {
@@ -614,33 +569,7 @@ public sealed class WorkspaceBinarySerializer
             job.BatchIds = read_int_array(reader) ?? [];
             job.LogicleNormalized = read_float_matrix(reader);
             job.CytoNormNormalized = read_float_matrix(reader);
-            if (file_version < 14)
-            {
-                _ = read_int_jagged(reader);
-                _ = read_float_jagged(reader);
-                _ = read_float_matrix(reader);
-                _ = read_int_array(reader);
-                _ = read_double_matrix(reader);
-                _ = read_int_array(reader);
-                _ = read_int_array(reader);
-            }
             workspace.IntegrationJobs.Add(job);
-        }
-    }
-
-    private static void migrate_legacy_job_metadata(FlowWorkspace workspace, IntegrationJob job)
-    {
-        foreach (var metadata in job.SampleMetadata)
-        {
-            var sample = workspace.Groups.SelectMany(group => group.Samples).FirstOrDefault(sample => sample.Id == metadata.SampleId);
-            if (sample is null)
-                continue;
-            if (!string.IsNullOrWhiteSpace(metadata.Batch) && !sample.Metadata.ContainsKey("Batch"))
-                sample.Metadata["Batch"] = metadata.Batch;
-            if (!string.IsNullOrWhiteSpace(metadata.Condition) && !sample.Metadata.ContainsKey("Condition"))
-                sample.Metadata["Condition"] = metadata.Condition;
-            if (!string.IsNullOrWhiteSpace(metadata.Notes) && !sample.Metadata.ContainsKey("Notes"))
-                sample.Metadata["Notes"] = metadata.Notes;
         }
     }
 
@@ -686,7 +615,7 @@ public sealed class WorkspaceBinarySerializer
         }
     }
 
-    private static void read_page_elements(BinaryReader reader, FlowWorkspace workspace, PageLayout layout, bool includes_gate_options, int file_version)
+    private static void read_page_elements(BinaryReader reader, FlowWorkspace workspace, PageLayout layout)
     {
         int count = reader.ReadInt32();
         for (int index = 0; index < count; index++)
@@ -707,23 +636,18 @@ public sealed class WorkspaceBinarySerializer
             var plot_mode = (PlotMode)reader.ReadInt32();
             bool show_gridlines = reader.ReadBoolean();
             bool show_outlier_points = reader.ReadBoolean();
-            bool draw_large_dots = file_version >= 8 && reader.ReadBoolean();
+            bool draw_large_dots = reader.ReadBoolean();
             bool show_tick_labels = reader.ReadBoolean();
             bool use_pseudocolor = reader.ReadBoolean();
-            bool show_gates = includes_gate_options ? reader.ReadBoolean() : true;
-            bool show_gate_annotations = includes_gate_options ? reader.ReadBoolean() : true;
+            bool show_gates = reader.ReadBoolean();
+            bool show_gate_annotations = reader.ReadBoolean();
             int contour_level_count = reader.ReadInt32();
             int density_smoothing = reader.ReadInt32();
             var x_axis = read_axis_settings(reader);
             var y_axis = read_axis_settings(reader);
-            string dot_color_channel = "";
-            var dot_color_palette = PlotColorPalette.Viridis;
-            if (file_version >= 6)
-            {
-                dot_color_channel = read_string(reader);
-                dot_color_palette = (PlotColorPalette)reader.ReadInt32();
-            }
-            bool dot_color_use_log_scale = file_version >= 9 && reader.ReadBoolean();
+            string dot_color_channel = read_string(reader);
+            var dot_color_palette = (PlotColorPalette)reader.ReadInt32();
+            bool dot_color_use_log_scale = reader.ReadBoolean();
 
             if (group_index < 0 || group_index >= workspace.Groups.Count)
                 continue;
@@ -897,7 +821,7 @@ public sealed class WorkspaceBinarySerializer
         }
     }
 
-    private static void read_statistics(BinaryReader reader, ICollection<StatisticDefinition> statistics, int file_version)
+    private static void read_statistics(BinaryReader reader, ICollection<StatisticDefinition> statistics)
     {
         int count = reader.ReadInt32();
         for (int index = 0; index < count; index++)
@@ -907,7 +831,7 @@ public sealed class WorkspaceBinarySerializer
                 Kind = (StatisticKind)reader.ReadInt32(),
                 ChannelName = read_string(reader)
             };
-            if (file_version >= 11 && statistic.Kind == StatisticKind.Python)
+            if (statistic.Kind == StatisticKind.Python)
             {
                 statistic.PythonSource = read_string(reader);
                 statistic.PythonCallableName = read_string(reader);
@@ -962,7 +886,6 @@ public sealed class WorkspaceBinarySerializer
         if (options.GoalBatch.HasValue)
             writer.Write(options.GoalBatch.Value);
         write_double_array(writer, options.Limits);
-        write_flowsom_clusterer_options(writer, options.FlowSom);
     }
 
     private static CytoNormOptions read_cytonorm_options(BinaryReader reader)
@@ -973,7 +896,6 @@ public sealed class WorkspaceBinarySerializer
         var goal = (CytoNormGoal)reader.ReadInt32();
         int? goal_batch = reader.ReadBoolean() ? reader.ReadInt32() : null;
         var limits = read_double_array(reader);
-        var flowsom = read_flowsom_clusterer_options(reader);
         return new CytoNormOptions
         {
             QuantileCount = quantile_count,
@@ -981,94 +903,9 @@ public sealed class WorkspaceBinarySerializer
             MinimumCellsPerCluster = minimum_cells,
             Goal = goal,
             GoalBatch = goal_batch,
-            Limits = limits,
-            FlowSom = flowsom
+            Limits = limits
         };
     }
-
-    private static KnnGraphOptions read_knn_options(BinaryReader reader) =>
-        new()
-        {
-            NeighborCount = reader.ReadInt32(),
-            Distance = (KnnDistanceMetric)reader.ReadInt32(),
-            SearchMethod = (KnnSearchMethod)reader.ReadInt32(),
-            Mutual = reader.ReadBoolean(),
-            IterationCount = reader.ReadBoolean() ? reader.ReadInt32() : null,
-            MaxCandidates = reader.ReadBoolean() ? reader.ReadInt32() : null
-        };
-
-    private static UmapReductionOptions read_umap_options(BinaryReader reader) =>
-        new()
-        {
-            Dimensions = reader.ReadInt32(),
-            NeighborCount = reader.ReadInt32(),
-            EpochCount = reader.ReadBoolean() ? reader.ReadInt32() : null
-        };
-
-    private static void write_leiden_options(BinaryWriter writer, LeidenClusteringOptions options)
-    {
-        writer.Write(options.Resolution);
-        writer.Write(options.IterationCount);
-        writer.Write(options.Randomness);
-        writer.Write(options.Seed.HasValue);
-        if (options.Seed.HasValue)
-            writer.Write(options.Seed.Value);
-    }
-
-    private static LeidenClusteringOptions read_leiden_options(BinaryReader reader) =>
-        new()
-        {
-            Resolution = reader.ReadDouble(),
-            IterationCount = reader.ReadInt32(),
-            Randomness = reader.ReadDouble(),
-            Seed = reader.ReadBoolean() ? reader.ReadInt32() : null
-        };
-
-    private static void write_flowsom_clusterer_options(BinaryWriter writer, FlowSomClustererOptions options)
-    {
-        write_flowsom_options(writer, options.Som);
-        write_leiden_options(writer, options.MetaClustering);
-        writer.Write((int)options.Distance);
-    }
-
-    private static FlowSomClustererOptions read_flowsom_clusterer_options(BinaryReader reader) =>
-        new()
-        {
-            Som = read_flowsom_options(reader),
-            MetaClustering = read_leiden_options(reader),
-            Distance = (FlowSomDistance)reader.ReadInt32()
-        };
-
-    private static void write_flowsom_options(BinaryWriter writer, FlowSomOptions options)
-    {
-        writer.Write(options.XDimension);
-        writer.Write(options.YDimension);
-        writer.Write(options.IterationCount);
-        writer.Write(options.AlphaStart);
-        writer.Write(options.AlphaEnd);
-        writer.Write(options.RadiusStart.HasValue);
-        if (options.RadiusStart.HasValue)
-            writer.Write(options.RadiusStart.Value);
-        writer.Write(options.RadiusEnd);
-        writer.Write((int)options.Distance);
-        writer.Write(options.Seed.HasValue);
-        if (options.Seed.HasValue)
-            writer.Write(options.Seed.Value);
-    }
-
-    private static FlowSomOptions read_flowsom_options(BinaryReader reader) =>
-        new()
-        {
-            XDimension = reader.ReadInt32(),
-            YDimension = reader.ReadInt32(),
-            IterationCount = reader.ReadInt32(),
-            AlphaStart = reader.ReadDouble(),
-            AlphaEnd = reader.ReadDouble(),
-            RadiusStart = reader.ReadBoolean() ? reader.ReadDouble() : null,
-            RadiusEnd = reader.ReadDouble(),
-            Distance = (FlowSomDistance)reader.ReadInt32(),
-            Seed = reader.ReadBoolean() ? reader.ReadInt32() : null
-        };
 
     private static void write_float_matrix(BinaryWriter writer, float[,]? matrix)
     {
@@ -1094,19 +931,6 @@ public sealed class WorkspaceBinarySerializer
         for (int row = 0; row < rows; row++)
         for (int column = 0; column < columns; column++)
             matrix[row, column] = reader.ReadSingle();
-        return matrix;
-    }
-
-    private static double[,]? read_double_matrix(BinaryReader reader)
-    {
-        if (!reader.ReadBoolean())
-            return null;
-        int rows = reader.ReadInt32();
-        int columns = reader.ReadInt32();
-        var matrix = new double[rows, columns];
-        for (int row = 0; row < rows; row++)
-        for (int column = 0; column < columns; column++)
-            matrix[row, column] = reader.ReadDouble();
         return matrix;
     }
 
@@ -1149,34 +973,6 @@ public sealed class WorkspaceBinarySerializer
         var values = new double[length];
         for (int index = 0; index < length; index++)
             values[index] = reader.ReadDouble();
-        return values;
-    }
-
-    private static int[][]? read_int_jagged(BinaryReader reader)
-    {
-        if (!reader.ReadBoolean())
-            return null;
-        int rows = reader.ReadInt32();
-        var values = new int[rows][];
-        for (int row = 0; row < rows; row++)
-            values[row] = read_int_array(reader) ?? [];
-        return values;
-    }
-
-    private static float[][]? read_float_jagged(BinaryReader reader)
-    {
-        if (!reader.ReadBoolean())
-            return null;
-        int rows = reader.ReadInt32();
-        var values = new float[rows][];
-        for (int row = 0; row < rows; row++)
-        {
-            int columns = reader.ReadInt32();
-            values[row] = new float[columns];
-            for (int column = 0; column < columns; column++)
-                values[row][column] = reader.ReadSingle();
-        }
-
         return values;
     }
 

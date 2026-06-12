@@ -7,7 +7,6 @@ namespace gated.Reduction;
 public sealed class CytoNormFitResult
 {
     internal CytoNormFitResult(
-        FlowSomClusterer clusterer,
         ExpressionQuantiles expression_quantiles,
         CytoNormSpline[,,] splines,
         int[] batches,
@@ -15,7 +14,6 @@ public sealed class CytoNormFitResult
         int[] reference_clusters,
         CytoNormOptions options)
     {
-        Clusterer = clusterer;
         ExpressionQuantiles = expression_quantiles;
         Splines = splines;
         Batches = batches;
@@ -24,7 +22,6 @@ public sealed class CytoNormFitResult
         Options = options;
     }
 
-    public FlowSomClusterer Clusterer { get; }
     public ExpressionQuantiles ExpressionQuantiles { get; }
     public CytoNormSpline[,,] Splines { get; }
     public int[] Batches { get; }
@@ -44,17 +41,14 @@ public static class CytoNorm
         if (options.MinimumCellsPerCluster < 1)
             throw new ArgumentOutOfRangeException(nameof(options.MinimumCellsPerCluster), "Minimum cells per cluster must be positive.");
 
-        var clusterer = new FlowSomClusterer(options.FlowSom);
-        clusterer.Train(reference_data);
-        var clusters = clusterer.Predict(reference_data);
-        return Fit(reference_data, reference_batches, clusters, clusterer, options);
+        var clusters = Enumerable.Repeat(0, reference_data.GetLength(0)).ToArray();
+        return Fit(reference_data, reference_batches, clusters, options);
     }
 
     public static CytoNormFitResult Fit(
         float[,] reference_data,
         int[] reference_batches,
         int[] reference_clusters,
-        FlowSomClusterer clusterer,
         CytoNormOptions? options = null)
     {
         options ??= new CytoNormOptions();
@@ -113,7 +107,6 @@ public static class CytoNorm
         }
 
         return new CytoNormFitResult(
-            clusterer,
             expression_quantiles,
             splines,
             batches,
@@ -131,7 +124,7 @@ public static class CytoNorm
             throw new ArgumentException("Data must have the same number of variables as the CytoNorm model.", nameof(data));
 
         var result = MatrixUtilities.Copy(data);
-        var clusters = model.Clusterer.Predict(data);
+        var clusters = Enumerable.Repeat(0, data.GetLength(0)).ToArray();
         NormalizeInPlace(model, result, batches, clusters);
         return result;
     }

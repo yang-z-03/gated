@@ -18,7 +18,6 @@ public sealed class CytoNormOptions
     public CytoNormGoal Goal { get; set; } = CytoNormGoal.BatchMean;
     public int? GoalBatch { get; set; }
     public double[]? Limits { get; set; }
-    public FlowSomClustererOptions FlowSom { get; set; } = new();
 }
 
 public sealed class ExpressionQuantiles

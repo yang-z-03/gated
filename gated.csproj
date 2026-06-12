@@ -144,6 +144,12 @@
       <AvaloniaResource Include="Resources\macro.svg" />
       <None Remove="Resources\save.svg" />
       <AvaloniaResource Include="Resources\save.svg" />
+      <None Remove="Python\completion.py" />
+      <AvaloniaResource Include="Python\completion.py" />
+      <None Remove="Python\hover.py" />
+      <AvaloniaResource Include="Python\hover.py" />
+      <None Remove="Python\stub.py" />
+      <AvaloniaResource Include="Python\stub.py" />
       <None Remove="gated.ico" />
       <AvaloniaResource Include="gated.ico" />
     </ItemGroup>

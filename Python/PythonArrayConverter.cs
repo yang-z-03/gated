@@ -125,6 +125,17 @@ public static class PythonArrayConverter
         }
     }
 
+    public static List<T> To<T>(PyList value)
+    {
+        using (Py.GIL())
+        {
+            List<T> values = new();
+            foreach(PyObject? obj in value)
+                values.Add(obj.As<T>());
+            return values;
+        }
+    }
+
     public static float[,] SelectRows(float[,] matrix, IReadOnlyList<int> rows)
     {
         int column_count = matrix.GetLength(1);

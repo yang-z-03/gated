@@ -247,7 +247,7 @@ public partial class MainWindow : Window
         {
             if (column.ColumnName.StartsWith("__", StringComparison.Ordinal))
                 continue;
-            var binding = new Binding($"[{column.ColumnName}]")
+            var binding = new Binding(column.ColumnName)
             {
                 Mode = column.ColumnName is "Group" or "Sample" ? BindingMode.OneWay : BindingMode.TwoWay,
                 UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged

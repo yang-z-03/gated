@@ -13,8 +13,8 @@ public sealed class SpinnerView : Control
 
     public SpinnerView()
     {
-        Width = 18;
-        Height = 18;
+        Width = 48;
+        Height = 48;
         timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(80) };
         timer.Tick += (_, _) =>
         {

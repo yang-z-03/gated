@@ -32,7 +32,9 @@ public sealed class Workspace
                     row.SetItem("Group", group.Name.ToPython());
                     row.SetItem("Sample", sample.Name.ToPython());
                     ensure_metadata_schema();
-                    foreach (var column in Model.MetadataColumns.OrderBy(item => item.Key, StringComparer.Ordinal))
+                    foreach (var column in Model.MetadataColumns
+                                 .Where(item => item.Key is not ("Group" or "Sample"))
+                                 .OrderBy(item => item.Key, StringComparer.Ordinal))
                     {
                         if (!sample.Metadata.TryGetValue(column.Key, out string? value) || string.IsNullOrWhiteSpace(value))
                         {
@@ -50,8 +52,8 @@ public sealed class Workspace
         }
     }
 
-    public List<Grouping> groupings => Model.Groups.Select(group => new Grouping(Model, group)).ToList();
-    public List<IntegrationJob> integration_jobs => Model.IntegrationJobs.Select(job => new IntegrationJob(Model, job)).ToList();
+    public PyObject groupings => PythonObjects.List(Model.Groups.Select(group => new Grouping(Model, group)));
+    public PyObject integration_jobs => PythonObjects.List(Model.IntegrationJobs.Select(job => new IntegrationJob(Model, job)));
 
     public Grouping add_grouping(string name)
     {
@@ -62,13 +64,17 @@ public sealed class Workspace
     }
 
     public Grouping __getitem__(string grouping) =>
-        groupings.FirstOrDefault(group => group.name == grouping)
+        Model.Groups
+            .Select(group => new Grouping(Model, group))
+            .FirstOrDefault(group => group.name == grouping)
         ?? throw new KeyNotFoundException($"Grouping '{grouping}' was not found.");
 
     public Grouping this[string grouping] => __getitem__(grouping);
 
     public IntegrationJob integration_job(string name) =>
-        integration_jobs.FirstOrDefault(job => job.name == name)
+        Model.IntegrationJobs
+            .Select(job => new IntegrationJob(Model, job))
+            .FirstOrDefault(job => job.name == name)
         ?? throw new KeyNotFoundException($"Integration job '{name}' was not found.");
 
     public void apply_metadata(PyObject dataframe)
@@ -76,11 +82,13 @@ public sealed class Workspace
         PythonExtensionRuntime.WithGil(() => {
             dynamic pandas = Py.Import("pandas");
             using PyObject frame = pandas.DataFrame(dataframe);
-            var metadata_columns = frame.GetAttr("columns").As<IEnumerable<PyObject>>()
+            var metadata_columns = new PyList(frame.GetAttr("columns").InvokeMethod("tolist"))
                 .Select(column => column.As<string>() ?? "")
                 .Where(column => column.Length > 0 && column is not ("Group" or "Sample"))
                 .ToArray();
             Model.MetadataColumns.Clear();
+            Model.MetadataColumns["Group"] = MetadataColumnKind.String;
+            Model.MetadataColumns["Sample"] = MetadataColumnKind.String;
             foreach (string column in metadata_columns)
                 Model.MetadataColumns[column] = infer_metadata_kind_from_frame(frame, pandas, column);
             using PyObject records = frame.InvokeMethod("to_dict", "records".ToPython());
@@ -103,7 +111,10 @@ public sealed class Workspace
                 if (sample is null)
                     continue;
 
-                foreach (string existing_key in sample.Metadata.Keys.Except(metadata_columns, StringComparer.Ordinal).ToArray())
+                foreach (string existing_key in sample.Metadata.Keys
+                             .Where(key => key is not ("Group" or "Sample"))
+                             .Except(metadata_columns, StringComparer.Ordinal)
+                             .ToArray())
                     sample.Metadata.Remove(existing_key);
                 foreach (string column in metadata_columns)
                 {
@@ -117,10 +128,17 @@ public sealed class Workspace
 
     private void ensure_metadata_schema()
     {
+        foreach (var group in Model.Groups)
+        foreach (var sample in group.Samples)
+        {
+            sample.Metadata["Group"] = group.Name;
+            sample.Metadata["Sample"] = sample.Name;
+        }
+        Model.MetadataColumns["Group"] = MetadataColumnKind.String;
+        Model.MetadataColumns["Sample"] = MetadataColumnKind.String;
         foreach (string key in Model.Groups
                      .SelectMany(group => group.Samples)
                      .SelectMany(sample => sample.Metadata.Keys)
-                     .Where(key => key is not ("Group" or "Sample"))
                      .Distinct(StringComparer.Ordinal)
                      .OrderBy(key => key, StringComparer.Ordinal))
             if (!Model.MetadataColumns.ContainsKey(key))
@@ -207,8 +225,8 @@ public sealed class IntegrationJob
 
     public string name => Model.Name;
     public string batch_column => Model.BatchColumnName;
-    public List<string> features => Model.SelectedFeatureNames.ToList();
-    public List<int> batch_ids => Model.BatchIds.ToList();
+    public PyObject features => PythonObjects.List(Model.SelectedFeatureNames);
+    public PyObject batch_ids => PythonObjects.List(Model.BatchIds);
     public bool has_integrated_matrix => Model.CurrentMatrix is not null;
     public PyObject source_matrix => PythonArrayConverter.ToNumpy(Model.SourceData ?? new float[0, 0]);
     public PyObject logicle_matrix => PythonArrayConverter.ToNumpy(Model.LogicleNormalized ?? new float[0, 0]);
@@ -257,11 +275,11 @@ public sealed class Grouping
     }
 
     public string name => Model.Name;
-    public List<Sample> samples => Model.Samples.Select(sample => new Sample(Model, sample)).ToList();
+    public PyObject samples => PythonObjects.List(Model.Samples.Select(sample => new Sample(Model, sample)));
     public Strategy strategies => new(Model, null);
-    public Dictionary<string, Compensation> compensations => Model.CompensationCandidates.ToDictionary(item => item.Name, item => new Compensation(item), StringComparer.Ordinal);
+    public PyObject compensations => PythonObjects.Dict(Model.CompensationCandidates.Select(item => KeyValuePair.Create(item.Name, new Compensation(item))));
     public string current_compensation => Model.AppliedCompensation?.Name ?? "";
-    public List<string> channels => Model.Channels.Select(channel => channel.Name).ToList();
+    public PyObject channels => PythonObjects.List(Model.Channels.Select(channel => channel.Name));
 
     public Sample add_fcs(string filename)
     {
@@ -286,14 +304,14 @@ public sealed class Grouping
         return new Compensation(compensation);
     }
 
-    public Compensation create_compensation(string key, IEnumerable<string> channels, PyObject matrix)
+    public Compensation create_compensation(string key, PyObject channels, PyObject matrix)
     {
         PythonExtensionRuntime.EnsureInitialized();
         return PythonExtensionRuntime.WithGil(() =>
         {
-            var channel_names = channels.ToArray();
+            var channel_names = PythonArrayConverter.To<string>(new PyList(channels));
             var values = PythonArrayConverter.ToFloatMatrix(matrix);
-            if (values.GetLength(0) != channel_names.Length || values.GetLength(1) != channel_names.Length)
+            if (values.GetLength(0) != channel_names.Count || values.GetLength(1) != channel_names.Count)
                 throw new ArgumentException("Compensation matrix dimensions must match the channel list.");
 
             var compensation = CompensationMatrix.Create(key, channel_names, values);
@@ -302,7 +320,9 @@ public sealed class Grouping
     }
 
     public Sample __getitem__(string sample) =>
-        samples.FirstOrDefault(item => item.name == sample)
+        Model.Samples
+            .Select(item => new Sample(Model, item))
+            .FirstOrDefault(item => item.name == sample)
         ?? throw new KeyNotFoundException($"Sample '{sample}' was not found.");
 
     public Sample this[string sample] => __getitem__(sample);
@@ -320,17 +340,16 @@ public sealed class Strategy
     }
 
     public string name => gate?.Name ?? group.Name;
-    public List<StatisticDefinition> statistics => definitions().Select(definition => new StatisticDefinition(group, definition)).ToList();
-    public List<string> population_keys => source_gates().SelectMany(item => Population.KeysForGate(item)).ToList();
+    public PyObject statistics => PythonObjects.List(definitions().Select(definition => new StatisticDefinition(group, definition)));
+    public PyObject population_keys => PythonObjects.List(source_gates().SelectMany(item => Population.KeysForGate(item)));
     public bool has_multiple_populations => gate?.PopulationRegions.Count > 1;
 
-    public List<Strategy> children(string population_key = "default")
+    public PyObject children(string population_key = "default")
     {
         var region = gate is null ? PopulationRegion.Primary : Population.ResolveRegion(gate, population_key);
-        return source_gates()
+        return PythonObjects.List(source_gates()
             .Where(child => gate is null || child.ParentPopulationRegion == region)
-            .Select(child => new Strategy(group, child))
-            .ToList();
+            .Select(child => new Strategy(group, child)));
     }
 
     public Population get_population(Sample sample)
@@ -502,18 +521,18 @@ public sealed class Sample
     }
 
     public string name => Model.Name;
-    public List<string> channels => Model.Channels.Select(channel => channel.Name).ToList();
-    public List<string> embeddings => Model.Embeddings.Keys.OrderBy(name => name, StringComparer.Ordinal).ToList();
+    public PyObject channels => PythonObjects.List(Model.Channels.Select(channel => channel.Name));
+    public PyObject embeddings => PythonObjects.List(embedding_names());
     public PyObject matrix => PythonArrayConverter.ToNumpy(Model.RawEvents);
     public PyObject embedding_matrix => PythonArrayConverter.ToNumpy(build_embedding_matrix());
-    public Dictionary<string, Population> populations => Model.Populations.SelectMany(item => Population.Flatten([item])).ToDictionary(item => item.Key, item => new Population(group, Model, item.Value), StringComparer.Ordinal);
+    public PyObject populations => PythonObjects.Dict(population_items());
     public Strategy strategy => new(group, null);
-    public List<string> population_keys => populations.Keys.ToList();
+    public PyObject population_keys => PythonObjects.List(population_items().Select(item => item.Key));
 
     public PyObject get_compensated_matrix() => PythonArrayConverter.ToNumpy(Model.CompensatedEvents);
 
     public Population __getitem__(string population_key) =>
-        populations.TryGetValue(population_key, out var population)
+        population_items().ToDictionary(item => item.Key, item => item.Value, StringComparer.Ordinal).TryGetValue(population_key, out var population)
             ? population
             : throw new KeyNotFoundException($"Population '{population_key}' was not found.");
 
@@ -521,7 +540,7 @@ public sealed class Sample
 
     private float[,] build_embedding_matrix()
     {
-        var names = embeddings;
+        var names = embedding_names();
         var matrix = new float[Model.EventCount, names.Count];
         for (int column = 0; column < names.Count; column++)
         {
@@ -531,6 +550,13 @@ public sealed class Sample
         }
         return matrix;
     }
+
+    private List<string> embedding_names() => Model.Embeddings.Keys.OrderBy(name => name, StringComparer.Ordinal).ToList();
+
+    private IEnumerable<KeyValuePair<string, Population>> population_items() =>
+        Model.Populations
+            .SelectMany(item => Population.Flatten([item]))
+            .Select(item => KeyValuePair.Create(item.Key, new Population(group, Model, item.Value)));
 }
 
 public sealed class Population
@@ -558,9 +584,9 @@ public sealed class Population
         }
     }
 
-    public Dictionary<string, Population> populations => (model?.Children ?? sample.Populations).SelectMany(item => Flatten([item])).ToDictionary(item => item.Key, item => new Population(group, sample, item.Value), StringComparer.Ordinal);
+    public PyObject populations => PythonObjects.Dict(population_items());
     public Strategy strategy => new(resolve_group(), model?.Gate);
-    public List<string> population_keys => populations.Keys.ToList();
+    public PyObject population_keys => PythonObjects.List(population_items().Select(item => item.Key));
 
     public PyObject get_compensated_matrix() => PythonArrayConverter.ToNumpy(PythonArrayConverter.SelectRows(sample.CompensatedEvents, indices()));
 
@@ -600,7 +626,7 @@ public sealed class Population
     }
 
     public Population __getitem__(string population_key) =>
-        populations.TryGetValue(population_key, out var population)
+        population_items().ToDictionary(item => item.Key, item => item.Value, StringComparer.Ordinal).TryGetValue(population_key, out var population)
             ? population
             : throw new KeyNotFoundException($"Population '{population_key}' was not found.");
 
@@ -645,6 +671,11 @@ public sealed class Population
 
     private int[] indices() => model?.EventIndices ?? Enumerable.Range(0, sample.EventCount).ToArray();
 
+    private IEnumerable<KeyValuePair<string, Population>> population_items() =>
+        (model?.Children ?? sample.Populations)
+            .SelectMany(item => Flatten([item]))
+            .Select(item => KeyValuePair.Create(item.Key, new Population(group, sample, item.Value)));
+
     private FlowGroup resolve_group()
     {
         return group;
@@ -688,6 +719,40 @@ public sealed class Compensation
     }
 
     public string name => Model.Name;
-    public List<string> channels => Model.ChannelNames.ToList();
+    public PyObject channels => PythonObjects.List(Model.ChannelNames);
     public PyObject matrix => PythonArrayConverter.ToNumpy(Model.Values);
+}
+
+internal static class PythonObjects
+{
+    public static PyObject List<T>(IEnumerable<T> values)
+    {
+        return PythonExtensionRuntime.WithGil(() =>
+        {
+            var list = new PyList();
+            foreach (var value in values)
+            {
+                using PyObject item = value.ToPython();
+                list.Append(item);
+            }
+
+            return list;
+        });
+    }
+
+    public static PyObject Dict<T>(IEnumerable<KeyValuePair<string, T>> values)
+    {
+        return PythonExtensionRuntime.WithGil(() =>
+        {
+            var dict = new PyDict();
+            foreach (var pair in values)
+            {
+                using PyObject key = pair.Key.ToPython();
+                using PyObject value = pair.Value.ToPython();
+                dict.SetItem(key, value);
+            }
+
+            return dict;
+        });
+    }
 }

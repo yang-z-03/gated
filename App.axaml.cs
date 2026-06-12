@@ -19,6 +19,7 @@ public partial class App : Application
         {
             PythonExtensionRuntime.StartBackground();
             desktop.Exit += (_, _) => PythonExtensionRuntime.Shutdown();
+            BindingPlugins.PropertyAccessors.Add(new DataRowViewPropertyAccessorPlugin());
             var window = new MainWindow();
             desktop.MainWindow = window;
             var args = desktop.Args ?? [];
@@ -31,6 +32,5 @@ public partial class App : Application
         }
 
         base.OnFrameworkInitializationCompleted();
-        BindingPlugins.PropertyAccessors.Add(new DataRowViewPropertyAccessorPlugin());
     }
 }
