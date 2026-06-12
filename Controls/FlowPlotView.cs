@@ -13,6 +13,7 @@ using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
+using Avalonia.Threading;
 using gated.Models;
 
 namespace gated.Controls;
@@ -73,6 +74,9 @@ public sealed class FlowPlotView : Control
     public static readonly StyledProperty<ICommand?> GateEditedCommandProperty =
         AvaloniaProperty.Register<FlowPlotView, ICommand?>(nameof(GateEditedCommand));
 
+    public static readonly StyledProperty<bool> TransformPreparingProperty =
+        AvaloniaProperty.Register<FlowPlotView, bool>(nameof(TransformPreparing));
+
     private const int density_size = 300;
     private int dragging_vertex_index = -1;
     private int dragging_pending_vertex_index = -1;
@@ -114,7 +118,8 @@ public sealed class FlowPlotView : Control
             DensitySmoothingProperty,
             ActiveToolProperty,
             GateCreatedCommandProperty,
-            GateEditedCommandProperty);
+            GateEditedCommandProperty,
+            TransformPreparingProperty);
     }
 
     public FlowGroup? Group
@@ -225,6 +230,12 @@ public sealed class FlowPlotView : Control
         set => SetValue(GateEditedCommandProperty, value);
     }
 
+    public bool TransformPreparing
+    {
+        get => GetValue(TransformPreparingProperty);
+        set => SetValue(TransformPreparingProperty, value);
+    }
+
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
@@ -267,19 +278,21 @@ public sealed class FlowPlotView : Control
             clear_pending_gate();
         if (change.Property == XAxisProperty || change.Property == YAxisProperty)
             clear_pending_gate();
+        if (change.Property == TransformPreparingProperty && !TransformPreparing)
+            invalidate_plot_cache();
         if (change.Property == GroupProperty
             || change.Property == SampleProperty
             || change.Property == GateProperty
             || change.Property == GatesProperty
             || change.Property == PopulationProperty
-            || change.Property == XAxisProperty
-            || change.Property == YAxisProperty
             || change.Property == DotColorProperty
             || change.Property == PlotModeProperty
             || change.Property == ShowOutlierPointsProperty
             || change.Property == DrawLargeDotsProperty
             || change.Property == DensitySmoothingProperty
             || change.Property == ContourLevelCountProperty)
+            invalidate_plot_cache();
+        if ((change.Property == XAxisProperty || change.Property == YAxisProperty) && !TransformPreparing)
             invalidate_plot_cache();
         if (change.Property == ShowGridlinesProperty)
             InvalidateVisual();
@@ -574,13 +587,14 @@ public sealed class FlowPlotView : Control
 
         foreach (var sample in samples)
         {
-            var x_values = sample.GetChannelValues(XAxis.ChannelName);
-            var y_values = sample.GetChannelValues(YAxis.ChannelName);
-            var color_values = should_color_dots() ? sample.GetChannelValues(DotColor!.ChannelName) : [];
+            int[] event_indices = resolve_event_indices(sample);
+            var x_values = sample.GetChannelValues(XAxis.ChannelName, event_indices);
+            var y_values = sample.GetChannelValues(YAxis.ChannelName, event_indices);
+            var color_values = should_color_dots() ? sample.GetChannelValues(DotColor!.ChannelName, event_indices) : [];
             if (x_values.Length == 0 || y_values.Length == 0)
                 continue;
 
-            foreach (int index in resolve_event_indices(sample))
+            for (int index = 0; index < event_indices.Length; index++)
             {
                 int x_bin = to_bin(x_values[index], XAxis, x_minimum, x_span);
                 int y_bin = to_bin(y_values[index], YAxis, y_minimum, y_span);
@@ -701,11 +715,12 @@ public sealed class FlowPlotView : Control
 
         foreach (var sample in samples)
         {
-            var x_values = sample.GetChannelValues(XAxis.ChannelName);
+            int[] event_indices = resolve_event_indices(sample);
+            var x_values = sample.GetChannelValues(XAxis.ChannelName, event_indices);
             if (x_values.Length == 0)
                 continue;
 
-            foreach (int index in resolve_event_indices(sample))
+            for (int index = 0; index < event_indices.Length; index++)
             {
                 int bin = to_bin(x_values[index], XAxis, x_minimum, x_span);
                 if (bin < 0)
@@ -1115,19 +1130,19 @@ public sealed class FlowPlotView : Control
                 yield return sample;
     }
 
-    private IEnumerable<int> resolve_event_indices(FlowSample sample)
+    private int[] resolve_event_indices(FlowSample sample)
     {
         if (Population is not null && Sample == sample)
-            return Population.EventIndices;
+            return Population.GetPlotEventIndices();
 
         if (Gate is not null)
         {
             var population = find_population(sample.Populations, Gate);
             if (population is not null)
-                return population.EventIndices;
+                return population.GetPlotEventIndices();
         }
 
-        return Enumerable.Range(0, sample.EventCount);
+        return sample.GetPlotEventIndices();
     }
 
     private static PopulationResult? find_population(IEnumerable<PopulationResult> populations, GateDefinition gate)
@@ -1725,10 +1740,13 @@ public sealed class FlowPlotView : Control
 
     private void sample_property_changed(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(FlowSample.CompensatedEvents) or null or "")
-            invalidate_plot_cache();
-        else if (e.PropertyName == nameof(FlowSample.Populations))
-            InvalidateVisual();
+        run_on_ui_thread(() =>
+        {
+            if (e.PropertyName is nameof(FlowSample.CompensatedEvents) or null or "")
+                invalidate_plot_cache();
+            else if (e.PropertyName == nameof(FlowSample.Populations))
+                InvalidateVisual();
+        });
     }
 
     private void resubscribe_axis(ref AxisSettings? old_axis, AxisSettings? new_axis)
@@ -1741,8 +1759,19 @@ public sealed class FlowPlotView : Control
             old_axis.PropertyChanged += axis_property_changed;
     }
 
-    private void axis_property_changed(object? sender, PropertyChangedEventArgs e) =>
-        invalidate_plot_cache();
+    private void axis_property_changed(object? sender, PropertyChangedEventArgs e)
+    {
+        run_on_ui_thread(() =>
+        {
+            if (TransformPreparing)
+            {
+                InvalidateVisual();
+                return;
+            }
+
+            invalidate_plot_cache();
+        });
+    }
 
     private void resubscribe_dot_color(DotColorSettings? new_dot_color)
     {
@@ -1755,7 +1784,7 @@ public sealed class FlowPlotView : Control
     }
 
     private void dot_color_property_changed(object? sender, PropertyChangedEventArgs e) =>
-        invalidate_plot_cache();
+        run_on_ui_thread(invalidate_plot_cache);
 
     private void invalidate_plot_cache()
     {
@@ -1763,6 +1792,17 @@ public sealed class FlowPlotView : Control
         cached_contour_key = null;
         cached_contour_geometry = null;
         InvalidateVisual();
+    }
+
+    private static void run_on_ui_thread(Action action)
+    {
+        if (Dispatcher.UIThread.CheckAccess())
+        {
+            action();
+            return;
+        }
+
+        Dispatcher.UIThread.Post(action);
     }
 
     private static WriteableBitmap create_bitmap(byte[] pixels)

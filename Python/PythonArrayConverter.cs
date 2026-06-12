@@ -1,0 +1,143 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using Python.Runtime;
+
+namespace gated.Python;
+
+public static class PythonArrayConverter
+{
+    public static PyObject ToNumpy(float[,] matrix)
+    {
+        using (Py.GIL())
+        {
+            using var rows = new PyList();
+            int row_count = matrix.GetLength(0);
+            int column_count = matrix.GetLength(1);
+            for (int row = 0; row < row_count; row++)
+            {
+                using var values = new PyList();
+                for (int column = 0; column < column_count; column++)
+                    values.Append(new PyFloat(matrix[row, column]));
+                rows.Append(values);
+            }
+
+            dynamic numpy = Py.Import("numpy");
+            return numpy.array(rows);
+        }
+    }
+
+    public static PyObject ToNumpy(double[] values)
+    {
+        using (Py.GIL())
+        {
+            using var list = new PyList();
+            foreach (double value in values)
+                list.Append(new PyFloat(value));
+
+            dynamic numpy = Py.Import("numpy");
+            return numpy.array(list);
+        }
+    }
+
+    public static PyObject ToNumpy(bool[] values)
+    {
+        using (Py.GIL())
+        {
+            using var list = new PyList();
+            foreach (bool value in values)
+                list.Append(value.ToPython());
+
+            dynamic numpy = Py.Import("numpy");
+            return numpy.array(list);
+        }
+    }
+
+    public static PyObject ToNumpy(float[] values)
+    {
+        using (Py.GIL())
+        {
+            using var list = new PyList();
+            foreach (float value in values)
+                list.Append(new PyFloat(value));
+
+            dynamic numpy = Py.Import("numpy");
+            return numpy.array(list);
+        }
+    }
+
+    public static float[,] ToFloatMatrix(PyObject value)
+    {
+        using (Py.GIL())
+        {
+            dynamic numpy = Py.Import("numpy");
+            using PyObject array = numpy.asarray(value);
+            using PyObject list = array.InvokeMethod("tolist");
+            var rows = new PyList(list);
+            long row_count = rows.Length();
+            long column_count = row_count == 0 ? 0 : new PyList(rows[0]).Length();
+            var matrix = new float[row_count, column_count];
+            for (int row = 0; row < row_count; row++)
+            {
+                var r = new PyList(rows[row]);
+                if (r.Length() != column_count)
+                    throw new ArgumentException("Matrix rows must have consistent dimensions.");
+                for (int column = 0; column < column_count; column++)
+                    matrix[row, column] = r[column].As<float>();
+            }
+
+            return matrix;
+        }
+    }
+
+    public static double[] ToDoubleArray(PyObject? value)
+    {
+        using (Py.GIL())
+        {
+            if (value is null || value.IsNone())
+                return [];
+
+            dynamic numpy = Py.Import("numpy");
+            using PyObject array = numpy.asarray(value);
+            using PyObject flattened = array.InvokeMethod("ravel");
+            using PyList list = new PyList(flattened.InvokeMethod("tolist"));
+            double[] dbl = new double[list.Length()];
+            for (int i = 0; i < dbl.Length; i++) dbl[i] = list[i].As<double>();
+            return dbl;
+        }
+    }
+
+    public static float[] ToFloatArray(PyObject? value)
+    {
+        using (Py.GIL())
+        {
+            if (value is null || value.IsNone())
+                return [];
+
+            dynamic numpy = Py.Import("numpy");
+            using PyObject array = numpy.asarray(value);
+            using PyObject flattened = array.InvokeMethod("ravel");
+            using PyList list = new PyList(flattened.InvokeMethod("tolist"));
+            var values = new float[list.Length()];
+            for (int index = 0; index < values.Length; index++)
+                values[index] = list[index].As<float>();
+            return values;
+        }
+    }
+
+    public static float[,] SelectRows(float[,] matrix, IReadOnlyList<int> rows)
+    {
+        int column_count = matrix.GetLength(1);
+        var selected = new float[rows.Count, column_count];
+        for (int row = 0; row < rows.Count; row++)
+        {
+            int source_row = rows[row];
+            if (source_row < 0 || source_row >= matrix.GetLength(0))
+                continue;
+            for (int column = 0; column < column_count; column++)
+                selected[row, column] = matrix[source_row, column];
+        }
+
+        return selected;
+    }
+}

@@ -4,12 +4,15 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Data;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using Avalonia;
+using Avalonia.Threading;
 using gated.Models;
 using gated.Reduction;
 using gated.Services;
+using PythonWorkspaceContext = gated.Python.PythonWorkspaceContext;
 
 namespace gated.ViewModels;
 
@@ -26,9 +29,6 @@ public sealed class MainWindowViewModel : NotifyBase
     private PageLayout? selected_page_layout;
     private IntegrationJob? selected_integration_job;
     private bool is_workspace_metadata_mode;
-    private IntegrationJobSampleMetadata[] subscribed_workspace_metadata_rows = [];
-    private IntegrationJob? subscribed_integration_job_metadata;
-    private IntegrationJobSampleMetadata[] subscribed_job_metadata_rows = [];
     private bool syncing_metadata;
     private PlotMode selected_plot_mode = PlotMode.Density;
     private GatingTool active_tool = GatingTool.View;
@@ -39,6 +39,16 @@ public sealed class MainWindowViewModel : NotifyBase
     private int contour_level_count = 10;
     private int density_smoothing = 9;
     private string status_text = "Append samples to grouping to begin analysis";
+    private string python_script_text = "";
+    private string python_script_output = "";
+    private string python_script_name = "";
+    private string python_script_log = "";
+    private PythonScriptDefinition? editing_python_script;
+    private PythonScriptDefinition? selected_integration_macro;
+    private bool is_python_script_dirty;
+    private bool syncing_python_script;
+    private bool is_python_script_editor_mode;
+    private bool is_python_script_running;
     private AxisSettings x_axis = new();
     private AxisSettings y_axis = new();
     private DotColorSettings dot_color = new();
@@ -48,6 +58,10 @@ public sealed class MainWindowViewModel : NotifyBase
     private PagePlotElement? subscribed_page_menu_element;
     private EquivalentSampleChoice? selected_equivalent_sample_choice;
     private bool syncing_equivalent_sample_choices;
+    private bool is_plot_transform_preparing;
+    private CancellationTokenSource? plot_transform_preparation_cancellation;
+    private bool is_gate_recalculating;
+    private CancellationTokenSource? gate_recalculation_cancellation;
 
     public FlowWorkspace Workspace { get; } = new();
     public ObservableCollection<ProjectNode> ProjectNodes { get; } = new();
@@ -57,21 +71,23 @@ public sealed class MainWindowViewModel : NotifyBase
     public ObservableCollection<AxisChoice> SelectedPageAxisChoices { get; } = new();
     public ObservableCollection<AxisChoice> SelectedPageColorChoices { get; } = new();
     public ObservableCollection<EquivalentSampleChoice> EquivalentSampleChoices { get; } = new();
+    public ObservableCollection<string> BatchColumnChoices { get; } = new();
     private DataTable statistic_table = new();
+    private DataTable workspace_metadata_table = new();
     public ObservableCollection<GateDefinition> PlotGates { get; } = new();
     public ObservableCollection<PagePlotElement> PageElements => selected_page_layout?.Elements ?? empty_page_elements;
     private readonly ObservableCollection<PagePlotElement> empty_page_elements = new();
     public ObservableCollection<CoordinateScaleKind> CoordinateScaleChoices { get; } = new(Enum.GetValues<CoordinateScaleKind>());
     public ObservableCollection<PlotMode> PlotModeChoices { get; } = new(Enum.GetValues<PlotMode>());
     public ObservableCollection<PlotColorPalette> PlotColorPaletteChoices { get; } = new(Enum.GetValues<PlotColorPalette>());
-    public ObservableCollection<KnnDistanceMetric> KnnDistanceChoices { get; } = new(Enum.GetValues<KnnDistanceMetric>());
-    public ObservableCollection<KnnSearchMethod> KnnSearchChoices { get; } = new(Enum.GetValues<KnnSearchMethod>());
     public ObservableCollection<CytoNormGoal> CytoNormGoalChoices { get; } = new(Enum.GetValues<CytoNormGoal>());
-    public ObservableCollection<FlowSomDistance> FlowSomDistanceChoices { get; } = new(Enum.GetValues<FlowSomDistance>());
-    public ObservableCollection<IntegrationJobSampleMetadata> WorkspaceSampleMetadata { get; } = new();
+    public ObservableCollection<PythonScriptDefinition> MacroScripts { get; } = new();
+    public ObservableCollection<PythonScriptDefinition> StatisticScripts { get; } = new();
     public ObservableCollection<string> RecentFilePaths => Workspace.RecentFilePaths;
     public DataView StatisticTableView => statistic_table.DefaultView;
     public DataTable StatisticTable => statistic_table;
+    public DataView WorkspaceMetadataTableView => workspace_metadata_table.DefaultView;
+    public DataTable WorkspaceMetadataTable => workspace_metadata_table;
 
     public ICommand CreateGroupCommand { get; }
     public ICommand CreateLayoutCommand { get; }
@@ -112,18 +128,21 @@ public sealed class MainWindowViewModel : NotifyBase
     public ICommand DeletePageElementCommand { get; }
     public ICommand RefreshIntegrationJobFeaturesCommand { get; }
     public ICommand RunIntegrationJobCommand { get; }
-    public ICommand RunIntegrationJobKnnCommand { get; }
-    public ICommand RunIntegrationJobUmapCommand { get; }
-    public ICommand RunIntegrationJobLeidenCommand { get; }
-    public ICommand RunIntegrationJobFlowSomCommand { get; }
-    public ICommand WriteIntegrationJobResultsCommand { get; }
+    public ICommand RunIntegrationMacroCommand { get; }
     public ICommand CancelIntegrationJobCommand { get; }
     public ICommand ApplyWorkspaceMetadataCommand { get; }
+    public ICommand AddStringMetadataColumnCommand { get; }
+    public ICommand AddIntegerMetadataColumnCommand { get; }
+    public ICommand AddFloatMetadataColumnCommand { get; }
+    public ICommand OpenPythonScriptEditorCommand { get; }
+    public ICommand ClosePythonScriptEditorCommand { get; }
+    public ICommand RunPythonScriptCommand { get; }
     public ICommand IntegrationPopulationSelectionChangedCommand { get; }
     public ICommand IntegrationFeatureSelectionChangedCommand { get; }
     public ICommand SelectPreviousEquivalentSampleCommand { get; }
     public ICommand SelectNextEquivalentSampleCommand { get; }
     public Func<string, string, Task<string?>>? RequestTextInputAsync { get; set; }
+    public Func<string, string, Task<ScriptSaveChoice>>? RequestScriptSaveChoiceAsync { get; set; }
     public Func<string, IReadOnlyList<AxisChoice>, Task<string?>>? RequestChoiceInputAsync { get; set; }
     public Func<string, IReadOnlyList<BooleanPopulationChoice>, Task<BooleanGateSelection?>>? RequestBooleanGateInputAsync { get; set; }
     public Func<CompensationMatrix, Task<bool>>? RequestCompensationEditorAsync { get; set; }
@@ -132,6 +151,7 @@ public sealed class MainWindowViewModel : NotifyBase
     {
         foreach (string path in RecentFileStore.Load())
             Workspace.RecentFilePaths.Add(path);
+        ReloadScriptRepositories();
         CreateGroupCommand = new RelayCommand(_ => create_group());
         CreateLayoutCommand = new RelayCommand(_ => create_layout());
         CreateIntegrationJobCommand = new RelayCommand(_ => create_integration_job(), _ => Workspace.Groups.Any(group => group.Samples.Count > 0));
@@ -164,20 +184,22 @@ public sealed class MainWindowViewModel : NotifyBase
         AddFrequencyOfAllStatisticCommand = new RelayCommand(_ => _ = add_statistic_async(StatisticKind.FrequencyOfAll), _ => selected_group is not null);
         AddCountStatisticCommand = new RelayCommand(_ => _ = add_statistic_async(StatisticKind.NumberOfEvents), _ => selected_group is not null);
         AddCanvasGateCommand = new RelayCommand(parameter => _ = add_canvas_gate_async(parameter as GateDefinition));
-        GateEditedCommand = new RelayCommand(_ => RecalculateSelectedGroup());
+        GateEditedCommand = new RelayCommand(parameter => ScheduleEditedGateRecalculation(parameter as GateDefinition));
         ToggleProjectNodeCommand = new RelayCommand(parameter => toggle_project_node(parameter as ProjectNode));
         SelectProjectNodeCommand = new RelayCommand(parameter => select_project_node(parameter as ProjectNode));
         AddPageElementCommand = new RelayCommand(parameter => add_page_element(parameter as PageDropRequest));
         DeletePageElementCommand = new RelayCommand(_ => delete_selected_page_element(), _ => selected_page_element is not null);
         RefreshIntegrationJobFeaturesCommand = new RelayCommand(_ => refresh_selected_integration_job_features(), _ => selected_integration_job is not null && IsIntegrationJobIdle);
         RunIntegrationJobCommand = new RelayCommand(_ => _ = run_integration_job_async(), _ => selected_integration_job is { HasIntegrated: false } && IsIntegrationJobIdle);
-        RunIntegrationJobKnnCommand = new RelayCommand(_ => _ = run_integration_job_knn_async(), _ => selected_integration_job is { HasIntegrated: true, HasKnnGraph: false } && IsIntegrationJobIdle);
-        RunIntegrationJobUmapCommand = new RelayCommand(_ => _ = run_integration_job_umap_async(), _ => selected_integration_job is { HasKnnGraph: true, HasUmap: false } && IsIntegrationJobIdle);
-        RunIntegrationJobLeidenCommand = new RelayCommand(_ => _ = run_integration_job_leiden_async(), _ => selected_integration_job is { HasKnnGraph: true, HasLeiden: false } && IsIntegrationJobIdle);
-        RunIntegrationJobFlowSomCommand = new RelayCommand(_ => _ = run_integration_job_flowsom_async(), _ => selected_integration_job is { HasIntegrated: true, HasFlowSom: false } && IsIntegrationJobIdle);
-        WriteIntegrationJobResultsCommand = new RelayCommand(_ => _ = write_integration_job_results_async(), _ => selected_integration_job is not null && IsIntegrationJobIdle);
+        RunIntegrationMacroCommand = new RelayCommand(_ => _ = run_selected_integration_macro_async(), _ => selected_integration_job is { HasIntegrated: true } && selected_integration_macro is not null && IsIntegrationJobIdle && !IsPythonScriptRunning);
         CancelIntegrationJobCommand = new RelayCommand(_ => cancel_selected_integration_job(), _ => selected_integration_job is not null);
         ApplyWorkspaceMetadataCommand = new RelayCommand(_ => CommitWorkspaceSampleMetadata(), _ => IsWorkspaceMetadataMode);
+        AddStringMetadataColumnCommand = new RelayCommand(_ => _ = add_metadata_column_async(MetadataColumnKind.String));
+        AddIntegerMetadataColumnCommand = new RelayCommand(_ => _ = add_metadata_column_async(MetadataColumnKind.Integer));
+        AddFloatMetadataColumnCommand = new RelayCommand(_ => _ = add_metadata_column_async(MetadataColumnKind.Float));
+        OpenPythonScriptEditorCommand = new RelayCommand(_ => OpenPythonScriptEditor());
+        ClosePythonScriptEditorCommand = new RelayCommand(_ => _ = ClosePythonScriptEditorAsync());
+        RunPythonScriptCommand = new RelayCommand(_ => _ = run_python_script_async(), _ => !is_python_script_running);
         IntegrationPopulationSelectionChangedCommand = new RelayCommand(_ => UpdateIntegrationJobPopulationSelectionStates());
         IntegrationFeatureSelectionChangedCommand = new RelayCommand(_ => UpdateIntegrationJobFeatureSelectionStates());
         SelectPreviousEquivalentSampleCommand = new RelayCommand(_ => select_relative_equivalent_sample(-1), _ => EquivalentSampleChoices.Count > 1);
@@ -216,6 +238,7 @@ public sealed class MainWindowViewModel : NotifyBase
 
             refresh_selection_sidebars();
             refresh_equivalent_sample_choices();
+            schedule_plot_transform_preparation();
         }
     }
 
@@ -228,6 +251,7 @@ public sealed class MainWindowViewModel : NotifyBase
                 return;
             refresh_axis_choices();
             refresh_equivalent_sample_choices();
+            schedule_plot_transform_preparation();
         }
     }
 
@@ -248,6 +272,7 @@ public sealed class MainWindowViewModel : NotifyBase
             raise_command_states();
             refresh_selected_statistics();
             refresh_equivalent_sample_choices();
+            schedule_plot_transform_preparation();
         }
     }
 
@@ -266,12 +291,37 @@ public sealed class MainWindowViewModel : NotifyBase
             refresh_axis_choices();
             refresh_selected_statistics();
             refresh_equivalent_sample_choices();
+            schedule_plot_transform_preparation();
         }
     }
 
     public GateDefinition? PlotGate => selected_gate;
     public PopulationResult? PlotPopulation => selected_population;
     public string SelectedGateName => PlotGate?.Name ?? "No gate selected";
+
+    public bool IsPlotTransformPreparing
+    {
+        get => is_plot_transform_preparing;
+        private set
+        {
+            if (!SetField(ref is_plot_transform_preparing, value))
+                return;
+            OnPropertyChanged(nameof(IsEditorPlotCalculating));
+        }
+    }
+
+    public bool IsGateRecalculating
+    {
+        get => is_gate_recalculating;
+        private set
+        {
+            if (!SetField(ref is_gate_recalculating, value))
+                return;
+            OnPropertyChanged(nameof(IsEditorPlotCalculating));
+        }
+    }
+
+    public bool IsEditorPlotCalculating => IsPlotTransformPreparing || IsGateRecalculating;
 
     public EquivalentSampleChoice? SelectedEquivalentSampleChoice
     {
@@ -538,6 +588,7 @@ public sealed class MainWindowViewModel : NotifyBase
             {
                 SelectedIntegrationJob = null;
                 IsWorkspaceMetadataMode = false;
+                IsPythonScriptEditorMode = false;
             }
             OnPropertyChanged(nameof(IsDefaultAnalysisMode));
             StatusText = value
@@ -554,13 +605,97 @@ public sealed class MainWindowViewModel : NotifyBase
         {
             if (!SetField(ref is_workspace_metadata_mode, value))
                 return;
+            if (value)
+                IsPythonScriptEditorMode = false;
             OnPropertyChanged(nameof(IsDefaultAnalysisMode));
         }
     }
-    public bool IsDefaultAnalysisMode => !IsPageEditorMode && !IsIntegrationJobMode && !IsWorkspaceMetadataMode;
+    public bool IsPythonScriptEditorMode
+    {
+        get => is_python_script_editor_mode;
+        private set
+        {
+            if (!SetField(ref is_python_script_editor_mode, value))
+                return;
+            if (value)
+            {
+                is_page_editor_mode = false;
+                OnPropertyChanged(nameof(IsPageEditorMode));
+                SelectedIntegrationJob = null;
+                IsWorkspaceMetadataMode = false;
+                StatusText = "Python script editor";
+            }
+            OnPropertyChanged(nameof(IsDefaultAnalysisMode));
+        }
+    }
+
+    public bool IsDefaultAnalysisMode => !IsPageEditorMode && !IsIntegrationJobMode && !IsWorkspaceMetadataMode && !IsPythonScriptEditorMode;
     public bool IsIntegrationJobIdle => SelectedIntegrationJob is not { IsRunning: true };
     public bool IsSelectedIntegrationJobConfigEditable => SelectedIntegrationJob is { IsConfigurationLocked: false } && IsIntegrationJobIdle;
     public bool IsSelectedIntegrationJobConfigReadOnly => !IsSelectedIntegrationJobConfigEditable;
+
+    public string PythonScriptText
+    {
+        get => python_script_text;
+        set
+        {
+            if (!SetField(ref python_script_text, value ?? ""))
+                return;
+            if (!syncing_python_script)
+                IsPythonScriptDirty = true;
+        }
+    }
+
+    public string PythonScriptName
+    {
+        get => python_script_name;
+        set
+        {
+            if (!SetField(ref python_script_name, value ?? ""))
+                return;
+            OnPropertyChanged(nameof(PythonScriptFileName));
+            if (!syncing_python_script)
+                IsPythonScriptDirty = true;
+        }
+    }
+
+    public string PythonScriptFileName => editing_python_script is null
+        ? ""
+        : PythonScriptRepository.PreviewFileName(editing_python_script.Kind, PythonScriptName);
+
+    public bool HasEditingPythonScript => editing_python_script is not null;
+
+    public string PythonScriptLog
+    {
+        get => python_script_log;
+        private set => SetField(ref python_script_log, value, nameof(PythonScriptLog));
+    }
+
+    public bool IsPythonScriptDirty
+    {
+        get => is_python_script_dirty;
+        private set => SetField(ref is_python_script_dirty, value);
+    }
+
+    public string PythonScriptOutput
+    {
+        get => python_script_output;
+        private set => SetField(ref python_script_output, value);
+    }
+
+    public bool IsPythonScriptRunning
+    {
+        get => is_python_script_running;
+        private set
+        {
+            if (!SetField(ref is_python_script_running, value))
+                return;
+            if (RunPythonScriptCommand is RelayCommand command)
+                command.RaiseCanExecuteChanged();
+        }
+    }
+
+    public bool CanSavePythonScript => editing_python_script is not null;
 
     public PagePlotElement? SelectedPageElement
     {
@@ -608,20 +743,19 @@ public sealed class MainWindowViewModel : NotifyBase
         {
             if (!SetField(ref selected_integration_job, value))
                 return;
-            unsubscribe_job_metadata_rows();
             if (value is not null)
             {
+                IsPythonScriptEditorMode = false;
                 IsWorkspaceMetadataMode = false;
-                refresh_job_metadata_from_workspace(value);
-                subscribe_job_metadata_rows(value);
             }
+            refresh_batch_column_choices();
             OnPropertyChanged(nameof(IsIntegrationJobMode));
             OnPropertyChanged(nameof(IsDefaultAnalysisMode));
             OnPropertyChanged(nameof(IsIntegrationJobIdle));
             OnPropertyChanged(nameof(IsSelectedIntegrationJobConfigEditable));
             OnPropertyChanged(nameof(IsSelectedIntegrationJobConfigReadOnly));
-            OnPropertyChanged(nameof(IsSelectedIntegrationJobConfigReadOnly));
             OnPropertyChanged(nameof(SelectedIntegrationJobName));
+            OnPropertyChanged(nameof(SelectedIntegrationJobBatchColumnName));
             raise_command_states();
         }
     }
@@ -636,6 +770,35 @@ public sealed class MainWindowViewModel : NotifyBase
             selected_integration_job.Name = value;
             OnPropertyChanged();
             refresh_project_tree();
+        }
+    }
+
+    public string SelectedIntegrationJobBatchColumnName
+    {
+        get => selected_integration_job?.BatchColumnName ?? "";
+        set
+        {
+            if (selected_integration_job is null)
+                return;
+            string next = value ?? "";
+            if (selected_integration_job.BatchColumnName == next)
+                return;
+            selected_integration_job.BatchColumnName = next;
+            OnPropertyChanged();
+            if (selected_integration_job.SourceData is not null)
+                selected_integration_job.InvalidateFromConfiguration();
+            raise_command_states();
+        }
+    }
+
+    public PythonScriptDefinition? SelectedIntegrationMacro
+    {
+        get => selected_integration_macro;
+        set
+        {
+            if (!SetField(ref selected_integration_macro, value))
+                return;
+            raise_command_states();
         }
     }
 
@@ -785,15 +948,15 @@ public sealed class MainWindowViewModel : NotifyBase
         Workspace.Groups.Clear();
         Workspace.PageLayouts.Clear();
         Workspace.IntegrationJobs.Clear();
+        Workspace.MetadataColumns.Clear();
         foreach (var group in loaded.Groups)
-        {
-            group.RecalculateSamples();
             Workspace.Groups.Add(group);
-        }
         foreach (var layout in loaded.PageLayouts)
             Workspace.PageLayouts.Add(layout);
         foreach (var job in loaded.IntegrationJobs)
             Workspace.IntegrationJobs.Add(job);
+        foreach (var column in loaded.MetadataColumns)
+            Workspace.MetadataColumns[column.Key] = column.Value;
         ensure_default_layout();
 
         project_expansion_state.Clear();
@@ -809,6 +972,7 @@ public sealed class MainWindowViewModel : NotifyBase
         next_gate_number = Math.Max(1, count_gates(Workspace.Groups.SelectMany(group => group.Gates)) + 1);
         if (selected_group is not null)
             reset_axes_from_group(selected_group);
+        refresh_workspace_sample_metadata();
         seed_loaded_workspace_expansion_state();
         refresh_project_tree();
         refresh_selection_sidebars();
@@ -821,11 +985,333 @@ public sealed class MainWindowViewModel : NotifyBase
     public void RecalculateSelectedGroup()
     {
         selected_group?.RecalculateSamples();
+        refresh_selected_population_reference();
         refresh_project_tree();
         OnPropertyChanged(nameof(PlotGate));
         OnPropertyChanged(nameof(PlotPopulation));
         refresh_plot_gates();
         refresh_selected_statistics();
+    }
+
+    public void RecalculateEditedGate(GateDefinition? gate)
+    {
+        if (selected_group is null || gate is null)
+        {
+            RecalculateSelectedGroup();
+            return;
+        }
+
+        if (has_external_boolean_dependency(selected_group, gate) || !selected_group.RecalculateGateSubtree(gate))
+            selected_group.RecalculateSamples();
+
+        refresh_selected_population_reference();
+        refresh_project_tree();
+        OnPropertyChanged(nameof(PlotGate));
+        OnPropertyChanged(nameof(PlotPopulation));
+        refresh_plot_gates();
+        refresh_selected_statistics();
+    }
+
+    private void ScheduleEditedGateRecalculation(GateDefinition? gate)
+    {
+        gate_recalculation_cancellation?.Cancel();
+
+        if (selected_group is null || gate is null)
+        {
+            RecalculateSelectedGroup();
+            return;
+        }
+
+        var group = selected_group;
+        var cancellation = new CancellationTokenSource();
+        gate_recalculation_cancellation = cancellation;
+        IsGateRecalculating = true;
+        StatusText = "Recalculating gate ...";
+
+        _ = recalculate_edited_gate_async(group, gate, cancellation);
+    }
+
+    private async Task recalculate_edited_gate_async(FlowGroup group, GateDefinition gate, CancellationTokenSource cancellation)
+    {
+        try
+        {
+            await Task.Run(() =>
+            {
+                cancellation.Token.ThrowIfCancellationRequested();
+                if (has_external_boolean_dependency(group, gate) || !group.RecalculateGateSubtree(gate, cancellation.Token))
+                    group.RecalculateSamples(force_compensation: false, cancellation.Token);
+            }, cancellation.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (Exception exception)
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (!ReferenceEquals(gate_recalculation_cancellation, cancellation))
+                    return;
+                StatusText = $"Gate recalculation failed: {exception.Message}";
+            });
+        }
+        finally
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (!ReferenceEquals(gate_recalculation_cancellation, cancellation))
+                {
+                    cancellation.Dispose();
+                    return;
+                }
+
+                gate_recalculation_cancellation.Dispose();
+                gate_recalculation_cancellation = null;
+                IsGateRecalculating = false;
+                refresh_selected_population_reference();
+                refresh_project_tree();
+                OnPropertyChanged(nameof(PlotGate));
+                OnPropertyChanged(nameof(PlotPopulation));
+                refresh_plot_gates();
+                refresh_selected_statistics();
+                StatusText = "Gate recalculation complete";
+            });
+        }
+    }
+
+    private void refresh_selected_population_reference()
+    {
+        if (selected_population is null || selected_sample is null)
+            return;
+
+        var refreshed = find_population(selected_sample.Populations, selected_population.Gate, selected_population.Region);
+        if (!ReferenceEquals(refreshed, selected_population))
+            SelectedPopulation = refreshed;
+    }
+
+    public void RunPythonExtension(string code)
+    {
+        void capture_log(string text) => 
+            append_python_log(text);
+        Python.PythonExtensionRuntime.LogReceived += capture_log;
+        try
+        {
+            var context = new PythonWorkspaceContext(Workspace);
+            context.execute(code);
+            void refresh()
+            {
+                foreach (var group in Workspace.Groups)
+                    group.RecalculateSamples();
+                SelectedGroup ??= Workspace.Groups.FirstOrDefault();
+                SelectedSample ??= selected_group?.Samples.FirstOrDefault();
+                refresh_project_tree();
+                refresh_selection_sidebars();
+                OnPropertyChanged(nameof(PlotGate));
+                OnPropertyChanged(nameof(PlotPopulation));
+                refresh_plot_gates();
+                refresh_selected_statistics();
+                StatusText = "Python extension completed";
+                raise_command_states();
+            }
+
+            if (Dispatcher.UIThread.CheckAccess())
+                refresh();
+            else
+                Dispatcher.UIThread.InvokeAsync(refresh).GetAwaiter().GetResult();
+        }
+        catch (Exception exception)
+        {
+            append_python_log(exception.ToString());
+            throw;
+        }
+        finally
+        {
+            Python.PythonExtensionRuntime.LogReceived -= capture_log;
+        }
+    }
+
+    public void ReloadScriptRepositories()
+    {
+        MacroScripts.Clear();
+        foreach (var macro in PythonScriptRepository.LoadMacros())
+            MacroScripts.Add(macro);
+
+        StatisticScripts.Clear();
+        foreach (var statistic in PythonScriptRepository.LoadStatistics())
+            StatisticScripts.Add(statistic);
+    }
+
+    public async Task CreateMacroAsync()
+    {
+        if (!await confirm_python_script_transition_async())
+            return;
+        string? name = RequestTextInputAsync is null
+            ? $"Macro {MacroScripts.Count + 1}"
+            : await RequestTextInputAsync("Create macro", "Macro name");
+        if (string.IsNullOrWhiteSpace(name))
+            return;
+
+        var macro = PythonScriptRepository.NewMacro(name.Trim());
+        OpenPythonScriptEditor(macro, dirty: true);
+        StatusText = $"Created macro: {macro.Name}";
+    }
+
+    public async Task CreateStatisticScriptAsync()
+    {
+        if (!await confirm_python_script_transition_async())
+            return;
+        string? name = RequestTextInputAsync is null
+            ? $"Python statistic {StatisticScripts.Count + 1}"
+            : await RequestTextInputAsync("Create Python statistic", "Statistic name");
+        if (string.IsNullOrWhiteSpace(name))
+            return;
+
+        var statistic = PythonScriptRepository.NewStatistic(name.Trim());
+        OpenPythonScriptEditor(statistic, dirty: true);
+        StatusText = $"Created Python statistic script: {statistic.Name}";
+    }
+
+    public async Task OpenPythonScriptEditorAsync(PythonScriptDefinition? script = null)
+    {
+        if (!await confirm_python_script_transition_async())
+            return;
+        OpenPythonScriptEditor(script);
+    }
+
+    public void OpenPythonScriptEditor(PythonScriptDefinition? script = null, bool dirty = false)
+    {
+        editing_python_script = script;
+        PythonScriptLog = "";
+        syncing_python_script = true;
+        if (script is not null)
+        {
+            python_script_name = script.Name;
+            python_script_text = script.Source;
+            OnPropertyChanged(nameof(PythonScriptName));
+            OnPropertyChanged(nameof(PythonScriptText));
+            OnPropertyChanged(nameof(PythonScriptFileName));
+            OnPropertyChanged(nameof(HasEditingPythonScript));
+            OnPropertyChanged(nameof(CanSavePythonScript));
+            PythonScriptOutput = $"{script.Kind}: {script.Name}";
+        }
+        syncing_python_script = false;
+        IsPythonScriptDirty = dirty;
+        IsPythonScriptEditorMode = true;
+    }
+
+    public async Task ClosePythonScriptEditorAsync()
+    {
+        if (!await confirm_python_script_transition_async())
+            return;
+        IsPythonScriptEditorMode = false;
+        editing_python_script = null;
+        OnPropertyChanged(nameof(HasEditingPythonScript));
+        OnPropertyChanged(nameof(CanSavePythonScript));
+        OnPropertyChanged(nameof(PythonScriptFileName));
+        IsPythonScriptDirty = false;
+        PythonScriptLog = "";
+        StatusText = "Analysis view";
+    }
+
+    public bool SavePythonScript()
+    {
+        if (editing_python_script is null)
+            return true;
+
+        editing_python_script.Name = PythonScriptName.Trim();
+        editing_python_script.Source = PythonScriptText;
+        string? validation_error = PythonScriptRepository.ValidateForSave(editing_python_script);
+        if (!string.IsNullOrWhiteSpace(validation_error))
+        {
+            append_python_log(validation_error);
+            StatusText = validation_error;
+            return false;
+        }
+
+        PythonScriptRepository.Save(editing_python_script);
+        ReloadScriptRepositories();
+        IsPythonScriptDirty = false;
+        OnPropertyChanged(nameof(PythonScriptFileName));
+        StatusText = $"Saved script: {PythonScriptFileName}";
+        return true;
+    }
+
+    public async Task RunMacroAsync(PythonScriptDefinition macro)
+    {
+        if (macro.Kind != PythonScriptRepositoryKind.Macro)
+            return;
+        PythonScriptLog = "";
+        await Task.Run(() => RunPythonExtension(macro.Source));
+        StatusText = $"Ran macro: {macro.Name}";
+    }
+
+    public void ApplyStatisticScript(PythonScriptDefinition script)
+    {
+        if (selected_group is null || script.Kind != PythonScriptRepositoryKind.Statistic)
+            return;
+
+        Python.PythonExtensionRuntime.ValidateStatisticSource(script.Source, "entry");
+        var definition = new StatisticDefinition();
+        definition.SetPythonMethod(script.Source, "entry", script.Name);
+        var definitions = selected_gate?.Statistics ?? selected_group.Statistics;
+        definitions.Add(definition);
+        selected_group.RecalculateSamples();
+        refresh_project_tree();
+        refresh_selected_statistics();
+        StatusText = $"Added Python statistic: {script.Name}";
+    }
+
+    private async Task run_python_script_async()
+    {
+        if (IsPythonScriptRunning)
+            return;
+
+        IsPythonScriptRunning = true;
+        PythonScriptOutput = "Running ...";
+        PythonScriptLog = "";
+        try
+        {
+            await Task.Run(() => RunPythonExtension(PythonScriptText));
+            PythonScriptOutput = "Completed.";
+        }
+        catch (Exception exception)
+        {
+            PythonScriptOutput = exception.Message;
+            StatusText = $"Python extension failed: {exception.Message}";
+        }
+        finally
+        {
+            IsPythonScriptRunning = false;
+        }
+    }
+
+    private async Task<bool> confirm_python_script_transition_async()
+    {
+        if (!IsPythonScriptDirty || editing_python_script is null)
+            return true;
+
+        var choice = RequestScriptSaveChoiceAsync is null
+            ? ScriptSaveChoice.Save
+            : await RequestScriptSaveChoiceAsync("Unsaved script changes", $"Save changes to '{PythonScriptName}'?");
+
+        if (choice == ScriptSaveChoice.Cancel)
+            return false;
+        if (choice == ScriptSaveChoice.Discard)
+            return true;
+        return SavePythonScript();
+    }
+
+    private void append_python_log(string text)
+    {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(() => append_python_log(text));
+            return;
+        }
+
+        PythonScriptLog = string.IsNullOrEmpty(PythonScriptLog)
+            ? text
+            : PythonScriptLog + Environment.NewLine + text;
     }
 
     public void SwapAxes()
@@ -840,6 +1326,7 @@ public sealed class MainWindowViewModel : NotifyBase
         OnPropertyChanged(nameof(IsYAxisEnabled));
         sync_selected_gate_preferred_view();
         refresh_plot_gates();
+        schedule_plot_transform_preparation();
     }
 
     private void add_sample_to_compatible_group(FlowSample sample)
@@ -902,7 +1389,8 @@ public sealed class MainWindowViewModel : NotifyBase
     private void populate_integration_job_choices(IntegrationJob job)
     {
         job.Populations.Clear();
-        job.SampleMetadata.Clear();
+        ensure_metadata_schema();
+        job.BatchColumnName = default_batch_column_name();
         foreach (var group in Workspace.Groups)
         foreach (var sample in group.Samples)
         {
@@ -921,23 +1409,13 @@ public sealed class MainWindowViewModel : NotifyBase
                 IsSelected = selected_group is null || ReferenceEquals(group, selected_group)
             });
 
-            job.SampleMetadata.Add(new IntegrationJobSampleMetadata
-            {
-                GroupId = group.Id,
-                SampleId = sample.Id,
-                GroupName = group.Name,
-                SampleName = sample.Name,
-                Batch = sample.Metadata.TryGetValue("Batch", out string? batch) ? batch : group.Name,
-                Condition = sample.Metadata.TryGetValue("Condition", out string? condition) ? condition : "",
-                Notes = sample.Metadata.TryGetValue("Notes", out string? notes) ? notes : ""
-            });
-
             foreach (var population in sample.Populations)
                 append_integration_population_selection(job, group, sample, population, sample_row_key, 1);
         }
 
         update_population_selection_states(job);
         refresh_integration_job_features(job);
+        refresh_batch_column_choices();
     }
 
     private void append_integration_population_selection(IntegrationJob job, FlowGroup group, FlowSample sample, PopulationResult population, Guid parent_key, int depth)
@@ -1105,63 +1583,8 @@ public sealed class MainWindowViewModel : NotifyBase
         if (selected_integration_job is null)
             return;
         var job = selected_integration_job;
-        sync_job_metadata_to_workspace(job);
         await run_integration_job_stage_async(job, runner => runner.RunIntegration(job));
         finish_integration_job_step(job, "Integration complete");
-    }
-
-    private async Task run_integration_job_knn_async()
-    {
-        if (selected_integration_job is null)
-            return;
-        var job = selected_integration_job;
-        sync_job_metadata_to_workspace(job);
-        await run_integration_job_stage_async(job, runner => runner.RunKnn(job));
-        finish_integration_job_step(job, "kNN graph complete");
-    }
-
-    private async Task run_integration_job_umap_async()
-    {
-        if (selected_integration_job is null)
-            return;
-        var job = selected_integration_job;
-        sync_job_metadata_to_workspace(job);
-        await run_integration_job_stage_async(job, runner => runner.RunUmap(job));
-        finish_integration_job_step(job, "UMAP complete");
-        refresh_axis_choices();
-    }
-
-    private async Task run_integration_job_leiden_async()
-    {
-        if (selected_integration_job is null)
-            return;
-        var job = selected_integration_job;
-        sync_job_metadata_to_workspace(job);
-        await run_integration_job_stage_async(job, runner => runner.RunLeiden(job));
-        finish_integration_job_step(job, "Leiden clustering complete");
-        refresh_axis_choices();
-    }
-
-    private async Task run_integration_job_flowsom_async()
-    {
-        if (selected_integration_job is null)
-            return;
-        var job = selected_integration_job;
-        sync_job_metadata_to_workspace(job);
-        await run_integration_job_stage_async(job, runner => runner.RunFlowSom(job));
-        finish_integration_job_step(job, "FlowSOM clustering complete");
-        refresh_axis_choices();
-    }
-
-    private async Task write_integration_job_results_async()
-    {
-        if (selected_integration_job is null)
-            return;
-        var job = selected_integration_job;
-        sync_job_metadata_to_workspace(job);
-        await run_integration_job_stage_async(job, runner => runner.WriteBack(job));
-        finish_integration_job_step(job, job.Status == IntegrationJobStatus.Complete ? "Integration job results written" : job.StatusText);
-        refresh_axis_choices();
     }
 
     private async Task run_integration_job_stage_async(IntegrationJob job, Func<IntegrationJobRunner, bool> action)
@@ -1210,6 +1633,32 @@ public sealed class MainWindowViewModel : NotifyBase
         refresh_project_tree();
     }
 
+    private async Task run_selected_integration_macro_async()
+    {
+        if (selected_integration_macro is null || selected_integration_job is not { HasIntegrated: true })
+            return;
+
+        IsPythonScriptRunning = true;
+        PythonScriptOutput = "Running ...";
+        PythonScriptLog = "";
+        try
+        {
+            await RunMacroAsync(selected_integration_macro);
+            PythonScriptOutput = "Completed.";
+            StatusText = $"Ran macro: {selected_integration_macro.Name}";
+        }
+        catch (Exception exception)
+        {
+            PythonScriptOutput = exception.Message;
+            StatusText = $"Python macro failed: {exception.Message}";
+        }
+        finally
+        {
+            IsPythonScriptRunning = false;
+            raise_command_states();
+        }
+    }
+
     private void finish_integration_job_step(IntegrationJob job, string success_status)
     {
         StatusText = job.HasWarning ? job.WarningText : success_status;
@@ -1219,52 +1668,139 @@ public sealed class MainWindowViewModel : NotifyBase
 
     private void refresh_workspace_sample_metadata()
     {
-        unsubscribe_workspace_metadata_rows();
-        WorkspaceSampleMetadata.Clear();
+        rebuild_workspace_metadata_table();
+        refresh_batch_column_choices();
+    }
+
+    private void rebuild_workspace_metadata_table()
+    {
+        workspace_metadata_table = build_metadata_table(workspace_sample_rows());
+        workspace_metadata_table.ColumnChanged += metadata_table_column_changed;
+        OnPropertyChanged(nameof(WorkspaceMetadataTable));
+        OnPropertyChanged(nameof(WorkspaceMetadataTableView));
+    }
+
+    private void metadata_table_column_changed(object sender, DataColumnChangeEventArgs e)
+    {
+        if (syncing_metadata || e.Column is null || e.Column.ColumnName.StartsWith("__", StringComparison.Ordinal) || e.Column.ColumnName is "Group" or "Sample")
+            return;
+        syncing_metadata = true;
+        try
+        {
+            commit_metadata_row(e.Row);
+            refresh_batch_column_choices();
+        }
+        finally
+        {
+            syncing_metadata = false;
+        }
+    }
+
+    private IEnumerable<(FlowGroup Group, FlowSample Sample)> workspace_sample_rows()
+    {
         foreach (var group in Workspace.Groups)
         foreach (var sample in group.Samples)
+            yield return (group, sample);
+    }
+
+    private DataTable build_metadata_table(IEnumerable<(FlowGroup Group, FlowSample Sample)> rows)
+    {
+        ensure_metadata_schema();
+        var table = new DataTable();
+        table.Columns.Add("__GroupId", typeof(Guid));
+        table.Columns.Add("__SampleId", typeof(Guid));
+        table.Columns.Add("Group", typeof(string));
+        table.Columns.Add("Sample", typeof(string));
+        foreach (var column in Workspace.MetadataColumns.OrderBy(item => item.Key, StringComparer.Ordinal))
+            table.Columns.Add(column.Key, type_for_metadata_kind(column.Value));
+
+        foreach (var (group, sample) in rows)
         {
-            WorkspaceSampleMetadata.Add(new IntegrationJobSampleMetadata
+            var row = table.NewRow();
+            row["__GroupId"] = group.Id;
+            row["__SampleId"] = sample.Id;
+            row["Group"] = group.Name;
+            row["Sample"] = sample.Name;
+            foreach (var column in Workspace.MetadataColumns)
             {
-                GroupId = group.Id,
-                SampleId = sample.Id,
-                GroupName = group.Name,
-                SampleName = sample.Name,
-                Batch = sample.Metadata.TryGetValue("Batch", out string? batch) ? batch : "",
-                Condition = sample.Metadata.TryGetValue("Condition", out string? condition) ? condition : "",
-                Notes = sample.Metadata.TryGetValue("Notes", out string? notes) ? notes : ""
-            });
+                if (!sample.Metadata.TryGetValue(column.Key, out string? value) || string.IsNullOrWhiteSpace(value))
+                    row[column.Key] = DBNull.Value;
+                else
+                    row[column.Key] = parse_metadata_value(value, column.Value) ?? DBNull.Value;
+            }
+            table.Rows.Add(row);
         }
-        subscribe_workspace_metadata_rows();
+
+        return table;
+    }
+
+    private void ensure_metadata_schema()
+    {
+        foreach (var key in Workspace.Groups
+                     .SelectMany(group => group.Samples)
+                     .SelectMany(sample => sample.Metadata.Keys)
+                     .Where(key => key is not ("Group" or "Sample"))
+                     .Distinct(StringComparer.Ordinal)
+                     .OrderBy(key => key, StringComparer.Ordinal))
+        {
+            if (!Workspace.MetadataColumns.ContainsKey(key))
+                Workspace.MetadataColumns[key] = infer_metadata_kind(key);
+        }
+    }
+
+    private void refresh_batch_column_choices()
+    {
+        ensure_metadata_schema();
+        var choices = Workspace.MetadataColumns
+            .Where(column => column.Value == MetadataColumnKind.String)
+            .Select(column => column.Key)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+
+        BatchColumnChoices.Clear();
+        foreach (string choice in choices)
+            BatchColumnChoices.Add(choice);
+
+        if (selected_integration_job is not null)
+        {
+            if (!string.IsNullOrWhiteSpace(selected_integration_job.BatchColumnName) && !choices.Contains(selected_integration_job.BatchColumnName, StringComparer.Ordinal))
+                selected_integration_job.BatchColumnName = "";
+            if (string.IsNullOrWhiteSpace(selected_integration_job.BatchColumnName))
+                selected_integration_job.BatchColumnName = default_batch_column_name(choices);
+        }
+
+        OnPropertyChanged(nameof(SelectedIntegrationJobBatchColumnName));
+    }
+
+    private string default_batch_column_name(string[]? choices = null)
+    {
+        choices ??= Workspace.MetadataColumns
+            .Where(column => column.Value == MetadataColumnKind.String)
+            .Select(column => column.Key)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+        return choices.FirstOrDefault(name => string.Equals(name, "Batch", StringComparison.Ordinal)) ??
+               choices.FirstOrDefault() ??
+               "";
     }
 
     public void CommitWorkspaceSampleMetadata()
     {
-        foreach (var row in WorkspaceSampleMetadata)
-            sync_workspace_metadata_row(row);
+        commit_metadata_table(workspace_metadata_table);
         StatusText = "Workspace sample metadata updated";
+        refresh_batch_column_choices();
     }
 
-    private void sync_workspace_metadata_row(IntegrationJobSampleMetadata row)
+    private void commit_metadata_table(DataTable table)
     {
         if (syncing_metadata)
             return;
         syncing_metadata = true;
         try
         {
-            var sample = Workspace.Groups.SelectMany(group => group.Samples).FirstOrDefault(sample => sample.Id == row.SampleId);
-            if (sample is null)
-                return;
-            sample.Metadata["Batch"] = row.Batch;
-            sample.Metadata["Condition"] = row.Condition;
-            sample.Metadata["Notes"] = row.Notes;
-
-            foreach (var job_row in Workspace.IntegrationJobs.SelectMany(job => job.SampleMetadata).Where(metadata => metadata.SampleId == row.SampleId))
-            {
-                job_row.Batch = row.Batch;
-                job_row.Condition = row.Condition;
-                job_row.Notes = row.Notes;
-            }
+            foreach (DataRow row in table.Rows)
+                commit_metadata_row(row);
+            refresh_batch_column_choices();
         }
         finally
         {
@@ -1272,114 +1808,77 @@ public sealed class MainWindowViewModel : NotifyBase
         }
     }
 
-    private void subscribe_workspace_metadata_rows()
+    private void commit_metadata_row(DataRow row)
     {
-        subscribed_workspace_metadata_rows = WorkspaceSampleMetadata.ToArray();
-        foreach (var row in subscribed_workspace_metadata_rows)
-            row.PropertyChanged += workspace_metadata_row_changed;
-    }
-
-    private void unsubscribe_workspace_metadata_rows()
-    {
-        foreach (var row in subscribed_workspace_metadata_rows)
-            row.PropertyChanged -= workspace_metadata_row_changed;
-        subscribed_workspace_metadata_rows = [];
-    }
-
-    private void workspace_metadata_row_changed(object? sender, PropertyChangedEventArgs e)
-    {
-        if (sender is IntegrationJobSampleMetadata row)
-            sync_workspace_metadata_row(row);
-    }
-
-    private void subscribe_job_metadata_rows(IntegrationJob job)
-    {
-        subscribed_integration_job_metadata = job;
-        subscribed_job_metadata_rows = job.SampleMetadata.ToArray();
-        foreach (var row in subscribed_job_metadata_rows)
-            row.PropertyChanged += job_metadata_row_changed;
-    }
-
-    private void unsubscribe_job_metadata_rows()
-    {
-        foreach (var row in subscribed_job_metadata_rows)
-            row.PropertyChanged -= job_metadata_row_changed;
-        subscribed_job_metadata_rows = [];
-        subscribed_integration_job_metadata = null;
-    }
-
-    private void job_metadata_row_changed(object? sender, PropertyChangedEventArgs e)
-    {
-        if (syncing_metadata || sender is not IntegrationJobSampleMetadata row)
+        if (row["__SampleId"] is not Guid sample_id)
             return;
-        syncing_metadata = true;
-        try
-        {
-            var sample = Workspace.Groups.SelectMany(group => group.Samples).FirstOrDefault(sample => sample.Id == row.SampleId);
-            if (sample is not null)
-            {
-                sample.Metadata["Batch"] = row.Batch;
-                sample.Metadata["Condition"] = row.Condition;
-                sample.Metadata["Notes"] = row.Notes;
-            }
+        var sample = Workspace.Groups.SelectMany(group => group.Samples).FirstOrDefault(sample => sample.Id == sample_id);
+        if (sample is null)
+            return;
 
-            var workspace_row = WorkspaceSampleMetadata.FirstOrDefault(metadata => metadata.SampleId == row.SampleId);
-            if (workspace_row is not null)
-            {
-                workspace_row.Batch = row.Batch;
-                workspace_row.Condition = row.Condition;
-                workspace_row.Notes = row.Notes;
-            }
-
-            foreach (var other_job_row in Workspace.IntegrationJobs
-                         .Where(job => !ReferenceEquals(job, subscribed_integration_job_metadata))
-                         .SelectMany(job => job.SampleMetadata)
-                         .Where(metadata => metadata.SampleId == row.SampleId))
-            {
-                other_job_row.Batch = row.Batch;
-                other_job_row.Condition = row.Condition;
-                other_job_row.Notes = row.Notes;
-            }
-        }
-        finally
+        foreach (var column in Workspace.MetadataColumns)
         {
-            syncing_metadata = false;
+            object value = row.Table.Columns.Contains(column.Key) ? row[column.Key] : DBNull.Value;
+            if (value == DBNull.Value || value is null || string.IsNullOrWhiteSpace(Convert.ToString(value)))
+                sample.Metadata.Remove(column.Key);
+            else
+                sample.Metadata[column.Key] = format_metadata_value(value, column.Value);
         }
     }
 
-    private void sync_job_metadata_to_workspace(IntegrationJob job)
+    private async Task add_metadata_column_async(MetadataColumnKind kind)
     {
-        foreach (var row in job.SampleMetadata)
-        {
-            var sample = Workspace.Groups.SelectMany(group => group.Samples).FirstOrDefault(sample => sample.Id == row.SampleId);
-            if (sample is null)
-                continue;
-            sample.Metadata["Batch"] = row.Batch;
-            sample.Metadata["Condition"] = row.Condition;
-            sample.Metadata["Notes"] = row.Notes;
-
-            var workspace_row = WorkspaceSampleMetadata.FirstOrDefault(metadata => metadata.SampleId == row.SampleId);
-            if (workspace_row is not null)
-            {
-                workspace_row.Batch = row.Batch;
-                workspace_row.Condition = row.Condition;
-                workspace_row.Notes = row.Notes;
-            }
-        }
+        if (RequestTextInputAsync is null)
+            return;
+        string? name = await RequestTextInputAsync($"Add {kind.ToString().ToLowerInvariant()} metadata column", "");
+        if (string.IsNullOrWhiteSpace(name))
+            return;
+        name = name.Trim();
+        if (name is "Group" or "Sample" || Workspace.MetadataColumns.ContainsKey(name))
+            return;
+        Workspace.MetadataColumns[name] = kind;
+        rebuild_workspace_metadata_table();
+        refresh_batch_column_choices();
     }
 
-    private void refresh_job_metadata_from_workspace(IntegrationJob job)
+    private MetadataColumnKind infer_metadata_kind(string key)
     {
-        foreach (var row in job.SampleMetadata)
-        {
-            var sample = Workspace.Groups.SelectMany(group => group.Samples).FirstOrDefault(sample => sample.Id == row.SampleId);
-            if (sample is null)
-                continue;
-            row.Batch = sample.Metadata.TryGetValue("Batch", out string? batch) ? batch : row.Batch;
-            row.Condition = sample.Metadata.TryGetValue("Condition", out string? condition) ? condition : row.Condition;
-            row.Notes = sample.Metadata.TryGetValue("Notes", out string? notes) ? notes : row.Notes;
-        }
+        var values = Workspace.Groups.SelectMany(group => group.Samples)
+            .Select(sample => sample.Metadata.TryGetValue(key, out string? value) ? value : "")
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .ToArray();
+        if (values.Length == 0)
+            return MetadataColumnKind.String;
+        if (values.All(value => int.TryParse(value, out _)))
+            return MetadataColumnKind.Integer;
+        if (values.All(value => double.TryParse(value, out _)))
+            return MetadataColumnKind.Float;
+        return MetadataColumnKind.String;
     }
+
+    private static Type type_for_metadata_kind(MetadataColumnKind kind) =>
+        kind switch
+        {
+            MetadataColumnKind.Integer => typeof(int),
+            MetadataColumnKind.Float => typeof(double),
+            _ => typeof(string)
+        };
+
+    private static object? parse_metadata_value(string value, MetadataColumnKind kind) =>
+        kind switch
+        {
+            MetadataColumnKind.Integer => int.TryParse(value, out int int_value) ? int_value : null,
+            MetadataColumnKind.Float => double.TryParse(value, out double double_value) ? double_value : null,
+            _ => value
+        };
+
+    private static string format_metadata_value(object value, MetadataColumnKind kind) =>
+        kind switch
+        {
+            MetadataColumnKind.Integer => Convert.ToInt32(value).ToString(),
+            MetadataColumnKind.Float => Convert.ToDouble(value).ToString("G17"),
+            _ => Convert.ToString(value) ?? ""
+        };
 
     private async Task rename_selected_group_async()
     {
@@ -1669,6 +2168,23 @@ public sealed class MainWindowViewModel : NotifyBase
         }
     }
 
+    private static bool has_external_boolean_dependency(FlowGroup group, GateDefinition edited_gate)
+    {
+        var edited_subtree_ids = all_gates([edited_gate]).Select(gate => gate.Id).ToHashSet();
+        foreach (var gate in all_gates(group.Gates))
+        {
+            if (edited_subtree_ids.Contains(gate.Id))
+                continue;
+            if (gate.Kind is not (GateKind.Merge or GateKind.Exclude or GateKind.Overlap))
+                continue;
+            if ((gate.BooleanFirstGateId is Guid first_id && edited_subtree_ids.Contains(first_id)) ||
+                (gate.BooleanSecondGateId is Guid second_id && edited_subtree_ids.Contains(second_id)))
+                return true;
+        }
+
+        return false;
+    }
+
     private static int count_gates(IEnumerable<GateDefinition> gates)
     {
         int count = 0;
@@ -1726,7 +2242,7 @@ public sealed class MainWindowViewModel : NotifyBase
             selected_gate.Children.Add(gate);
         }
         SelectedGate = gate;
-        selected_group.RecalculateSamples();
+        recalculate_new_gate(gate);
         refresh_project_tree();
         OnPropertyChanged(nameof(PlotGate));
         refresh_plot_gates();
@@ -1770,7 +2286,7 @@ public sealed class MainWindowViewModel : NotifyBase
         gate.Parent = selected_gate;
         siblings.Add(gate);
         SelectedGate = gate;
-        selected_group.RecalculateSamples();
+        recalculate_new_gate(gate);
         refresh_project_tree();
         refresh_plot_gates();
         refresh_selected_statistics();
@@ -1948,12 +2464,21 @@ public sealed class MainWindowViewModel : NotifyBase
         gate.Statistics.Add(new StatisticDefinition { Kind = StatisticKind.FrequencyOfParent, ChannelName = gate.XChannel });
         gate.Parent = selected_gate;
         siblings.Add(gate);
-        selected_group.RecalculateSamples();
+        recalculate_new_gate(gate);
         refresh_project_tree();
         refresh_plot_gates();
         refresh_selected_statistics();
         StatusText = $"{gate.Kind} gate created from canvas";
         raise_command_states();
+    }
+
+    private void recalculate_new_gate(GateDefinition gate)
+    {
+        if (selected_group is null)
+            return;
+
+        if (!selected_group.RecalculateGateSubtree(gate))
+            selected_group.RecalculateSamples();
     }
 
     private bool can_create_gate_kind(GateKind kind) =>
@@ -1980,6 +2505,7 @@ public sealed class MainWindowViewModel : NotifyBase
         if (node is null)
             return;
 
+        IsPythonScriptEditorMode = false;
         var previous_group = selected_group;
         var previous_gate = selected_gate;
         var previous_population = selected_population;
@@ -2276,6 +2802,7 @@ public sealed class MainWindowViewModel : NotifyBase
         OnPropertyChanged(nameof(IsEditorXAxisLogicleScale));
         sync_selected_gate_preferred_view();
         refresh_plot_gates();
+        schedule_plot_transform_preparation();
     }
 
     private void y_axis_property_changed(object? sender, PropertyChangedEventArgs e)
@@ -2356,6 +2883,105 @@ public sealed class MainWindowViewModel : NotifyBase
             return;
 
         copy_current_view_to_preferred_view(selected_gate);
+    }
+
+    private void schedule_plot_transform_preparation()
+    {
+        plot_transform_preparation_cancellation?.Cancel();
+
+        var samples = selected_group?.Samples.ToArray() ?? [];
+        if (selected_sample is not null)
+            samples = samples.Where(sample => ReferenceEquals(sample, selected_sample)).ToArray();
+
+        if (samples.Length == 0 || string.IsNullOrWhiteSpace(XAxis.ChannelName))
+        {
+            IsPlotTransformPreparing = false;
+            return;
+        }
+
+        var x_axis = XAxisClone();
+        var y_axis = IsYAxisEnabled ? YAxisClone() : null;
+        var population_gate = selected_population?.Gate;
+        var population_region = selected_population?.Region;
+        var parent_gate = selected_gate?.Parent;
+        var parent_region = selected_gate?.ParentPopulationRegion ?? PopulationRegion.Primary;
+        var targets = samples
+            .Select(sample => (
+                Sample: sample,
+                Population: resolve_transform_population(sample, population_gate, population_region, parent_gate, parent_region)))
+            .ToArray();
+
+        var cancellation = new CancellationTokenSource();
+        plot_transform_preparation_cancellation = cancellation;
+        IsPlotTransformPreparing = true;
+
+        _ = prepare_plot_transforms_async(targets, x_axis, y_axis, cancellation);
+    }
+
+    private static PopulationResult? resolve_transform_population(
+        FlowSample sample,
+        GateDefinition? population_gate,
+        PopulationRegion? population_region,
+        GateDefinition? parent_gate,
+        PopulationRegion parent_region)
+    {
+        if (population_gate is not null && population_region is { } region)
+            return find_population(sample.Populations, population_gate, region);
+        if (parent_gate is not null)
+            return find_population(sample.Populations, parent_gate, parent_region);
+        return null;
+    }
+
+    private async Task prepare_plot_transforms_async(
+        (FlowSample Sample, PopulationResult? Population)[] targets,
+        AxisSettings x_axis,
+        AxisSettings? y_axis,
+        CancellationTokenSource cancellation)
+    {
+        try
+        {
+            await Task.Delay(120, cancellation.Token);
+            await Task.Run(() =>
+            {
+                foreach (var target in targets)
+                {
+                    cancellation.Token.ThrowIfCancellationRequested();
+                    prepare_axis_transform(target.Sample, target.Population, x_axis, cancellation.Token);
+                    if (y_axis is not null && !string.IsNullOrWhiteSpace(y_axis.ChannelName))
+                        prepare_axis_transform(target.Sample, target.Population, y_axis, cancellation.Token);
+                }
+            }, cancellation.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        finally
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (!ReferenceEquals(plot_transform_preparation_cancellation, cancellation))
+                {
+                    cancellation.Dispose();
+                    return;
+                }
+
+                plot_transform_preparation_cancellation.Dispose();
+                plot_transform_preparation_cancellation = null;
+                IsPlotTransformPreparing = false;
+            });
+        }
+    }
+
+    private static void prepare_axis_transform(FlowSample sample, PopulationResult? population, AxisSettings axis, CancellationToken cancellation_token)
+    {
+        if (string.IsNullOrWhiteSpace(axis.ChannelName))
+            return;
+
+        if (population is null)
+            sample.GetNormalizedChannelValues(axis.ChannelName, axis.Minimum, axis.Maximum, axis.Scale, cancellation_token);
+        else
+            population.GetNormalizedChannelValues(sample, axis.ChannelName, axis.Minimum, axis.Maximum, axis.Scale, cancellation_token);
     }
 
     private void apply_axis_channel_defaults(AxisSettings axis)
@@ -2534,13 +3160,7 @@ public sealed class MainWindowViewModel : NotifyBase
             return Array.Empty<string>();
 
         return population.AvailableEmbeddingNames
-            .Where(embedding_name => sample.Embeddings.ContainsKey(embedding_name) &&
-                Workspace.IntegrationJobs.Any(job =>
-                    job_outputs_key(job, embedding_name) &&
-                    job.RowMap.Any(row =>
-                        row.SampleId == sample.Id &&
-                        row.GateId == population.Gate.Id &&
-                        row.Region == population.Region)))
+            .Where(embedding_name => sample.Embeddings.ContainsKey(embedding_name))
             .Distinct(StringComparer.Ordinal)
             .OrderBy(name => name, StringComparer.Ordinal)
             .ToArray();
@@ -2741,13 +3361,6 @@ public sealed class MainWindowViewModel : NotifyBase
         parent.Children.Add(population_node);
     }
 
-    private static bool job_outputs_key(IntegrationJob job, string key) =>
-        key == job.LeidenKey ||
-        key == job.FlowSomKey ||
-        key == job.UmapXKey ||
-        key == job.UmapYKey ||
-        key == job.UmapZKey;
-
     private void refresh_visible_project_nodes()
     {
         ProjectNodes.Clear();
@@ -2887,11 +3500,7 @@ public sealed class MainWindowViewModel : NotifyBase
             RenameIntegrationJobCommand,
             RefreshIntegrationJobFeaturesCommand,
             RunIntegrationJobCommand,
-            RunIntegrationJobKnnCommand,
-            RunIntegrationJobUmapCommand,
-            RunIntegrationJobLeidenCommand,
-            RunIntegrationJobFlowSomCommand,
-            WriteIntegrationJobResultsCommand,
+            RunIntegrationMacroCommand,
             CancelIntegrationJobCommand,
             ApplyWorkspaceMetadataCommand,
             SelectPreviousEquivalentSampleCommand,
@@ -3028,22 +3637,7 @@ public sealed class MainWindowViewModel : NotifyBase
             return;
 
         var gate = node.Gate;
-        var preferred_view = preferred_view_for_node(gate, node);
-        bool has_preferred_view = preferred_view?.HasView == true;
-        var x_axis = new AxisSettings
-        {
-            ChannelName = has_preferred_view ? preferred_view!.XChannel : gate.XChannel,
-            Minimum = has_preferred_view ? preferred_view!.XMinimum : gate.XMinimum,
-            Maximum = has_preferred_view ? preferred_view!.XMaximum : gate.XMaximum,
-            Scale = (has_preferred_view ? preferred_view!.XScale : gate.XScale).Clone()
-        };
-        var y_axis = new AxisSettings
-        {
-            ChannelName = has_preferred_view ? preferred_view!.YChannel ?? gate.YChannel ?? "" : gate.YChannel ?? "",
-            Minimum = has_preferred_view ? preferred_view!.YMinimum : gate.YMinimum,
-            Maximum = has_preferred_view ? preferred_view!.YMaximum : gate.YMaximum,
-            Scale = (has_preferred_view ? preferred_view!.YScale : gate.YScale).Clone()
-        };
+        var (x_axis, y_axis) = axes_for_page_node(gate, node);
 
         if (string.IsNullOrWhiteSpace(x_axis.ChannelName))
             x_axis = XAxisClone();
@@ -3100,6 +3694,53 @@ public sealed class MainWindowViewModel : NotifyBase
                 YMaximum = gate.PreferredYMaximum,
                 YScale = gate.PreferredYScale
             };
+    }
+
+    private (AxisSettings XAxis, AxisSettings YAxis) axes_for_page_node(GateDefinition gate, ProjectNode node)
+    {
+        if (node_matches_current_plot_context(node))
+            return (XAxisClone(), YAxisClone());
+
+        var preferred_view = preferred_view_for_node(gate, node);
+        bool has_preferred_view = preferred_view?.HasView == true;
+        var x_axis = new AxisSettings
+        {
+            ChannelName = has_preferred_view ? preferred_view!.XChannel : gate.XChannel,
+            Minimum = has_preferred_view ? preferred_view!.XMinimum : gate.XMinimum,
+            Maximum = has_preferred_view ? preferred_view!.XMaximum : gate.XMaximum,
+            Scale = (has_preferred_view ? preferred_view!.XScale : gate.XScale).Clone()
+        };
+        var y_axis = new AxisSettings
+        {
+            ChannelName = has_preferred_view ? preferred_view!.YChannel ?? gate.YChannel ?? "" : gate.YChannel ?? "",
+            Minimum = has_preferred_view ? preferred_view!.YMinimum : gate.YMinimum,
+            Maximum = has_preferred_view ? preferred_view!.YMaximum : gate.YMaximum,
+            Scale = (has_preferred_view ? preferred_view!.YScale : gate.YScale).Clone()
+        };
+
+        if (string.IsNullOrWhiteSpace(x_axis.ChannelName))
+            x_axis = XAxisClone();
+        if (string.IsNullOrWhiteSpace(y_axis.ChannelName))
+            y_axis = YAxisClone();
+
+        return (x_axis, y_axis);
+    }
+
+    private bool node_matches_current_plot_context(ProjectNode node)
+    {
+        if (!ReferenceEquals(selected_node, node))
+            return false;
+
+        return node.Kind switch
+        {
+            ProjectNodeKind.Population =>
+                ReferenceEquals(selected_sample, node.Sample) &&
+                ReferenceEquals(selected_population, node.Population) &&
+                ReferenceEquals(selected_gate, node.Gate),
+            ProjectNodeKind.Gate =>
+                ReferenceEquals(selected_gate, node.Gate),
+            _ => false
+        };
     }
 
     private AxisSettings XAxisClone() =>
@@ -3261,6 +3902,14 @@ public sealed class MainWindowViewModel : NotifyBase
 }
 
 public sealed record PageDropRequest(ProjectNode Node, Point PagePoint);
+
+public enum ScriptSaveChoice
+{
+    Save,
+    Discard,
+    Cancel
+}
+
 public sealed record BooleanPopulationChoice(Guid GateId, PopulationRegion Region, string DisplayName)
 {
     public override string ToString() => DisplayName;

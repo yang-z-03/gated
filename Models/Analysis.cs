@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using Avalonia;
+using gated.Python;
 
 namespace gated.Models;
 
@@ -9,30 +11,58 @@ public static class GateEvaluator
 {
     public static int[] Apply(FlowSample sample, GateDefinition gate, int[] parent_indices)
     {
-        return Apply(sample, gate, PopulationRegion.Primary, parent_indices);
+        return Apply(sample, gate, PopulationRegion.Primary, parent_indices, CancellationToken.None);
     }
 
-    public static int[] Apply(FlowSample sample, GateDefinition gate, PopulationRegion region, int[] parent_indices)
+    public static int[] Apply(
+        FlowSample sample,
+        GateDefinition gate,
+        PopulationRegion region,
+        int[] parent_indices,
+        CancellationToken cancellation_token = default)
     {
-        return Apply(sample, null, gate, region, parent_indices);
+        return Apply(sample, null, gate, region, parent_indices, cancellation_token);
     }
 
-    public static int[] Apply(FlowSample sample, FlowGroup? group, GateDefinition gate, PopulationRegion region, int[] parent_indices)
+    public static int[] Apply(
+        FlowSample sample,
+        FlowGroup? group,
+        GateDefinition gate,
+        PopulationRegion region,
+        int[] parent_indices,
+        CancellationToken cancellation_token = default)
     {
+        return Apply(sample, group, gate, region, parent_indices, parent_population: null, cancellation_token);
+    }
+
+    public static int[] Apply(
+        FlowSample sample,
+        FlowGroup? group,
+        GateDefinition gate,
+        PopulationRegion region,
+        int[] parent_indices,
+        PopulationResult? parent_population,
+        CancellationToken cancellation_token = default)
+    {
+        cancellation_token.ThrowIfCancellationRequested();
         if (gate.Kind is GateKind.Merge or GateKind.Exclude or GateKind.Overlap)
-            return apply_boolean_gate(sample, group, gate, parent_indices);
+            return apply_boolean_gate(sample, group, gate, parent_indices, cancellation_token);
 
         if (gate.Kind == GateKind.CurlyQuadrant)
-            return apply_curly_quadrant(sample, gate, region, parent_indices);
+            return apply_curly_quadrant(sample, gate, region, parent_indices, cancellation_token);
 
-        var x_values = sample.GetNormalizedChannelValues(gate.XChannel, gate.XMinimum, gate.XMaximum, gate.XScale);
+        var x_values = parent_population is null
+            ? sample.GetNormalizedChannelValues(gate.XChannel, gate.XMinimum, gate.XMaximum, gate.XScale, cancellation_token)
+            : parent_population.GetNormalizedChannelValues(sample, gate.XChannel, gate.XMinimum, gate.XMaximum, gate.XScale, cancellation_token);
         if (x_values.Length == 0)
             return Array.Empty<int>();
 
         float[]? y_values = null;
         if (!gate.IsOneDimensional && gate.YChannel is not null)
         {
-            y_values = sample.GetNormalizedChannelValues(gate.YChannel, gate.YMinimum, gate.YMaximum, gate.YScale);
+            y_values = parent_population is null
+                ? sample.GetNormalizedChannelValues(gate.YChannel, gate.YMinimum, gate.YMaximum, gate.YScale, cancellation_token)
+                : parent_population.GetNormalizedChannelValues(sample, gate.YChannel, gate.YMinimum, gate.YMaximum, gate.YScale, cancellation_token);
             if (y_values.Length == 0)
                 return Array.Empty<int>();
         }
@@ -40,10 +70,16 @@ public static class GateEvaluator
         var normalized_vertices = normalized_gate_vertices(gate);
 
         var selected = new List<int>(parent_indices.Length);
-        foreach (int row in parent_indices)
+        for (int index = 0; index < parent_indices.Length; index++)
         {
-            double x_value = x_values[row];
-            double y_value = y_values is null ? 0 : y_values[row];
+            if ((index & 4095) == 0)
+                cancellation_token.ThrowIfCancellationRequested();
+            int row = parent_indices[index];
+            int value_index = parent_population is null ? row : index;
+            if (value_index < 0 || value_index >= x_values.Length || y_values is not null && value_index >= y_values.Length)
+                continue;
+            double x_value = x_values[value_index];
+            double y_value = y_values is null ? 0 : y_values[value_index];
             if (contains_normalized(gate, region, normalized_vertices, x_value, y_value))
                 selected.Add(row);
         }
@@ -92,7 +128,12 @@ public static class GateEvaluator
         };
     }
 
-    private static int[] apply_curly_quadrant(FlowSample sample, GateDefinition gate, PopulationRegion region, int[] parent_indices)
+    private static int[] apply_curly_quadrant(
+        FlowSample sample,
+        GateDefinition gate,
+        PopulationRegion region,
+        int[] parent_indices,
+        CancellationToken cancellation_token)
     {
         if (gate.YChannel is null || gate.Vertices.Count == 0)
             return Array.Empty<int>();
@@ -103,8 +144,11 @@ public static class GateEvaluator
             return Array.Empty<int>();
 
         var selected = new List<int>(parent_indices.Length);
-        foreach (int row in parent_indices)
+        for (int index = 0; index < parent_indices.Length; index++)
         {
+            if ((index & 4095) == 0)
+                cancellation_token.ThrowIfCancellationRequested();
+            int row = parent_indices[index];
             if (row < 0 || row >= x_values.Length || row >= y_values.Length)
                 continue;
             if (contains_curly_quadrant(gate.Vertices[0], x_values[row], y_values[row], region))
@@ -114,7 +158,12 @@ public static class GateEvaluator
         return selected.ToArray();
     }
 
-    private static int[] apply_boolean_gate(FlowSample sample, FlowGroup? group, GateDefinition gate, int[] parent_indices)
+    private static int[] apply_boolean_gate(
+        FlowSample sample,
+        FlowGroup? group,
+        GateDefinition gate,
+        int[] parent_indices,
+        CancellationToken cancellation_token)
     {
         if (group is null || gate.BooleanFirstGateId is null || gate.BooleanSecondGateId is null)
             return Array.Empty<int>();
@@ -125,8 +174,9 @@ public static class GateEvaluator
             return Array.Empty<int>();
 
         var all_indices = Enumerable.Range(0, sample.EventCount).ToArray();
-        var first = evaluate_gate_population(sample, group, first_gate, gate.BooleanFirstRegion, all_indices, []);
-        var second = evaluate_gate_population(sample, group, second_gate, gate.BooleanSecondRegion, all_indices, []);
+        var first = evaluate_gate_population(sample, group, first_gate, gate.BooleanFirstRegion, all_indices, [], cancellation_token);
+        var second = evaluate_gate_population(sample, group, second_gate, gate.BooleanSecondRegion, all_indices, [], cancellation_token);
+        cancellation_token.ThrowIfCancellationRequested();
         var first_set = first.ToHashSet();
         var second_set = second.ToHashSet();
         var parent_set = parent_indices.ToHashSet();
@@ -146,17 +196,19 @@ public static class GateEvaluator
         GateDefinition gate,
         PopulationRegion region,
         int[] root_indices,
-        HashSet<Guid> active)
+        HashSet<Guid> active,
+        CancellationToken cancellation_token)
     {
+        cancellation_token.ThrowIfCancellationRequested();
         if (!active.Add(gate.Id))
             return Array.Empty<int>();
 
         int[] parent_indices = root_indices;
         if (gate.Parent is not null)
-            parent_indices = evaluate_gate_population(sample, group, gate.Parent, gate.ParentPopulationRegion, root_indices, active);
+            parent_indices = evaluate_gate_population(sample, group, gate.Parent, gate.ParentPopulationRegion, root_indices, active, cancellation_token);
 
         active.Remove(gate.Id);
-        return Apply(sample, group, gate, region, parent_indices);
+        return Apply(sample, group, gate, region, parent_indices, cancellation_token);
     }
 
     private static GateDefinition? find_gate(IEnumerable<GateDefinition> gates, Guid id)
@@ -333,10 +385,47 @@ public static class StatisticsCalculator
             StatisticKind.NumberOfEvents => event_indices.Length,
             StatisticKind.FrequencyOfParent => parent_count == 0 ? 0 : event_indices.Length * 100.0 / parent_count,
             StatisticKind.FrequencyOfAll => all_count == 0 ? 0 : event_indices.Length * 100.0 / all_count,
+            StatisticKind.Python => calculate_python_statistic(sample, definition, event_indices),
             _ => calculate_channel_statistic(sample, definition, event_indices)
         };
 
-        return new StatisticResult { Kind = definition.Kind, ChannelName = definition.ChannelName, Value = value };
+        return new StatisticResult
+        {
+            Kind = definition.Kind,
+            ChannelName = definition.ChannelName,
+            Value = value,
+            PythonDisplayName = definition.PythonDisplayName
+        };
+    }
+
+    private static double calculate_python_statistic(FlowSample sample, StatisticDefinition definition, int[] event_indices)
+    {
+        try
+        {
+            var matrix = select_rows(sample.CompensatedEvents, event_indices);
+            var channels = sample.Channels.Select(channel => channel.Name).ToArray();
+            return PythonExtensionRuntime.CalculateStatistic(definition, matrix, channels);
+        }
+        catch (Exception exception)
+        {
+            PythonExtensionRuntime.Log($"Python statistic failed: {exception.Message}");
+            return double.NaN;
+        }
+    }
+
+    private static float[,] select_rows(float[,] source, int[] event_indices)
+    {
+        int columns = source.GetLength(1);
+        var selected = new float[event_indices.Length, columns];
+        for (int row = 0; row < event_indices.Length; row++)
+        {
+            int source_row = event_indices[row];
+            if (source_row < 0 || source_row >= source.GetLength(0))
+                continue;
+            for (int column = 0; column < columns; column++)
+                selected[row, column] = source[source_row, column];
+        }
+        return selected;
     }
 
     private static double calculate_channel_statistic(FlowSample sample, StatisticDefinition definition, int[] event_indices)

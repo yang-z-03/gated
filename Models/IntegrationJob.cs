@@ -26,6 +26,7 @@ public sealed class IntegrationJob : NotifyBase
     private double progress_fraction;
     private string progress_text = "";
     private bool cancellation_requested;
+    private string batch_column_name = "";
 
     public Guid Id { get; init; } = Guid.NewGuid();
 
@@ -102,6 +103,12 @@ public sealed class IntegrationJob : NotifyBase
     public ObservableCollection<IntegrationJobFeatureSelection> Features { get; } = new();
     public ObservableCollection<IntegrationJobSampleMetadata> SampleMetadata { get; } = new();
 
+    public string BatchColumnName
+    {
+        get => batch_column_name;
+        set => SetField(ref batch_column_name, value ?? "");
+    }
+
     public LogicleParameters Logicle { get; set; } = new();
     public double LogicleT
     {
@@ -124,40 +131,15 @@ public sealed class IntegrationJob : NotifyBase
         set { Logicle = Logicle with { A = value }; OnPropertyChanged(); }
     }
     public CytoNormOptions CytoNormOptions { get; set; } = new();
-    public KnnGraphOptions KnnOptions { get; set; } = new();
-    public UmapReductionOptions UmapOptions { get; set; } = new();
-    public LeidenClusteringOptions LeidenOptions { get; set; } = new();
-    public FlowSomClustererOptions FlowSomOptions { get; set; } = new();
 
     public ObservableCollection<IntegrationJobRowMap> RowMap { get; } = new();
     public float[,]? SourceData { get; set; }
     public int[] BatchIds { get; set; } = [];
     public float[,]? LogicleNormalized { get; set; }
     public float[,]? CytoNormNormalized { get; set; }
-    public int[][]? KnnIndices { get; set; }
-    public float[][]? KnnDistances { get; set; }
-    public float[,]? UmapEmbedding { get; set; }
-    public int[]? LeidenClusters { get; set; }
-    public double[,]? FlowSomCodes { get; set; }
-    public int[]? FlowSomNodeClusters { get; set; }
-    public int[]? FlowSomClusters { get; set; }
-
-    public bool WriteUmap { get; set; } = true;
-    public bool WriteLeiden { get; set; } = true;
-    public bool WriteFlowSom { get; set; } = true;
-
-    public string UmapXKey => $"{Name} UMAP X";
-    public string UmapYKey => $"{Name} UMAP Y";
-    public string UmapZKey => $"{Name} UMAP Z";
-    public string LeidenKey => $"{Name} Leiden";
-    public string FlowSomKey => $"{Name} FlowSOM";
 
     public float[,]? CurrentMatrix => CytoNormNormalized ?? LogicleNormalized ?? SourceData;
     public bool HasIntegrated => LogicleNormalized is not null;
-    public bool HasKnnGraph => KnnIndices is not null && KnnDistances is not null;
-    public bool HasUmap => UmapEmbedding is not null;
-    public bool HasLeiden => LeidenClusters is not null;
-    public bool HasFlowSom => FlowSomClusters is not null;
     public bool IsConfigurationLocked => HasIntegrated;
 
     public void InvalidateFromConfiguration()
@@ -167,22 +149,12 @@ public sealed class IntegrationJob : NotifyBase
         BatchIds = [];
         LogicleNormalized = null;
         CytoNormNormalized = null;
-        InvalidateFromGraph();
         CurrentStep = Math.Min(CurrentStep, 3);
         WarningText = "Configuration changed. Rerun integration before downstream steps.";
         Status = IntegrationJobStatus.Warning;
     }
 
-    public void InvalidateFromGraph()
-    {
-        KnnIndices = null;
-        KnnDistances = null;
-        UmapEmbedding = null;
-        LeidenClusters = null;
-        FlowSomCodes = null;
-        FlowSomNodeClusters = null;
-        FlowSomClusters = null;
-    }
+    public void InvalidateFromGraph() { }
 
     public string[] SelectedFeatureNames => Features
         .Where(feature => feature.IsSelected && feature.IsChannel && !string.IsNullOrWhiteSpace(feature.ChannelName))

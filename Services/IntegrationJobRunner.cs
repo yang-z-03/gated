@@ -58,161 +58,11 @@ public sealed class IntegrationJobRunner
             job.CytoNormNormalized = null;
         }
 
-        job.InvalidateFromGraph();
         report(job, 1, "Integration complete");
         job.WarningText = "";
         job.Status = IntegrationJobStatus.Ready;
         job.CurrentStep = Math.Max(job.CurrentStep, 4);
         return true;
-    }
-
-    public bool RunKnn(IntegrationJob job)
-    {
-        if (!ensure_current_matrix(job, out var matrix))
-            return false;
-
-        report(job, 0, "Building kNN graph");
-        job.Status = IntegrationJobStatus.Running;
-        var options = clone_knn_options(job.KnnOptions);
-        options.Progress = (fraction, text) => report(job, fraction, text);
-        options.IsCancellationRequested = () => job.CancellationRequested;
-        var graph = KnnGraphBuilder.Build(matrix, options);
-        job.KnnIndices = graph.Indices.Select(row => row.ToArray()).ToArray();
-        job.KnnDistances = graph.Distances.Select(row => row.ToArray()).ToArray();
-        job.UmapEmbedding = null;
-        job.LeidenClusters = null;
-        job.WarningText = "";
-        job.Status = IntegrationJobStatus.Ready;
-        job.CurrentStep = Math.Max(job.CurrentStep, 5);
-        report(job, 1, "kNN graph complete");
-        return true;
-    }
-
-    public bool RunUmap(IntegrationJob job)
-    {
-        if (!ensure_current_matrix(job, out var matrix))
-            return false;
-        if (!ensure_knn(job, matrix))
-            return false;
-
-        job.Status = IntegrationJobStatus.Running;
-        report(job, 0, "Running UMAP");
-        var data = to_jagged(matrix);
-        var umap = new Umap(
-            dimensions: job.UmapOptions.Dimensions,
-            numberOfNeighbors: job.UmapOptions.NeighborCount,
-            customNumberOfEpochs: job.UmapOptions.EpochCount);
-        var (indices, distances) = prepare_umap_knn(job.KnnIndices!, job.KnnDistances!, matrix.GetLength(0), job.UmapOptions.NeighborCount);
-        int epochs = umap.InitializeFit(data, indices, distances);
-        for (int epoch = 0; epoch < epochs; epoch++)
-        {
-            if (job.CancellationRequested)
-                throw new OperationCanceledException("UMAP cancelled.");
-            umap.Step();
-            if (epoch % 5 == 0)
-                report(job, epochs == 0 ? 1 : epoch / (double)epochs, $"UMAP epoch {epoch + 1:N0} of {epochs:N0}");
-        }
-        job.UmapEmbedding = to_matrix(umap.GetEmbedding());
-        WriteBack(job, OutputKind.Umap);
-        job.WarningText = "";
-        job.Status = IntegrationJobStatus.Ready;
-        job.CurrentStep = Math.Max(job.CurrentStep, 6);
-        report(job, 1, "UMAP complete");
-        return true;
-    }
-
-    public bool RunLeiden(IntegrationJob job)
-    {
-        if (!ensure_current_matrix(job, out var matrix))
-            return false;
-        if (!ensure_knn(job, matrix))
-            return false;
-
-        job.Status = IntegrationJobStatus.Running;
-        report(job, 0, "Running Leiden clustering");
-        var network = KnnGraphBuilder.BuildNetwork(job.KnnIndices!, job.KnnDistances!, matrix.GetLength(0), job.KnnOptions.Mutual);
-        job.LeidenClusters = LeidenClustering.Cluster(network, job.LeidenOptions);
-        WriteBack(job, OutputKind.Leiden);
-        job.WarningText = "";
-        job.Status = IntegrationJobStatus.Ready;
-        job.CurrentStep = Math.Max(job.CurrentStep, 6);
-        report(job, 1, "Leiden complete");
-        return true;
-    }
-
-    public bool RunFlowSom(IntegrationJob job)
-    {
-        if (!ensure_current_matrix(job, out var matrix))
-            return false;
-
-        job.Status = IntegrationJobStatus.Running;
-        report(job, 0, "Running FlowSOM");
-        var clusterer = new FlowSomClusterer(job.FlowSomOptions);
-        clusterer.Train(matrix);
-        job.FlowSomClusters = clusterer.Predict(matrix);
-        job.FlowSomCodes = clusterer.Codes;
-        job.FlowSomNodeClusters = clusterer.NodeClusters;
-        WriteBack(job, OutputKind.FlowSom);
-        job.WarningText = "";
-        job.Status = IntegrationJobStatus.Ready;
-        job.CurrentStep = Math.Max(job.CurrentStep, 6);
-        report(job, 1, "FlowSOM complete");
-        return true;
-    }
-
-    public bool WriteBack(IntegrationJob job) => WriteBack(job, OutputKind.All);
-
-    public bool WriteBack(IntegrationJob job, OutputKind output)
-    {
-        if (!validate_output_keys(job, output, out string warning))
-        {
-            set_warning(job, warning);
-            return false;
-        }
-
-        var by_sample = job.RowMap
-            .Select((row, global_index) => (row.SampleId, row.EventIndex, GlobalIndex: global_index))
-            .GroupBy(item => item.SampleId);
-
-        foreach (var group in by_sample)
-        {
-            var sample = find_sample(group.Key);
-            if (sample is null)
-                continue;
-
-            if ((output is OutputKind.All or OutputKind.Umap) && job.WriteUmap && job.UmapEmbedding is not null)
-                write_embedding(sample, group, job.UmapEmbedding, job);
-            if ((output is OutputKind.All or OutputKind.Leiden) && job.WriteLeiden && job.LeidenClusters is not null)
-                write_cluster(sample, group, job.LeidenClusters, job, job.LeidenKey);
-            if ((output is OutputKind.All or OutputKind.FlowSom) && job.WriteFlowSom && job.FlowSomClusters is not null)
-                write_cluster(sample, group, job.FlowSomClusters, job, job.FlowSomKey);
-
-            sample.InvalidateNormalizedChannelCache();
-        }
-
-        job.WarningText = "";
-        if (output == OutputKind.All)
-            job.Status = IntegrationJobStatus.Complete;
-        job.CurrentStep = 7;
-        return true;
-    }
-
-    private bool ensure_current_matrix(IntegrationJob job, out float[,] matrix)
-    {
-        matrix = job.CurrentMatrix ?? new float[0, 0];
-        if (matrix.GetLength(0) > 0 && matrix.GetLength(1) > 0)
-            return true;
-
-        set_warning(job, "Run integration before this step.");
-        return false;
-    }
-
-    private bool ensure_knn(IntegrationJob job, float[,] matrix)
-    {
-        if (job.KnnIndices is not null && job.KnnDistances is not null)
-            return true;
-
-        return RunKnn(job);
     }
 
     private bool try_build_source(
@@ -281,11 +131,30 @@ public sealed class IntegrationJobRunner
             return false;
         }
 
-        var batch_lookup = build_batch_lookup(job);
+        if (string.IsNullOrWhiteSpace(job.BatchColumnName))
+        {
+            warning = "Select a non-numeric metadata column to use as batch information.";
+            return false;
+        }
+
+        if (!workspace.MetadataColumns.TryGetValue(job.BatchColumnName, out var batch_column_kind))
+        {
+            warning = $"Batch metadata column '{job.BatchColumnName}' is not available.";
+            return false;
+        }
+
+        if (batch_column_kind != MetadataColumnKind.String)
+        {
+            warning = "Batch metadata must use a non-numeric metadata column.";
+            return false;
+        }
+
+        var selected_sample_ids = rows.Select(row => row.Sample.Id).Distinct().ToArray();
+        var batch_lookup = build_batch_lookup(job, selected_sample_ids);
         bool missing_batch = rows.Any(row => !batch_lookup.TryGetValue(row.Sample.Id, out string? batch) || string.IsNullOrWhiteSpace(batch));
         if (missing_batch)
         {
-            warning = "Every selected sample must have a Batch value.";
+            warning = $"Every selected sample must have a value in '{job.BatchColumnName}'.";
             return false;
         }
 
@@ -327,129 +196,19 @@ public sealed class IntegrationJobRunner
         return true;
     }
 
-    private Dictionary<Guid, string> build_batch_lookup(IntegrationJob job)
+    private Dictionary<Guid, string> build_batch_lookup(IntegrationJob job, IEnumerable<Guid> sample_ids)
     {
         var result = new Dictionary<Guid, string>();
-        foreach (var metadata in job.SampleMetadata)
+        foreach (var sample_id in sample_ids)
         {
-            result[metadata.SampleId] = metadata.Batch;
-            if (find_sample(metadata.SampleId) is { } sample)
-            {
-                sample.Metadata["Batch"] = metadata.Batch;
-                sample.Metadata["Condition"] = metadata.Condition;
-                sample.Metadata["Notes"] = metadata.Notes;
-            }
+            var batch = find_sample(sample_id) is { } sample &&
+                        sample.Metadata.TryGetValue(job.BatchColumnName, out string? sample_batch)
+                ? sample_batch
+                : "";
+            result[sample_id] = batch;
         }
 
         return result;
-    }
-
-    private bool validate_output_keys(IntegrationJob job, OutputKind output, out string warning)
-    {
-        warning = "";
-        var requested = requested_keys(job, output).ToArray();
-        if (requested.Length == 0)
-        {
-            warning = "Run at least one output algorithm before writing results.";
-            return false;
-        }
-
-        if (requested.Distinct(StringComparer.Ordinal).Count() != requested.Length)
-        {
-            warning = "Output keys duplicate within this job. Rename the job before writing results.";
-            return false;
-        }
-
-        foreach (var sample_id in job.RowMap.Select(row => row.SampleId).Distinct())
-        {
-            var sample = find_sample(sample_id);
-            if (sample is null)
-                continue;
-            if (requested.Any(key => sample.Embeddings.ContainsKey(key) && !key.StartsWith(job.Name + " ", StringComparison.Ordinal)))
-            {
-                warning = "One or more output keys already exist in selected samples. Rename the job before writing results.";
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    private IEnumerable<string> requested_keys(IntegrationJob job, OutputKind output)
-    {
-        if ((output is OutputKind.All or OutputKind.Umap) && job.WriteUmap && job.UmapEmbedding is not null)
-        {
-            int dimensions = job.UmapEmbedding.GetLength(1);
-            if (dimensions > 0)
-                yield return job.UmapXKey;
-            if (dimensions > 1)
-                yield return job.UmapYKey;
-            if (dimensions > 2)
-                yield return job.UmapZKey;
-        }
-        if ((output is OutputKind.All or OutputKind.Leiden) && job.WriteLeiden && job.LeidenClusters is not null)
-            yield return job.LeidenKey;
-        if ((output is OutputKind.All or OutputKind.FlowSom) && job.WriteFlowSom && job.FlowSomClusters is not null)
-            yield return job.FlowSomKey;
-    }
-
-    private static void write_embedding(
-        FlowSample sample,
-        IEnumerable<(Guid SampleId, int EventIndex, int GlobalIndex)> rows,
-        float[,] embedding,
-        IntegrationJob job)
-    {
-        var row_array = rows.ToArray();
-        string[] keys = [job.UmapXKey, job.UmapYKey, job.UmapZKey];
-        int dimensions = Math.Min(embedding.GetLength(1), keys.Length);
-        for (int dimension = 0; dimension < dimensions; dimension++)
-        {
-            var values = fill_nan(sample.EventCount);
-            foreach (var row in row_array)
-                values[row.EventIndex] = embedding[row.GlobalIndex, dimension];
-            sample.Embeddings[keys[dimension]] = values;
-            tag_population_embedding_names(sample, job, keys[dimension]);
-        }
-    }
-
-    private static void write_cluster(
-        FlowSample sample,
-        IEnumerable<(Guid SampleId, int EventIndex, int GlobalIndex)> rows,
-        int[] clusters,
-        IntegrationJob job,
-        string key)
-    {
-        var row_array = rows.ToArray();
-        var values = fill_nan(sample.EventCount);
-        foreach (var row in row_array)
-            values[row.EventIndex] = clusters[row.GlobalIndex];
-        sample.Embeddings[key] = values;
-        tag_population_embedding_names(sample, job, key);
-    }
-
-    private static void tag_population_embedding_names(
-        FlowSample sample,
-        IntegrationJob job,
-        string key)
-    {
-        var regions = job.RowMap
-            .Where(row => row.SampleId == sample.Id)
-            .Select(row => (row.GateId, row.Region))
-            .Distinct()
-            .ToArray();
-        foreach (var item in regions)
-        {
-            var population = find_population(sample, item.GateId, item.Region);
-            if (population is not null && !population.AvailableEmbeddingNames.Contains(key))
-                population.AvailableEmbeddingNames.Add(key);
-        }
-    }
-
-    private static float[] fill_nan(int length)
-    {
-        var values = new float[length];
-        Array.Fill(values, float.NaN);
-        return values;
     }
 
     private FlowSample? find_sample(Guid sample_id) =>
@@ -489,78 +248,4 @@ public sealed class IntegrationJobRunner
         job.ProgressFraction = fraction;
         job.ProgressText = text;
     }
-
-    private static KnnGraphOptions clone_knn_options(KnnGraphOptions options) =>
-        new()
-        {
-            NeighborCount = options.NeighborCount,
-            Distance = options.Distance,
-            SearchMethod = options.SearchMethod,
-            Mutual = options.Mutual,
-            IterationCount = options.IterationCount,
-            MaxCandidates = options.MaxCandidates,
-            Random = options.Random
-        };
-
-    private static float[][] to_jagged(float[,] matrix)
-    {
-        int rows = matrix.GetLength(0);
-        int columns = matrix.GetLength(1);
-        var result = new float[rows][];
-        for (int row = 0; row < rows; row++)
-        {
-            result[row] = new float[columns];
-            for (int column = 0; column < columns; column++)
-                result[row][column] = matrix[row, column];
-        }
-
-        return result;
-    }
-
-    private static float[,] to_matrix(float[][] data)
-    {
-        int rows = data.Length;
-        int columns = rows == 0 ? 0 : data[0].Length;
-        var result = new float[rows, columns];
-        for (int row = 0; row < rows; row++)
-        for (int column = 0; column < columns; column++)
-            result[row, column] = data[row][column];
-        return result;
-    }
-
-    private static (int[][] Indices, float[][] Distances) prepare_umap_knn(
-        int[][] graph_indices,
-        float[][] graph_distances,
-        int row_count,
-        int neighbor_count)
-    {
-        int width = Math.Min(neighbor_count, row_count);
-        var indices = new int[row_count][];
-        var distances = new float[row_count][];
-        for (int row = 0; row < row_count; row++)
-        {
-            indices[row] = new int[width];
-            distances[row] = new float[width];
-            indices[row][0] = row;
-            distances[row][0] = 0;
-            int copied = Math.Min(width - 1, graph_indices[row].Length);
-            Array.Copy(graph_indices[row], 0, indices[row], 1, copied);
-            Array.Copy(graph_distances[row], 0, distances[row], 1, copied);
-            for (int index = copied + 1; index < width; index++)
-            {
-                indices[row][index] = -1;
-                distances[row][index] = float.PositiveInfinity;
-            }
-        }
-
-        return (indices, distances);
-    }
-}
-
-public enum OutputKind
-{
-    All,
-    Umap,
-    Leiden,
-    FlowSom
 }

@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Data.Core.Plugins;
 using Avalonia.Markup.Xaml;
+using gated.Python;
 
 namespace gated;
 
@@ -16,6 +17,8 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
+            PythonExtensionRuntime.StartBackground();
+            desktop.Exit += (_, _) => PythonExtensionRuntime.Shutdown();
             var window = new MainWindow();
             desktop.MainWindow = window;
             var args = desktop.Args ?? [];

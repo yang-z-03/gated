@@ -464,10 +464,11 @@ public sealed class PageEditorView : Control
 
         foreach (var sample in samples)
         {
-            var x_values = sample.GetChannelValues(element.XAxis.ChannelName);
+            int[] event_indices = resolve_event_indices(element, sample);
+            var x_values = sample.GetChannelValues(element.XAxis.ChannelName, event_indices);
             if (x_values.Length == 0)
                 continue;
-            foreach (int index in resolve_event_indices(element, sample))
+            for (int index = 0; index < event_indices.Length; index++)
             {
                 int bin = to_bin(x_values[index], element.XAxis, x_minimum, x_span);
                 if (bin < 0)
@@ -509,13 +510,14 @@ public sealed class PageEditorView : Control
 
         foreach (var sample in samples)
         {
-            var x_values = sample.GetChannelValues(element.XAxis.ChannelName);
-            var y_values = sample.GetChannelValues(element.YAxis.ChannelName);
-            var color_values = should_color_dots(element) ? sample.GetChannelValues(element.DotColor.ChannelName) : [];
+            int[] event_indices = resolve_event_indices(element, sample);
+            var x_values = sample.GetChannelValues(element.XAxis.ChannelName, event_indices);
+            var y_values = sample.GetChannelValues(element.YAxis.ChannelName, event_indices);
+            var color_values = should_color_dots(element) ? sample.GetChannelValues(element.DotColor.ChannelName, event_indices) : [];
             if (x_values.Length == 0 || y_values.Length == 0)
                 continue;
 
-            foreach (int index in resolve_event_indices(element, sample))
+            for (int index = 0; index < event_indices.Length; index++)
             {
                 int x_bin = to_bin(x_values[index], element.XAxis, x_minimum, x_span);
                 int y_bin = to_bin(y_values[index], element.YAxis, y_minimum, y_span);
@@ -688,17 +690,17 @@ public sealed class PageEditorView : Control
                 yield return sample;
     }
 
-    private static IEnumerable<int> resolve_event_indices(PagePlotElement element, FlowSample sample)
+    private static int[] resolve_event_indices(PagePlotElement element, FlowSample sample)
     {
         if (element.Population is not null && ReferenceEquals(element.Sample, sample))
-            return element.Population.EventIndices;
+            return element.Population.GetPlotEventIndices();
         if (element.Gate is not null)
         {
             var population = find_population(sample.Populations, element.Gate, element.Population?.Region);
             if (population is not null)
-                return population.EventIndices;
+                return population.GetPlotEventIndices();
         }
-        return Enumerable.Range(0, sample.EventCount);
+        return sample.GetPlotEventIndices();
     }
 
     private static IEnumerable<GateDefinition> resolve_plot_gates(PagePlotElement element)

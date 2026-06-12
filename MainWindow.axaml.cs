@@ -43,6 +43,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         DataContext = view_model;
         view_model.RequestTextInputAsync = show_text_input_dialog;
+        view_model.RequestScriptSaveChoiceAsync = show_script_save_dialog;
         view_model.RequestChoiceInputAsync = show_choice_input_dialog;
         view_model.RequestBooleanGateInputAsync = show_boolean_gate_input_dialog;
         view_model.RequestCompensationEditorAsync = show_compensation_editor_dialog;
@@ -52,9 +53,13 @@ public partial class MainWindow : Window
         view_model.SelectedPageAxisChoices.CollectionChanged += channel_choices_collection_changed;
         view_model.SelectedPageColorChoices.CollectionChanged += channel_choices_collection_changed;
         view_model.RecentFilePaths.CollectionChanged += recent_file_paths_collection_changed;
+        view_model.MacroScripts.CollectionChanged += script_repository_collection_changed;
+        view_model.StatisticScripts.CollectionChanged += script_repository_collection_changed;
         update_statistics_columns();
+        update_metadata_columns(workspace_metadata_grid, view_model.WorkspaceMetadataTable);
         update_channel_menus();
         update_recent_items_menu();
+        update_script_repository_menus();
         update_page_editor_viewport_size();
         page_editor_scroll.PropertyChanged += (_, e) =>
         {
@@ -81,6 +86,10 @@ public partial class MainWindow : Window
     {
         if (e.PropertyName == nameof(MainWindowViewModel.StatisticTable))
             update_statistics_columns();
+        if (e.PropertyName == nameof(MainWindowViewModel.WorkspaceMetadataTable))
+            update_metadata_columns(workspace_metadata_grid, view_model.WorkspaceMetadataTable);
+        if (e.PropertyName == nameof(MainWindowViewModel.SelectedGroup))
+            update_script_repository_menus();
         if (e.PropertyName is nameof(MainWindowViewModel.SelectedXAxisChoice)
             or nameof(MainWindowViewModel.SelectedYAxisChoice)
             or nameof(MainWindowViewModel.SelectedDotColorChoice)
@@ -95,6 +104,9 @@ public partial class MainWindow : Window
 
     private void recent_file_paths_collection_changed(object? sender, NotifyCollectionChangedEventArgs e) =>
         update_recent_items_menu();
+
+    private void script_repository_collection_changed(object? sender, NotifyCollectionChangedEventArgs e) =>
+        update_script_repository_menus();
 
     private void request_update_channel_menus()
     {
@@ -145,6 +157,39 @@ public partial class MainWindow : Window
         recent_items_menu.Items.Add(clear_item);
     }
 
+    private void update_script_repository_menus()
+    {
+        populate_script_menu(run_macros_menu, view_model.MacroScripts, run_macro_menu_item_click);
+        populate_script_menu(edit_macros_menu, view_model.MacroScripts, edit_script_menu_item_click);
+        populate_script_menu(python_statistics_menu, view_model.StatisticScripts, apply_statistic_script_menu_item_click);
+        populate_script_menu(edit_python_statistics_menu, view_model.StatisticScripts, edit_script_menu_item_click);
+    }
+
+    private static void populate_script_menu(
+        MenuItem menu,
+        IEnumerable<gated.Services.PythonScriptDefinition> scripts,
+        EventHandler<RoutedEventArgs> click)
+    {
+        menu.Items.Clear();
+        var script_list = scripts.OrderBy(script => script.Name, StringComparer.OrdinalIgnoreCase).ToArray();
+        if (script_list.Length == 0)
+        {
+            menu.Items.Add(new MenuItem { Header = "Empty", IsEnabled = false });
+            return;
+        }
+
+        foreach (var script in script_list)
+        {
+            var item = new MenuItem
+            {
+                Header = script.Name,
+                Tag = script
+            };
+            item.Click += click;
+            menu.Items.Add(item);
+        }
+    }
+
     private async void recent_file_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if ((sender as MenuItem)?.Tag is not string path)
@@ -192,6 +237,40 @@ public partial class MainWindow : Window
                 });
             }
         }
+    }
+
+    private static void update_metadata_columns(DataGrid grid, System.Data.DataTable table)
+    {
+        grid.Columns.Clear();
+        grid.ItemsSource = table.DefaultView;
+        foreach (System.Data.DataColumn column in table.Columns)
+        {
+            if (column.ColumnName.StartsWith("__", StringComparison.Ordinal))
+                continue;
+            var binding = new Binding($"[{column.ColumnName}]")
+            {
+                Mode = column.ColumnName is "Group" or "Sample" ? BindingMode.OneWay : BindingMode.TwoWay,
+                UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged
+            };
+            grid.Columns.Add(new DataGridTextColumn
+            {
+                Header = column.ColumnName,
+                Binding = binding,
+                Width = column.ColumnName is "Group" or "Sample" ? new DataGridLength(130) : new DataGridLength(120),
+                IsReadOnly = column.ColumnName is "Group" or "Sample"
+            });
+        }
+    }
+
+    private static void apply_small_button_classes(Control root)
+    {
+        if (root is Button button && !button.Classes.Contains("Small"))
+            button.Classes.Add("Small");
+        if (root is Panel panel)
+            foreach (var child in panel.Children)
+                apply_small_button_classes(child);
+        if (root is ContentControl { Content: Control content })
+            apply_small_button_classes(content);
     }
 
     private async void window_key_down(object? sender, KeyEventArgs e)
@@ -248,6 +327,13 @@ public partial class MainWindow : Window
                 e.Handled = true;
                 view_model.EditCompensationCommand.Execute(null);
             }
+            return;
+        }
+
+        if (e.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Shift) && e.Key == Key.P)
+        {
+            e.Handled = true;
+            await view_model.CreateMacroAsync();
             return;
         }
 
@@ -380,6 +466,46 @@ public partial class MainWindow : Window
     private async void about_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         await new AboutWindow().ShowDialog(this);
+    }
+
+    private async void create_macro_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
+        await view_model.CreateMacroAsync();
+
+    private async void create_statistic_script_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
+        await view_model.CreateStatisticScriptAsync();
+
+    private async void run_macro_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if ((sender as MenuItem)?.Tag is not gated.Services.PythonScriptDefinition script)
+            return;
+        try
+        {
+            await view_model.RunMacroAsync(script);
+        }
+        catch (Exception exception)
+        {
+            await show_message_dialog("Macro failed", exception.Message);
+        }
+    }
+
+    private async void edit_script_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if ((sender as MenuItem)?.Tag is gated.Services.PythonScriptDefinition script)
+            await view_model.OpenPythonScriptEditorAsync(script);
+    }
+
+    private async void apply_statistic_script_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if ((sender as MenuItem)?.Tag is not gated.Services.PythonScriptDefinition script)
+            return;
+        try
+        {
+            view_model.ApplyStatisticScript(script);
+        }
+        catch (Exception exception)
+        {
+            await show_message_dialog("Failed to add Python statistic", exception.Message);
+        }
     }
 
     private async void check_for_updates_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -544,6 +670,7 @@ public partial class MainWindow : Window
         };
 
         var buttons = ((StackPanel)((StackPanel)dialog.Content).Children[5]).Children;
+        apply_small_button_classes((Control)dialog.Content);
         ((Button)buttons[0]).Click += (_, _) => dialog.Close(UpdateDialogChoice.SuppressForOneWeek);
         ((Button)buttons[1]).Click += (_, _) => dialog.Close(UpdateDialogChoice.Cancel);
         ((Button)buttons[2]).Click += (_, _) => dialog.Close(UpdateDialogChoice.Update);
@@ -644,6 +771,7 @@ public partial class MainWindow : Window
         };
 
         var buttons = ((StackPanel)((StackPanel)dialog.Content).Children[2]).Children;
+        apply_small_button_classes((Control)dialog.Content);
         ((Button)buttons[0]).Click += (_, _) => dialog.Close();
         await dialog.ShowDialog(this);
     }
@@ -1095,12 +1223,72 @@ public partial class MainWindow : Window
             : WindowState.Maximized;
     }
 
-    private void window_close(object? sender, RoutedEventArgs e)
+    private async void window_close(object? sender, RoutedEventArgs e)
     {
+        if (view_model.IsPythonScriptEditorMode && view_model.IsPythonScriptDirty)
+        {
+            await view_model.ClosePythonScriptEditorAsync();
+            if (view_model.IsPythonScriptEditorMode)
+                return;
+        }
+
         var lifetime = Application.Current?.ApplicationLifetime;
         if (lifetime is ClassicDesktopStyleApplicationLifetime desktop)
             desktop.Shutdown();
         else this.Close();
+    }
+
+    private async Task<ScriptSaveChoice> show_script_save_dialog(string title, string message)
+    {
+        var dialog = new Window
+        {
+            Title = title,
+            Width = 460,
+            MinWidth = 360,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = Background,
+            SizeToContent = SizeToContent.Height,
+            Content = new StackPanel
+            {
+                Margin = new Thickness(16),
+                Spacing = 12,
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = title,
+                        FontWeight = FontWeight.SemiBold,
+                        Foreground = Brushes.White
+                    },
+                    new TextBlock
+                    {
+                        Text = message,
+                        TextWrapping = TextWrapping.Wrap,
+                        LineHeight = 18,
+                        Foreground = new SolidColorBrush(Color.FromRgb(218, 221, 228))
+                    },
+                    new StackPanel
+                    {
+                        Orientation = Avalonia.Layout.Orientation.Horizontal,
+                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                        Spacing = 8,
+                        Children =
+                        {
+                            new Button { Content = "Cancel", MinWidth = 80, IsCancel = true },
+                            new Button { Content = "Discard", MinWidth = 80 },
+                            new Button { Content = "Save", MinWidth = 80, IsDefault = true }
+                        }
+                    }
+                }
+            }
+        };
+
+        var buttons = ((StackPanel)((StackPanel)dialog.Content).Children[2]).Children;
+        apply_small_button_classes((Control)dialog.Content);
+        ((Button)buttons[0]).Click += (_, _) => dialog.Close(ScriptSaveChoice.Cancel);
+        ((Button)buttons[1]).Click += (_, _) => dialog.Close(ScriptSaveChoice.Discard);
+        ((Button)buttons[2]).Click += (_, _) => dialog.Close(ScriptSaveChoice.Save);
+        return await dialog.ShowDialog<ScriptSaveChoice>(this);
     }
 
     private async Task<string?> show_text_input_dialog(string title, string default_value)
@@ -1142,6 +1330,7 @@ public partial class MainWindow : Window
         };
 
         var buttons = ((StackPanel)((StackPanel)dialog.Content).Children[2]).Children;
+        apply_small_button_classes((Control)dialog.Content);
         ((Button)buttons[0]).Click += (_, _) => dialog.Close(null);
         ((Button)buttons[1]).Click += (_, _) => dialog.Close(input.Text);
         input.AttachedToVisualTree += (_, _) =>
@@ -1222,6 +1411,7 @@ public partial class MainWindow : Window
         };
 
         var buttons = ((StackPanel)((StackPanel)dialog.Content).Children[2]).Children;
+        apply_small_button_classes((Control)dialog.Content);
         ((Button)buttons[0]).Click += (_, _) => dialog.Close(null);
         ((Button)buttons[1]).Click += (_, _) => dialog.Close((input.SelectedItem as AxisChoice)?.Name);
         input.AttachedToVisualTree += (_, _) => input.Focus();
@@ -1285,6 +1475,7 @@ public partial class MainWindow : Window
         };
 
         var buttons = ((StackPanel)((StackPanel)dialog.Content).Children[5]).Children;
+        apply_small_button_classes((Control)dialog.Content);
         ((Button)buttons[0]).Click += (_, _) => dialog.Close(null);
         ((Button)buttons[1]).Click += (_, _) =>
         {
@@ -1497,6 +1688,7 @@ public partial class MainWindow : Window
         Grid.SetRow((Control)grid.Children[5], 5);
 
         var buttons = ((StackPanel)grid.Children[5]).Children;
+        apply_small_button_classes(grid);
         ((Button)buttons[0]).Click += (_, _) => dialog.Close(false);
         ((Button)buttons[1]).Click += (_, _) =>
         {

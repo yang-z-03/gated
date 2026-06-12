@@ -15,8 +15,10 @@
 
     <ItemGroup>
         <PackageReference Include="Avalonia" Version="11.3.12" />
+        <PackageReference Include="Avalonia.AvaloniaEdit" Version="11.4.1" />
         <PackageReference Include="Avalonia.Controls.DataGrid" Version="11.3.12" />
         <PackageReference Include="Avalonia.Desktop" Version="11.3.12" />
+        <PackageReference Include="AvaloniaEdit.TextMate" Version="11.4.1" />
         <PackageReference Include="Avalonia.Svg.Skia" Version="11.3.0" />
         <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.12" />
         <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.12" />
@@ -26,6 +28,8 @@
             <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
             <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
         </PackageReference>
+        <PackageReference Include="pythonnet" Version="3.1.0" />
+        <PackageReference Include="TextMateSharp.Grammars" Version="2.0.3" />
         <PackageReference Include="Tmds.DBus.Protocol" Version="0.21.3" />
     </ItemGroup>
 
@@ -134,6 +138,12 @@
       <AvaloniaResource Include="Resources\threshold.svg" />
       <None Remove="Resources\range.svg" />
       <AvaloniaResource Include="Resources\range.svg" />
+      <None Remove="Resources\script.svg" />
+      <AvaloniaResource Include="Resources\script.svg" />
+      <None Remove="Resources\macro.svg" />
+      <AvaloniaResource Include="Resources\macro.svg" />
+      <None Remove="Resources\save.svg" />
+      <AvaloniaResource Include="Resources\save.svg" />
       <None Remove="gated.ico" />
       <AvaloniaResource Include="gated.ico" />
     </ItemGroup>
