@@ -1,0 +1,97 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Color x:Key="SemiColorPrimary">#6DA8FF</Color>
+    <Color x:Key="SemiColorPrimaryPointerover">#7FB3FF</Color>
+    <Color x:Key="SemiColorPrimaryActive">#4F91F0</Color>
+    <Color x:Key="SemiColorFill0">#30333A</Color>
+    <Color x:Key="SemiColorFill1">#3A3E47</Color>
+    <Color x:Key="SemiColorFill2">#252830</Color>
+    <Color x:Key="SemiColorText0">#F4F6FA</Color>
+    <Color x:Key="SemiColorText1">#D7DCE5</Color>
+    <Color x:Key="SemiColorDisabledText">#777D89</Color>
+    <Color x:Key="SemiColorBorder">#4A505B</Color>
+    <SolidColorBrush x:Key="UpdaterPrimaryBrush" Color="{StaticResource SemiColorPrimary}" />
+    <SolidColorBrush x:Key="UpdaterPrimaryPointeroverBrush" Color="{StaticResource SemiColorPrimaryPointerover}" />
+    <SolidColorBrush x:Key="UpdaterPrimaryActiveBrush" Color="{StaticResource SemiColorPrimaryActive}" />
+    <SolidColorBrush x:Key="UpdaterFill0Brush" Color="{StaticResource SemiColorFill0}" />
+    <SolidColorBrush x:Key="UpdaterFill1Brush" Color="{StaticResource SemiColorFill1}" />
+    <SolidColorBrush x:Key="UpdaterFill2Brush" Color="{StaticResource SemiColorFill2}" />
+    <SolidColorBrush x:Key="UpdaterText0Brush" Color="{StaticResource SemiColorText0}" />
+    <SolidColorBrush x:Key="UpdaterText1Brush" Color="{StaticResource SemiColorText1}" />
+    <SolidColorBrush x:Key="UpdaterDisabledTextBrush" Color="{StaticResource SemiColorDisabledText}" />
+    <SolidColorBrush x:Key="UpdaterBorderBrush" Color="{StaticResource SemiColorBorder}" />
+
+    <ControlTheme x:Key="{x:Type Button}" TargetType="Button">
+        <Setter Property="Padding" Value="14 0" />
+        <Setter Property="MinHeight" Value="32" />
+        <Setter Property="MinWidth" Value="84" />
+        <Setter Property="Foreground" Value="{StaticResource UpdaterText0Brush}" />
+        <Setter Property="Background" Value="{StaticResource UpdaterFill0Brush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource UpdaterBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="4" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <ControlTemplate TargetType="Button">
+                <ContentPresenter Name="PART_ContentPresenter"
+                                  Padding="{TemplateBinding Padding}"
+                                  Background="{TemplateBinding Background}"
+                                  BorderBrush="{TemplateBinding BorderBrush}"
+                                  BorderThickness="{TemplateBinding BorderThickness}"
+                                  CornerRadius="{TemplateBinding CornerRadius}"
+                                  Content="{TemplateBinding Content}"
+                                  HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                  VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+            </ControlTemplate>
+        </Setter>
+        <Style Selector="^:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{StaticResource UpdaterFill1Brush}" />
+        </Style>
+        <Style Selector="^:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{StaticResource UpdaterFill2Brush}" />
+        </Style>
+        <Style Selector="^.Primary /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="Background" Value="{StaticResource UpdaterPrimaryBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource UpdaterPrimaryBrush}" />
+        </Style>
+        <Style Selector="^.Primary:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{StaticResource UpdaterPrimaryPointeroverBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource UpdaterPrimaryPointeroverBrush}" />
+        </Style>
+        <Style Selector="^.Primary:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{StaticResource UpdaterPrimaryActiveBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource UpdaterPrimaryActiveBrush}" />
+        </Style>
+        <Style Selector="^:disabled /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Foreground" Value="{StaticResource UpdaterDisabledTextBrush}" />
+            <Setter Property="Background" Value="{StaticResource UpdaterFill2Brush}" />
+        </Style>
+    </ControlTheme>
+
+    <ControlTheme x:Key="{x:Type ProgressBar}" TargetType="ProgressBar">
+        <Setter Property="Foreground" Value="{StaticResource UpdaterPrimaryBrush}" />
+        <Setter Property="Background" Value="{StaticResource UpdaterFill0Brush}" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="CornerRadius" Value="4" />
+        <Setter Property="MinHeight" Value="8" />
+        <Setter Property="Template">
+            <ControlTemplate TargetType="ProgressBar">
+                <Border Background="{TemplateBinding Background}"
+                        BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}"
+                        CornerRadius="{TemplateBinding CornerRadius}"
+                        ClipToBounds="True">
+                    <Border Name="PART_Indicator"
+                            HorizontalAlignment="Left"
+                            Background="{TemplateBinding Foreground}"
+                            CornerRadius="{TemplateBinding CornerRadius}" />
+                </Border>
+            </ControlTemplate>
+        </Setter>
+    </ControlTheme>
+</ResourceDictionary>

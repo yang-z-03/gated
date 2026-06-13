@@ -89,6 +89,10 @@ class Population:
         '''
         Writes a one-dimensional embedding into the owning sample for this population.
 
+        value must be a one-dimensional NumPy array of floats or strings. Float
+        arrays are stored as floating-point embeddings. String arrays are stored
+        as categorical integer embeddings with category text metadata.
+
         value may contain exactly one value per selected event, or one value per
         event in the full sample. Only masked events are written; non-population
         events keep existing values or become NaN for a new embedding.

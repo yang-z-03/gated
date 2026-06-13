@@ -52,6 +52,12 @@ public enum MetadataColumnKind
     Float
 }
 
+public enum EmbeddingValueKind
+{
+    Float,
+    Integer
+}
+
 public enum GatingTool
 {
     View,
@@ -540,7 +546,6 @@ public sealed class PopulationResult : NotifyBase
 
     public GateDefinition Gate { get; init; } = new();
     public PopulationRegion Region { get; init; } = PopulationRegion.Primary;
-    public ObservableCollection<string> AvailableEmbeddingNames { get; } = new();
     public ObservableCollection<PopulationResult> Children { get; } = new();
     public ObservableCollection<StatisticResult> Statistics { get; } = new();
 
@@ -727,6 +732,15 @@ public sealed class CompensationMatrix : NotifyBase
     }
 }
 
+public sealed class EmbeddingData
+{
+    public EmbeddingValueKind Kind { get; set; }
+    public float[] Values { get; set; } = Array.Empty<float>();
+    public Dictionary<int, string> Categories { get; } = new();
+
+    public bool IsCategorical => Kind == EmbeddingValueKind.Integer;
+}
+
 public sealed class FlowSample : NotifyBase
 {
     private string name = "";
@@ -751,7 +765,7 @@ public sealed class FlowSample : NotifyBase
     public ObservableCollection<ChannelDefinition> Channels { get; } = new();
     public float[,] RawEvents { get; private init; } = new float[0, 0];
     public ObservableCollection<PopulationResult> Populations { get; } = new();
-    public Dictionary<string, float[]> Embeddings { get; } = new();
+    public Dictionary<string, EmbeddingData> Embeddings { get; } = new();
     public Dictionary<string, string> Metadata { get; } = new();
     public CompensationMatrix? DefaultCompensation { get; set; }
 
@@ -778,7 +792,7 @@ public sealed class FlowSample : NotifyBase
     public float[] GetChannelValues(string channel_name, int[]? event_indices = null)
     {
         if (Embeddings.TryGetValue(channel_name, out var embedding_values))
-            return select_values(embedding_values, event_indices);
+            return select_values(embedding_values.Values, event_indices);
 
         int channel_index = GetChannelIndex(channel_name);
         if (channel_index < 0)
@@ -1038,6 +1052,7 @@ public sealed class FlowSample : NotifyBase
         foreach (var gate in group.Gates)
         foreach (var population in build_population_results(group, gate, all_indices, all_indices.Length, parent_population: null, cancellation_token))
             Populations.Add(population);
+        RefreshPopulationEmbedding();
         OnPropertyChanged(nameof(Populations));
     }
 
@@ -1067,6 +1082,7 @@ public sealed class FlowSample : NotifyBase
 
         var replacements = build_population_results(group, gate, parent_indices, EventCount, parent_population, cancellation_token).ToArray();
         replace_population_results(siblings, gate, replacements);
+        RefreshPopulationEmbedding();
         OnPropertyChanged(nameof(Populations));
         return true;
     }
@@ -1088,7 +1104,6 @@ public sealed class FlowSample : NotifyBase
         cancellation_token.ThrowIfCancellationRequested();
         var event_indices = GateEvaluator.Apply(this, group, gate, region, parent_indices, parent_population, cancellation_token);
         var result = new PopulationResult { Gate = gate, Region = region, EventIndices = event_indices, EventCount = event_indices.Length };
-        refresh_population_embedding_names(result);
         cancellation_token.ThrowIfCancellationRequested();
         foreach (var definition in gate.Statistics)
         {
@@ -1107,31 +1122,34 @@ public sealed class FlowSample : NotifyBase
         return result;
     }
 
-    public void RefreshPopulationEmbeddingNames()
+    public void RefreshPopulationEmbedding()
     {
+        var values = Enumerable.Repeat(float.NaN, EventCount).ToArray();
+        var categories = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (var population in Populations)
-            refresh_population_embedding_names_recursive(population);
+            assign_population_embedding(population, values, categories);
+
+        var embedding = new EmbeddingData { Kind = EmbeddingValueKind.Integer, Values = values };
+        foreach (var item in categories.OrderBy(item => item.Value))
+            embedding.Categories[item.Value] = item.Key;
+        Embeddings["Populations"] = embedding;
+        InvalidateNormalizedChannelCache();
     }
 
-    private void refresh_population_embedding_names_recursive(PopulationResult population)
+    private static void assign_population_embedding(PopulationResult population, float[] values, Dictionary<string, int> categories)
     {
-        refresh_population_embedding_names(population);
-        foreach (var child in population.Children)
-            refresh_population_embedding_names_recursive(child);
-    }
-
-    private void refresh_population_embedding_names(PopulationResult population)
-    {
-        population.AvailableEmbeddingNames.Clear();
-        foreach (var embedding in Embeddings)
+        if (!categories.TryGetValue(population.DisplayName, out int category))
         {
-            if (population.EventIndices.Any(index =>
-                index >= 0 &&
-                index < embedding.Value.Length &&
-                !float.IsNaN(embedding.Value[index]) &&
-                !float.IsInfinity(embedding.Value[index])))
-                population.AvailableEmbeddingNames.Add(embedding.Key);
+            category = categories.Count + 1;
+            categories[population.DisplayName] = category;
         }
+
+        foreach (int index in population.EventIndices)
+            if (index >= 0 && index < values.Length)
+                values[index] = category;
+
+        foreach (var child in population.Children)
+            assign_population_embedding(child, values, categories);
     }
 
     private IEnumerable<PopulationResult> build_population_results(

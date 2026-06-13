@@ -567,9 +567,8 @@ public partial class MainWindow : Window
         {
             await Task.Yield();
             await manager.EnsureUpdaterCurrentAsync(progress);
-            string manifest_path = await manager.DownloadUpdateAsync(update, progress);
-            dialog.SetProgress("Preparing updater ...", "Gated will close and restart after extraction.", null);
-            manager.LaunchUpdater(manifest_path);
+            dialog.SetProgress("Starting updater ...", "Gated will close while the updater downloads and installs packages.", null);
+            manager.LaunchUpdater(update);
 
             if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
                 desktop.Shutdown();

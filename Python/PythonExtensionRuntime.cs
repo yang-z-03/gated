@@ -140,7 +140,27 @@ public static class PythonExtensionRuntime
             globals.SetItem("pd", (pandas_module ?? Py.Import("pandas")));
             globals.SetItem("msgbox", new Action<string, string>(MsgBox).ToPython());
             globals.SetItem("log", new Action<object?>(Log).ToPython());
-            PythonEngine.Exec(code, globals, globals);
+            try
+            {
+                PythonEngine.Exec(code, globals, globals);
+            }
+            catch(PythonException pex)
+            {
+                string error_loc = "<Unk>";
+                try
+                {
+                    string location = pex.StackTrace.Split('\n')[0].Trim();
+                    string line = location.Replace("File \"<string>\", line ", "").Replace(", in <module>", "");
+                    error_loc = line;
+                } catch { error_loc = "<Unk>"; }
+
+                if (error_loc == "<Unk>") Log("Python interpreter error: " + pex.Message);
+                else Log("Python interpreter error: " + pex.Message + "\n  " + $"at line {error_loc}: ...");
+            }
+            catch(Exception ex)
+            {
+                Log(ex.Message);
+            }
         });
     }
 

@@ -544,7 +544,7 @@ public sealed class Sample
         var matrix = new float[Model.EventCount, names.Count];
         for (int column = 0; column < names.Count; column++)
         {
-            var values = Model.Embeddings[names[column]];
+            var values = Model.Embeddings[names[column]].Values;
             for (int row = 0; row < Model.EventCount && row < values.Length; row++)
                 matrix[row, column] = values[row];
         }
@@ -594,21 +594,32 @@ public sealed class Population
     {
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Embedding name cannot be empty.", nameof(name));
+        if (string.Equals(name, "Populations", StringComparison.Ordinal))
+            throw new ArgumentException("Embedding 'Populations' is generated from gates and cannot be overwritten.", nameof(name));
 
         var selected_indices = indices();
-        var input = PythonArrayConverter.ToFloatArray(value);
-        if (input.Length != selected_indices.Length && input.Length != sample.EventCount)
+        var input = PythonArrayConverter.ToEmbeddingArray(value);
+        if (input.Values.Length != selected_indices.Length && input.Values.Length != sample.EventCount)
             throw new ArgumentException($"Embedding '{name}' expects either {selected_indices.Length} selected values or {sample.EventCount} sample-wide values.");
 
-        var values = sample.Embeddings.TryGetValue(name, out var existing) && existing.Length == sample.EventCount
-            ? existing.ToArray()
+        var existing_matches = sample.Embeddings.TryGetValue(name, out var existing) &&
+            existing.Values.Length == sample.EventCount &&
+            existing.Kind == input.Kind;
+        var values = existing_matches
+            ? existing!.Values.ToArray()
             : Enumerable.Repeat(float.NaN, sample.EventCount).ToArray();
+        var categories = existing_matches && existing is not null
+            ? new Dictionary<int, string>(existing.Categories)
+            : new Dictionary<int, string>();
+        var input_values = input.Values;
+        if (input.Kind == EmbeddingValueKind.Integer)
+            input_values = remap_category_values(input.Values, input.Categories, categories);
 
-        if (input.Length == sample.EventCount)
+        if (input_values.Length == sample.EventCount)
         {
             foreach (int event_index in selected_indices)
                 if (event_index >= 0 && event_index < values.Length)
-                    values[event_index] = input[event_index];
+                    values[event_index] = input_values[event_index];
         }
         else
         {
@@ -616,13 +627,50 @@ public sealed class Population
             {
                 int event_index = selected_indices[index];
                 if (event_index >= 0 && event_index < values.Length)
-                    values[event_index] = input[index];
+                    values[event_index] = input_values[index];
             }
         }
 
-        sample.Embeddings[name] = values;
+        var embedding = new EmbeddingData { Kind = input.Kind, Values = values };
+        foreach (var category in categories)
+            embedding.Categories[category.Key] = category.Value;
+        sample.Embeddings[name] = embedding;
         sample.InvalidateNormalizedChannelCache();
-        sample.RefreshPopulationEmbeddingNames();
+    }
+
+    private static float[] remap_category_values(
+        float[] values,
+        IReadOnlyDictionary<int, string> input_categories,
+        Dictionary<int, string> target_categories)
+    {
+        var ids_by_label = target_categories.ToDictionary(item => item.Value, item => item.Key, StringComparer.Ordinal);
+        var id_map = new Dictionary<int, int>();
+        foreach (var input_category in input_categories)
+        {
+            if (!ids_by_label.TryGetValue(input_category.Value, out int target_id))
+            {
+                target_id = target_categories.Count == 0 ? 1 : target_categories.Keys.Max() + 1;
+                target_categories[target_id] = input_category.Value;
+                ids_by_label[input_category.Value] = target_id;
+            }
+
+            id_map[input_category.Key] = target_id;
+        }
+
+        var mapped = new float[values.Length];
+        for (int index = 0; index < values.Length; index++)
+        {
+            if (float.IsNaN(values[index]) || float.IsInfinity(values[index]))
+            {
+                mapped[index] = float.NaN;
+                continue;
+            }
+
+            int source_id = Convert.ToInt32(values[index]);
+            mapped[index] = id_map.TryGetValue(source_id, out int target_id) ? target_id : float.NaN;
+        }
+
+        return mapped;
     }
 
     public Population __getitem__(string population_key) =>

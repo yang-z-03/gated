@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using gated.Models;
 using Python.Runtime;
 
 namespace gated.Python;
@@ -123,6 +124,73 @@ public static class PythonArrayConverter
                 values[index] = list[index].As<float>();
             return values;
         }
+    }
+
+    public static (EmbeddingValueKind Kind, float[] Values, Dictionary<int, string> Categories) ToEmbeddingArray(PyObject? value)
+    {
+        using (Py.GIL())
+        {
+            if (value is null || value.IsNone())
+                return (EmbeddingValueKind.Float, [], new Dictionary<int, string>());
+
+            dynamic numpy = Py.Import("numpy");
+            using PyObject array = numpy.asarray(value);
+            using PyObject flattened = array.InvokeMethod("ravel");
+            using PyObject dtype = array.GetAttr("dtype");
+            string dtype_kind = dtype.GetAttr("kind").As<string>();
+
+            if (dtype_kind is "U" or "S")
+                return strings_to_categories(new PyList(flattened.InvokeMethod("tolist")));
+
+            if (dtype_kind == "O")
+            {
+                using var builtins = Py.Import("builtins");
+                using var str_type = builtins.GetAttr("str");
+                using PyList object_list = new PyList(flattened.InvokeMethod("tolist"));
+                bool all_strings = true;
+                foreach (PyObject item in object_list)
+                {
+                    using var is_string = builtins.InvokeMethod("isinstance", item, str_type);
+                    if (is_string.As<bool>())
+                        continue;
+                    all_strings = false;
+                    break;
+                }
+
+                if (all_strings)
+                    return strings_to_categories(object_list);
+            }
+
+            if (dtype_kind is not ("f" or "i" or "u"))
+                throw new ArgumentException("Embedding values must be a NumPy array of floats or strings.");
+
+            using PyList list = new PyList(flattened.InvokeMethod("tolist"));
+            var values = new float[list.Length()];
+            for (int index = 0; index < values.Length; index++)
+                values[index] = list[index].As<float>();
+            return (EmbeddingValueKind.Float, values, new Dictionary<int, string>());
+        }
+    }
+
+    private static (EmbeddingValueKind Kind, float[] Values, Dictionary<int, string> Categories) strings_to_categories(PyList list)
+    {
+        var ids_by_label = new Dictionary<string, int>(StringComparer.Ordinal);
+        var categories = new Dictionary<int, string>();
+        var values = new float[list.Length()];
+        for (int index = 0; index < values.Length; index++)
+        {
+            string label = list[index].As<string>();
+            if (!ids_by_label.TryGetValue(label, out int id))
+            {
+                id = ids_by_label.Count + 1;
+                ids_by_label[label] = id;
+                categories[id] = label;
+            }
+
+            values[index] = id;
+        }
+
+        return (EmbeddingValueKind.Integer, values, categories);
     }
 
     public static List<T> To<T>(PyList value)

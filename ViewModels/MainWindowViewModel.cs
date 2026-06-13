@@ -1166,8 +1166,10 @@ public sealed class MainWindowViewModel : NotifyBase
             context.execute(code);
             void refresh()
             {
+#if RECALC_AFTER_SCRIPT
                 foreach (var group in Workspace.Groups)
                     group.RecalculateSamples();
+#endif
                 bool metadata_changed = !metadata_snapshot.SequenceEqual(snapshot_workspace_metadata());
                 SelectedGroup ??= Workspace.Groups.FirstOrDefault();
                 SelectedSample ??= selected_group?.Samples.FirstOrDefault();
@@ -3360,11 +3362,22 @@ public sealed class MainWindowViewModel : NotifyBase
 
     private IEnumerable<string> available_embedding_axis_names(FlowSample? sample, PopulationResult? population)
     {
-        if (sample is null || population is null)
+        if (sample is null)
             return Array.Empty<string>();
 
-        return population.AvailableEmbeddingNames
-            .Where(embedding_name => sample.Embeddings.ContainsKey(embedding_name))
+        if (population is null)
+            return sample.Embeddings.Keys
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(name => name, StringComparer.Ordinal)
+                .ToArray();
+
+        return sample.Embeddings
+            .Where(item => population.EventIndices.Any(index =>
+                index >= 0 &&
+                index < item.Value.Values.Length &&
+                !float.IsNaN(item.Value.Values[index]) &&
+                !float.IsInfinity(item.Value.Values[index])))
+            .Select(item => item.Key)
             .Distinct(StringComparer.Ordinal)
             .OrderBy(name => name, StringComparer.Ordinal)
             .ToArray();
@@ -3431,6 +3444,18 @@ public sealed class MainWindowViewModel : NotifyBase
             {
                 string sample_key = $"{group_key}:sample:{sample.Id}";
                 var sample_node = create_project_node(ProjectNodeKind.Sample, sample.Name, sample_key, sample: sample, group: group, count: sample.EventCount, depth: 2);
+                foreach (var embedding in sample.Embeddings.OrderBy(item => item.Key, StringComparer.Ordinal))
+                {
+                    sample_node.Children.Add(create_project_node(
+                        ProjectNodeKind.Embedding,
+                        embedding.Key,
+                        $"{sample_key}:embedding:{embedding.Key}",
+                        group: group,
+                        sample: sample,
+                        embedding_name: embedding.Key,
+                        count: count_embedding_values(embedding.Value),
+                        depth: 3));
+                }
                 foreach (var population in sample.Populations)
                     append_population_node(sample_node, sample, population, group, $"{sample_key}:population:{population.Gate.Id}:{population.Region}", 3);
                 group_node.Children.Add(sample_node);
@@ -3531,20 +3556,6 @@ public sealed class MainWindowViewModel : NotifyBase
     private void append_population_node(ProjectNode parent, FlowSample sample, PopulationResult population, FlowGroup group, string key, int depth)
     {
         var population_node = create_project_node(ProjectNodeKind.Population, population.DisplayName, key, group: group, sample: sample, gate: population.Gate, population: population, count: population.EventCount, depth: depth);
-        foreach (string embedding_name in available_embedding_axis_names(sample, population))
-        {
-            population_node.Children.Add(create_project_node(
-                ProjectNodeKind.Embedding,
-                embedding_name,
-                $"{key}:embedding:{embedding_name}",
-                group: group,
-                sample: sample,
-                gate: population.Gate,
-                population: population,
-                embedding_name: embedding_name,
-                count: population.EventCount,
-                depth: depth + 1));
-        }
         for (int index = 0; index < population.Statistics.Count; index++)
         {
             var statistic = population.Statistics[index];
@@ -3564,6 +3575,9 @@ public sealed class MainWindowViewModel : NotifyBase
             append_population_node(population_node, sample, child, group, $"{key}:population:{child.Gate.Id}:{child.Region}", depth + 1);
         parent.Children.Add(population_node);
     }
+
+    private static int count_embedding_values(EmbeddingData embedding) =>
+        embedding.Values.Count(value => !float.IsNaN(value) && !float.IsInfinity(value));
 
     private void refresh_visible_project_nodes()
     {
@@ -4019,9 +4033,10 @@ public sealed class MainWindowViewModel : NotifyBase
         if (sample is null ||
             population is null ||
             string.IsNullOrWhiteSpace(embedding_name) ||
-            !sample.Embeddings.TryGetValue(embedding_name, out var values))
+            !sample.Embeddings.TryGetValue(embedding_name, out var embedding))
             return Array.Empty<float>();
 
+        var values = embedding.Values;
         return population.EventIndices
             .Where(index => index >= 0 && index < values.Length)
             .Select(index => values[index]);

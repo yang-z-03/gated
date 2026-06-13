@@ -1,6 +1,9 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Markup.Xaml.Styling;
 using Avalonia.Themes.Fluent;
+using System;
+using update;
 
 namespace gated.Updater;
 
@@ -9,6 +12,7 @@ public sealed class UpdaterApp : Application
     public override void Initialize()
     {
         Styles.Add(new FluentTheme());
+        Styles.Add(new Theme());
     }
 
     public override void OnFrameworkInitializationCompleted()

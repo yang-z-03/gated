@@ -119,56 +119,34 @@ public sealed class UpdateManager
         }
     }
 
-    public async Task<string> DownloadUpdateAsync(
-        UpdateInfo update,
-        IProgress<UpdateProgress>? progress = null,
-        CancellationToken cancellation_token = default)
-    {
-        string staging_root = Path.Combine(Path.GetTempPath(), "gated-update-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture));
-        Directory.CreateDirectory(staging_root);
-
-        var archives = new List<StagedArchive>();
-        for (int i = 0; i < update.Latest.Archives.Count; i++)
-        {
-            var archive = update.Latest.Archives[i];
-            string path = Path.Combine(staging_root, $"archive-{i + 1}.zip");
-            await download_archive(archive, path, i, update.Latest.Archives.Count, progress, cancellation_token, "Downloading update ...");
-            archives.Add(new StagedArchive(path, archive.ExtractPath));
-        }
-
-        string manifest_path = Path.Combine(staging_root, "update.xml");
-        var manifest = new XDocument(
-            new XElement("update",
-                new XAttribute("version", update.Latest.Version.ToString()),
-                archives.Select(archive =>
-                    new XElement("archive",
-                        new XAttribute("path", archive.Path),
-                        new XAttribute("extract", archive.ExtractPath)))));
-        manifest.Save(manifest_path);
-        return manifest_path;
-    }
-
-    public void LaunchUpdater(string manifest_path)
+    public void LaunchUpdater(UpdateInfo update)
     {
         if (!OperatingSystem.IsWindows())
             throw new PlatformNotSupportedException("Automatic replacement is currently supported on Windows.");
 
         string app_path = get_application_path();
         string updater_path = get_updater_path();
+        string? local_versions_path = get_local_versions_path();
         if (!File.Exists(updater_path))
             throw new FileNotFoundException("The updater executable was not found.", updater_path);
+
+        var arguments = new List<string>
+        {
+            "--app", quote(app_path),
+            "--updater", quote(updater_path),
+            "--parent-pid", Environment.ProcessId.ToString(CultureInfo.InvariantCulture),
+            "--current-version", update.Current.ToString(),
+            "--target-version", update.Latest.Version.ToString(),
+            "--versions-url", quote(VersionsUrl)
+        };
+        if (local_versions_path is not null)
+            arguments.AddRange(["--local-versions", quote(local_versions_path)]);
 
         var start_info = new ProcessStartInfo
         {
             FileName = updater_path,
             UseShellExecute = true,
-            Arguments = string.Join(" ", new[]
-            {
-                "--manifest", quote(manifest_path),
-                "--app", quote(app_path),
-                "--updater", quote(updater_path),
-                "--parent-pid", Environment.ProcessId.ToString(CultureInfo.InvariantCulture)
-            })
+            Arguments = string.Join(" ", arguments)
         };
         Process.Start(start_info);
     }
@@ -296,6 +274,21 @@ public sealed class UpdateManager
 
     private static string get_updater_path() =>
         Path.Combine(Path.GetDirectoryName(get_application_path())!, "update.exe");
+
+    private static string? get_local_versions_path()
+    {
+        string? directory = Path.GetDirectoryName(get_application_path());
+        while (!string.IsNullOrWhiteSpace(directory))
+        {
+            string candidate = Path.Combine(directory, ".github", "versions");
+            if (File.Exists(candidate))
+                return candidate;
+
+            directory = Directory.GetParent(directory)?.FullName;
+        }
+
+        return null;
+    }
 
     private static AppVersion get_installed_updater_version(string updater_path)
     {
@@ -451,8 +444,6 @@ public sealed record UpdateVersion(
 }
 
 public sealed record UpdateInfo(AppVersion Current, UpdateVersion Latest);
-
-public sealed record StagedArchive(string Path, string ExtractPath);
 
 public sealed record UpdateProgress(string Title, string Detail, double? Fraction);
 

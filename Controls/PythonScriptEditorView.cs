@@ -144,6 +144,7 @@ public sealed class PythonScriptEditorView : UserControl
             Padding = new Thickness(4),
             Background = new SolidColorBrush(Color.FromRgb(31, 33, 40)),
             Foreground = Brushes.White,
+            ItemsPanel = new FuncTemplate<Panel?>(() => new StackPanel()),
             ItemTemplate = completion_item_template()
         };
         completion_list.Styles.Add(new Style(x => x.OfType<ListBoxItem>())
@@ -240,8 +241,8 @@ public sealed class PythonScriptEditorView : UserControl
         editor.TextArea.TextView.AddHandler(PointerPressedEvent, editor_pointer_pressed, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         overlay_layer.PointerMoved += overlay_pointer_moved;
         overlay_layer.PointerExited += overlay_pointer_exited;
-        completion_list.Tapped += (_, _) => insert_selected_completion();
-        completion_list.SelectionChanged += (_, _) => update_completion_detail();
+        completion_list.Tapped += (_, _) => run_completion_ui_action(insert_selected_completion);
+        completion_list.SelectionChanged += (_, _) => run_completion_ui_action(update_completion_detail);
         run_button.Click += (_, _) => execute_run_command();
         save_button.Click += (_, _) => view_model?.SavePythonScript();
         close_button.Click += async (_, _) =>
@@ -555,31 +556,38 @@ public sealed class PythonScriptEditorView : UserControl
         if (e.KeyModifiers == KeyModifiers.Control && e.Key == Key.Space)
         {
             e.Handled = true;
-            _ = show_completion_async(editor.TextArea);
+            start_completion(editor.TextArea);
         }
     }
 
     private void editor_key_up(object? sender, KeyEventArgs e)
     {
-        if (suppress_next_completion_trigger)
+        try
         {
-            suppress_next_completion_trigger = false;
-            return;
+            if (suppress_next_completion_trigger)
+            {
+                suppress_next_completion_trigger = false;
+                return;
+            }
+
+            if (e.KeyModifiers != KeyModifiers.None)
+                return;
+
+            int offset = editor.TextArea.Caret.Offset;
+            string text = editor.TextArea.Document.Text;
+            if (offset <= 0 || offset > text.Length)
+                return;
+            if (is_inside_python_string(text, offset))
+                return;
+
+            char previous = text[offset - 1];
+            if (previous == '.' || char.IsLetter(previous) || previous == '_')
+                start_completion(editor.TextArea);
         }
-
-        if (e.KeyModifiers != KeyModifiers.None)
-            return;
-
-        int offset = editor.TextArea.Caret.Offset;
-        string text = editor.TextArea.Document.Text;
-        if (offset <= 0 || offset > text.Length)
-            return;
-        if (is_inside_python_string(text, offset))
-            return;
-
-        char previous = text[offset - 1];
-        if (previous == '.' || char.IsLetter(previous) || previous == '_')
-            _ = show_completion_async(editor.TextArea);
+        catch (Exception)
+        {
+            close_completion_after_error();
+        }
     }
 
     private void execute_run_command()
@@ -590,79 +598,108 @@ public sealed class PythonScriptEditorView : UserControl
 
     private void editor_text_entering(object? sender, TextInputEventArgs e)
     {
-        if (!has_real_completion_items() || e.Text is not { Length: > 0 } text)
-            return;
-
-        if (text == ".")
+        try
         {
-            if (selected_completion_would_not_change_text())
+            if (!has_real_completion_items() || e.Text is not { Length: > 0 } text)
+                return;
+
+            if (text == ".")
+            {
+                if (selected_completion_would_not_change_text())
+                {
+                    close_completion_popup();
+                    return;
+                }
+                insert_selected_completion();
+            }
+            else if (!char.IsLetterOrDigit(text[0]) && text[0] != '_')
             {
                 close_completion_popup();
-                return;
+                suppress_next_completion_trigger = true;
             }
-            insert_selected_completion();
         }
-        else if (!char.IsLetterOrDigit(text[0]) && text[0] != '_')
+        catch (Exception)
         {
-            close_completion_popup();
-            suppress_next_completion_trigger = true;
+            close_completion_after_error();
         }
     }
 
     private void editor_text_entered(object? sender, TextInputEventArgs e)
     {
-        if (sender is not TextArea text_area)
-            return;
+        try
+        {
+            if (sender is not TextArea text_area)
+                return;
 
-        if (is_inside_python_string(text_area.Document.Text, text_area.Caret.Offset))
-            return;
+            if (is_inside_python_string(text_area.Document.Text, text_area.Caret.Offset))
+                return;
 
-        if (e.Text == "." || (e.Text is { Length: 1 } text && (char.IsLetter(text[0]) || text[0] == '_')))
-            _ = show_completion_async(text_area);
+            if (e.Text == "." || (e.Text is { Length: 1 } text && (char.IsLetter(text[0]) || text[0] == '_')))
+                start_completion(text_area);
+        }
+        catch (Exception)
+        {
+            close_completion_after_error();
+        }
+    }
+
+    private void start_completion(TextArea text_area)
+    {
+        _ = show_completion_async(text_area);
     }
 
     private async Task show_completion_async(TextArea text_area)
     {
-        string code = text_area.Document.Text;
-        int offset = text_area.Caret.Offset;
-        if (is_inside_python_string(code, offset))
+        try
         {
-            close_completion_popup();
-            return;
-        }
-
-        string request_key = $"{offset}:{code.GetHashCode(StringComparison.Ordinal)}";
-        if (completion_popup.IsVisible && request_key == completion_request_key)
-            return;
-
-        completion_request_key = request_key;
-        int request_id = ++completion_request_id;
-        completion_start_offset = completion_start(text_area.Document, offset);
-        var location = document_location(text_area.Document, offset);
-
-        close_hover_popup();
-
-        var items = await Task.Run(() => completion_items(code, location.Line, location.Column).ToArray());
-        if (request_id != completion_request_id)
-            return;
-
-        await Dispatcher.UIThread.InvokeAsync(() =>
-        {
-            if (request_id != completion_request_id)
-                return;
-            if (items.Length == 0)
+            string code = text_area.Document.Text;
+            int offset = text_area.Caret.Offset;
+            if (is_inside_python_string(code, offset))
             {
                 close_completion_popup();
                 return;
             }
 
-            completion_list.ItemsSource = items;
-            completion_list.SelectedIndex = 0;
-            update_completion_detail();
-            position_completion_popup(offset);
-            completion_popup.IsVisible = true;
-            completion_list.ScrollIntoView(items[0]);
-        });
+            string request_key = $"{offset}:{code.GetHashCode(StringComparison.Ordinal)}";
+            if (completion_popup.IsVisible && request_key == completion_request_key)
+                return;
+
+            completion_request_key = request_key;
+            int request_id = ++completion_request_id;
+            completion_start_offset = completion_start(text_area.Document, offset);
+            var location = document_location(text_area.Document, offset);
+
+            close_hover_popup();
+
+            var items = await Task.Run(() => completion_items(code, location.Line, location.Column).ToArray());
+            if (request_id != completion_request_id)
+                return;
+
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (request_id != completion_request_id)
+                    return;
+                if (items.Length == 0)
+                {
+                    close_completion_popup();
+                    return;
+                }
+
+                reset_completion_list();
+                completion_list.ItemsSource = items;
+                completion_list.SelectedIndex = 0;
+                update_completion_detail();
+                position_completion_popup(offset);
+                completion_popup.IsVisible = true;
+                completion_list.InvalidateMeasure();
+                completion_list.InvalidateArrange();
+                completion_list.ScrollIntoView(items[0]);
+            });
+        }
+        catch (Exception)
+        {
+            await close_completion_after_error_async();
+        }
     }
 
     private static IEnumerable<PythonCompletionData> completion_items(string code, int line, int column)
@@ -690,47 +727,69 @@ public sealed class PythonScriptEditorView : UserControl
 
     private void move_completion_selection(int delta)
     {
-        int count = completion_list.ItemCount;
-        if (count == 0)
-            return;
-        int current = completion_list.SelectedIndex < 0 ? 0 : completion_list.SelectedIndex;
-        int next = (current + delta) % count;
-        if (next < 0)
-            next += count;
-        completion_list.SelectedIndex = next;
-        update_completion_detail();
-        if (completion_list.SelectedItem is not null)
-            completion_list.ScrollIntoView(completion_list.SelectedItem);
+        run_completion_ui_action(() =>
+        {
+            int count = completion_list.ItemCount;
+            if (count == 0)
+                return;
+            int current = completion_list.SelectedIndex < 0 ? 0 : completion_list.SelectedIndex;
+            int next = (current + delta) % count;
+            if (next < 0)
+                next += count;
+            completion_list.SelectedIndex = next;
+            update_completion_detail();
+            if (completion_list.SelectedItem is not null)
+                completion_list.ScrollIntoView(completion_list.SelectedItem);
+        });
     }
 
     private void insert_selected_completion()
     {
-        if (!completion_popup.IsVisible || completion_list.SelectedItem is not PythonCompletionData item)
-            return;
+        run_completion_ui_action(() =>
+        {
+            if (!completion_popup.IsVisible || completion_list.SelectedItem is not PythonCompletionData item)
+                return;
 
-        int offset = editor.TextArea.Caret.Offset;
-        int length = Math.Max(0, offset - completion_start_offset);
-        editor.Document.Replace(completion_start_offset, length, item.InsertionText);
-        editor.CaretOffset = completion_start_offset + item.InsertionText.Length;
-        close_completion_popup();
+            int offset = editor.TextArea.Caret.Offset;
+            int length = Math.Max(0, offset - completion_start_offset);
+            editor.Document.Replace(completion_start_offset, length, item.InsertionText);
+            editor.CaretOffset = completion_start_offset + item.InsertionText.Length;
+            close_completion_popup();
+        });
     }
 
     private bool selected_completion_would_not_change_text()
     {
-        if (!completion_popup.IsVisible || completion_list.SelectedItem is not PythonCompletionData item)
+        try
+        {
+            if (!completion_popup.IsVisible || completion_list.SelectedItem is not PythonCompletionData item)
+                return false;
+            int offset = editor.TextArea.Caret.Offset;
+            int length = Math.Max(0, offset - completion_start_offset);
+            if (completion_start_offset < 0 || completion_start_offset + length > editor.Document.TextLength)
+                return false;
+            string current = editor.Document.Text.Substring(completion_start_offset, length);
+            return current == item.InsertionText;
+        }
+        catch (Exception)
+        {
+            close_completion_after_error();
             return false;
-        int offset = editor.TextArea.Caret.Offset;
-        int length = Math.Max(0, offset - completion_start_offset);
-        if (completion_start_offset < 0 || completion_start_offset + length > editor.Document.TextLength)
-            return false;
-        string current = editor.Document.Text.Substring(completion_start_offset, length);
-        return current == item.InsertionText;
+        }
     }
 
     private bool completion_has_empty_prefix()
     {
-        int offset = editor.TextArea.Caret.Offset;
-        return completion_start_offset >= 0 && offset <= editor.Document.TextLength && offset <= completion_start_offset;
+        try
+        {
+            int offset = editor.TextArea.Caret.Offset;
+            return completion_start_offset >= 0 && offset <= editor.Document.TextLength && offset <= completion_start_offset;
+        }
+        catch (Exception)
+        {
+            close_completion_after_error();
+            return false;
+        }
     }
 
     private void close_completion_popup(bool invalidate_request = true)
@@ -739,15 +798,60 @@ public sealed class PythonScriptEditorView : UserControl
             completion_request_id++;
         completion_request_key = "";
         completion_popup.IsVisible = false;
-        completion_list.ItemsSource = null;
+        reset_completion_list();
         completion_detail.Child = null;
         completion_detail.IsVisible = false;
         if (!hover_popup.IsVisible)
             overlay_layer.IsHitTestVisible = false;
     }
 
+    private void reset_completion_list()
+    {
+        completion_list.SelectedIndex = -1;
+        completion_list.ItemsSource = null;
+        completion_list.InvalidateMeasure();
+        completion_list.InvalidateArrange();
+    }
+
     private bool has_real_completion_items() =>
         completion_popup.IsVisible && completion_list.ItemsSource is not null && completion_list.ItemCount > 0;
+
+    private void run_completion_ui_action(Action action)
+    {
+        try
+        {
+            action();
+        }
+        catch (Exception)
+        {
+            close_completion_after_error();
+        }
+    }
+
+    private async Task close_completion_after_error_async()
+    {
+        try
+        {
+            if (Dispatcher.UIThread.CheckAccess())
+                close_completion_popup();
+            else
+                await Dispatcher.UIThread.InvokeAsync(() => close_completion_popup());
+        }
+        catch (Exception)
+        {
+        }
+    }
+
+    private void close_completion_after_error()
+    {
+        try
+        {
+            close_completion_popup();
+        }
+        catch (Exception)
+        {
+        }
+    }
 
     private void position_completion_popup(int offset)
     {
@@ -757,15 +861,18 @@ public sealed class PythonScriptEditorView : UserControl
 
     private void update_completion_detail()
     {
-        if (completion_list.SelectedItem is not PythonCompletionData item)
+        run_completion_ui_action(() =>
         {
-            completion_detail.Child = null;
-            completion_detail.IsVisible = false;
-            return;
-        }
+            if (completion_list.SelectedItem is not PythonCompletionData item)
+            {
+                completion_detail.Child = null;
+                completion_detail.IsVisible = false;
+                return;
+            }
 
-        completion_detail.Child = build_completion_detail_view(item, completion_detail);
-        completion_detail.IsVisible = true;
+            completion_detail.Child = build_completion_detail_view(item, completion_detail);
+            completion_detail.IsVisible = true;
+        });
     }
 
     private Point caret_point(int offset)
@@ -835,60 +942,82 @@ public sealed class PythonScriptEditorView : UserControl
 
     private void editor_pointer_pressed(object? sender, PointerPressedEventArgs e)
     {
-        if (!completion_popup.IsVisible && !hover_popup.IsVisible)
-            return;
+        try
+        {
+            if (!completion_popup.IsVisible && !hover_popup.IsVisible)
+                return;
 
-        close_tooltip_windows();
-        e.Handled = true;
+            close_tooltip_windows();
+            e.Handled = true;
+        }
+        catch (Exception)
+        {
+            close_completion_after_error();
+            close_hover_after_error();
+        }
     }
 
     private void editor_pointer_exited(object? sender, PointerEventArgs e)
     {
-        if (hover_popup.IsVisible && is_point_inside_overlay_child(e.GetPosition(overlay_layer), hover_popup, tolerance: TooltipApproachTolerance))
-            return;
-        hover_delay?.Cancel();
-        hover_delay = null;
-        hover_offset = -1;
-        close_hover_popup();
+        try
+        {
+            if (hover_popup.IsVisible && is_point_inside_overlay_child(e.GetPosition(overlay_layer), hover_popup, tolerance: TooltipApproachTolerance))
+                return;
+            hover_delay?.Cancel();
+            hover_delay = null;
+            hover_offset = -1;
+            close_hover_popup();
+        }
+        catch (Exception)
+        {
+            close_hover_after_error();
+        }
     }
 
     private void editor_pointer_moved(object? sender, PointerEventArgs e)
     {
-        if (sender is not AvaloniaEdit.Rendering.TextView text_view)
-            return;
-
-        var position = text_view.GetPositionFloor(e.GetPosition(text_view) + text_view.ScrollOffset);
-        if (!position.HasValue)
-            return;
-
-        var overlay_point = e.GetPosition(overlay_layer);
-        if (is_point_inside_visible_overlay_child(overlay_point, tolerance: TooltipApproachTolerance))
+        try
         {
-            overlay_layer.IsHitTestVisible = true;
-            return;
-        }
+            if (sender is not AvaloniaEdit.Rendering.TextView text_view)
+                return;
 
-        overlay_layer.IsHitTestVisible = false;
+            var position = text_view.GetPositionFloor(e.GetPosition(text_view) + text_view.ScrollOffset);
+            if (!position.HasValue)
+                return;
 
-        int line = position.Value.Location.Line;
-        if (hover_popup.IsVisible && hover_line >= 0 && line != hover_line)
-        {
-            hover_delay?.Cancel();
-            hover_offset = -1;
-            hover_line = -1;
+            var overlay_point = e.GetPosition(overlay_layer);
+            if (is_point_inside_visible_overlay_child(overlay_point, tolerance: TooltipApproachTolerance))
+            {
+                overlay_layer.IsHitTestVisible = true;
+                return;
+            }
+
+            overlay_layer.IsHitTestVisible = false;
+
+            int line = position.Value.Location.Line;
+            if (hover_popup.IsVisible && hover_line >= 0 && line != hover_line)
+            {
+                hover_delay?.Cancel();
+                hover_offset = -1;
+                hover_line = -1;
+                close_hover_popup();
+            }
+
+            hover_point = e.GetPosition(overlay_layer);
+            int offset = text_view.Document.GetOffset(position.Value.Location);
+            if (offset == hover_offset)
+                return;
             close_hover_popup();
+            hover_offset = offset;
+            hover_line = line;
+            hover_delay?.Cancel();
+            hover_delay = new CancellationTokenSource();
+            _ = show_hover_after_delay_async(text_view, offset, hover_delay.Token);
         }
-
-        hover_point = e.GetPosition(overlay_layer);
-        int offset = text_view.Document.GetOffset(position.Value.Location);
-        if (offset == hover_offset)
-            return;
-        close_hover_popup();
-        hover_offset = offset;
-        hover_line = line;
-        hover_delay?.Cancel();
-        hover_delay = new CancellationTokenSource();
-        _ = show_hover_after_delay_async(text_view, offset, hover_delay.Token);
+        catch (Exception)
+        {
+            close_hover_after_error();
+        }
     }
 
     private void overlay_pointer_moved(object? sender, PointerEventArgs e)
@@ -913,41 +1042,44 @@ public sealed class PythonScriptEditorView : UserControl
         try
         {
             await Task.Delay(TimeSpan.FromSeconds(1), token);
-        }
-        catch (TaskCanceledException)
-        {
-            return;
-        }
 
-        var location = document_location(text_view.Document, offset);
-        int line = location.Line;
-        string code = text_view.Document.Text;
-        var hover = await Task.Run(() => PythonExtensionRuntime.GetPythonHoverInfo(code, location.Line, location.Column), token);
-        if (token.IsCancellationRequested || hover_offset != offset || hover_line != line || completion_popup.IsVisible || hover is null || hover.Type is "keyword")
-        {
-            await Dispatcher.UIThread.InvokeAsync(close_hover_popup);
-            return;
-        }
-
-        await Dispatcher.UIThread.InvokeAsync(() =>
-        {
-            if (token.IsCancellationRequested || hover_offset != offset || hover_line != line)
+            var location = document_location(text_view.Document, offset);
+            int line = location.Line;
+            string code = text_view.Document.Text;
+            var hover = await Task.Run(() => PythonExtensionRuntime.GetPythonHoverInfo(code, location.Line, location.Column), token);
+            if (token.IsCancellationRequested || hover_offset != offset || hover_line != line || completion_popup.IsVisible || hover is null || hover.Type is "keyword")
+            {
+                await Dispatcher.UIThread.InvokeAsync(close_hover_popup);
                 return;
-            hover_popup.Child = build_hover_title_view(hover, hover_popup);
-            place_overlay_near_point(hover_popup, new Point(hover_point.X + 14, hover_point.Y + 8), prefer_below: true);
-            hover_popup.IsVisible = true;
-        });
+            }
 
-        await Task.Yield();
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (token.IsCancellationRequested || hover_offset != offset || hover_line != line)
+                    return;
+                hover_popup.Child = build_hover_title_view(hover, hover_popup);
+                place_overlay_near_point(hover_popup, new Point(hover_point.X + 14, hover_point.Y + 8), prefer_below: true);
+                hover_popup.IsVisible = true;
+            });
 
-        await Dispatcher.UIThread.InvokeAsync(() =>
+            await Task.Yield();
+
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (token.IsCancellationRequested || hover_offset != offset || hover_line != line || completion_popup.IsVisible)
+                    return;
+                hover_popup.Child = build_documentation_view(hover, hover_popup);
+                place_overlay_near_point(hover_popup, new Point(hover_point.X + 14, hover_point.Y + 8), prefer_below: true);
+                hover_popup.IsVisible = true;
+            });
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
-            if (token.IsCancellationRequested || hover_offset != offset || hover_line != line || completion_popup.IsVisible)
-                return;
-            hover_popup.Child = build_documentation_view(hover, hover_popup);
-            place_overlay_near_point(hover_popup, new Point(hover_point.X + 14, hover_point.Y + 8), prefer_below: true);
-            hover_popup.IsVisible = true;
-        });
+        }
+        catch (Exception)
+        {
+            await close_hover_after_error_async();
+        }
     }
 
     private void close_hover_popup()
@@ -958,6 +1090,35 @@ public sealed class PythonScriptEditorView : UserControl
         hover_line = -1;
         if (!completion_popup.IsVisible)
             overlay_layer.IsHitTestVisible = false;
+    }
+
+    private async Task close_hover_after_error_async()
+    {
+        try
+        {
+            hover_delay?.Cancel();
+            hover_delay = null;
+            if (Dispatcher.UIThread.CheckAccess())
+                close_hover_popup();
+            else
+                await Dispatcher.UIThread.InvokeAsync(close_hover_popup);
+        }
+        catch (Exception)
+        {
+        }
+    }
+
+    private void close_hover_after_error()
+    {
+        try
+        {
+            hover_delay?.Cancel();
+            hover_delay = null;
+            close_hover_popup();
+        }
+        catch (Exception)
+        {
+        }
     }
 
     private bool is_point_inside_visible_overlay_child(Point point, double tolerance = 0) =>

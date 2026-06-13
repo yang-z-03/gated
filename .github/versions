@@ -27,4 +27,21 @@
     <archive href="https://github.com/yang-z-03/gated/releases/download/0-25/gated-0-25-3.zip" extract="."/>
     <info href="https://raw.githubusercontent.com/yang-z-03/gated/refs/heads/master/.github/logs/0-25-3.changes" />
   </version>
+  <version major="0" minor="26" patch="0" platform="windows" minimal="7">
+      <archive href="https://github.com/yang-z-03/gated/releases/download/0-26/gated-0-26-0.zip" extract="."/>
+      <require type="package" name="python" major="3" minor="13" override_if_exist="false" href="https://github.com/yang-z-03/gated/releases/download/0-26/python-3-13.zip" extract="./python">
+          <require type="python-package" name="docstring_parser" version="==0.18.0"/>
+          <require type="python-package" name="jedi" version="==0.20.0"/>
+          <require type="python-package" name="parso" version="==0.8.7"/>
+          <require type="python-package" name="igraph" version="&gt;=1,&lt;2"/>
+          <require type="python-package" name="scipy" version="&gt;=1,&lt;2"/>
+          <require type="python-package" name="numpy" version="&gt;=2,&lt;3"/>
+          <require type="python-package" name="pandas" version="&gt;=3,&lt;4"/>
+          <require type="python-package" name="scikit-learn" version="&gt;=1.9,&lt;1.10"/>
+          <require type="python-package" name="leidenalg" version="&gt;=0.12,&lt;0.13"/>
+      </require>
+      <macros extract="./macros" compat="0.25"/>
+      <statistics extract="./statistics" compat="0.25"/>
+      <info href="https://raw.githubusercontent.com/yang-z-03/gated/refs/heads/master/.github/logs/0-26-0.changes" />
+  </version>
 </repository>

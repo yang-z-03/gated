@@ -131,9 +131,10 @@ public sealed class WorkspaceBinarySerializer
 
         int sample_count = reader.ReadInt32();
         for (int index = 0; index < sample_count; index++)
-            group.AddSample(read_sample(reader), recalculate: false);
+            group.AddSample(read_sample(reader, group.Gates), recalculate: false);
 
-        group.RecalculateSamples();
+        foreach (var sample in group.Samples)
+            sample.ApplyCompensation(group.AppliedCompensation, force: true);
         return group;
     }
 
@@ -161,9 +162,17 @@ public sealed class WorkspaceBinarySerializer
         foreach (var embedding in sample.Embeddings.OrderBy(item => item.Key, StringComparer.Ordinal))
         {
             write_string(writer, embedding.Key);
-            writer.Write(embedding.Value.Length);
-            foreach (float value in embedding.Value)
+            writer.Write((int)embedding.Value.Kind);
+            writer.Write(embedding.Value.Values.Length);
+            foreach (float value in embedding.Value.Values)
                 writer.Write(value);
+
+            writer.Write(embedding.Value.Categories.Count);
+            foreach (var category in embedding.Value.Categories.OrderBy(item => item.Key))
+            {
+                writer.Write(category.Key);
+                write_string(writer, category.Value);
+            }
         }
 
         writer.Write(sample.Metadata.Count);
@@ -172,9 +181,11 @@ public sealed class WorkspaceBinarySerializer
             write_string(writer, item.Key);
             write_string(writer, item.Value);
         }
+
+        write_population_results(writer, sample.Populations);
     }
 
-    private static FlowSample read_sample(BinaryReader reader)
+    private static FlowSample read_sample(BinaryReader reader, IReadOnlyList<GateDefinition> gates)
     {
         Guid id = new Guid(reader.ReadBytes(16));
         string name = read_string(reader);
@@ -202,18 +213,118 @@ public sealed class WorkspaceBinarySerializer
         for (int index = 0; index < embedding_count; index++)
         {
             string embedding_name = read_string(reader);
+            var kind = (EmbeddingValueKind)reader.ReadInt32();
             int value_count = reader.ReadInt32();
             var values = new float[value_count];
             for (int value_index = 0; value_index < value_count; value_index++)
                 values[value_index] = reader.ReadSingle();
-            sample.Embeddings[embedding_name] = values;
+            var embedding = new EmbeddingData { Kind = kind, Values = values };
+            int category_count = reader.ReadInt32();
+            for (int category_index = 0; category_index < category_count; category_index++)
+                embedding.Categories[reader.ReadInt32()] = read_string(reader);
+            sample.Embeddings[embedding_name] = embedding;
         }
 
         int metadata_count = reader.ReadInt32();
         for (int index = 0; index < metadata_count; index++)
             sample.Metadata[read_string(reader)] = read_string(reader);
 
+        read_population_results(reader, sample.Populations, gates);
         return sample;
+    }
+
+    private static void write_population_results(BinaryWriter writer, IReadOnlyCollection<PopulationResult> populations)
+    {
+        writer.Write(populations.Count);
+        foreach (var population in populations)
+            write_population_result(writer, population);
+    }
+
+    private static void write_population_result(BinaryWriter writer, PopulationResult population)
+    {
+        writer.Write(population.Gate.Id.ToByteArray());
+        writer.Write((int)population.Region);
+        write_int_array(writer, population.EventIndices);
+        writer.Write(population.EventCount);
+
+        writer.Write(population.Statistics.Count);
+        foreach (var statistic in population.Statistics)
+        {
+            writer.Write((int)statistic.Kind);
+            write_string(writer, statistic.ChannelName);
+            writer.Write(statistic.Value);
+            write_string(writer, statistic.PythonDisplayName);
+        }
+
+        write_population_results(writer, population.Children);
+    }
+
+    private static void read_population_results(
+        BinaryReader reader,
+        ICollection<PopulationResult> target,
+        IReadOnlyList<GateDefinition> gates)
+    {
+        int count = reader.ReadInt32();
+        for (int index = 0; index < count; index++)
+        {
+            var population = read_population_result(reader, gates);
+            if (population is not null)
+                target.Add(population);
+        }
+    }
+
+    private static PopulationResult? read_population_result(BinaryReader reader, IReadOnlyList<GateDefinition> gates)
+    {
+        Guid gate_id = new Guid(reader.ReadBytes(16));
+        var region = (PopulationRegion)reader.ReadInt32();
+        var event_indices = read_int_array(reader) ?? [];
+        int event_count = reader.ReadInt32();
+        var gate = find_gate(gates, gate_id);
+
+        int statistic_count = reader.ReadInt32();
+        var statistics = new List<StatisticResult>(statistic_count);
+        for (int index = 0; index < statistic_count; index++)
+        {
+            statistics.Add(new StatisticResult
+            {
+                Kind = (StatisticKind)reader.ReadInt32(),
+                ChannelName = read_string(reader),
+                Value = reader.ReadDouble(),
+                PythonDisplayName = read_string(reader)
+            });
+        }
+
+        var children = new List<PopulationResult>();
+        read_population_results(reader, children, gates);
+        if (gate is null)
+            return null;
+
+        var population = new PopulationResult
+        {
+            Gate = gate,
+            Region = region,
+            EventIndices = event_indices,
+            EventCount = event_count
+        };
+        foreach (var statistic in statistics)
+            population.Statistics.Add(statistic);
+        foreach (var child in children)
+            population.Children.Add(child);
+        return population;
+    }
+
+    private static GateDefinition? find_gate(IEnumerable<GateDefinition> gates, Guid id)
+    {
+        foreach (var gate in gates)
+        {
+            if (gate.Id == id)
+                return gate;
+            var child = find_gate(gate.Children, id);
+            if (child is not null)
+                return child;
+        }
+
+        return null;
     }
 
     private static void write_gate(BinaryWriter writer, GateDefinition gate)

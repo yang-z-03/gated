@@ -337,7 +337,10 @@ public sealed class FlowPlotView : Control
     {
         base.OnPointerReleased(e);
         if (gate_was_edited && dragging_gate is not null && GateEditedCommand?.CanExecute(dragging_gate) == true)
+        {
+            invalidate_plot_cache();
             GateEditedCommand.Execute(dragging_gate);
+        }
 
         if (dragging_pending_vertex_index >= 0 && pending_gate is not null)
             settle_pending_gate_point();
@@ -574,8 +577,8 @@ public sealed class FlowPlotView : Control
             return null;
 
         var density = new int[density_size, density_size];
-        var color_sums = should_color_dots() ? new double[density_size, density_size] : null;
-        var color_counts = should_color_dots() ? new int[density_size, density_size] : null;
+        var category_colors = should_color_dots() ? create_category_colors(samples, DotColor!.ChannelName, DotColor.Palette) : null;
+        var color_accumulator = should_color_dots() ? new DotColorAccumulator(DotColor!.Palette, category_colors) : null;
         int max_density = 0;
         int total_count = 0;
         double x_minimum = XAxis.Scale.Transform(XAxis.Minimum);
@@ -591,9 +594,13 @@ public sealed class FlowPlotView : Control
             var x_values = sample.GetChannelValues(XAxis.ChannelName, event_indices);
             var y_values = sample.GetChannelValues(YAxis.ChannelName, event_indices);
             var color_values = should_color_dots() ? sample.GetChannelValues(DotColor!.ChannelName, event_indices) : [];
+            var color_embedding = should_color_dots() && sample.Embeddings.TryGetValue(DotColor!.ChannelName, out var embedding)
+                ? embedding
+                : null;
             if (x_values.Length == 0 || y_values.Length == 0)
                 continue;
 
+            color_accumulator?.ConfigureCategories(color_embedding);
             for (int index = 0; index < event_indices.Length; index++)
             {
                 int x_bin = to_bin(x_values[index], XAxis, x_minimum, x_span);
@@ -605,20 +612,12 @@ public sealed class FlowPlotView : Control
                 int value = ++density[x_bin, y_bin];
                 if (value > max_density)
                     max_density = value;
-                if (color_sums is not null &&
-                    color_counts is not null &&
-                    index >= 0 &&
-                    index < color_values.Length &&
-                    !float.IsNaN(color_values[index]) &&
-                    !float.IsInfinity(color_values[index]))
-                {
-                    color_sums[x_bin, y_bin] += transform_dot_color_value(color_values[index], DotColor!.UseLogScale);
-                    color_counts[x_bin, y_bin]++;
-                }
+                if (index >= 0 && index < color_values.Length)
+                    color_accumulator?.Add(x_bin, y_bin, color_values[index], DotColor!.UseLogScale);
             }
         }
 
-        return max_density == 0 ? null : (density, create_dot_colors(color_sums, color_counts), max_density, total_count);
+        return max_density == 0 ? null : (density, color_accumulator?.CreateColors() ?? new Color?[density_size, density_size], max_density, total_count);
     }
 
     private static double[,] normalized_density_grid(int[,] density, int max_density)
@@ -639,42 +638,141 @@ public sealed class FlowPlotView : Control
     private bool should_color_dots() =>
         DotColor is { HasChannel: true } && PlotMode == PlotMode.Dotplot;
 
-    private Color?[,] create_dot_colors(double[,]? color_sums, int[,]? color_counts)
+    private static double transform_dot_color_value(double value, bool use_log_scale) =>
+        use_log_scale ? Math.Log10(1 + Math.Max(0, value)) : value;
+
+    private static Dictionary<string, Color>? create_category_colors(
+        IEnumerable<FlowSample> samples,
+        string embedding_name,
+        PlotColorPalette palette)
     {
-        if (color_sums is null || color_counts is null || DotColor is null)
-            return new Color?[density_size, density_size];
+        var labels = samples
+            .Select(sample => sample.Embeddings.TryGetValue(embedding_name, out var embedding) ? embedding : null)
+            .Where(embedding => embedding is { Kind: EmbeddingValueKind.Integer })
+            .SelectMany(embedding => embedding!.Categories.Values)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(label => label, StringComparer.Ordinal)
+            .ToArray();
+        if (labels.Length == 0)
+            return null;
 
-        double minimum = double.PositiveInfinity;
-        double maximum = double.NegativeInfinity;
-        for (int x = 0; x < density_size; x++)
-        for (int y = 0; y < density_size; y++)
+        var colors = new Dictionary<string, Color>(StringComparer.Ordinal);
+        for (int index = 0; index < labels.Length; index++)
         {
-            if (color_counts[x, y] <= 0)
-                continue;
-            double value = color_sums[x, y] / color_counts[x, y];
-            minimum = Math.Min(minimum, value);
-            maximum = Math.Max(maximum, value);
-        }
-
-        if (double.IsInfinity(minimum) || maximum <= minimum)
-            return new Color?[density_size, density_size];
-
-        var colors = new Color?[density_size, density_size];
-        for (int x = 0; x < density_size; x++)
-        for (int y = 0; y < density_size; y++)
-        {
-            if (color_counts[x, y] <= 0)
-                continue;
-            double value = color_sums[x, y] / color_counts[x, y];
-            double normalized = Math.Clamp((value - minimum) / (maximum - minimum), 0, 1);
-            colors[x, y] = palette_color(normalized, DotColor.Palette);
+            double normalized = labels.Length == 1 ? 0.5 : index / (double)(labels.Length - 1);
+            colors[labels[index]] = palette_color(normalized, palette);
         }
 
         return colors;
     }
 
-    private static double transform_dot_color_value(double value, bool use_log_scale) =>
-        use_log_scale ? Math.Log10(1 + Math.Max(0, value)) : value;
+    private sealed class DotColorAccumulator
+    {
+        private readonly PlotColorPalette palette;
+        private readonly IReadOnlyDictionary<string, Color>? category_colors;
+        private readonly double[,] continuous_sums = new double[density_size, density_size];
+        private readonly int[,] continuous_counts = new int[density_size, density_size];
+        private readonly Dictionary<string, int>?[] category_counts = new Dictionary<string, int>?[density_size * density_size];
+        private Dictionary<int, string>? current_category_labels;
+
+        public DotColorAccumulator(PlotColorPalette palette, IReadOnlyDictionary<string, Color>? category_colors)
+        {
+            this.palette = palette;
+            this.category_colors = category_colors;
+        }
+
+        public void ConfigureCategories(EmbeddingData? embedding)
+        {
+            if (embedding is not { Kind: EmbeddingValueKind.Integer } || embedding.Categories.Count == 0)
+            {
+                current_category_labels = null;
+                return;
+            }
+
+            current_category_labels = new Dictionary<int, string>(embedding.Categories);
+        }
+
+        public void Add(int x_bin, int y_bin, float value, bool use_log_scale)
+        {
+            if (float.IsNaN(value) || float.IsInfinity(value))
+                return;
+
+            if (current_category_labels is not null && category_colors is not null)
+            {
+                int category_id = Convert.ToInt32(value);
+                if (!current_category_labels.TryGetValue(category_id, out string? label))
+                    return;
+
+                int index = y_bin * density_size + x_bin;
+                var counts = category_counts[index] ??= new Dictionary<string, int>(StringComparer.Ordinal);
+                counts[label] = counts.TryGetValue(label, out int count) ? count + 1 : 1;
+                return;
+            }
+
+            continuous_sums[x_bin, y_bin] += transform_dot_color_value(value, use_log_scale);
+            continuous_counts[x_bin, y_bin]++;
+        }
+
+        public Color?[,] CreateColors()
+        {
+            var colors = create_continuous_colors();
+            for (int index = 0; index < category_counts.Length; index++)
+            {
+                var counts = category_counts[index];
+                if (counts is null || counts.Count == 0)
+                    continue;
+
+                var label = counts
+                    .OrderByDescending(item => item.Value)
+                    .ThenBy(item => item.Key, StringComparer.Ordinal)
+                    .First()
+                    .Key;
+                int x = index % density_size;
+                int y = index / density_size;
+                colors[x, y] = category_color(label);
+            }
+
+            return colors;
+        }
+
+        private Color?[,] create_continuous_colors()
+        {
+            double minimum = double.PositiveInfinity;
+            double maximum = double.NegativeInfinity;
+            for (int x = 0; x < density_size; x++)
+            for (int y = 0; y < density_size; y++)
+            {
+                if (continuous_counts[x, y] <= 0)
+                    continue;
+                double value = continuous_sums[x, y] / continuous_counts[x, y];
+                minimum = Math.Min(minimum, value);
+                maximum = Math.Max(maximum, value);
+            }
+
+            var colors = new Color?[density_size, density_size];
+            if (double.IsInfinity(minimum) || maximum <= minimum)
+                return colors;
+
+            for (int x = 0; x < density_size; x++)
+            for (int y = 0; y < density_size; y++)
+            {
+                if (continuous_counts[x, y] <= 0)
+                    continue;
+                double value = continuous_sums[x, y] / continuous_counts[x, y];
+                double normalized = Math.Clamp((value - minimum) / (maximum - minimum), 0, 1);
+                colors[x, y] = palette_color(normalized, palette);
+            }
+
+            return colors;
+        }
+
+        private Color category_color(string label)
+        {
+            if (category_colors is not null && category_colors.TryGetValue(label, out var color))
+                return color;
+            return Colors.Black;
+        }
+    }
 
     private static WriteableBitmap create_dotplot_bitmap(int[,] density, Color?[,]? colors, int total_count, bool large_dots)
     {
@@ -1371,7 +1469,10 @@ public sealed class FlowPlotView : Control
         pending_gate = null;
         has_pending_preview_point = false;
         if (GateCreatedCommand?.CanExecute(gate) == true)
+        {
+            invalidate_plot_cache();
             GateCreatedCommand.Execute(gate);
+        }
         InvalidateVisual();
     }
 
