@@ -37,7 +37,7 @@ Population hierarchy
 
 Layout editor
 
-![Layout editor](.github/layout.png)
+![Layout editor](.github/layout.png){:width="80%"}
 
 Data normalization and integration
 
