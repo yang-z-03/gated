@@ -40,8 +40,8 @@
           <require type="python-package" name="scikit-learn" version="&gt;=1.9,&lt;1.10"/>
           <require type="python-package" name="leidenalg" version="&gt;=0.12,&lt;0.13"/>
       </require>
-      <macros extract="./macros" compat="0.25"/>
-      <statistics extract="./statistics" compat="0.25"/>
+      <macros extract="./macros" compat="1"/>
+      <statistics extract="./statistics" compat="1"/>
       <info href="https://raw.githubusercontent.com/yang-z-03/gated/refs/heads/master/.github/logs/0-26-0.changes" />
   </version>
 </repository>

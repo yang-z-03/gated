@@ -25,15 +25,22 @@ public sealed class UpdaterWindow : Window
     private static readonly HttpClient http_client = new() { Timeout = TimeSpan.FromSeconds(30) };
 
     private readonly string[] args;
-    private readonly TextBlock title = text("Checking for updates", 20, FontWeight.SemiBold);
+    private readonly TextBlock title = text("Checking for updates", 20, FontWeight.Light, brush(255, 255, 255));
     private readonly TextBlock subtitle = text("Preparing updater.", 13);
-    private readonly StackPanel steps = new() { Orientation = Orientation.Horizontal, Spacing = 8 };
+    private readonly StackPanel steps = new() { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 8, 0, 0) };
     private readonly ContentControl page_host = new();
     private readonly Button back_button = new() { Content = "Back", IsEnabled = false };
     private readonly Button cancel_button = new() { Content = "Cancel" };
     private readonly Button next_button = new() { Content = "Next", Classes = { "Primary" }, IsEnabled = false };
     private readonly ProgressBar progress = new() { Minimum = 0, Maximum = 100, Height = 8 };
-    private readonly TextBlock progress_detail = text("", 12);
+    private readonly TextBlock progress_detail = text("", 12).also(block =>
+    {
+        block.TextWrapping = TextWrapping.NoWrap;
+        block.TextTrimming = TextTrimming.None;
+        block.MaxLines = 1;
+        block.ClipToBounds = true;
+        block.OpacityMask = right_fade_mask();
+    });
 
     private UpdateOptions? options;
     private UpdatePlan? plan;
@@ -43,11 +50,14 @@ public sealed class UpdaterWindow : Window
     {
         this.args = args;
         Title = "Gated Updater";
-        Width = 760;
-        Height = 560;
+        Width = 680;
+        Height = 500;
         MinWidth = 680;
         MinHeight = 500;
+        MaxWidth = 680;
+        MaxHeight = 500;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        FontFamily = new FontFamily("Adobe Clean, Roboto, Inter, SF Pro Text, Arial");
         Background = brush(31, 34, 40);
 
         Content = new Grid
@@ -76,7 +86,8 @@ public sealed class UpdaterWindow : Window
                         new StackPanel
                         {
                             Spacing = 5,
-                            Children = { progress, progress_detail }
+                            Children = { progress, progress_detail },
+                            Margin = new Thickness(0, 0, 25, 0)
                         },
                         back_button,
                         cancel_button,
@@ -225,7 +236,7 @@ public sealed class UpdaterWindow : Window
         if (python_required && python is not null && python.Href is not null)
             staged_python = download_archives([new UpdateArchive(python.Href, python.ExtractPath)], staging_root, "python", progress).Single();
 
-        var protected_items = scan_protected(options.InstallRoot, target.ProtectedPaths);
+        var protected_items = scan_scripts(options.InstallRoot, target.ScriptAreas);
         var packages = python?.PythonPackages.Select(package =>
         {
             var installed_package = installed.PythonPackages.FirstOrDefault(item => string.Equals(item.Name, package.Name, StringComparison.OrdinalIgnoreCase));
@@ -239,6 +250,8 @@ public sealed class UpdaterWindow : Window
     private static void apply_update(UpdateOptions options, UpdatePlan plan, Action<string, double?> progress)
     {
         wait_for_parent(options.ParentPid, quick: false);
+        Thread.Sleep(750);
+        terminate_embedded_python_processes(options.InstallRoot);
         string extract_root = Path.Combine(Path.GetTempPath(), "gated-update-extract-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture));
         string preserve_root = Path.Combine(Path.GetTempPath(), "gated-update-preserve-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture));
         Directory.CreateDirectory(extract_root);
@@ -246,6 +259,8 @@ public sealed class UpdaterWindow : Window
 
         try
         {
+            progress("Checking installation file access.", 4);
+            assert_installation_can_be_replaced(options.InstallRoot, options.UpdaterPath);
             preserve_compatible_items(options.InstallRoot, preserve_root, plan.ProtectedItems, progress);
 
             progress("Extracting base package.", 10);
@@ -261,13 +276,16 @@ public sealed class UpdaterWindow : Window
                 progress("Extracting embedded Python.", 20);
                 string target = safe_combine(extract_root, plan.PythonArchive.ExtractPath);
                 if (Directory.Exists(target))
-                    Directory.Delete(target, recursive: true);
+                    delete_directory_with_retries(target, progress);
                 Directory.CreateDirectory(target);
                 ZipFile.ExtractToDirectory(plan.PythonArchive.Path, target, overwriteFiles: true);
             }
 
             progress("Removing old installation files.", 30);
-            clean_installation(options.InstallRoot, options.UpdaterPath);
+            clean_installation(
+                options.InstallRoot,
+                options.UpdaterPath,
+                plan.PythonRequired ? [] : ["python"]);
 
             progress("Copying base package.", 42);
             copy_directory(extract_root, options.InstallRoot, options.UpdaterPath, progress, 42, 25);
@@ -313,36 +331,67 @@ public sealed class UpdaterWindow : Window
                 info_row("Base package", $"{update_plan.BaseArchives.Count} archive(s) staged"),
                 info_row("Embedded Python", update_plan.PythonRequired ? "Will be installed or replaced" : "Installed version satisfies metadata"),
                 info_row("Python packages", $"{update_plan.PythonPackages.Count(package => !package.Satisfied)} package(s) need pip changes"),
-                info_row("Protected definitions", $"{update_plan.ProtectedItems.Count(item => item.Compatible)} compatible, {update_plan.ProtectedItems.Count(item => !item.Compatible)} deprecated")
+                info_row("Macros and statistics", $"{update_plan.ProtectedItems.Count(item => item.Compatible)} kept, {update_plan.ProtectedItems.Count(item => !item.Compatible)} removed")
             }
         };
     }
 
     private Control build_review_page(UpdatePlan update_plan)
     {
-        var list = new StackPanel { Spacing = 8 };
-        list.Children.Add(section("Installation"));
-        list.Children.Add(info_row("Application", $"Replace with Gated {update_plan.TargetVersion}"));
-        list.Children.Add(info_row("Python", update_plan.PythonRequired ? "Reinstall embedded Python and discard previous packages" : "Keep current embedded Python"));
+        var list = new StackPanel { Spacing = 14 };
+        list.Children.Add(section("Package"));
+        list.Children.Add(table(
+            ["Item", "Current", "Requested", "Action"],
+            [["Gated", options?.CurrentVersion.ToString() ?? "unknown", update_plan.TargetVersion.ToString(), "Update"]],
+            [1, 2]));
 
-        list.Children.Add(section("Macros and statistics"));
-        foreach (var item in update_plan.ProtectedItems.DefaultIfEmpty(new ProtectedItem("none", "No existing macro or statistic definitions were found.", true)))
-            list.Children.Add(info_row(item.Kind, item.RelativePath, item.Compatible ? brush(129, 201, 149) : brush(235, 132, 121)));
+        list.Children.Add(section("Embedded Python"));
+        string python_version = update_plan.PythonRequirement is null
+            ? "not requested"
+            : $"{update_plan.PythonRequirement.Major}.{update_plan.PythonRequirement.Minor}";
+        list.Children.Add(table(
+            ["Requirement", "Installed", "Requested", "Action"],
+            [["python", update_plan.PythonRequired ? "missing or forced" : "installed", python_version, update_plan.PythonRequired ? "Fresh install" : "Keep"]],
+            [2]));
 
         list.Children.Add(section("Python packages"));
-        foreach (var package in update_plan.PythonPackages)
-        {
-            string detail = package.Satisfied
-                ? $"{package.Name} {package.InstalledVersion} satisfies {package.VersionRange}"
-                : $"{package.Name} {package.VersionRange} will be installed";
-            list.Children.Add(info_row("pip", detail, package.Satisfied ? brush(129, 201, 149) : brush(244, 196, 107)));
-        }
+        var package_rows = update_plan.PythonPackages.Count == 0
+            ? [["none", "", "", "No package requirements"]]
+            : update_plan.PythonPackages
+                .Select(package => new[]
+                {
+                    package.Name,
+                    string.IsNullOrWhiteSpace(package.InstalledVersion) ? "not installed" : package.InstalledVersion!,
+                    package.VersionRange,
+                    package.Satisfied ? "Keep" : "Install"
+                })
+                .ToArray();
+        list.Children.Add(table(["Package", "Installed", "Requested", "Action"], package_rows, [1, 2]));
+
+        list.Children.Add(section("Macros and statistics"));
+        var script_rows = update_plan.ProtectedItems.Count == 0
+            ? [["none", "", "", "", "No existing macro or statistic definitions"]]
+            : update_plan.ProtectedItems
+                .OrderBy(item => item.Kind, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(item => new[]
+                {
+                    item.Kind,
+                    item.Name,
+                    item.ApiVersion?.ToString(CultureInfo.InvariantCulture) ?? "invalid",
+                    item.RequiredApiVersion.ToString(CultureInfo.InvariantCulture),
+                    item.Compatible ? "Keep" : "Remove"
+                })
+                .ToArray();
+        list.Children.Add(table(["Type", "Name", "API", "Required", "Action"], script_rows, [2, 3]));
+        list.Children.Add(new Grid() { Height = 20 });
 
         return new ScrollViewer
         {
             Margin = new Thickness(0, 18, 0, 0),
             VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+            OpacityMask = bottom_fade_mask(),
             Content = list
         };
     }
@@ -351,11 +400,11 @@ public sealed class UpdaterWindow : Window
         new StackPanel
         {
             Margin = new Thickness(0, 32, 0, 0),
-            Spacing = 12,
+            Spacing = 4,
             Children =
             {
-                text("Applying update. This window will restart Gated when finished.", 14),
-                text("Do not launch Gated manually until the updater has completed.", 12)
+                text("Applying update. This window will restart Gated when finished.", 13),
+                text("Do not launch Gated manually until the updater has completed.", 13)
             }
         };
 
@@ -379,13 +428,24 @@ public sealed class UpdaterWindow : Window
     private static VersionEntry parse_version(XElement element)
     {
         var requirements = element.Elements("require").Select(parse_requirement).ToArray();
+        var script_areas = element.Elements()
+            .Where(child => child.Name.LocalName is "macros" or "statistics")
+            .Select(child => new ScriptArea(
+                child.Name.LocalName,
+                normalize_extract_path((string?)child.Attribute("extract") ?? "."),
+                required_int_or_default(child, "compat")))
+            .Concat(element.Elements("protect").Select(item => new ScriptArea(
+                Path.GetFileName(normalize_extract_path((string?)item.Attribute("extract") ?? ".")).ToLowerInvariant(),
+                normalize_extract_path((string?)item.Attribute("extract") ?? "."),
+                0)))
+            .ToArray();
         return new VersionEntry(
             new AppVersion(required_int(element, "major"), required_int(element, "minor"), required_int(element, "patch")),
             (string?)element.Attribute("platform"),
             (string?)element.Attribute("minimal"),
             element.Elements("archive").Select(parse_archive).ToArray(),
             requirements,
-            element.Elements("protect").Select(item => normalize_extract_path((string?)item.Attribute("extract") ?? ".")).ToArray());
+            script_areas);
     }
 
     private static Requirement parse_requirement(XElement element) =>
@@ -420,28 +480,55 @@ public sealed class UpdaterWindow : Window
             response.EnsureSuccessStatusCode();
             using var source = response.Content.ReadAsStream();
             using var target = File.Create(path);
-            source.CopyTo(target);
+            copy_stream_with_progress(source, target, response.Content.Headers.ContentLength, Path.GetFileName(archive.Href.LocalPath), progress);
             staged.Add(new StagedArchive(path, archive.ExtractPath));
         }
 
         return staged.ToArray();
     }
 
-    private static ProtectedItem[] scan_protected(string install_root, IReadOnlyList<string> protected_paths)
+    private static void copy_stream_with_progress(Stream source, Stream target, long? length, string file_name, Action<string, double?> progress)
+    {
+        var buffer = new byte[1024 * 64];
+        long total_read = 0;
+        while (true)
+        {
+            int read = source.Read(buffer, 0, buffer.Length);
+            if (read == 0)
+                break;
+
+            target.Write(buffer, 0, read);
+            total_read += read;
+            double? fraction = length > 0 ? (double)total_read / length.Value * 100.0 : null;
+            string detail = length > 0
+                ? $"Downloading {file_name}: {format_bytes(total_read)} / {format_bytes(length.Value)}"
+                : $"Downloading {file_name}: {format_bytes(total_read)}";
+            progress(detail, fraction);
+        }
+    }
+
+    private static ProtectedItem[] scan_scripts(string install_root, IReadOnlyList<ScriptArea> script_areas)
     {
         var result = new List<ProtectedItem>();
-        foreach (string protected_path in protected_paths)
+        foreach (var area in script_areas)
         {
-            string root = safe_combine(install_root, protected_path);
+            string root = safe_combine(install_root, area.ExtractPath);
             if (!Directory.Exists(root))
                 continue;
 
-            string kind = Path.GetFileName(root.TrimEnd(Path.DirectorySeparatorChar));
-            foreach (string file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+            string pattern = area.Kind == "macros" ? "*.macro" : area.Kind == "statistics" ? "*.statistic" : "*";
+            foreach (string file in Directory.EnumerateFiles(root, pattern, SearchOption.AllDirectories))
             {
+                var script = read_script_definition(file, area.Kind);
                 string relative = Path.GetRelativePath(install_root, file);
-                bool compatible = is_readable_text(file);
-                result.Add(new ProtectedItem(kind, relative, compatible));
+                bool compatible = script is not null && script.ApiVersion >= area.RequiredApiVersion;
+                result.Add(new ProtectedItem(
+                    area.Kind,
+                    script?.Name ?? Path.GetFileNameWithoutExtension(file),
+                    relative,
+                    script?.ApiVersion,
+                    area.RequiredApiVersion,
+                    compatible));
             }
         }
 
@@ -478,23 +565,222 @@ public sealed class UpdaterWindow : Window
         }
     }
 
-    private static void clean_installation(string install_root, string updater_path)
+    private static ScriptDefinition? read_script_definition(string path, string area_kind)
+    {
+        try
+        {
+            using var stream = File.OpenRead(path);
+            using var reader = new BinaryReader(stream);
+            if (reader.ReadString() != "GATEDSCRIPT")
+                return null;
+
+            int format_version = reader.ReadInt32();
+            if (format_version > 1)
+                return null;
+
+            int expected_kind = area_kind == "macros" ? 0 : 1;
+            int kind = reader.ReadInt32();
+            if (kind != expected_kind)
+                return null;
+
+            _ = new Guid(reader.ReadBytes(16));
+            string name = reader.ReadString();
+            int api_version = reader.ReadInt32();
+            return new ScriptDefinition(name, api_version);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static void clean_installation(string install_root, string updater_path, string[] preserved_directories)
     {
         foreach (string file in Directory.EnumerateFiles(install_root))
         {
             if (is_same_path(file, updater_path))
                 continue;
-            File.SetAttributes(file, FileAttributes.Normal);
-            File.Delete(file);
+            delete_file_with_retries(file);
         }
 
         foreach (string directory in Directory.EnumerateDirectories(install_root))
         {
-            foreach (string child in Directory.EnumerateFileSystemEntries(directory, "*", SearchOption.AllDirectories).OrderByDescending(item => item.Length))
-                File.SetAttributes(child, FileAttributes.Normal);
-            File.SetAttributes(directory, FileAttributes.Normal);
-            Directory.Delete(directory, recursive: true);
+            if (preserved_directories.Contains(Path.GetFileName(directory)))
+                continue;
+
+            delete_directory_with_retries(directory, null);
         }
+    }
+
+    private static void assert_installation_can_be_replaced(string install_root, string updater_path)
+    {
+        var occupied = find_processes_running_from_installation(install_root, updater_path).ToArray();
+        if (occupied.Length > 0)
+        {
+            string processes = string.Join(", ", occupied.Select(process => $"{process.Name} ({process.Id})"));
+            throw new IOException($"The update cannot continue because the installation is still used by another program: {processes}. Close that program and retry the update.");
+        }
+
+        foreach (string file in Directory.EnumerateFiles(install_root, "*", SearchOption.AllDirectories))
+        {
+            if (is_same_path(file, updater_path))
+                continue;
+
+            try
+            {
+                using var stream = File.Open(file, FileMode.Open, FileAccess.Read, FileShare.None);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                throw new IOException($"The update cannot continue because '{file}' is occupied by another program. Close that program and retry the update.", exception);
+            }
+        }
+    }
+
+    private static IEnumerable<ProcessUse> find_processes_running_from_installation(string install_root, string updater_path)
+    {
+        string full_root = Path.GetFullPath(install_root);
+        string current_process_path = Environment.ProcessPath ?? updater_path;
+        foreach (var process in Process.GetProcesses())
+        {
+            try
+            {
+                if (process.Id == Environment.ProcessId)
+                    continue;
+
+                string? path;
+                try
+                {
+                    path = process.MainModule?.FileName;
+                }
+                catch
+                {
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(path) ||
+                    is_same_path(path, updater_path) ||
+                    is_same_path(path, current_process_path) ||
+                    !is_path_under_or_same(path, full_root))
+                    continue;
+
+                yield return new ProcessUse(process.Id, process.ProcessName);
+            }
+            finally
+            {
+                process.Dispose();
+            }
+        }
+    }
+
+    private static void terminate_embedded_python_processes(string install_root)
+    {
+        string python_root = Path.GetFullPath(Path.Combine(install_root, "python"));
+        foreach (var process in Process.GetProcesses())
+        {
+            try
+            {
+                string name = process.ProcessName;
+                if (!name.Equals("python", StringComparison.OrdinalIgnoreCase) &&
+                    !name.Equals("pythonw", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                string? path;
+                try
+                {
+                    path = process.MainModule?.FileName;
+                }
+                catch
+                {
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(path) || !is_path_under(path, python_root))
+                    continue;
+
+                process.Kill(entireProcessTree: true);
+                process.WaitForExit(5000);
+            }
+            catch
+            {
+            }
+            finally
+            {
+                process.Dispose();
+            }
+        }
+    }
+
+    private static void delete_file_with_retries(string path)
+    {
+        retry_io(() =>
+        {
+            if (!File.Exists(path))
+                return;
+
+            File.SetAttributes(path, FileAttributes.Normal);
+            File.Delete(path);
+        }, $"Unable to remove {path}.");
+    }
+
+    private static void delete_directory_with_retries(string path, Action<string, double?>? progress)
+    {
+        retry_io(() =>
+        {
+            if (!Directory.Exists(path))
+                return;
+
+            foreach (string child in Directory.EnumerateFileSystemEntries(path, "*", SearchOption.AllDirectories).OrderByDescending(item => item.Length))
+                set_normal_attributes(child);
+            set_normal_attributes(path);
+            progress?.Invoke($"Removing {Path.GetFileName(path)}.", null);
+            Directory.Delete(path, recursive: true);
+        }, $"Unable to remove {path}.");
+    }
+
+    private static void retry_io(Action action, string failure_message)
+    {
+        Exception? last = null;
+        for (int attempt = 0; attempt < 8; attempt++)
+        {
+            try
+            {
+                action();
+                return;
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                last = exception;
+                Thread.Sleep(250 + attempt * 350);
+            }
+        }
+
+        throw new IOException(failure_message, last);
+    }
+
+    private static void set_normal_attributes(string path)
+    {
+        if (File.Exists(path))
+            File.SetAttributes(path, FileAttributes.Normal);
+        else if (Directory.Exists(path))
+            File.SetAttributes(path, FileAttributes.Normal);
+    }
+
+    private static bool is_path_under(string path, string root)
+    {
+        string full_path = Path.GetFullPath(path);
+        string full_root = Path.GetFullPath(root);
+        if (!full_root.EndsWith(Path.DirectorySeparatorChar))
+            full_root += Path.DirectorySeparatorChar;
+
+        return full_path.StartsWith(full_root, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool is_path_under_or_same(string path, string root)
+    {
+        string full_path = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar);
+        string full_root = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar);
+        return string.Equals(full_path, full_root, StringComparison.OrdinalIgnoreCase) || is_path_under(path, root);
     }
 
     private static void copy_directory(string source_root, string target_root, string updater_path, Action<string, double?> progress, double start, double weight)
@@ -629,21 +915,6 @@ public sealed class UpdaterWindow : Window
         }
     }
 
-    private static bool is_readable_text(string path)
-    {
-        try
-        {
-            using var reader = new StreamReader(path, detectEncodingFromByteOrderMarks: true);
-            char[] buffer = new char[1024];
-            reader.Read(buffer, 0, buffer.Length);
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
     private void render_steps(int active)
     {
         steps.Children.Clear();
@@ -683,13 +954,36 @@ public sealed class UpdaterWindow : Window
     {
         title.Text = "Update failed";
         subtitle.Text = exception.Message;
-        page_host.Content = new ScrollViewer
+        if (exception is ArgumentException)
         {
-            Content = text(exception.ToString(), 12)
-        };
+            page_host.Content = new StackPanel
+            {
+                Margin = new Thickness(0, 32, 0, 0),
+                Spacing = 12,
+                Children =
+                {
+                    text("This is an updater utility and should only be called via the program itself.", 13),
+                    text("Never run it manually.", 13),
+                }
+            };
+        }
+        else
+        {
+            page_host.Content = new StackPanel
+            {
+                Margin = new Thickness(0, 32, 0, 0),
+                Spacing = 12,
+                Children =
+                {
+                    text("Exception occurs when running installation task. This is an internal error, report to the developers for future fix. You can file an issue on the project page: https://github.com/yang-z-03/gated/issues and mark \'Installer failure\' tag for maintainer to capture the error.", 13),
+                    text("It is unfortunate that your previous installation may have been broken by the partial installation. Visiting https://github.com/yang-z-03/gated/releases and download a copy yourself in replace, that you can proceed using the software.", 13)
+                }
+            };
+        }
         progress.IsVisible = false;
         back_button.IsEnabled = false;
         cancel_button.Content = "Close";
+        cancel_button.IsEnabled = true;
         next_button.IsEnabled = false;
     }
 
@@ -712,6 +1006,84 @@ public sealed class UpdaterWindow : Window
             }
         }.also(row => Grid.SetColumn(((Grid)row.Child!).Children[1], 1));
 
+    private static Control table(string[] headers, IReadOnlyList<string[]> rows, int[]? code_columns = null)
+    {
+        var grid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions(string.Join(",", headers.Select(_ => "Auto"))),
+            RowDefinitions = new RowDefinitions(string.Join(",", Enumerable.Repeat("Auto", rows.Count + 1))),
+            Margin = new Thickness(0, 4, 0, 0)
+        };
+        Grid.SetIsSharedSizeScope(grid, true);
+
+        for (int column = 0; column < headers.Length; column++)
+        {
+            grid.ColumnDefinitions[column].SharedSizeGroup = $"ReviewColumn{column}";
+            var header = text(headers[column], 12, FontWeight.SemiBold, brush(244, 246, 250));
+            header.Margin = new Thickness(0, 0, 18, 7);
+            Grid.SetColumn(header, column);
+            Grid.SetRow(header, 0);
+            grid.Children.Add(header);
+        }
+
+        for (int row = 0; row < rows.Count; row++)
+        {
+            for (int column = 0; column < headers.Length; column++)
+            {
+                string value = column < rows[row].Length ? rows[row][column] : "";
+                var cell = text(value, 12, foreground: action_brush(value));
+                if (code_columns?.Contains(column) == true)
+                    cell.FontFamily = code_font_family();
+                cell.Margin = new Thickness(0, 3, 18, 3);
+                Grid.SetColumn(cell, column);
+                Grid.SetRow(cell, row + 1);
+                grid.Children.Add(cell);
+            }
+        }
+
+        return new Border
+        {
+            Background = brush(44, 48, 57),
+            BorderBrush = brush(78, 84, 96),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(12, 10),
+            Child = grid
+        };
+    }
+
+    private static LinearGradientBrush bottom_fade_mask() =>
+        new()
+        {
+            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+            EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
+            GradientStops =
+            {
+                new GradientStop(Colors.Black, 0),
+                new GradientStop(Colors.Black, 0.88),
+                new GradientStop(Colors.Transparent, 1)
+            }
+        };
+
+    private static LinearGradientBrush right_fade_mask() =>
+        new()
+        {
+            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+            EndPoint = new RelativePoint(1, 0, RelativeUnit.Relative),
+            GradientStops =
+            {
+                new GradientStop(Colors.Black, 0),
+                new GradientStop(Colors.Black, 0.86),
+                new GradientStop(Colors.Transparent, 1)
+            }
+        };
+
+    private static IBrush? action_brush(string value) =>
+        value is "Keep" ? brush(129, 201, 149) :
+        value is "Remove" ? brush(235, 132, 121) :
+        value is "Install" or "Update" or "Fresh install" ? brush(244, 196, 107) :
+        null;
+
     private static Control section(string label) =>
         text(label, 13, FontWeight.SemiBold, brush(244, 246, 250)).also(control => control.Margin = new Thickness(0, 12, 0, 0));
 
@@ -726,6 +1098,22 @@ public sealed class UpdaterWindow : Window
         };
 
     private static SolidColorBrush brush(byte r, byte g, byte b) => new(Color.FromRgb(r, g, b));
+
+    private static FontFamily code_font_family() => new("IBM Plex Mono, Jetbrains Mono, Consolas");
+
+    private static string format_bytes(long bytes)
+    {
+        string[] units = ["B", "KB", "MB", "GB"];
+        double value = bytes;
+        int unit = 0;
+        while (value >= 1024 && unit < units.Length - 1)
+        {
+            value /= 1024;
+            unit++;
+        }
+
+        return $"{value:0.#} {units[unit]}";
+    }
 
     private static UpdateOptions parse_args(string[] args)
     {
@@ -856,7 +1244,7 @@ internal sealed record VersionEntry(
     string? MinimalSystemVersion,
     IReadOnlyList<UpdateArchive> Archives,
     IReadOnlyList<Requirement> Requirements,
-    IReadOnlyList<string> ProtectedPaths)
+    IReadOnlyList<ScriptArea> ScriptAreas)
 {
     public bool IsCompatibleWith(SystemInfo system)
     {
@@ -895,10 +1283,13 @@ internal sealed record Requirement(
 internal sealed record PythonRequirement(string Name, string VersionRange);
 internal sealed record UpdateArchive(Uri Href, string ExtractPath);
 internal sealed record StagedArchive(string Path, string ExtractPath);
-internal sealed record ProtectedItem(string Kind, string RelativePath, bool Compatible);
+internal sealed record ScriptArea(string Kind, string ExtractPath, int RequiredApiVersion);
+internal sealed record ScriptDefinition(string Name, int ApiVersion);
+internal sealed record ProtectedItem(string Kind, string Name, string RelativePath, int? ApiVersion, int RequiredApiVersion, bool Compatible);
 internal sealed record PythonPackagePlan(string Name, string VersionRange, string? InstalledVersion, bool Satisfied);
 internal sealed record PythonPackageState(string Name, string Version);
 internal sealed record PipPackage(string? Name, string? Version);
+internal sealed record ProcessUse(int Id, string Name);
 
 internal sealed record InstalledState(string AppVersion, IReadOnlyList<string> Requirements, IReadOnlyList<PythonPackageState> PythonPackages)
 {
