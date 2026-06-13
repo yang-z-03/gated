@@ -133,8 +133,6 @@ public sealed class WorkspaceBinarySerializer
         for (int index = 0; index < sample_count; index++)
             group.AddSample(read_sample(reader, group.Gates), recalculate: false);
 
-        foreach (var sample in group.Samples)
-            sample.ApplyCompensation(group.AppliedCompensation, force: true);
         return group;
     }
 
@@ -716,6 +714,7 @@ public sealed class WorkspaceBinarySerializer
             writer.Write(element.UsePseudocolor);
             writer.Write(element.ShowGates);
             writer.Write(element.ShowGateAnnotations);
+            writer.Write(element.ShowGateAnnotationNames);
             writer.Write(element.ContourLevelCount);
             writer.Write(element.DensitySmoothing);
             write_axis_settings(writer, element.XAxis);
@@ -752,6 +751,7 @@ public sealed class WorkspaceBinarySerializer
             bool use_pseudocolor = reader.ReadBoolean();
             bool show_gates = reader.ReadBoolean();
             bool show_gate_annotations = reader.ReadBoolean();
+            bool show_gate_annotation_names = reader.ReadBoolean();
             int contour_level_count = reader.ReadInt32();
             int density_smoothing = reader.ReadInt32();
             var x_axis = read_axis_settings(reader);
@@ -796,6 +796,7 @@ public sealed class WorkspaceBinarySerializer
                 UsePseudocolor = use_pseudocolor,
                 ShowGates = show_gates,
                 ShowGateAnnotations = show_gate_annotations,
+                ShowGateAnnotationNames = show_gate_annotation_names,
                 ContourLevelCount = contour_level_count,
                 DensitySmoothing = density_smoothing
             });

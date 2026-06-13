@@ -5,4 +5,7 @@
   <version major="2" minor="0" patch="0" platform="windows" minimal="7">
     <archive href="https://github.com/yang-z-03/gated/releases/download/0-26/updater-2-0-0.zip" extract="."/>
   </version>
+  <version major="2" minor="1" patch="0" platform="windows" minimal="7">
+    <archive href="https://github.com/yang-z-03/gated/releases/download/0-26-2/updater-2-1-0.zip" extract="."/>
+  </version>
 </repository>

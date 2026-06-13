@@ -1,0 +1,7 @@
+Version 0.26.2
+
+- Split compensation loader after project load. Project deserialization takes minimal time.
+- Page layout deletion can be handled with Del key
+- Population embedding are supported natively. Typed embeddings
+- Time consumption for reading projects shrinks half compared with 0.25, and nearly 1/8 compared to 0.24, making it capable of processing extensively large dataset with acceptable experience
+- Updater dedicated to package management

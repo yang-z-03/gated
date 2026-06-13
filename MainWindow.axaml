@@ -3,7 +3,7 @@
         xmlns:controls="using:gated.Controls"
         x:Class="gated.MainWindow"
         x:CompileBindings="False"
-        Width="1600" Height="920"
+        Width="1500" Height="850"
         MinWidth="1100" MinHeight="700"
         Title="Gated"
 
@@ -233,6 +233,7 @@
                 <MenuItem Header="Draw large dots" ToggleType="CheckBox" IsChecked="{Binding DrawLargeDots, Mode=TwoWay}" />
                 <MenuItem Header="Show gridlines" ToggleType="CheckBox" IsChecked="{Binding ShowGridlines, Mode=TwoWay}" />
                 <MenuItem Header="Show gate annotations" ToggleType="CheckBox" IsChecked="{Binding ShowGateAnnotations, Mode=TwoWay}" />
+                <MenuItem Header="Show gate annotation names" ToggleType="CheckBox" IsChecked="{Binding ShowGateAnnotationNames, Mode=TwoWay}" />
                 <Separator />
                 <MenuItem x:Name="editor_x_channel_menu" Header="X selected channel" />
                 <MenuItem x:Name="editor_y_channel_menu" Header="Y selected channel" />
@@ -270,6 +271,7 @@
                 <MenuItem Header="Density pseudocolor" ToggleType="CheckBox" IsEnabled="{Binding HasSelectedPageElement}" IsChecked="{Binding SelectedPageElement.UsePseudocolor, Mode=TwoWay}" />
                 <MenuItem Header="Show gates" ToggleType="CheckBox" IsEnabled="{Binding HasSelectedPageElement}" IsChecked="{Binding SelectedPageElement.ShowGates, Mode=TwoWay}" />
                 <MenuItem Header="Show gate annotations" ToggleType="CheckBox" IsEnabled="{Binding HasSelectedPageElement}" IsChecked="{Binding SelectedPageElement.ShowGateAnnotations, Mode=TwoWay}" />
+                <MenuItem Header="Show gate annotation names" ToggleType="CheckBox" IsEnabled="{Binding HasSelectedPageElement}" IsChecked="{Binding SelectedPageElement.ShowGateAnnotationNames, Mode=TwoWay}" />
                 <Separator />
                 <MenuItem x:Name="layout_x_channel_menu" Header="X selected channel" IsEnabled="{Binding HasSelectedPageElement}" />
                 <MenuItem x:Name="layout_y_channel_menu" Header="Y selected channel" IsEnabled="{Binding HasSelectedPageElement}" />
@@ -377,7 +379,7 @@
 
             <Grid Grid.Column="2"
                   IsVisible="{Binding IsDefaultAnalysisMode}"
-                  RowDefinitions="*,5,250"
+                  RowDefinitions="*,5,230"
                   Background="{DynamicResource SemiColorBackground1}">
                 <Grid Grid.Row="0"
                       ColumnDefinitions="*,336">
@@ -472,6 +474,7 @@
                                                    DrawLargeDots="{Binding DrawLargeDots}"
                                                    ShowGridlines="{Binding ShowGridlines}"
                                                    ShowGateAnnotations="{Binding ShowGateAnnotations}"
+                                                   ShowGateAnnotationNames="{Binding ShowGateAnnotationNames}"
                                                    ContourLevelCount="{Binding ContourLevelCount}"
                                                    DensitySmoothing="{Binding DensitySmoothing}"
                                                    ActiveTool="{Binding ActiveTool}"
@@ -661,6 +664,8 @@
                                                       IsChecked="{Binding ShowGridlines}" />
                                             <CheckBox Content="Show gate annotations" Margin="0,0,12,0"
                                                       IsChecked="{Binding ShowGateAnnotations}" />
+                                            <CheckBox Content="Show annotation names" Margin="0,0,12,0"
+                                                      IsChecked="{Binding ShowGateAnnotationNames}" />
                                         </StackPanel>
 
                                         <TextBlock Margin="0,4,0,-4" Foreground="{DynamicResource SemiColorText2}" Text="Dot color" />
@@ -848,6 +853,8 @@
                                               IsChecked="{Binding SelectedPageElement.ShowGates}" />
                                     <CheckBox Content="Show gate annotations"
                                               IsChecked="{Binding SelectedPageElement.ShowGateAnnotations}" />
+                                    <CheckBox Content="Show annotation names"
+                                              IsChecked="{Binding SelectedPageElement.ShowGateAnnotationNames}" />
 
                                     <TextBlock Margin="0,4,0,-4" Foreground="{DynamicResource SemiColorText2}" Text="Dot color" />
                                     <ComboBox Classes="Small"

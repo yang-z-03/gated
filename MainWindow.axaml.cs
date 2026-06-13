@@ -37,6 +37,8 @@ public partial class MainWindow : Window
     private readonly Dictionary<MenuItem, ChannelMenuState> channel_menu_states = new();
     private string? current_workspace_path;
     private bool channel_menu_update_pending;
+    private bool close_confirmed;
+    private bool close_prompt_active;
 
     public MainWindow()
     {
@@ -66,6 +68,7 @@ public partial class MainWindow : Window
             if (e.Property == BoundsProperty)
                 update_page_editor_viewport_size();
         };
+        Closing += window_closing;
         AddHandler(KeyDownEvent, window_key_down, RoutingStrategies.Tunnel);
         DragDrop.SetAllowDrop(this, true);
         DragDrop.AddDragOverHandler(this, drag_over);
@@ -339,6 +342,14 @@ public partial class MainWindow : Window
 
         if (e.KeyModifiers == KeyModifiers.None && e.Key == Key.Delete)
         {
+            if (view_model.IsPageEditorMode)
+            {
+                e.Handled = true;
+                if (view_model.DeletePageElementCommand.CanExecute(null))
+                    view_model.DeletePageElementCommand.Execute(null);
+                return;
+            }
+
             if (can_delete_with_shortcut() && view_model.DeleteSelectedCommand.CanExecute(null))
             {
                 e.Handled = true;
@@ -428,7 +439,7 @@ public partial class MainWindow : Window
     private async void save_workspace_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
         await save_workspace_async();
 
-    private async Task save_workspace_async()
+    private async Task<bool> save_workspace_async()
     {
         string? path = current_workspace_path;
         if (string.IsNullOrWhiteSpace(path))
@@ -446,7 +457,7 @@ public partial class MainWindow : Window
             });
 
             if (file is null)
-                return;
+                return false;
 
             path = file.Path.LocalPath;
         }
@@ -456,10 +467,12 @@ public partial class MainWindow : Window
             await run_with_progress_dialog("Saving workspace ...", path, () => Task.Run(() => new WorkspaceBinarySerializer().Save(view_model.Workspace, path)));
             view_model.StatusText = $"Saved workspace: {System.IO.Path.GetFileName(path)}";
             current_workspace_path = path;
+            return true;
         }
         catch (Exception exception)
         {
             view_model.StatusText = $"Failed to save workspace: {exception.Message}";
+            return false;
         }
     }
 
@@ -516,6 +529,41 @@ public partial class MainWindow : Window
     public async Task CheckForUpdatesAtStartupAsync()
     {
         await check_for_updates(is_manual_check: false, suppress_connection_errors: true);
+    }
+
+    public async Task<bool> BootstrapPythonIfMissingAsync()
+    {
+        if (File.Exists(Path.Combine(AppContext.BaseDirectory, "python", "python.exe")))
+            return false;
+
+        var manager = new UpdateManager();
+        var dialog = new ProgressDialog("Preparing Python runtime ...", "Installing embedded Python and required packages.");
+        var progress = new Progress<UpdateProgress>(status => dialog.SetProgress(status.Title, status.Detail, status.Fraction));
+        var dialog_task = dialog.ShowDialog(this);
+
+        try
+        {
+            await Task.Yield();
+            await manager.EnsureUpdaterCurrentAsync(progress);
+            dialog.SetProgress("Starting updater ...", "Gated will close while Python is installed.", null);
+            manager.LaunchPythonBootstrapUpdater();
+
+            if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+                desktop.Shutdown();
+            else
+                Close();
+        }
+        catch (Exception exception)
+        {
+            dialog.Close();
+            await dialog_task;
+            await show_message_dialog("Python runtime is missing", $"Unable to start the Python bootstrap updater: {exception.Message}");
+            return false;
+        }
+
+        dialog.Close();
+        await dialog_task;
+        return true;
     }
 
     private async Task check_for_updates(bool is_manual_check, bool suppress_connection_errors)
@@ -1239,6 +1287,23 @@ public partial class MainWindow : Window
 
     private async void window_close(object? sender, RoutedEventArgs e)
     {
+        await request_application_close_async();
+    }
+
+    private async void window_closing(object? sender, WindowClosingEventArgs e)
+    {
+        if (close_confirmed)
+            return;
+
+        e.Cancel = true;
+        await request_application_close_async();
+    }
+
+    private async Task request_application_close_async()
+    {
+        if (close_prompt_active)
+            return;
+
         if (view_model.IsPythonScriptEditorMode && view_model.IsPythonScriptDirty)
         {
             await view_model.ClosePythonScriptEditorAsync();
@@ -1246,10 +1311,73 @@ public partial class MainWindow : Window
                 return;
         }
 
+        close_prompt_active = true;
+        var choice = await show_workspace_exit_dialog();
+        close_prompt_active = false;
+
+        if (choice == ScriptSaveChoice.Cancel)
+            return;
+        if (choice == ScriptSaveChoice.Save && !await save_workspace_async())
+            return;
+
+        close_confirmed = true;
         var lifetime = Application.Current?.ApplicationLifetime;
         if (lifetime is ClassicDesktopStyleApplicationLifetime desktop)
             desktop.Shutdown();
         else this.Close();
+    }
+
+    private async Task<ScriptSaveChoice> show_workspace_exit_dialog()
+    {
+        var dialog = new Window
+        {
+            Title = "Save workspace",
+            Width = 460,
+            MinWidth = 360,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = Background,
+            SizeToContent = SizeToContent.Height,
+            Content = new StackPanel
+            {
+                Margin = new Thickness(16),
+                Spacing = 12,
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = "Save workspace before exit?",
+                        FontWeight = FontWeight.SemiBold,
+                        Foreground = Brushes.White
+                    },
+                    new TextBlock
+                    {
+                        Text = "Choose Save to write the current workspace, Discard to exit without saving, or Cancel to keep working.",
+                        TextWrapping = TextWrapping.Wrap,
+                        LineHeight = 18,
+                        Foreground = new SolidColorBrush(Color.FromRgb(218, 221, 228))
+                    },
+                    new StackPanel
+                    {
+                        Orientation = Avalonia.Layout.Orientation.Horizontal,
+                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                        Spacing = 8,
+                        Children =
+                        {
+                            new Button { Content = "Cancel", MinWidth = 80, IsCancel = true },
+                            new Button { Content = "Discard", MinWidth = 80 },
+                            new Button { Content = "Save", MinWidth = 80, IsDefault = true }
+                        }
+                    }
+                }
+            }
+        };
+
+        var buttons = ((StackPanel)((StackPanel)dialog.Content).Children[2]).Children;
+        apply_small_button_classes((Control)dialog.Content);
+        ((Button)buttons[0]).Click += (_, _) => dialog.Close(ScriptSaveChoice.Cancel);
+        ((Button)buttons[1]).Click += (_, _) => dialog.Close(ScriptSaveChoice.Discard);
+        ((Button)buttons[2]).Click += (_, _) => dialog.Close(ScriptSaveChoice.Save);
+        return await dialog.ShowDialog<ScriptSaveChoice>(this);
     }
 
     private async Task<ScriptSaveChoice> show_script_save_dialog(string title, string message)

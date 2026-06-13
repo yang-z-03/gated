@@ -32,6 +32,7 @@ public sealed class PagePlotElement : NotifyBase
     private bool draw_large_dots;
     private bool show_gates = true;
     private bool show_gate_annotations = true;
+    private bool show_gate_annotation_names;
     private int contour_level_count = 10;
     private int density_smoothing = 6;
 
@@ -114,6 +115,12 @@ public sealed class PagePlotElement : NotifyBase
     {
         get => show_gate_annotations;
         set => SetField(ref show_gate_annotations, value, nameof(ShowGateAnnotations));
+    }
+
+    public bool ShowGateAnnotationNames
+    {
+        get => show_gate_annotation_names;
+        set => SetField(ref show_gate_annotation_names, value, nameof(ShowGateAnnotationNames));
     }
 
     public int ContourLevelCount

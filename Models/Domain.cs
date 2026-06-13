@@ -1331,6 +1331,15 @@ public sealed class FlowGroup : NotifyBase
         }
     }
 
+    public void ApplyCompensationToSamples(bool force_compensation, CancellationToken cancellation_token = default)
+    {
+        foreach (var sample in Samples)
+        {
+            cancellation_token.ThrowIfCancellationRequested();
+            sample.ApplyCompensation(AppliedCompensation, force_compensation);
+        }
+    }
+
     public bool RecalculateGateSubtree(GateDefinition gate, CancellationToken cancellation_token = default)
     {
         bool recalculated_all = true;

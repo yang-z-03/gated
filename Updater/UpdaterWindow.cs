@@ -117,7 +117,7 @@ public sealed class UpdaterWindow : Window
             options = parse_args(args);
             set_busy("Checking metadata", "Loading version manifest.", null);
             plan = await Task.Run(() => build_plan(options, report));
-            if (plan.TargetVersion.CompareTo(options.CurrentVersion) <= 0 && options.TargetVersion is null)
+            if (!options.RequirementsOnly && plan.TargetVersion.CompareTo(options.CurrentVersion) <= 0 && options.TargetVersion is null)
             {
                 set_ready("Gated is up to date", $"Installed version {options.CurrentVersion} is current.");
                 next_button.Content = "Close";
@@ -168,7 +168,7 @@ public sealed class UpdaterWindow : Window
 
         if (index == 0)
         {
-            title.Text = $"Gated {plan.TargetVersion} is ready";
+            title.Text = options?.RequirementsOnly == true ? "Python runtime is ready" : $"Gated {plan.TargetVersion} is ready";
             subtitle.Text = "Required archives have been staged. Review the planned installation before applying it.";
             page_host.Content = build_summary_page(plan);
             set_ready("Downloads ready", "All required update archives are available locally.");
@@ -183,7 +183,9 @@ public sealed class UpdaterWindow : Window
         else
         {
             title.Text = "Installing update";
-            subtitle.Text = "Replacing application files and reconciling Python packages.";
+            subtitle.Text = options?.RequirementsOnly == true
+                ? "Installing embedded Python and reconciling Python packages."
+                : "Replacing application files and reconciling Python packages.";
             page_host.Content = build_progress_page();
             back_button.IsEnabled = false;
             next_button.IsEnabled = false;
@@ -229,12 +231,18 @@ public sealed class UpdaterWindow : Window
         string staging_root = Path.Combine(Path.GetTempPath(), "gated-update-stage-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture));
         Directory.CreateDirectory(staging_root);
 
-        var staged_archives = download_archives(target.Archives, staging_root, "base", progress);
+        var staged_archives = options.RequirementsOnly
+            ? []
+            : download_archives(target.Archives, staging_root, "base", progress);
         var python = target.Requirements.FirstOrDefault(requirement => requirement.Type == "package" && requirement.Name == "python");
-        bool python_required = python is not null && (python.OverrideIfExist || !installed.HasRequirement(python.InstallKey));
+        bool python_exists = File.Exists(Path.Combine(options.InstallRoot, "python", "python.exe"));
+        bool python_required = python is not null &&
+            (python.OverrideIfExist || !python_exists || (!options.RequirementsOnly && !installed.HasRequirement(python.InstallKey)));
         StagedArchive? staged_python = null;
         if (python_required && python is not null && python.Href is not null)
             staged_python = download_archives([new UpdateArchive(python.Href, python.ExtractPath)], staging_root, "python", progress).Single();
+        if (options.RequirementsOnly && python is null)
+            throw new InvalidDataException("The version manifest does not contain an embedded Python requirement.");
 
         var protected_items = scan_scripts(options.InstallRoot, target.ScriptAreas);
         var packages = python?.PythonPackages.Select(package =>
@@ -260,15 +268,22 @@ public sealed class UpdaterWindow : Window
         try
         {
             progress("Checking installation file access.", 4);
-            assert_installation_can_be_replaced(options.InstallRoot, options.UpdaterPath);
-            preserve_compatible_items(options.InstallRoot, preserve_root, plan.ProtectedItems, progress);
+            if (options.RequirementsOnly)
+                assert_python_can_be_replaced_if_needed(options.InstallRoot, plan.PythonRequired);
+            else
+                assert_installation_can_be_replaced(options.InstallRoot, options.UpdaterPath);
 
-            progress("Extracting base package.", 10);
-            foreach (var archive in plan.BaseArchives)
+            if (!options.RequirementsOnly)
             {
-                string target = safe_combine(extract_root, archive.ExtractPath);
-                Directory.CreateDirectory(target);
-                ZipFile.ExtractToDirectory(archive.Path, target, overwriteFiles: true);
+                preserve_compatible_items(options.InstallRoot, preserve_root, plan.ProtectedItems, progress);
+
+                progress("Extracting base package.", 10);
+                foreach (var archive in plan.BaseArchives)
+                {
+                    string target = safe_combine(extract_root, archive.ExtractPath);
+                    Directory.CreateDirectory(target);
+                    ZipFile.ExtractToDirectory(archive.Path, target, overwriteFiles: true);
+                }
             }
 
             if (plan.PythonRequired && plan.PythonArchive is not null)
@@ -281,15 +296,29 @@ public sealed class UpdaterWindow : Window
                 ZipFile.ExtractToDirectory(plan.PythonArchive.Path, target, overwriteFiles: true);
             }
 
-            progress("Removing old installation files.", 30);
-            clean_installation(
-                options.InstallRoot,
-                options.UpdaterPath,
-                plan.PythonRequired ? [] : ["python"]);
+            if (options.RequirementsOnly)
+            {
+                if (plan.PythonRequired)
+                {
+                    string python_root = Path.Combine(options.InstallRoot, "python");
+                    progress("Installing embedded Python.", 30);
+                    if (Directory.Exists(python_root))
+                        delete_directory_with_retries(python_root, progress);
+                    copy_directory(extract_root, options.InstallRoot, options.UpdaterPath, progress, 35, 25);
+                }
+            }
+            else
+            {
+                progress("Removing old installation files.", 30);
+                clean_installation(
+                    options.InstallRoot,
+                    options.UpdaterPath,
+                    plan.PythonRequired ? [] : ["python"]);
 
-            progress("Copying base package.", 42);
-            copy_directory(extract_root, options.InstallRoot, options.UpdaterPath, progress, 42, 25);
-            restore_compatible_items(preserve_root, options.InstallRoot, plan.ProtectedItems, progress);
+                progress("Copying base package.", 42);
+                copy_directory(extract_root, options.InstallRoot, options.UpdaterPath, progress, 42, 25);
+                restore_compatible_items(preserve_root, options.InstallRoot, plan.ProtectedItems, progress);
+            }
 
             var python_exe = find_python(options.InstallRoot);
             var installed_packages = read_python_packages(python_exe, progress);
@@ -328,7 +357,7 @@ public sealed class UpdaterWindow : Window
             Spacing = 12,
             Children =
             {
-                info_row("Base package", $"{update_plan.BaseArchives.Count} archive(s) staged"),
+                info_row("Base package", options?.RequirementsOnly == true ? "Main program will not be updated" : $"{update_plan.BaseArchives.Count} archive(s) staged"),
                 info_row("Embedded Python", update_plan.PythonRequired ? "Will be installed or replaced" : "Installed version satisfies metadata"),
                 info_row("Python packages", $"{update_plan.PythonPackages.Count(package => !package.Satisfied)} package(s) need pip changes"),
                 info_row("Macros and statistics", $"{update_plan.ProtectedItems.Count(item => item.Compatible)} kept, {update_plan.ProtectedItems.Count(item => !item.Compatible)} removed")
@@ -342,7 +371,12 @@ public sealed class UpdaterWindow : Window
         list.Children.Add(section("Package"));
         list.Children.Add(table(
             ["Item", "Current", "Requested", "Action"],
-            [["Gated", options?.CurrentVersion.ToString() ?? "unknown", update_plan.TargetVersion.ToString(), "Update"]],
+            [[
+                "Gated",
+                options?.CurrentVersion.ToString() ?? "unknown",
+                update_plan.TargetVersion.ToString(),
+                options?.RequirementsOnly == true ? "Keep" : "Update"
+            ]],
             [1, 2]));
 
         list.Children.Add(section("Embedded Python"));
@@ -633,6 +667,28 @@ public sealed class UpdaterWindow : Window
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
             {
                 throw new IOException($"The update cannot continue because '{file}' is occupied by another program. Close that program and retry the update.", exception);
+            }
+        }
+    }
+
+    private static void assert_python_can_be_replaced_if_needed(string install_root, bool python_required)
+    {
+        if (!python_required)
+            return;
+
+        string python_root = Path.Combine(install_root, "python");
+        if (!Directory.Exists(python_root))
+            return;
+
+        foreach (string file in Directory.EnumerateFiles(python_root, "*", SearchOption.AllDirectories))
+        {
+            try
+            {
+                using var stream = File.Open(file, FileMode.Open, FileAccess.Read, FileShare.None);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                throw new IOException($"The Python runtime cannot be replaced because '{file}' is occupied by another program. Close that program and retry.", exception);
             }
         }
     }
@@ -1133,7 +1189,8 @@ public sealed class UpdaterWindow : Window
             read_optional_version(args, "--target-version"),
             read_option(args, "--versions-url", default_versions_url),
             read_option(args, "--local-versions", ""),
-            Path.Combine(install_root, "gated.update.json"));
+            Path.Combine(install_root, "gated.update.json"),
+            has_flag(args, "--requirements-only"));
     }
 
     private static AppVersion? read_optional_version(string[] args, string name)
@@ -1154,6 +1211,9 @@ public sealed class UpdaterWindow : Window
 
         return args[index + 1];
     }
+
+    private static bool has_flag(string[] args, string name) =>
+        args.Any(arg => string.Equals(arg, name, StringComparison.OrdinalIgnoreCase));
 
     private static int required_int(XElement element, string attribute) =>
         int.Parse((string?)element.Attribute(attribute) ?? throw new InvalidDataException($"Version {attribute} is missing."), CultureInfo.InvariantCulture);
@@ -1223,7 +1283,8 @@ internal sealed record UpdateOptions(
     AppVersion? TargetVersion,
     string VersionsUrl,
     string LocalVersionsPath,
-    string MetadataPath);
+    string MetadataPath,
+    bool RequirementsOnly);
 
 internal sealed record UpdatePlan(
     VersionEntry Target,

@@ -36,6 +36,7 @@ public sealed class MainWindowViewModel : NotifyBase
     private bool draw_large_dots;
     private bool show_gridlines = true;
     private bool show_gate_annotations = true;
+    private bool show_gate_annotation_names;
     private int contour_level_count = 10;
     private int density_smoothing = 9;
     private string status_text = "Append samples to grouping to begin analysis";
@@ -498,6 +499,12 @@ public sealed class MainWindowViewModel : NotifyBase
     {
         get => show_gate_annotations;
         set => SetField(ref show_gate_annotations, value);
+    }
+
+    public bool ShowGateAnnotationNames
+    {
+        get => show_gate_annotation_names;
+        set => SetField(ref show_gate_annotation_names, value);
     }
 
     public int ContourLevelCount
@@ -1042,6 +1049,7 @@ public sealed class MainWindowViewModel : NotifyBase
         refresh_selected_statistics();
         StatusText = $"Loaded workspace: {System.IO.Path.GetFileName(file_path)}";
         raise_command_states();
+        schedule_loaded_workspace_compensation(Workspace.Groups.ToArray(), System.IO.Path.GetFileName(file_path));
     }
 
     public void RecalculateSelectedGroup()
@@ -2258,6 +2266,76 @@ public sealed class MainWindowViewModel : NotifyBase
         StatusText = "Applying compensation ...";
 
         _ = apply_compensation_async(group, completion_status, force_compensation, cancellation);
+    }
+
+    private void schedule_loaded_workspace_compensation(IReadOnlyList<FlowGroup> groups, string file_name)
+    {
+        groups = groups
+            .Where(group => group.AppliedCompensation?.Values.GetLength(0) > 0)
+            .ToArray();
+        if (groups.Count == 0)
+            return;
+
+        compensation_application_cancellation?.Cancel();
+
+        var cancellation = new CancellationTokenSource();
+        compensation_application_cancellation = cancellation;
+        IsCompensationApplying = true;
+        StatusText = "Applying compensation ...";
+
+        _ = apply_loaded_workspace_compensation_async(groups, $"Loaded workspace: {file_name}", cancellation);
+    }
+
+    private async Task apply_loaded_workspace_compensation_async(
+        IReadOnlyList<FlowGroup> groups,
+        string completion_status,
+        CancellationTokenSource cancellation)
+    {
+        bool succeeded = false;
+        try
+        {
+            await Task.Run(() =>
+            {
+                foreach (var group in groups)
+                {
+                    cancellation.Token.ThrowIfCancellationRequested();
+                    group.ApplyCompensationToSamples(force_compensation: true, cancellation.Token);
+                }
+            }, cancellation.Token);
+            succeeded = true;
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (Exception exception)
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (!ReferenceEquals(compensation_application_cancellation, cancellation))
+                    return;
+                StatusText = $"Compensation failed: {exception.Message}";
+            });
+        }
+        finally
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (!ReferenceEquals(compensation_application_cancellation, cancellation))
+                {
+                    cancellation.Dispose();
+                    return;
+                }
+
+                compensation_application_cancellation.Dispose();
+                compensation_application_cancellation = null;
+                IsCompensationApplying = false;
+                OnPropertyChanged(nameof(PlotGate));
+                OnPropertyChanged(nameof(PlotPopulation));
+                if (succeeded)
+                    StatusText = completion_status;
+            });
+        }
     }
 
     private async Task apply_compensation_async(FlowGroup group, string completion_status, bool force_compensation, CancellationTokenSource cancellation)
@@ -3887,6 +3965,8 @@ public sealed class MainWindowViewModel : NotifyBase
             ShowGridlines = ShowGridlines,
             ShowOutlierPoints = ShowOutlierPoints,
             DrawLargeDots = DrawLargeDots,
+            ShowGateAnnotations = ShowGateAnnotations,
+            ShowGateAnnotationNames = ShowGateAnnotationNames,
             ShowTickLabels = false,
             UsePseudocolor = true,
             DotColor = DotColorClone(),
@@ -3993,8 +4073,11 @@ public sealed class MainWindowViewModel : NotifyBase
     {
         if (selected_page_element is null)
             return;
+        int removed_index = PageElements.IndexOf(selected_page_element);
         PageElements.Remove(selected_page_element);
-        SelectedPageElement = PageElements.LastOrDefault();
+        SelectedPageElement = PageElements.Count == 0
+            ? null
+            : PageElements[Math.Clamp(removed_index, 0, PageElements.Count - 1)];
         refresh_project_tree();
     }
 

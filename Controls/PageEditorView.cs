@@ -203,6 +203,8 @@ public sealed class PageEditorView : Control
             svg.AppendLine($"""<g transform="translate({element.X.ToString(CultureInfo.InvariantCulture)} {element.Y.ToString(CultureInfo.InvariantCulture)})">""");
             svg.AppendLine($"""<rect width="{element.Size.ToString(CultureInfo.InvariantCulture)}" height="{element.Size.ToString(CultureInfo.InvariantCulture)}" fill="white"/>""");
             append_svg_plot_image(svg, element);
+            if (element.PlotMode == PlotMode.Contour)
+                append_svg_contours(svg, element);
             append_svg_axes(svg, element);
             svg.AppendLine($"""<text x="{(element.Size / 2).ToString(CultureInfo.InvariantCulture)}" y="{(title_space / 2 + 5).ToString(CultureInfo.InvariantCulture)}" text-anchor="middle" font-family="Arial" font-size="13" font-weight="700" fill="black">{escape_xml(element.Title)}</text>""");
             if (element.ShowGates)
@@ -277,6 +279,7 @@ public sealed class PageEditorView : Control
             element.ShowTickLabels,
             element.ShowGates,
             element.ShowGateAnnotations,
+            element.ShowGateAnnotationNames,
             element.XAxis.ChannelName,
             element.YAxis.ChannelName,
             element.DotColor.ChannelName,
@@ -375,7 +378,7 @@ public sealed class PageEditorView : Control
         if (geometry is null)
             return;
 
-        var pen = new Pen(Brushes.Black, 0.8);
+        var pen = new Pen(Brushes.Black, 1.1);
         foreach (var segment in geometry.Segments)
             context.DrawLine(pen, density_to_screen(segment.Start, plot_rect), density_to_screen(segment.End, plot_rect));
     }
@@ -675,7 +678,8 @@ public sealed class PageEditorView : Control
             parent_frequency /= sample_count;
 
         string name = gate.HasLinkedPopulations ? $"{gate.Name} {population_region_name(region)}" : gate.Name;
-        string label = $"{name}\n{event_count:N0} ({parent_frequency:0.#}%)";
+        string statistics = $"{event_count:N0} ({parent_frequency:0.#}%)";
+        string label = element.ShowGateAnnotationNames ? $"{name}\n{statistics}" : statistics;
         var text = create_formatted_text(label, 10, Colors.Black);
         var origin = gate_annotation_origin(element, gate, region, plot_rect, text.Width + 6, text.Height + 4);
         context.FillRectangle(new SolidColorBrush(Color.FromArgb(220, 255, 255, 255)), new Rect(origin.X - 3, origin.Y - 2, text.Width + 6, text.Height + 4));
@@ -992,6 +996,7 @@ public sealed class PageEditorView : Control
         or nameof(PagePlotElement.ShowOutlierPoints)
         or nameof(PagePlotElement.DrawLargeDots)
         or nameof(PagePlotElement.UsePseudocolor)
+        or nameof(PagePlotElement.ShowGateAnnotationNames)
         or nameof(PagePlotElement.ContourLevelCount)
         or nameof(PagePlotElement.DensitySmoothing);
 
@@ -1498,6 +1503,21 @@ public sealed class PageEditorView : Control
             svg.AppendLine($"""<text x="{y_axis_label_x.ToString(CultureInfo.InvariantCulture)}" y="{(plot.Top + plot.Height / 2).ToString(CultureInfo.InvariantCulture)}" transform="rotate(-90 {y_axis_label_x.ToString(CultureInfo.InvariantCulture)} {(plot.Top + plot.Height / 2).ToString(CultureInfo.InvariantCulture)})" text-anchor="middle" font-family="Arial" font-size="11" fill="black">{escape_xml(element.YAxis.ChannelName)}</text>""");
     }
 
+    private void append_svg_contours(StringBuilder svg, PagePlotElement element)
+    {
+        var geometry = get_contour_geometry(element);
+        if (geometry is null)
+            return;
+
+        Rect plot = plot_rect_for(new Rect(0, 0, element.Size, element.Size), element.ShowTickLabels);
+        foreach (var segment in geometry.Segments)
+        {
+            var start = density_to_screen(segment.Start, plot);
+            var end = density_to_screen(segment.End, plot);
+            svg.AppendLine($"""<line x1="{start.X.ToString(CultureInfo.InvariantCulture)}" y1="{start.Y.ToString(CultureInfo.InvariantCulture)}" x2="{end.X.ToString(CultureInfo.InvariantCulture)}" y2="{end.Y.ToString(CultureInfo.InvariantCulture)}" stroke="black" stroke-width="1.1" fill="none"/>""");
+        }
+    }
+
     private static void append_svg_gate_annotation(StringBuilder svg, PagePlotElement element, GateDefinition gate, Rect plot)
     {
         if (gate.Vertices.Count == 0)
@@ -1530,12 +1550,20 @@ public sealed class PageEditorView : Control
 
         string name = gate.HasLinkedPopulations ? $"{gate.Name} {population_region_name(region)}" : gate.Name;
         string count_line = $"{event_count:N0} ({parent_frequency:0.#}%)";
-        double text_width = Math.Max(name.Length, count_line.Length) * 5.8;
-        var origin = gate_annotation_origin(element, gate, region, plot, text_width + 6, 26);
+        double text_width = (element.ShowGateAnnotationNames ? Math.Max(name.Length, count_line.Length) : count_line.Length) * 5.8;
+        double text_height = element.ShowGateAnnotationNames ? 26 : 14;
+        var origin = gate_annotation_origin(element, gate, region, plot, text_width + 6, text_height);
 
-        svg.AppendLine($"""<rect x="{(origin.X - 3).ToString(CultureInfo.InvariantCulture)}" y="{(origin.Y - 10).ToString(CultureInfo.InvariantCulture)}" width="{(text_width + 6).ToString(CultureInfo.InvariantCulture)}" height="26" fill="white" fill-opacity="0.86"/>""");
-        svg.AppendLine($"""<text x="{origin.X.ToString(CultureInfo.InvariantCulture)}" y="{origin.Y.ToString(CultureInfo.InvariantCulture)}" font-family="Arial" font-size="10" fill="black">{escape_xml(name)}</text>""");
-        svg.AppendLine($"""<text x="{origin.X.ToString(CultureInfo.InvariantCulture)}" y="{(origin.Y + 12).ToString(CultureInfo.InvariantCulture)}" font-family="Arial" font-size="10" fill="black">{escape_xml(count_line)}</text>""");
+        svg.AppendLine($"""<rect x="{(origin.X - 3).ToString(CultureInfo.InvariantCulture)}" y="{(origin.Y - 10).ToString(CultureInfo.InvariantCulture)}" width="{(text_width + 6).ToString(CultureInfo.InvariantCulture)}" height="{text_height.ToString(CultureInfo.InvariantCulture)}" fill="white" fill-opacity="0.86"/>""");
+        if (element.ShowGateAnnotationNames)
+        {
+            svg.AppendLine($"""<text x="{origin.X.ToString(CultureInfo.InvariantCulture)}" y="{origin.Y.ToString(CultureInfo.InvariantCulture)}" font-family="Arial" font-size="10" fill="black">{escape_xml(name)}</text>""");
+            svg.AppendLine($"""<text x="{origin.X.ToString(CultureInfo.InvariantCulture)}" y="{(origin.Y + 12).ToString(CultureInfo.InvariantCulture)}" font-family="Arial" font-size="10" fill="black">{escape_xml(count_line)}</text>""");
+        }
+        else
+        {
+            svg.AppendLine($"""<text x="{origin.X.ToString(CultureInfo.InvariantCulture)}" y="{origin.Y.ToString(CultureInfo.InvariantCulture)}" font-family="Arial" font-size="10" fill="black">{escape_xml(count_line)}</text>""");
+        }
     }
 
     private void append_svg_plot_image(StringBuilder svg, PagePlotElement element)

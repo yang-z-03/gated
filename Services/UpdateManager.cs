@@ -151,6 +151,37 @@ public sealed class UpdateManager
         Process.Start(start_info);
     }
 
+    public void LaunchPythonBootstrapUpdater()
+    {
+        if (!OperatingSystem.IsWindows())
+            throw new PlatformNotSupportedException("Automatic replacement is currently supported on Windows.");
+
+        string app_path = get_application_path();
+        string updater_path = get_updater_path();
+        string? local_versions_path = get_local_versions_path();
+        if (!File.Exists(updater_path))
+            throw new FileNotFoundException("The updater executable was not found.", updater_path);
+
+        var arguments = new List<string>
+        {
+            "--app", quote(app_path),
+            "--updater", quote(updater_path),
+            "--parent-pid", Environment.ProcessId.ToString(CultureInfo.InvariantCulture),
+            "--current-version", GetCurrentVersion().ToString(),
+            "--versions-url", quote(VersionsUrl),
+            "--requirements-only"
+        };
+        if (local_versions_path is not null)
+            arguments.AddRange(["--local-versions", quote(local_versions_path)]);
+
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = updater_path,
+            UseShellExecute = true,
+            Arguments = string.Join(" ", arguments)
+        });
+    }
+
     public static AppVersion GetCurrentVersion()
     {
         var assembly = Assembly.GetExecutingAssembly();

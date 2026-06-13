@@ -59,6 +59,9 @@ public sealed class FlowPlotView : Control
     public static readonly StyledProperty<bool> ShowGateAnnotationsProperty =
         AvaloniaProperty.Register<FlowPlotView, bool>(nameof(ShowGateAnnotations), true);
 
+    public static readonly StyledProperty<bool> ShowGateAnnotationNamesProperty =
+        AvaloniaProperty.Register<FlowPlotView, bool>(nameof(ShowGateAnnotationNames));
+
     public static readonly StyledProperty<int> ContourLevelCountProperty =
         AvaloniaProperty.Register<FlowPlotView, int>(nameof(ContourLevelCount), 10);
 
@@ -114,6 +117,7 @@ public sealed class FlowPlotView : Control
             DrawLargeDotsProperty,
             ShowGridlinesProperty,
             ShowGateAnnotationsProperty,
+            ShowGateAnnotationNamesProperty,
             ContourLevelCountProperty,
             DensitySmoothingProperty,
             ActiveToolProperty,
@@ -198,6 +202,12 @@ public sealed class FlowPlotView : Control
     {
         get => GetValue(ShowGateAnnotationsProperty);
         set => SetValue(ShowGateAnnotationsProperty, value);
+    }
+
+    public bool ShowGateAnnotationNames
+    {
+        get => GetValue(ShowGateAnnotationNamesProperty);
+        set => SetValue(ShowGateAnnotationNamesProperty, value);
     }
 
     public int ContourLevelCount
@@ -1117,7 +1127,7 @@ public sealed class FlowPlotView : Control
         int event_count = 0;
         double parent_frequency = 0;
         int sample_count = 0;
-        foreach (var sample in Group.Samples)
+        foreach (var sample in resolve_samples())
         {
             var population = find_population(sample.Populations, gate, gate.HasLinkedPopulations ? region : null);
             if (population is null)
@@ -1134,7 +1144,8 @@ public sealed class FlowPlotView : Control
             parent_frequency /= sample_count;
 
         string name = gate.HasLinkedPopulations ? $"{gate.Name} {population_region_name(region)}" : gate.Name;
-        string label = $"{name}  {event_count:N0}  {parent_frequency:0.#}%";
+        string statistics = $"{event_count:N0}  {parent_frequency:0.#}%";
+        string label = ShowGateAnnotationNames ? $"{name}  {statistics}" : statistics;
         var text = new FormattedText(
             label,
             CultureInfo.CurrentCulture,

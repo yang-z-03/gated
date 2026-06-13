@@ -17,7 +17,6 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            PythonExtensionRuntime.StartBackground();
             desktop.Exit += (_, _) => PythonExtensionRuntime.Shutdown();
             BindingPlugins.PropertyAccessors.Add(new DataRowViewPropertyAccessorPlugin());
             var window = new MainWindow();
@@ -25,6 +24,10 @@ public partial class App : Application
             var args = desktop.Args ?? [];
             window.Opened += async (_, _) =>
             {
+                if (await window.BootstrapPythonIfMissingAsync())
+                    return;
+
+                PythonExtensionRuntime.StartBackground();
                 if (args.Length > 0)
                     await window.OpenCommandLineFilesAsync(args);
                 await window.CheckForUpdatesAtStartupAsync();
