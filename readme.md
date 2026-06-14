@@ -49,6 +49,8 @@ Scripting
 
 ### Licensing
 
-Gated is licensed under GNU GPLv3. This program is distributed in the hope that it will be useful, but without any warranty; without even the implied warranty of merchantability or fitness for a particular purpose. See the GNU General Public License for more details. 
+Gated is licensed under GNU GPLv3. This program is distributed in the hope that it will be useful, 
+but without any warranty; without even the implied warranty of merchantability or fitness for 
+a particular purpose. See the GNU General Public License for more details. 
 
 Copyright (C) Zheng Yang 2025 - 2026.

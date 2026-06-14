@@ -11,7 +11,8 @@ namespace gated.Services;
 public sealed class WorkspaceBinarySerializer
 {
     private const uint magic = 0x44544731;
-    private const int version = 25;
+    private const int version = 27;
+    private const int minimum_supported_version = 27;
 
     public void Save(FlowWorkspace workspace, string file_path)
     {
@@ -39,7 +40,7 @@ public sealed class WorkspaceBinarySerializer
             throw new InvalidDataException("The file is not a Gated workspace.");
 
         int file_version = reader.ReadInt32();
-        if (file_version != version)
+        if (file_version < minimum_supported_version || file_version > version)
             throw new NotSupportedException($"Unsupported Gated workspace version: {file_version}.");
 
         var workspace = new FlowWorkspace { Name = read_string(reader) };
@@ -152,9 +153,7 @@ public sealed class WorkspaceBinarySerializer
 
         writer.Write(sample.EventCount);
         writer.Write(sample.ChannelCount);
-        for (int row = 0; row < sample.EventCount; row++)
-        for (int column = 0; column < sample.ChannelCount; column++)
-            writer.Write(sample.RawEvents[row, column]);
+        write_float_matrix_payload(writer, sample.RawEvents);
 
         writer.Write(sample.Embeddings.Count);
         foreach (var embedding in sample.Embeddings.OrderBy(item => item.Key, StringComparer.Ordinal))
@@ -201,10 +200,7 @@ public sealed class WorkspaceBinarySerializer
 
         int row_count = reader.ReadInt32();
         int column_count = reader.ReadInt32();
-        var raw_events = new float[row_count, column_count];
-        for (int row = 0; row < row_count; row++)
-        for (int column = 0; column < column_count; column++)
-            raw_events[row, column] = reader.ReadSingle();
+        var raw_events = read_float_matrix_payload(reader, row_count, column_count);
 
         var sample = new FlowSample(name, channels, raw_events) { Id = id };
         int embedding_count = reader.ReadInt32();
@@ -236,6 +232,38 @@ public sealed class WorkspaceBinarySerializer
         writer.Write(populations.Count);
         foreach (var population in populations)
             write_population_result(writer, population);
+    }
+
+    private static void write_float_matrix_payload(BinaryWriter writer, float[,] values)
+    {
+        if (!BitConverter.IsLittleEndian)
+        {
+            for (int row = 0; row < values.GetLength(0); row++)
+            for (int column = 0; column < values.GetLength(1); column++)
+                writer.Write(values[row, column]);
+            return;
+        }
+
+        var buffer = new byte[Buffer.ByteLength(values)];
+        Buffer.BlockCopy(values, 0, buffer, 0, buffer.Length);
+        writer.Write(buffer);
+    }
+
+    private static float[,] read_float_matrix_payload(BinaryReader reader, int row_count, int column_count)
+    {
+        var values = new float[row_count, column_count];
+        if (!BitConverter.IsLittleEndian)
+        {
+            for (int row = 0; row < row_count; row++)
+            for (int column = 0; column < column_count; column++)
+                values[row, column] = reader.ReadSingle();
+            return values;
+        }
+
+        var buffer = new byte[Buffer.ByteLength(values)];
+        reader.BaseStream.ReadExactly(buffer);
+        Buffer.BlockCopy(buffer, 0, values, 0, buffer.Length);
+        return values;
     }
 
     private static void write_population_result(BinaryWriter writer, PopulationResult population)
@@ -353,6 +381,16 @@ public sealed class WorkspaceBinarySerializer
         writer.Write(gate.PreferredYMinimum);
         writer.Write(gate.PreferredYMaximum);
         write_axis_scale(writer, gate.PreferredYScale);
+        write_gate_plot_options(
+            writer,
+            gate.PreferredPlotMode,
+            gate.PreferredShowOutlierPoints,
+            gate.PreferredDrawLargeDots,
+            gate.PreferredShowGridlines,
+            gate.PreferredShowGateAnnotations,
+            gate.PreferredShowGateAnnotationNames,
+            gate.PreferredContourLevelCount,
+            gate.PreferredDensitySmoothing);
 
         writer.Write(gate.SamplePreferredViews.Count);
         foreach (var item in gate.SamplePreferredViews.OrderBy(item => item.Key, StringComparer.Ordinal))
@@ -416,6 +454,16 @@ public sealed class WorkspaceBinarySerializer
         gate.PreferredYMinimum = reader.ReadDouble();
         gate.PreferredYMaximum = reader.ReadDouble();
         gate.PreferredYScale = read_axis_scale(reader);
+        read_gate_plot_options(
+            reader,
+            value => gate.PreferredPlotMode = value,
+            value => gate.PreferredShowOutlierPoints = value,
+            value => gate.PreferredDrawLargeDots = value,
+            value => gate.PreferredShowGridlines = value,
+            value => gate.PreferredShowGateAnnotations = value,
+            value => gate.PreferredShowGateAnnotationNames = value,
+            value => gate.PreferredContourLevelCount = value,
+            value => gate.PreferredDensitySmoothing = value);
 
         int sample_view_count = reader.ReadInt32();
         for (int index = 0; index < sample_view_count; index++)
@@ -453,6 +501,16 @@ public sealed class WorkspaceBinarySerializer
         writer.Write(view.YMinimum);
         writer.Write(view.YMaximum);
         write_axis_scale(writer, view.YScale);
+        write_gate_plot_options(
+            writer,
+            view.PlotMode,
+            view.ShowOutlierPoints,
+            view.DrawLargeDots,
+            view.ShowGridlines,
+            view.ShowGateAnnotations,
+            view.ShowGateAnnotationNames,
+            view.ContourLevelCount,
+            view.DensitySmoothing);
     }
 
     private static GateViewOptions read_gate_view_options(BinaryReader reader)
@@ -469,7 +527,59 @@ public sealed class WorkspaceBinarySerializer
         view.YMinimum = reader.ReadDouble();
         view.YMaximum = reader.ReadDouble();
         view.YScale = read_axis_scale(reader);
+        read_gate_plot_options(
+            reader,
+            value => view.PlotMode = value,
+            value => view.ShowOutlierPoints = value,
+            value => view.DrawLargeDots = value,
+            value => view.ShowGridlines = value,
+            value => view.ShowGateAnnotations = value,
+            value => view.ShowGateAnnotationNames = value,
+            value => view.ContourLevelCount = value,
+            value => view.DensitySmoothing = value);
         return view;
+    }
+
+    private static void write_gate_plot_options(
+        BinaryWriter writer,
+        PlotMode plot_mode,
+        bool show_outlier_points,
+        bool draw_large_dots,
+        bool show_gridlines,
+        bool show_gate_annotations,
+        bool show_gate_annotation_names,
+        int contour_level_count,
+        int density_smoothing)
+    {
+        writer.Write((int)plot_mode);
+        writer.Write(show_outlier_points);
+        writer.Write(draw_large_dots);
+        writer.Write(show_gridlines);
+        writer.Write(show_gate_annotations);
+        writer.Write(show_gate_annotation_names);
+        writer.Write(contour_level_count);
+        writer.Write(density_smoothing);
+    }
+
+    private static void read_gate_plot_options(
+        BinaryReader reader,
+        Action<PlotMode> set_plot_mode,
+        Action<bool> set_show_outlier_points,
+        Action<bool> set_draw_large_dots,
+        Action<bool> set_show_gridlines,
+        Action<bool> set_show_gate_annotations,
+        Action<bool> set_show_gate_annotation_names,
+        Action<int> set_contour_level_count,
+        Action<int> set_density_smoothing)
+    {
+        set_plot_mode((PlotMode)reader.ReadInt32());
+        set_show_outlier_points(reader.ReadBoolean());
+        set_draw_large_dots(reader.ReadBoolean());
+        set_show_gridlines(reader.ReadBoolean());
+        set_show_gate_annotations(reader.ReadBoolean());
+        set_show_gate_annotation_names(reader.ReadBoolean());
+        set_contour_level_count(reader.ReadInt32());
+        set_density_smoothing(reader.ReadInt32());
     }
 
     private static void write_compensation(BinaryWriter writer, CompensationMatrix compensation)
@@ -583,15 +693,16 @@ public sealed class WorkspaceBinarySerializer
                 writer.Write(feature.IsChannel);
             }
 
-            writer.Write(job.RowMap.Count);
-            foreach (var row in job.RowMap)
+            writer.Write(job.RowMap.Sources.Count);
+            foreach (var source in job.RowMap.Sources)
             {
-                writer.Write(row.GroupId.ToByteArray());
-                writer.Write(row.SampleId.ToByteArray());
-                writer.Write(row.GateId.ToByteArray());
-                writer.Write((int)row.Region);
-                writer.Write(row.EventIndex);
+                writer.Write(source.GroupId.ToByteArray());
+                writer.Write(source.SampleId.ToByteArray());
+                writer.Write(source.GateId.ToByteArray());
+                writer.Write((int)source.Region);
             }
+            write_int_array(writer, job.RowMap.SourceIds);
+            write_int_array(writer, job.RowMap.EventIndices);
 
             write_float_matrix(writer, job.SourceData);
             write_int_array(writer, job.BatchIds);
@@ -661,18 +772,19 @@ public sealed class WorkspaceBinarySerializer
                 });
             }
 
-            int row_count = reader.ReadInt32();
-            for (int row = 0; row < row_count; row++)
+            int source_count = reader.ReadInt32();
+            var row_map_sources = new List<IntegrationJobRowMapSource>(source_count);
+            for (int row = 0; row < source_count; row++)
             {
-                job.RowMap.Add(new IntegrationJobRowMap
+                row_map_sources.Add(new IntegrationJobRowMapSource
                 {
                     GroupId = new Guid(reader.ReadBytes(16)),
                     SampleId = new Guid(reader.ReadBytes(16)),
                     GateId = new Guid(reader.ReadBytes(16)),
-                    Region = (PopulationRegion)reader.ReadInt32(),
-                    EventIndex = reader.ReadInt32()
+                    Region = (PopulationRegion)reader.ReadInt32()
                 });
             }
+            job.RowMap.Set(row_map_sources, read_int_array(reader) ?? [], read_int_array(reader) ?? []);
 
             job.SourceData = read_float_matrix(reader);
             job.BatchIds = read_int_array(reader) ?? [];
@@ -929,7 +1041,7 @@ public sealed class WorkspaceBinarySerializer
             write_string(writer, statistic.PythonCallableName);
             writer.Write(statistic.PythonApiVersion);
             write_string(writer, statistic.PythonDisplayName);
-            write_double_array(writer, statistic.PythonParameters);
+            write_string(writer, statistic.PythonParametersJson);
         }
     }
 
@@ -949,7 +1061,7 @@ public sealed class WorkspaceBinarySerializer
                 statistic.PythonCallableName = read_string(reader);
                 statistic.PythonApiVersion = reader.ReadInt32();
                 statistic.PythonDisplayName = read_string(reader);
-                statistic.PythonParameters = read_double_array(reader) ?? [];
+                statistic.PythonParametersJson = read_string(reader);
             }
             statistics.Add(statistic);
         }
@@ -1028,9 +1140,7 @@ public sealed class WorkspaceBinarySerializer
         int columns = matrix.GetLength(1);
         writer.Write(rows);
         writer.Write(columns);
-        for (int row = 0; row < rows; row++)
-        for (int column = 0; column < columns; column++)
-            writer.Write(matrix[row, column]);
+        write_float_matrix_payload(writer, matrix);
     }
 
     private static float[,]? read_float_matrix(BinaryReader reader)
@@ -1039,11 +1149,7 @@ public sealed class WorkspaceBinarySerializer
             return null;
         int rows = reader.ReadInt32();
         int columns = reader.ReadInt32();
-        var matrix = new float[rows, columns];
-        for (int row = 0; row < rows; row++)
-        for (int column = 0; column < columns; column++)
-            matrix[row, column] = reader.ReadSingle();
-        return matrix;
+        return read_float_matrix_payload(reader, rows, columns);
     }
 
     private static void write_int_array(BinaryWriter writer, int[]? values)
@@ -1062,6 +1168,14 @@ public sealed class WorkspaceBinarySerializer
             return null;
         int length = reader.ReadInt32();
         var values = new int[length];
+        if (BitConverter.IsLittleEndian)
+        {
+            var buffer = new byte[Buffer.ByteLength(values)];
+            reader.BaseStream.ReadExactly(buffer);
+            Buffer.BlockCopy(buffer, 0, values, 0, buffer.Length);
+            return values;
+        }
+
         for (int index = 0; index < length; index++)
             values[index] = reader.ReadInt32();
         return values;
@@ -1083,6 +1197,14 @@ public sealed class WorkspaceBinarySerializer
             return null;
         int length = reader.ReadInt32();
         var values = new double[length];
+        if (BitConverter.IsLittleEndian)
+        {
+            var buffer = new byte[Buffer.ByteLength(values)];
+            reader.BaseStream.ReadExactly(buffer);
+            Buffer.BlockCopy(buffer, 0, values, 0, buffer.Length);
+            return values;
+        }
+
         for (int index = 0; index < length; index++)
             values[index] = reader.ReadDouble();
         return values;

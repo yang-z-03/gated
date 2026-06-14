@@ -380,12 +380,14 @@ public static class StatisticsCalculator
         int parent_count,
         int all_count)
     {
+        if (definition.Kind == StatisticKind.Python)
+            return calculate_python_statistic(sample, definition, event_indices);
+
         double value = definition.Kind switch
         {
             StatisticKind.NumberOfEvents => event_indices.Length,
             StatisticKind.FrequencyOfParent => parent_count == 0 ? 0 : event_indices.Length * 100.0 / parent_count,
             StatisticKind.FrequencyOfAll => all_count == 0 ? 0 : event_indices.Length * 100.0 / all_count,
-            StatisticKind.Python => calculate_python_statistic(sample, definition, event_indices),
             _ => calculate_channel_statistic(sample, definition, event_indices)
         };
 
@@ -394,22 +396,49 @@ public static class StatisticsCalculator
             Kind = definition.Kind,
             ChannelName = definition.ChannelName,
             Value = value,
-            PythonDisplayName = definition.PythonDisplayName
+            PythonDisplayName = definition.Kind == StatisticKind.Python && string.IsNullOrWhiteSpace(definition.PythonDisplayName)
+                ? definition.PythonCallableName
+                : definition.PythonDisplayName
         };
     }
 
-    private static double calculate_python_statistic(FlowSample sample, StatisticDefinition definition, int[] event_indices)
+    private static StatisticResult calculate_python_statistic(FlowSample sample, StatisticDefinition definition, int[] event_indices)
     {
+        string display_name = string.IsNullOrWhiteSpace(definition.PythonDisplayName)
+            ? definition.PythonCallableName
+            : definition.PythonDisplayName;
         try
         {
             var matrix = select_rows(sample.CompensatedEvents, event_indices);
             var channels = sample.Channels.Select(channel => channel.Name).ToArray();
-            return PythonExtensionRuntime.CalculateStatistic(definition, matrix, channels);
+            var evaluation = PythonExtensionRuntime.CalculateStatistic(definition, matrix, channels);
+            return new StatisticResult
+            {
+                Kind = StatisticKind.Python,
+                ChannelName = "",
+                Value = double.NaN,
+                PythonValue = evaluation.Value,
+                PythonFormattedValue = evaluation.DisplayValue,
+                PythonDisplayName = display_name,
+                PythonSource = definition.PythonSource,
+                PythonCallableName = definition.PythonCallableName,
+                PythonParametersJson = definition.PythonParametersJson
+            };
         }
         catch (Exception exception)
         {
             PythonExtensionRuntime.Log($"Python statistic failed: {exception.Message}");
-            return double.NaN;
+            return new StatisticResult
+            {
+                Kind = StatisticKind.Python,
+                ChannelName = "",
+                Value = double.NaN,
+                PythonFormattedValue = "",
+                PythonDisplayName = display_name,
+                PythonSource = definition.PythonSource,
+                PythonCallableName = definition.PythonCallableName,
+                PythonParametersJson = definition.PythonParametersJson
+            };
         }
     }
 

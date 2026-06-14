@@ -2,7 +2,7 @@
     <PropertyGroup>
         <OutputType>WinExe</OutputType>
         <TargetFramework>net10.0</TargetFramework>
-        <Version>0.26.2</Version>
+        <Version>0.27.0</Version>
         <Nullable>enable</Nullable>
         <ApplicationManifest>app.manifest</ApplicationManifest>
         <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
@@ -146,12 +146,18 @@
       <AvaloniaResource Include="Resources\macro.svg" />
       <None Remove="Resources\save.svg" />
       <AvaloniaResource Include="Resources\save.svg" />
+        
       <None Remove="Python\completion.py" />
       <AvaloniaResource Include="Python\completion.py" />
       <None Remove="Python\hover.py" />
       <AvaloniaResource Include="Python\hover.py" />
+      <None Remove="Python\integration_leiden.py" />
+      <AvaloniaResource Include="Python\integration_leiden.py" />
+      <None Remove="Python\integration_umap.py" />
+      <AvaloniaResource Include="Python\integration_umap.py" />
       <None Remove="Python\stub.py" />
       <AvaloniaResource Include="Python\stub.py" />
+        
       <None Remove="gated.ico" />
       <AvaloniaResource Include="gated.ico" />
     </ItemGroup>

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using gated.Reduction;
@@ -131,7 +132,7 @@ public sealed class IntegrationJob : NotifyBase
     }
     public CytoNormOptions CytoNormOptions { get; set; } = new();
 
-    public ObservableCollection<IntegrationJobRowMap> RowMap { get; } = new();
+    public IntegrationJobRowMap RowMap { get; } = new();
     public float[,]? SourceData { get; set; }
     public int[] BatchIds { get; set; } = [];
     public float[,]? LogicleNormalized { get; set; }
@@ -266,9 +267,29 @@ public sealed class IntegrationJobFeatureSelection : NotifyBase
 
 public sealed class IntegrationJobRowMap
 {
+    public List<IntegrationJobRowMapSource> Sources { get; } = new();
+    public int[] SourceIds { get; private set; } = [];
+    public int[] EventIndices { get; private set; } = [];
+    public int Count => EventIndices.Length;
+
+    public void Set(IEnumerable<IntegrationJobRowMapSource> sources, int[] source_ids, int[] event_indices)
+    {
+        if (source_ids.Length != event_indices.Length)
+            throw new ArgumentException("Row map source ids and event indices must have the same length.");
+
+        Sources.Clear();
+        Sources.AddRange(sources);
+        SourceIds = source_ids;
+        EventIndices = event_indices;
+    }
+
+    public void Clear() => Set([], [], []);
+}
+
+public sealed class IntegrationJobRowMapSource
+{
     public Guid GroupId { get; init; }
     public Guid SampleId { get; init; }
     public Guid GateId { get; init; }
     public PopulationRegion Region { get; init; } = PopulationRegion.Primary;
-    public int EventIndex { get; init; }
 }

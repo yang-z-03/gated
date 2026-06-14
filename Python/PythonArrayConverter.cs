@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.InteropServices;
 using gated.Models;
 using Python.Runtime;
 
@@ -12,59 +13,34 @@ public static class PythonArrayConverter
     {
         using (Py.GIL())
         {
-            using var rows = new PyList();
             int row_count = matrix.GetLength(0);
             int column_count = matrix.GetLength(1);
-            for (int row = 0; row < row_count; row++)
-            {
-                using var values = new PyList();
-                for (int column = 0; column < column_count; column++)
-                    values.Append(new PyFloat(matrix[row, column]));
-                rows.Append(values);
-            }
-
-            dynamic numpy = Py.Import("numpy");
-            return numpy.array(rows);
+            return to_numpy_view(matrix, matrix.LongLength * sizeof(float), "float32", row_count, column_count);
         }
     }
 
     public static PyObject ToNumpy(double[] values)
     {
         using (Py.GIL())
-        {
-            using var list = new PyList();
-            foreach (double value in values)
-                list.Append(new PyFloat(value));
-
-            dynamic numpy = Py.Import("numpy");
-            return numpy.array(list);
-        }
+            return to_numpy_view(values, values.LongLength * sizeof(double), "float64", values.Length);
     }
 
     public static PyObject ToNumpy(bool[] values)
     {
         using (Py.GIL())
-        {
-            using var list = new PyList();
-            foreach (bool value in values)
-                list.Append(value.ToPython());
+            return to_numpy_view(values, values.LongLength * sizeof(bool), "bool", values.Length);
+    }
 
-            dynamic numpy = Py.Import("numpy");
-            return numpy.array(list);
-        }
+    public static PyObject ToNumpy(int[] values)
+    {
+        using (Py.GIL())
+            return to_numpy_view(values, values.LongLength * sizeof(int), "int32", values.Length);
     }
 
     public static PyObject ToNumpy(float[] values)
     {
         using (Py.GIL())
-        {
-            using var list = new PyList();
-            foreach (float value in values)
-                list.Append(new PyFloat(value));
-
-            dynamic numpy = Py.Import("numpy");
-            return numpy.array(list);
-        }
+            return to_numpy_view(values, values.LongLength * sizeof(float), "float32", values.Length);
     }
 
     public static float[,] ToFloatMatrix(PyObject value)
@@ -218,5 +194,85 @@ public static class PythonArrayConverter
         }
 
         return selected;
+    }
+
+    private static PyObject to_numpy_view(Array source, long byte_count, string dtype, params int[] shape)
+    {
+        if (byte_count < 0 || byte_count > nint.MaxValue)
+            throw new ArgumentOutOfRangeException(nameof(byte_count), "Array is too large to expose to Python.");
+
+        if (byte_count == 0)
+            return empty_readonly_numpy(dtype, shape);
+
+        GCHandle handle = GCHandle.Alloc(source, GCHandleType.Pinned);
+        bool transferred_to_python = false;
+        try
+        {
+            using var locals = numpy_buffer_locals(dtype, shape);
+            locals.SetItem("_address", handle.AddrOfPinnedObject().ToInt64().ToPython());
+            locals.SetItem("_byte_count", byte_count.ToPython());
+
+            var release = new Action(() =>
+            {
+                if (handle.IsAllocated)
+                    handle.Free();
+            });
+            using PyObject release_callback = release.ToPython();
+            locals.SetItem("_release", release_callback);
+
+            PythonEngine.Exec("""
+                import ctypes as _ctypes
+                import weakref as _weakref
+                _buffer_type = _ctypes.c_byte * _byte_count
+                _buffer = _buffer_type.from_address(_address)
+                _base = _np.frombuffer(_buffer, dtype=_dtype)
+                _array = _base.reshape(_shape)
+                _array.setflags(write=False)
+                _finalizer = _weakref.finalize(_base, _release)
+                """, locals, locals);
+
+            transferred_to_python = true;
+            return locals.GetItem("_array");
+        }
+        finally
+        {
+            if (!transferred_to_python && handle.IsAllocated)
+                handle.Free();
+        }
+    }
+
+    private static PyObject empty_readonly_numpy(string dtype, int[] shape)
+    {
+        using var locals = numpy_buffer_locals(dtype, shape);
+        PythonEngine.Exec("""
+            _array = _np.empty(_shape, dtype=_dtype)
+            _array.setflags(write=False)
+            """, locals, locals);
+        return locals.GetItem("_array");
+    }
+
+    private static PyDict numpy_buffer_locals(string dtype, int[] shape)
+    {
+        var locals = new PyDict();
+        using PyObject builtins = Py.Import("builtins");
+        using PyObject numpy = Py.Import("numpy");
+        using PyObject py_dtype = dtype.ToPython();
+        locals.SetItem("__builtins__", builtins);
+        locals.SetItem("_np", numpy);
+        locals.SetItem("_dtype", py_dtype);
+        using PyObject py_shape = shape_list(shape);
+        locals.SetItem("_shape", py_shape);
+        return locals;
+    }
+
+    private static PyList shape_list(int[] shape)
+    {
+        var list = new PyList();
+        foreach (int dimension in shape)
+        {
+            using PyObject py_dimension = dimension.ToPython();
+            list.Append(py_dimension);
+        }
+        return list;
     }
 }

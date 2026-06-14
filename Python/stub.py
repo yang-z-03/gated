@@ -1,6 +1,6 @@
 
 from __future__ import annotations
-from typing import Callable
+from typing import Callable, Literal
 import numpy as np
 import pandas as pd
 
@@ -74,16 +74,15 @@ class Population:
 
     population_keys: readonly list[str]
         Available child population keys.
+
+    compensated_matrix: readonly np.ndarray
+        Compensated event matrix as a NumPy readonly array.
     '''
     mask: np.ndarray
     populations: dict[str, "Population"]
     strategy: "Strategy"
     population_keys: list[str]
-    def get_compensated_matrix(self) -> np.ndarray: 
-        '''
-        Returns compensated event rows selected by this population as a NumPy copy.
-        '''
-        ...
+    compensated_matrix: np.ndarray
 
     def set_embedding(self, name: str, value: np.ndarray): 
         '''
@@ -121,10 +120,13 @@ class Sample:
         Names of sample-level embedding arrays.
 
     matrix: readonly np.ndarray
-        Raw event matrix as a NumPy copy.
+        Raw event matrix as a NumPy readonly array.
 
     embedding_matrix: readonly np.ndarray
         Matrix containing all embeddings as columns.
+
+    compensated_matrix: readonly np.ndarray
+        Compensated event matrix as a NumPy readonly array.
 
     populations: readonly dict[str, Population]
         Populations keyed by population key.
@@ -140,11 +142,8 @@ class Sample:
     populations: dict[str, Population]
     strategy: "Strategy"
     population_keys: list[str]
-    def get_compensated_matrix(self) -> np.ndarray: 
-        '''
-        Returns the compensated event matrix as a NumPy copy.
-        '''
-        ...
+    compensated_matrix: np.ndarray
+        
     def __getitem__(self, population_key: str) -> Population: 
         '''
         Returns a population by key, equivalent to sample[population_key].
@@ -178,13 +177,13 @@ class Strategy:
     def get_population(self, sample: Sample) -> Population: ...
     def get_statistics(self, sample: Sample, statistic: StatisticDefinition) -> np.ndarray: ...
     
-    def define_statistics(self, kind: str, channel: str = "") -> StatisticDefinition: 
+    def define_statistics(self, kind: str, channel: str) -> StatisticDefinition: 
         '''
         Adds a native statistic. kind is a StatisticKind name such as Mean,
         Median, NumberOfEvents, FrequencyOfParent, or FrequencyOfAll.
         '''
         ...
-    def define_statistics_python(self, source: str, callable_name: str = "statistic", display_name: str | None = None, parameters: np.ndarray | None = None) -> StatisticDefinition: 
+    def define_statistics_python(self, source: str, callable_name: str = "entry", display_name: str | None = None, parameters: np.ndarray | None = None) -> StatisticDefinition: 
         '''
         Adds a Python statistic whose callable receives
         (matrix: np.ndarray, channels: list[str], parameters: np.ndarray).
@@ -267,6 +266,43 @@ class Grouping:
         '''Returns a sample by name, equivalent to grouping[sample].'''
         ...
 
+class IntegrationJob:
+    '''
+    A prepared integration job with source, normalized, and integrated matrices.
+
+    Row map data is exposed in a compact columnar form. ``row_map["source_ids"]``
+    and ``row_map["event_indices"]`` are readonly NumPy arrays with one entry per
+    matrix row. ``row_map["sources"]`` is a small DataFrame keyed by source_id with
+    group, sample, gate, and region metadata.
+    '''
+    name: str
+    batch_column: str
+    features: list[str]
+    batch_ids: np.ndarray
+    has_integrated_matrix: bool
+    matrix: np.ndarray
+    logicle_matrix: np.ndarray
+    integrated_matrix: np.ndarray
+    row_source_ids: np.ndarray
+    row_event_indices: np.ndarray
+    row_map: dict[str, np.ndarray | pd.DataFrame]
+
+    def row_sources(self) -> pd.DataFrame:
+        '''Returns the compact row source lookup table keyed by source_id.'''
+        ...
+
+    def row_map_frame(self) -> pd.DataFrame:
+        '''Returns an expanded row-map DataFrame for compatibility; this allocates per-row data.'''
+        ...
+
+    def set_embedding(self, name: str, value: np.ndarray):
+        '''
+        Writes one value per integration row back into the source samples as a synchronized embedding.
+
+        Numeric arrays create floating-point embeddings. String arrays create categorical embeddings.
+        '''
+        ...
+
 class Workspace:
     '''
     The main workspace object representing the currently opened workspace in the application.
@@ -289,7 +325,7 @@ class Workspace:
 
     metadata: pd.DataFrame
     groupings: list[Grouping]
-    integration_jobs: list
+    integration_jobs: list[IntegrationJob]
     def add_grouping(self, name: str) -> Grouping: ...
     def apply_metadata(self, dataframe: pd.DataFrame): 
         '''
@@ -304,25 +340,71 @@ workspace: Workspace
 Main workspace instance
 '''
 
-def log(content): 
+class Application:
     '''
-    Print a debug log content to the application debug console.
-    Script engineer would inspect intermediate result using the console.
-    By default, end users may not see the contents in it. If it is required to alert the user,
-    it is better to use ``msgbox(title, content)`` instead.
+    Application-level utilities for script interaction. The application object is available in
+    macro, integration, and Python statistic scripts.
     '''
-    ...
 
-def msgbox(title: str, content: str): 
-    '''
-    Push a model dialog message box
+    def log(self, content):
+        '''
+        Writes content to the script log pane for debugging.
+        '''
+        ...
 
-    Parameters
-    ==========
-    title: str
-        Message box title
-    
-    content: str
-        Plain text message box content
-    '''
-    ...
+    def msgbox(self, title: str, content: str, buttons: Literal["ok", "ok-cancel", "yes-no-cancel"] = "ok") -> str:
+        '''
+        Shows a modal message box and returns the selected button value.
+
+        Returns one of "ok", "cancel", "yes", or "no", depending on the requested button set.
+        '''
+        ...
+
+    def input(self, requires: list) -> list:
+        '''
+        Shows a modal input dialog built from requirement declarations and returns a list of
+        user-selected values in the same order as the requirement list.
+        '''
+        ...
+
+    def require_channel(self, name: str, default: str | list[str] | None = None, multiple: bool = False):
+        '''
+        Declares a channel selector requirement.
+        '''
+        ...
+
+    def require_integer(self, name: str, default: int = 0, min = None, max = None):
+        '''
+        Declares an integer numeric input requirement.
+        '''
+        ...
+
+    def require_float(self, name: str, default: float = 0.0, min = None, max = None):
+        '''
+        Declares a floating-point numeric input requirement.
+        '''
+        ...
+
+    def require_enum(self, name: str, possible_values: list[str], default: str | None = None):
+        '''
+        Declares a single-choice input requirement.
+        '''
+        ...
+
+    def require_option(self, name: str, default: bool):
+        '''
+        Declares a checkbox input requirement.
+        '''
+        ...
+
+    def progress(self, percentage: float, description: str = ""):
+        '''
+        Updates the application status bar with deterministic script progress.
+        percentage is clamped to 0..100.
+        '''
+        ...
+
+application: Application
+'''
+Application utility instance.
+'''

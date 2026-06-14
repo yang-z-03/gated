@@ -6,7 +6,7 @@
         x:Class="gated.AboutWindow" WindowStartupLocation="CenterOwner"
         Title="About Gated" FontSize="{StaticResource SemiFontSizeRegular}"
         FontFamily="{StaticResource SemiFontFamilyRegular}"
-        Background="#303030">
+        Background="#151515">
     <StackPanel Orientation="Vertical">
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0 20 0 10">
             <Image Width="64" Height="64" Source="avares://gated/gated.ico"/>

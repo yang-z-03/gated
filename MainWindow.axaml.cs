@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Linq;
 using System.Diagnostics;
 using System.IO;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Avalonia.Data;
 using Avalonia.Controls;
@@ -49,6 +50,7 @@ public partial class MainWindow : Window
         view_model.RequestChoiceInputAsync = show_choice_input_dialog;
         view_model.RequestBooleanGateInputAsync = show_boolean_gate_input_dialog;
         view_model.RequestCompensationEditorAsync = show_compensation_editor_dialog;
+        gated.Python.PythonExtensionRuntime.InputRequested = show_python_input_dialog_blocking;
         view_model.PropertyChanged += view_model_property_changed;
         view_model.AxisChoices.CollectionChanged += channel_choices_collection_changed;
         view_model.ColorChoices.CollectionChanged += channel_choices_collection_changed;
@@ -77,12 +79,18 @@ public partial class MainWindow : Window
         this.PropertyChanged += (s, e) => {
             if (e.Property == Window.WindowStateProperty)
             {
-                var state = this.WindowState;
-                if (state == WindowState.Maximized)
-                    this.window.Margin = new Thickness(8);
-                else this.window.Margin = new Thickness(0);
+                update_window_margin_for_state();
             }
         };
+        WindowPlacementStore.Restore(this);
+        update_window_margin_for_state();
+    }
+
+    private void update_window_margin_for_state()
+    {
+        if (WindowState == WindowState.Maximized)
+            window.Margin = new Thickness(8);
+        else window.Margin = new Thickness(0);
     }
 
     private void view_model_property_changed(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -382,7 +390,10 @@ public partial class MainWindow : Window
             or ProjectNodeKind.Sample
             or ProjectNodeKind.Gate
             or ProjectNodeKind.GatePopulationSlot
-            or ProjectNodeKind.Population;
+            or ProjectNodeKind.Population
+            or ProjectNodeKind.Embedding
+            or ProjectNodeKind.StatisticDefinition
+            or ProjectNodeKind.IntegrationJob;
 
     private async void open_fcs_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
         await open_fcs_files_async();
@@ -513,12 +524,286 @@ public partial class MainWindow : Window
             return;
         try
         {
-            view_model.ApplyStatisticScript(script);
+            var requirements = gated.Python.PythonExtensionRuntime.GetStatisticRequirements(script.Source);
+            string? parameters_json = await show_statistic_requirements_dialog(script.Name, requirements, "Add");
+            if (parameters_json is null)
+                return;
+
+            view_model.ApplyStatisticScript(script, parameters_json);
         }
         catch (Exception exception)
         {
             await show_message_dialog("Failed to add Python statistic", exception.Message);
         }
+    }
+
+    private async Task<string?> show_statistic_requirements_dialog(
+        string statistic_name,
+        IReadOnlyList<gated.Python.PythonStatisticRequirement> requirements,
+        string confirm_text = "OK")
+    {
+        if (requirements.Count == 0)
+            return "[]";
+
+        const double field_width = 260;
+        var fields = new List<StatisticRequirementField>();
+        var panel = new StackPanel { Spacing = 12, Margin = new Thickness(18) };
+
+        foreach (var requirement in requirements)
+        {
+            var field_panel = new StackPanel { Spacing = 6 };
+            if (!is_checkbox_requirement(requirement))
+            {
+                field_panel.Children.Add(new TextBlock
+                {
+                    Text = requirement.Name,
+                    Foreground = new SolidColorBrush(Color.FromRgb(150, 150, 158)),
+                    FontWeight = FontWeight.SemiBold,
+                    Margin = new Thickness(0, 2, 0, 0)
+                });
+            }
+
+            var field = create_statistic_requirement_field(requirement, field_width);
+            field_panel.Children.Add(field.Control);
+            fields.Add(field);
+            panel.Children.Add(field_panel);
+        }
+
+        var buttons = new StackPanel
+        {
+            Orientation = Avalonia.Layout.Orientation.Horizontal,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+            Spacing = 8,
+            Margin = new Thickness(0, 8, 0, 0)
+        };
+        var cancel = new Button { Content = "Cancel", MinWidth = 84 };
+        var ok = new Button { Content = confirm_text, MinWidth = 84 };
+        cancel.Classes.Add("Small");
+        ok.Classes.Add("Small");
+        buttons.Children.Add(cancel);
+        buttons.Children.Add(ok);
+        panel.Children.Add(buttons);
+
+        var dialog = new Window
+        {
+            Title = statistic_name,
+            SizeToContent = SizeToContent.WidthAndHeight,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            CanResize = false,
+            Content = new Border
+            {
+                Background = new SolidColorBrush(Color.FromRgb(30, 30, 30)),
+                Child = panel
+            }
+        };
+
+        cancel.Click += (_, _) => dialog.Close(null);
+        ok.Click += (_, _) =>
+        {
+            var values = fields.Select(field => field.Value()).ToArray();
+            dialog.Close(JsonSerializer.Serialize(values));
+        };
+
+        return await dialog.ShowDialog<string?>(this);
+    }
+
+    private string? show_python_input_dialog_blocking(
+        string title,
+        IReadOnlyList<gated.Python.PythonStatisticRequirement> requirements)
+    {
+        if (Dispatcher.UIThread.CheckAccess())
+            return show_statistic_requirements_dialog(title, requirements, "OK").GetAwaiter().GetResult();
+
+        var completion = new TaskCompletionSource<string?>();
+        Dispatcher.UIThread.Post(async () =>
+        {
+            try
+            {
+                completion.SetResult(await show_statistic_requirements_dialog(title, requirements, "OK"));
+            }
+            catch (Exception exception)
+            {
+                completion.SetException(exception);
+            }
+        });
+        return completion.Task.GetAwaiter().GetResult();
+    }
+
+    private StatisticRequirementField create_statistic_requirement_field(gated.Python.PythonStatisticRequirement requirement, double field_width)
+    {
+        var channels = view_model.SelectedGroup?.Channels
+            .Select(channel => new StatisticChannelChoice(channel.Name, channel.Label))
+            .ToArray() ?? [];
+        switch (requirement.Type.Trim().ToLowerInvariant())
+        {
+            case "channel" when requirement.Multiple:
+            {
+                var defaults = json_string_array(requirement.Default).ToHashSet(StringComparer.Ordinal);
+                var checks = channels.Select(channel => new CheckBox
+                {
+                    Content = channel_content(channel),
+                    Tag = channel.Name,
+                    IsChecked = defaults.Count == 0 ? false : defaults.Contains(channel.Name),
+                    Foreground = Brushes.White,
+                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left
+                }).ToArray();
+                var stack = new StackPanel { Spacing = 6, Width = field_width - 16 };
+                foreach (var check in checks)
+                    stack.Children.Add(check);
+                var scroller = new ScrollViewer
+                {
+                    Width = field_width - 16,
+                    MaxHeight = 150,
+                    Margin = new Thickness(8, 8),
+                    HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+                    VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+                    Content = stack
+                };
+                var border = new Border
+                {
+                    BorderThickness = new Thickness(1),
+                    BorderBrush = new SolidColorBrush(Color.FromRgb(50, 50, 50)),
+                    CornerRadius = new CornerRadius(6),
+                    Background = new SolidColorBrush(Color.FromRgb(22, 22, 24)),
+                    Child = scroller
+                };
+                return new StatisticRequirementField(border, () => checks
+                    .Where(check => check.IsChecked == true)
+                    .Select(check => check.Tag?.ToString() ?? "")
+                    .Where(value => value.Length > 0)
+                    .ToArray());
+            }
+            case "channel":
+            {
+                var combo = new ComboBox { ItemsSource = channels, Width = field_width };
+                combo.Classes.Add("Small");
+                var template = channel_choice_template();
+                combo.ItemTemplate = template;
+                combo.SelectionBoxItemTemplate = template;
+                string default_channel = json_string(requirement.Default);
+                combo.SelectedItem = channels.FirstOrDefault(channel => channel.Name == default_channel);
+                if (combo.SelectedItem is null && channels.Length > 0)
+                    combo.SelectedIndex = 0;
+                return new StatisticRequirementField(combo, () => (combo.SelectedItem as StatisticChannelChoice)?.Name ?? "");
+            }
+            case "integer":
+            {
+                var input = new NumericUpDown
+                {
+                    Minimum = requirement.Min.HasValue ? (decimal)requirement.Min.Value : int.MinValue,
+                    Maximum = requirement.Max.HasValue ? (decimal)requirement.Max.Value : int.MaxValue,
+                    Increment = 1,
+                    Value = json_decimal(requirement.Default) ?? 0,
+                    Width = field_width
+                };
+                input.Classes.Add("Small");
+                return new StatisticRequirementField(input, () => Convert.ToInt32(input.Value ?? 0));
+            }
+            case "float":
+            {
+                var input = new NumericUpDown
+                {
+                    Minimum = requirement.Min.HasValue ? (decimal)requirement.Min.Value : decimal.MinValue,
+                    Maximum = requirement.Max.HasValue ? (decimal)requirement.Max.Value : decimal.MaxValue,
+                    Increment = 0.1m,
+                    Value = json_decimal(requirement.Default) ?? 0,
+                    Width = field_width
+                };
+                input.Classes.Add("Small");
+                return new StatisticRequirementField(input, () => Convert.ToDouble(input.Value ?? 0));
+            }
+            case "enum":
+            {
+                var combo = new ComboBox { ItemsSource = requirement.Values, Width = field_width };
+                combo.Classes.Add("Small");
+                combo.SelectedItem = json_string(requirement.Default);
+                if (combo.SelectedItem is null && requirement.Values.Length > 0)
+                    combo.SelectedIndex = 0;
+                return new StatisticRequirementField(combo, () => combo.SelectedItem?.ToString() ?? "");
+            }
+            case "option":
+            {
+                var check = new CheckBox
+                {
+                    Content = requirement.Name,
+                    IsChecked = json_bool(requirement.Default),
+                    Foreground = Brushes.White,
+                    Width = field_width
+                };
+                return new StatisticRequirementField(check, () => check.IsChecked == true);
+            }
+            default:
+            {
+                var text = new TextBox { Text = json_string(requirement.Default), Width = field_width };
+                text.Classes.Add("Small");
+                return new StatisticRequirementField(text, () => text.Text ?? "");
+            }
+        }
+    }
+
+    private static bool is_checkbox_requirement(gated.Python.PythonStatisticRequirement requirement) =>
+        string.Equals(requirement.Type, "option", StringComparison.OrdinalIgnoreCase);
+
+    private static IDataTemplate channel_choice_template() =>
+        new FuncDataTemplate<StatisticChannelChoice>((choice, _) => channel_content(choice), supportsRecycling: false);
+
+    private static Control channel_content(StatisticChannelChoice? choice)
+    {
+        var panel = new StackPanel
+        {
+            Orientation = Avalonia.Layout.Orientation.Horizontal,
+            Spacing = 8
+        };
+        if (choice is null)
+            return panel;
+        if (choice.HasLabel)
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = choice.Label,
+                Foreground = new SolidColorBrush(Color.FromRgb(238, 240, 245)),
+                FontWeight = FontWeight.SemiBold
+            });
+        }
+        panel.Children.Add(new TextBlock
+        {
+            Text = choice.Name,
+            Foreground = new SolidColorBrush(Color.FromRgb(164, 168, 178))
+        });
+        return panel;
+    }
+
+    private static string json_string(JsonElement element) =>
+        element.ValueKind == JsonValueKind.String ? element.GetString() ?? "" : "";
+
+    private static string[] json_string_array(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Array)
+            return element.EnumerateArray().Select(json_string).Where(value => value.Length > 0).ToArray();
+        string value = json_string(element);
+        return value.Length == 0 ? [] : [value];
+    }
+
+    private static decimal? json_decimal(JsonElement element) =>
+        element.ValueKind == JsonValueKind.Number && element.TryGetDecimal(out var value) ? value : null;
+
+    private static bool json_bool(JsonElement element) =>
+        element.ValueKind == JsonValueKind.True || element.ValueKind == JsonValueKind.False && element.GetBoolean();
+
+    private sealed record StatisticRequirementField(Control Control, Func<object?> Value);
+
+    private sealed class StatisticChannelChoice
+    {
+        public StatisticChannelChoice(string name, string label)
+        {
+            Name = name;
+            Label = label;
+        }
+
+        public string Name { get; }
+        public string Label { get; }
+        public bool HasLabel => !string.IsNullOrWhiteSpace(Label);
+        public override string ToString() => HasLabel ? Label : Name;
     }
 
     private async void check_for_updates_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -1320,6 +1605,7 @@ public partial class MainWindow : Window
         if (choice == ScriptSaveChoice.Save && !await save_workspace_async())
             return;
 
+        WindowPlacementStore.Save(this);
         close_confirmed = true;
         var lifetime = Application.Current?.ApplicationLifetime;
         if (lifetime is ClassicDesktopStyleApplicationLifetime desktop)
@@ -1723,6 +2009,7 @@ public partial class MainWindow : Window
             Foreground = Brushes.IndianRed,
             IsVisible = false
         };
+
         void update_preview()
         {
             if (!try_read_compensation_inputs(inputs, channels, values, error_text, show_errors: false, out var preview_values))
@@ -1754,7 +2041,7 @@ public partial class MainWindow : Window
         var preview_expander = new Expander
         {
             Header = "Preview",
-            IsExpanded = true,
+            IsExpanded = false,
             Margin = new Thickness(0, 12, 0, 16),
             Content = new StackPanel
             {

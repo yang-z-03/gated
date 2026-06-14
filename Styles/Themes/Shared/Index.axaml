@@ -16,5 +16,7 @@
         <ResourceInclude Source="avares://gated/Styles/Themes/Shared/Expander.axaml" />
         <ResourceInclude Source="avares://gated/Styles/Themes/Shared/DataGrid.axaml" />
         <ResourceInclude Source="avares://gated/Styles/Themes/Shared/ProgressBar.axaml" />
+        <ResourceInclude Source="avares://gated/Styles/Themes/Shared/NumericUpDown.axaml" />
+        <ResourceInclude Source="avares://gated/Styles/Themes/Shared/ButtonSpinner.axaml" />
     </ResourceDictionary.MergedDictionaries>
 </ResourceDictionary>

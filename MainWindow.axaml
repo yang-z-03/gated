@@ -216,6 +216,7 @@
                 <Separator />
                 <MenuItem Header="Append samples to groups" Click="open_fcs_menu_item_click" />
                 <MenuItem Header="Delete selected samples" Command="{Binding DeleteSelectedCommand}" InputGesture="Delete"/>
+                <MenuItem Header="Delete selected embedding" Command="{Binding DeleteSelectedCommand}" InputGesture="Delete"/>
                 <MenuItem Header="Concatenate" Command="{Binding ConcatenateSamplesCommand}" />
                 <MenuItem Header="Select equivalent nodes" IsEnabled="False" />
                 <MenuItem Header="Expand" Command="{Binding ExpandProjectTreeCommand}" InputGesture="Ctrl + E"/>
@@ -322,6 +323,7 @@
                 <MenuItem Header="Frequency of parent population" Command="{Binding AddFrequencyOfParentStatisticCommand}" />
                 <MenuItem Header="Frequency of all" Command="{Binding AddFrequencyOfAllStatisticCommand}" />
                 <MenuItem Header="Number of events" Command="{Binding AddCountStatisticCommand}" />
+                <MenuItem Header="Delete selected statistic" Command="{Binding DeleteSelectedCommand}" InputGesture="Delete" />
                 <Separator />
                 <MenuItem Header="Create macro" InputGesture="Ctrl + Shift + P" Click="create_macro_menu_item_click" />
                 <MenuItem x:Name="run_macros_menu" Header="Run macros" />
@@ -333,9 +335,10 @@
                 <Separator />
                 <MenuItem Header="Create integration job" Command="{Binding CreateIntegrationJobCommand}" />
                 <MenuItem Header="Rename integration job" Command="{Binding RenameIntegrationJobCommand}" InputGesture="F2"/>
+                <MenuItem Header="Delete integration job" Command="{Binding DeleteSelectedCommand}" InputGesture="Delete"/>
                 <Separator />
                 <MenuItem Header="Run integration" Command="{Binding RunIntegrationJobCommand}" />
-                <MenuItem Header="Run selected integration macro" Command="{Binding RunIntegrationMacroCommand}" />
+                <MenuItem Header="Run integration UMAP / Leiden" Command="{Binding RunIntegrationMacroCommand}" />
                 <MenuItem Header="Cancel integration job" Command="{Binding CancelIntegrationJobCommand}" />
             </MenuItem>
             <MenuItem Header="_Help">
@@ -351,10 +354,27 @@
                 BorderBrush="#505050"
                 BorderThickness="0,1,0,0"
                 Background="{DynamicResource SemiColorBackground2}">
-            <TextBlock Margin="10,0,10,2"
-                       VerticalAlignment="Center"
-                       Foreground="{DynamicResource SemiColorText2}"
-                       Text="{Binding StatusText}" />
+            <Grid ColumnDefinitions="*,Auto"
+                  Margin="10,0,10,2">
+                <TextBlock Grid.Column="0"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource SemiColorText2}"
+                           Text="{Binding StatusText}" />
+                <StackPanel Grid.Column="1"
+                            Orientation="Horizontal"
+                            Spacing="8"
+                            VerticalAlignment="Center">
+                    <TextBlock VerticalAlignment="Center"
+                               Foreground="{DynamicResource SemiColorText2}"
+                               Text="{Binding PythonEngineStatusText}" />
+                    <ProgressBar Width="120"
+                                 Height="5"
+                                 VerticalAlignment="Center"
+                                 IsVisible="{Binding IsPythonEngineProgressVisible}"
+                                 IsIndeterminate="{Binding IsPythonEngineProgressIndeterminate}"
+                                 Value="{Binding PythonEngineProgress}" />
+                </StackPanel>
+            </Grid>
         </Border>
 
         <Grid ColumnDefinitions="500,5,*">
@@ -379,7 +399,7 @@
 
             <Grid Grid.Column="2"
                   IsVisible="{Binding IsDefaultAnalysisMode}"
-                  RowDefinitions="*,5,230"
+                  RowDefinitions="*,5,250"
                   Background="{DynamicResource SemiColorBackground1}">
                 <Grid Grid.Row="0"
                       ColumnDefinitions="*,336">
@@ -806,7 +826,7 @@
                                     <TextBlock VerticalAlignment="Center" Text="SVG" />
                                     </StackPanel>
                                 </Button>
-                                <Button Command="{Binding DeletePageElementCommand}" Classes="Small">
+                                <Button Command="{Binding DeletePageElementCommand}" Classes="Small Danger">
                                     <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/delete.svg}" />
                                 </Button>
                             </StackPanel>
@@ -1134,13 +1154,8 @@
                                             <TextBlock Text="Integrate" />
                                         </StackPanel>
                                     </Button>
-                                    <ComboBox Classes="Small"
-                                              Width="220"
-                                              Margin="0,0,8,8"
-                                              ItemsSource="{Binding MacroScripts}"
-                                              SelectedItem="{Binding SelectedIntegrationMacro}" />
                                     <Button Classes="Small" Margin="0,0,8,8" Command="{Binding RunIntegrationMacroCommand}">
-                                        <TextBlock Text="Run macro" />
+                                        <TextBlock Text="Run UMAP / Leiden" />
                                     </Button>
                                 </WrapPanel>
                                 <Button DockPanel.Dock="Right" Classes="Small" HorizontalAlignment="Left" Margin="0,0,0,8" Command="{Binding CancelIntegrationJobCommand}">
@@ -1172,21 +1187,30 @@
                         </StackPanel>
 
                         <WrapPanel Margin="0,0,0,2">
-                            <Button Classes="Small" Margin="0,0,8,8" Command="{Binding AddStringMetadataColumnCommand}">
-                                <TextBlock Text="Add string" />
+                            <Button Classes="Small" Margin="0,0,8,0" Command="{Binding AddStringMetadataColumnCommand}">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/table-edit.svg}" />
+                                    <TextBlock Text="String column" />
+                                </StackPanel>
                             </Button>
-                            <Button Classes="Small" Margin="0,0,8,8" Command="{Binding AddIntegerMetadataColumnCommand}">
-                                <TextBlock Text="Add integer" />
+                            <Button Classes="Small" Margin="0,0,8,0" Command="{Binding AddIntegerMetadataColumnCommand}">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/table-edit.svg}" />
+                                    <TextBlock Text="Integer column" />
+                                </StackPanel>
                             </Button>
-                            <Button Classes="Small" Margin="0,0,8,8" Command="{Binding AddFloatMetadataColumnCommand}">
-                                <TextBlock Text="Add float" />
+                            <Button Classes="Small" Margin="0,0,8,0" Command="{Binding AddFloatMetadataColumnCommand}">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/table-edit.svg}" />
+                                    <TextBlock Text="Floating point column" />
+                                </StackPanel>
                             </Button>
                         </WrapPanel>
 
                         <Border Height="430"
-                                BorderBrush="{DynamicResource SemiColorBorder}"
+                                BorderBrush="#505050"
                                 BorderThickness="1"
-                                CornerRadius="6"
+                                CornerRadius="8"
                                 Background="#1e1e1e"
                                 Padding="8"
                                 ClipToBounds="True">

@@ -31,8 +31,8 @@ public static class PythonScriptRepository
     public const int FormatVersion = 1;
     private const string Magic = "GATEDSCRIPT";
 
-    public static string MacroDirectory => Path.Combine(Directory.GetCurrentDirectory(), "macros");
-    public static string StatisticDirectory => Path.Combine(Directory.GetCurrentDirectory(), "statistics");
+    public static string MacroDirectory => Path.Combine(AppContext.BaseDirectory, "macros");
+    public static string StatisticDirectory => Path.Combine(AppContext.BaseDirectory, "statistics");
 
     public static IReadOnlyList<PythonScriptDefinition> LoadMacros() =>
         load_directory(MacroDirectory, PythonScriptRepositoryKind.Macro, "*.macro");
@@ -187,18 +187,64 @@ public static class PythonScriptRepository
 
     private static string macro_template(string name) =>
         $"""
-        # {name}
-        # workspace, np, pd, log, and msgbox are available.
+        '''
+        Macro: {name}
+        ------
 
-        log("Running macro: {name}")
+        The global scope has pre-imported objects:
+            
+            np           : numpy module
+            pd           : pandas module
+            workspace    : reference to the current workspace
+            application  : reference to application utility functions
+        '''
+
+        application.log("Running macro: {name}")
         """;
 
     private static string statistic_template(string name) =>
-        $"""
-        import numpy as np
+         """
+        '''
+        Statistics: {name}
+        -----------
 
-        def entry(matrix: np.ndarray, channels: list[str], parameters: np.ndarray) -> float:
-            # {name}
-            return float(np.nanmean(matrix))
-        """;
+        Implement your custom Python backend of the statistics calculation process within the entry point
+        function `entry` below: It access the target population matrix `matrix`, list of channels `channels`,
+        and additional parameters passed from the execution engine. The additional parameters can be 
+        requested by you using the parameter requirement function `requires`.
+
+        The entry point's return is stored as a Python value during recalculation. Return scalar values
+        or plain lists/dicts made from strings, booleans, integers, and floats. The optional format(value)
+        function below controls the statistic table display text.
+
+        The global scope has pre-imported objects:
+            
+            np           : numpy module
+            pd           : pandas module
+            application  : application utility functions for logging, dialogs, input, and progress
+
+            # requirement schema declarators. The user's choices are passed to entry as a list
+            # in the same order as returned by requires().
+            application.require_channel(name, default: str | list[str] | None = None, multiple: bool = False)
+            application.require_integer(name, default: int = 0, min = None, max = None)
+            application.require_float(name, default: float = 0.0, min = None, max = None)
+            application.require_enum(name, possible_values: list[str], default: str | None = None)
+            application.require_option(name, default: bool)
+        '''
+
+        def entry(matrix: np.ndarray, channels: list[str], parameters: list):
+            ''' Entry point '''
+            return matrix.shape[0]
+        
+        def requires():
+            ''' Declares the requirement here that the app will show to the user when they add the statistics '''
+            return [
+                application.require_channel(name = 'Channel', default = None, multiple = False),
+            ]
+        
+        def format(value):
+            ''' Formats the calculated Python value for the statistic table. '''
+            return f"{{value:.2f}}" if isinstance(value, float) else str(value)
+        
+        """.Replace("{name}", name);
 }

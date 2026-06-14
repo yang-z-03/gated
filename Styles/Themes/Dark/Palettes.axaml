@@ -1,5 +1,5 @@
 <ResourceDictionary 
-    x:Class="czi.Styles.Themes.Dark.Palettes" 
+    x:Class="gated.Styles.Themes.Dark.Palettes" 
     xmlns="https://github.com/avaloniaui" 
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     

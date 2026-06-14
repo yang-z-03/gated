@@ -32,6 +32,8 @@ public static class PythonExtensionRuntime
     private static PyObject? pandas_module;
     private static Task? startup_task;
     public static event Action<string>? LogReceived;
+    public static event Action<PythonExecutionStatus>? StatusChanged;
+    public static Func<string, IReadOnlyList<PythonStatisticRequirement>, string?>? InputRequested;
 
     public static void StartBackground()
     {
@@ -131,52 +133,83 @@ public static class PythonExtensionRuntime
         if (string.IsNullOrWhiteSpace(code))
             return;
 
-        caller_thread.InvokeWithGil(() =>
+        report_status("Script running ...", null, true, true);
+        try
         {
-            using var globals = new PyDict();
-            globals.SetItem("__builtins__", Py.Import("builtins"));
-            globals.SetItem("workspace", workspace.ToPython());
-            globals.SetItem("np", (numpy_module ?? Py.Import("numpy")));
-            globals.SetItem("pd", (pandas_module ?? Py.Import("pandas")));
-            globals.SetItem("msgbox", new Action<string, string>(MsgBox).ToPython());
-            globals.SetItem("log", new Action<object?>(Log).ToPython());
-            try
+            caller_thread.InvokeWithGil(() =>
             {
-                PythonEngine.Exec(code, globals, globals);
-            }
-            catch(PythonException pex)
-            {
-                string error_loc = "<Unk>";
-                try
-                {
-                    string location = pex.StackTrace.Split('\n')[0].Trim();
-                    string line = location.Replace("File \"<string>\", line ", "").Replace(", in <module>", "");
-                    error_loc = line;
-                } catch { error_loc = "<Unk>"; }
-
-                if (error_loc == "<Unk>") Log("Python interpreter error: " + pex.Message);
-                else Log("Python interpreter error: " + pex.Message + "\n  " + $"at line {error_loc}: ...");
-            }
-            catch(Exception ex)
-            {
-                Log(ex.Message);
-            }
-        });
+                using var globals = new PyDict();
+                globals.SetItem("__builtins__", Py.Import("builtins"));
+                globals.SetItem("workspace", workspace.ToPython());
+                globals.SetItem("np", (numpy_module ?? Py.Import("numpy")));
+                globals.SetItem("pd", (pandas_module ?? Py.Import("pandas")));
+                globals.SetItem("application", new PythonApplication().ToPython());
+                try_execute(code, globals);
+            });
+        }
+        finally
+        {
+            report_ready();
+        }
     }
 
-    public static double CalculateStatistic(gated.Models.StatisticDefinition definition, float[,] matrix, string[] channels)
+    private static void try_execute(string code, PyDict globals)
+    {
+        try
+        {
+            PythonEngine.Exec(code, globals, globals);
+        } catch (PythonException pex)
+        {
+            string error_loc = "<Unk>";
+            try
+            {
+                string location = pex.StackTrace.Split('\n')[0].Trim();
+                string line = location.Replace("File \"<string>\", line ", "").Replace(", in <module>", "");
+                error_loc = line;
+            } catch { error_loc = "<Unk>"; }
+
+            if (error_loc == "<Unk>") Log("Python interpreter error: " + pex.Message);
+            else Log("Python interpreter error: " + pex.Message + "\n  " + $"at line {error_loc}: ...");
+        } catch (Exception ex)
+        {
+            Log(ex.Message);
+        }
+    }
+
+    // Internal calls only. Not exposed to user script.
+    public static void ExecuteIntegrationJobScript(string resource_path, FlowWorkspace workspace, gated.Models.IntegrationJob job)
+    {
+        report_status("Script running ...", null, true, true);
+        try
+        {
+            caller_thread.InvokeWithGil(() =>
+            {
+                using var globals = new PyDict();
+                globals.SetItem("__builtins__", Py.Import("builtins"));
+                globals.SetItem("workspace", new Workspace(workspace).ToPython());
+                globals.SetItem("integration_job", new IntegrationJob(workspace, job).ToPython());
+                globals.SetItem("np", (numpy_module ?? Py.Import("numpy")));
+                globals.SetItem("pd", (pandas_module ?? Py.Import("pandas")));
+                globals.SetItem("application", new PythonApplication().ToPython());
+                string code = new StreamReader(AssetLoader.Open(new Uri(resource_path))).ReadToEnd();
+                try_execute(code, globals);
+            });
+        }
+        finally
+        {
+            report_ready();
+        }
+    }
+
+    public static PythonStatisticEvaluation CalculateStatistic(gated.Models.StatisticDefinition definition, float[,] matrix, string[] channels)
     {
         if (definition.Kind != StatisticKind.Python || string.IsNullOrWhiteSpace(definition.PythonSource))
-            return double.NaN;
+            return new PythonStatisticEvaluation(null, "");
 
         return caller_thread.InvokeWithGil(() =>
         {
-            using var globals = new PyDict();
-            globals.SetItem("__builtins__", Py.Import("builtins"));
-            globals.SetItem("np", (numpy_module ?? Py.Import("numpy")));
-            globals.SetItem("pd", (pandas_module ?? Py.Import("pandas")));
-            dynamic builtins = Py.Import("builtins");
-            builtins.exec(definition.PythonSource, globals, globals);
+            using var globals = statistic_globals();
+            PythonEngine.Exec(definition.PythonSource, globals, globals);
 
             using PyObject callable = globals.GetItem(definition.PythonCallableName);
             if (callable.IsNone() || !callable.HasAttr("__call__"))
@@ -184,9 +217,50 @@ public static class PythonExtensionRuntime
 
             using PyObject py_matrix = PythonArrayConverter.ToNumpy(matrix);
             using PyObject py_channels = string_list(channels);
-            using PyObject py_parameters = PythonArrayConverter.ToNumpy(definition.PythonParameters);
-            using PyObject result = callable.Invoke(py_matrix, py_channels, py_parameters);
-            return scalar_result(result);
+            using PyObject py_parameters = parameters_from_json(definition.PythonParametersJson);
+            PyObject result = callable.Invoke(py_matrix, py_channels, py_parameters);
+            string display_value = format_statistic_result(globals, result);
+            return new PythonStatisticEvaluation(result, display_value);
+        });
+    }
+
+    public static IReadOnlyList<PythonStatisticRequirement> GetStatisticRequirements(string source)
+    {
+        if (string.IsNullOrWhiteSpace(source))
+            return [];
+
+        return caller_thread.InvokeWithGil<IReadOnlyList<PythonStatisticRequirement>>(() =>
+        {
+            using var globals = statistic_globals();
+            PythonEngine.Exec(source, globals, globals);
+
+            using PyObject key = "requires".ToPython();
+            if (!globals.HasKey(key))
+                return Array.Empty<PythonStatisticRequirement>();
+
+            using PyObject requires = globals.GetItem("requires");
+            if (requires.IsNone() || !requires.HasAttr("__call__"))
+                return Array.Empty<PythonStatisticRequirement>();
+
+            using PyObject result = requires.Invoke();
+            dynamic json = Py.Import("json");
+            using PyObject json_text = json.dumps(result);
+            return JsonSerializer.Deserialize<List<PythonStatisticRequirement>>(
+                json_text.As<string>(),
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
+        });
+    }
+
+    public static string ToJson(PyObject? value)
+    {
+        return caller_thread.InvokeWithGil(() =>
+        {
+            if (value is null || value.IsNone())
+                return "[]";
+
+            dynamic json = Py.Import("json");
+            using PyObject text = json.dumps(value);
+            return text.As<string>();
         });
     }
 
@@ -194,15 +268,11 @@ public static class PythonExtensionRuntime
     {
         caller_thread.InvokeWithGil(() =>
         {
-            using var globals = new PyDict();
-            globals.SetItem("__builtins__", Py.Import("builtins"));
-            globals.SetItem("np", (numpy_module ?? Py.Import("numpy")));
-            globals.SetItem("pd", (pandas_module ?? Py.Import("pandas")));
-            dynamic builtins = Py.Import("builtins");
-            builtins.exec(source, globals, globals);
-            using PyObject callable = globals.GetItem(callable_name);
-            if (callable.IsNone() || !callable.HasAttr("__call__"))
-                throw new InvalidOperationException($"Python statistic callable '{callable_name}' was not found.");
+            using var globals = statistic_globals();
+            PythonEngine.Exec(source, globals, globals);
+            ensure_callable(globals, callable_name, "Python statistic entry point");
+            ensure_callable(globals, "requires", "Python statistic requirement function");
+            ensure_callable(globals, "format", "Python statistic formatter function");
         });
     }
 
@@ -276,33 +346,93 @@ public static class PythonExtensionRuntime
         return $"{item.Title}\n\n{item.Documentation}".Trim();
     }
 
-    public static void MsgBox(string title, string content)
+    public static string MsgBox(string title, string content, string buttons = "ok")
     {
-        async Task show_async()
+        async Task<string> show_async()
         {
             var owner = (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow;
+            string selected = "cancel";
             var window = new Window
             {
                 Title = title,
                 Width = 420,
-                Height = 220,
-                Content = new TextBlock
-                {
-                    Text = content,
-                    TextWrapping = TextWrapping.Wrap,
-                    Margin = new Thickness(16)
-                }
+                SizeToContent = SizeToContent.Height,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner
             };
+            var panel = new StackPanel
+            {
+                Spacing = 16,
+                Margin = new Thickness(16)
+            };
+            panel.Children.Add(new TextBlock
+            {
+                Text = content,
+                TextWrapping = TextWrapping.Wrap
+            });
+            var button_panel = new StackPanel
+            {
+                Orientation = Avalonia.Layout.Orientation.Horizontal,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                Spacing = 8
+            };
+
+            void add_button(string caption, string value)
+            {
+                var button = new Button { Content = caption, MinWidth = 84 };
+                button.Classes.Add("Small");
+                button.Click += (_, _) =>
+                {
+                    selected = value;
+                    window.Close(value);
+                };
+                button_panel.Children.Add(button);
+            }
+
+            switch ((buttons ?? "ok").Trim().ToLowerInvariant())
+            {
+                case "ok-cancel":
+                    add_button("Cancel", "cancel");
+                    add_button("OK", "ok");
+                    break;
+                case "yes-no-cancel":
+                    add_button("Cancel", "cancel");
+                    add_button("No", "no");
+                    add_button("Yes", "yes");
+                    break;
+                default:
+                    selected = "ok";
+                    add_button("OK", "ok");
+                    break;
+            }
+
+            panel.Children.Add(button_panel);
+            window.Content = panel;
             if (owner is not null)
-                await window.ShowDialog(owner);
-            else
-                window.Show();
+                return await window.ShowDialog<string>(owner) ?? selected;
+
+            window.Show();
+            return selected;
         }
 
+        var completion = new TaskCompletionSource<string>();
         if (Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
-            _ = show_async();
+            _ = show_async().ContinueWith(task => complete_task(completion, task), TaskScheduler.Default);
         else
-            Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(show_async).GetAwaiter().GetResult();
+        {
+            Avalonia.Threading.Dispatcher.UIThread.Post(async () =>
+            {
+                try
+                {
+                    completion.SetResult(await show_async());
+                }
+                catch (Exception exception)
+                {
+                    completion.SetException(exception);
+                }
+            });
+        }
+
+        return completion.Task.GetAwaiter().GetResult();
     }
 
     public static void Log(object? content)
@@ -312,12 +442,136 @@ public static class PythonExtensionRuntime
         Console.WriteLine(text);
     }
 
+    public static void Progress(double percentage, string description)
+    {
+        double clamped = double.IsNaN(percentage) ? 0 : Math.Clamp(percentage, 0, 100);
+        report_status(string.IsNullOrWhiteSpace(description) ? "Script running ..." : description, clamped, false, true);
+    }
+
+    public static PyObject RequestInput(PyObject requirements)
+    {
+        using (Py.GIL())
+        {
+            var parsed = parse_requirements(requirements);
+            string? json = InputRequested?.Invoke("Script input", parsed);
+            if (json is null)
+                throw new OperationCanceledException("Script input was cancelled.");
+            dynamic json_module = Py.Import("json");
+            return json_module.loads(json);
+        }
+    }
+
+    public static PyObject CreateRequirement(
+        string kind,
+        string name,
+        PyObject? default_value = null,
+        bool multiple = false,
+        double? min = null,
+        double? max = null,
+        PyObject? possible_values = null)
+    {
+        using (Py.GIL())
+        {
+            var item = new PyDict();
+            item.SetItem("type", kind.ToPython());
+            item.SetItem("name", name.ToPython());
+            item.SetItem("multiple", multiple.ToPython());
+            if (default_value is not null && !default_value.IsNone())
+                item.SetItem("default", default_value);
+            if (min.HasValue)
+                item.SetItem("min", min.Value.ToPython());
+            if (max.HasValue)
+                item.SetItem("max", max.Value.ToPython());
+            if (possible_values is not null && !possible_values.IsNone())
+                item.SetItem("values", new PyList(possible_values));
+            return item;
+        }
+    }
+
+    private static IReadOnlyList<PythonStatisticRequirement> parse_requirements(PyObject requirements)
+    {
+        using (Py.GIL())
+        {
+            dynamic json = Py.Import("json");
+            using PyObject json_text = json.dumps(requirements);
+            return JsonSerializer.Deserialize<List<PythonStatisticRequirement>>(
+                json_text.As<string>(),
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
+        }
+    }
+
+    private static void complete_task(TaskCompletionSource<string> completion, Task<string> task)
+    {
+        if (task.IsFaulted && task.Exception is not null)
+            completion.SetException(task.Exception.InnerExceptions);
+        else if (task.IsCanceled)
+            completion.SetCanceled();
+        else
+            completion.SetResult(task.Result);
+    }
+
+    private static void report_status(string description, double? progress, bool indeterminate, bool visible) =>
+        StatusChanged?.Invoke(new PythonExecutionStatus(description, progress, indeterminate, visible));
+
+    private static void report_ready() =>
+        StatusChanged?.Invoke(new PythonExecutionStatus("Script engine ready.", null, false, false));
+
     private static PyObject string_list(string[] values)
     {
         var list = new PyList();
         foreach (string value in values)
             list.Append(new PyString(value));
         return list;
+    }
+
+    private static PyDict statistic_globals()
+    {
+        var globals = new PyDict();
+        globals.SetItem("__builtins__", Py.Import("builtins"));
+        globals.SetItem("np", (numpy_module ?? Py.Import("numpy")));
+        globals.SetItem("pd", (pandas_module ?? Py.Import("pandas")));
+        globals.SetItem("application", new PythonApplication().ToPython());
+        return globals;
+    }
+
+    private static PyObject parameters_from_json(string? json_text)
+    {
+        dynamic json = Py.Import("json");
+        try
+        {
+            return json.loads(string.IsNullOrWhiteSpace(json_text) ? "[]" : json_text);
+        }
+        catch
+        {
+            return json.loads("[]");
+        }
+    }
+
+    private static string format_statistic_result(PyDict globals, PyObject result)
+    {
+        using PyObject key = "format".ToPython();
+        if (globals.HasKey(key))
+        {
+            using PyObject formatter = globals.GetItem("format");
+            if (!formatter.IsNone() && formatter.HasAttr("__call__"))
+            {
+                using PyObject formatted = formatter.Invoke(result);
+                return formatted.ToString() ?? "";
+            }
+        }
+
+        return result.IsNone() ? "" : result.ToString() ?? "";
+    }
+
+    private static void ensure_callable(PyDict globals, string name, string description)
+    {
+        using PyObject key = name.ToPython();
+        if (!globals.HasKey(key))
+            throw new InvalidOperationException($"{description} '{name}' was not found.");
+
+        using PyObject callable = globals.GetItem(name);
+        if (callable.IsNone() || !callable.HasAttr("__call__"))
+            throw new InvalidOperationException($"{description} '{name}' is not callable.");
     }
 
     private static PyDict jedi_globals(string code, int line, int column)
@@ -528,25 +782,59 @@ public static class PythonExtensionRuntime
 
     private static string python_analysis_prelude() => new StreamReader(AssetLoader.Open(new Uri("avares://gated/Python/stub.py"))).ReadToEnd();
 
-    private static double scalar_result(PyObject result)
-    {
-        if (result.IsNone())
-            return double.NaN;
+}
 
-        try
+public sealed record PythonStatisticEvaluation(PyObject? Value, string DisplayValue);
+
+public sealed record PythonExecutionStatus(string Description, double? Progress, bool IsIndeterminate, bool IsVisible);
+
+public sealed class PythonApplication
+{
+    public void log(object? content) => PythonExtensionRuntime.Log(content);
+
+    public string msgbox(string title, string content, string buttons = "ok") =>
+        PythonExtensionRuntime.MsgBox(title, content, buttons);
+
+    public PyObject input(PyObject requires) => PythonExtensionRuntime.RequestInput(requires);
+
+    public PyObject require_channel(string name, PyObject? @default = null, bool multiple = false) =>
+        PythonExtensionRuntime.CreateRequirement("channel", name, @default, multiple);
+
+    public PyObject require_integer(string name, PyObject? @default = null, PyObject? min = null, PyObject? max = null) =>
+        PythonExtensionRuntime.CreateRequirement("integer", name, @default ?? 0.ToPython(), false, py_double(min), py_double(max));
+
+    public PyObject require_float(string name, PyObject? @default = null, PyObject? min = null, PyObject? max = null) =>
+        PythonExtensionRuntime.CreateRequirement("float", name, @default ?? 0.0.ToPython(), false, py_double(min), py_double(max));
+
+    public PyObject require_enum(string name, PyObject possible_values, PyObject? @default = null) =>
+        PythonExtensionRuntime.CreateRequirement("enum", name, @default, false, possible_values: possible_values);
+
+    public PyObject require_option(string name, bool @default = false) =>
+        PythonExtensionRuntime.CreateRequirement("option", name, @default.ToPython());
+
+    public void progress(double percentage, string description = "") =>
+        PythonExtensionRuntime.Progress(percentage, description);
+
+    private static double? py_double(PyObject? value)
+    {
+        using (Py.GIL())
         {
-            return result.As<double>();
-        }
-        catch
-        {
-            dynamic numpy = Py.Import("numpy");
-            using PyObject array = numpy.asarray(result);
-            if (array.GetAttr("size").As<int>() == 0)
-                return double.NaN;
-            using PyObject mean = numpy.nanmean(array);
-            return mean.As<double>();
+            if (value is null || value.IsNone())
+                return null;
+            return value.As<double>();
         }
     }
+}
+
+public sealed class PythonStatisticRequirement
+{
+    public string Type { get; set; } = "";
+    public string Name { get; set; } = "";
+    public bool Multiple { get; set; }
+    public JsonElement Default { get; set; }
+    public double? Min { get; set; }
+    public double? Max { get; set; }
+    public string[] Values { get; set; } = [];
 }
 
 public sealed record PythonCompletionItem(

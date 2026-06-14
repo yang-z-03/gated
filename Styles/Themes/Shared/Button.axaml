@@ -9,5 +9,6 @@
     <StaticResource x:Key="ButtonLargeHeight" ResourceKey="SemiHeightControlLarge" />
     <StaticResource x:Key="ButtonBorderThickness" ResourceKey="SemiBorderThicknessControl" />
     <StaticResource x:Key="ButtonCornerRadius" ResourceKey="SemiBorderRadiusSmall" />
+    <x:Double x:Key="ButtonStateTransitionDuration">0.12</x:Double>
     <StaticResource x:Key="IconButtonClearData" ResourceKey="SemiIconClear" />
 </ResourceDictionary>

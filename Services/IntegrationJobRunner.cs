@@ -23,9 +23,7 @@ public sealed class IntegrationJobRunner
             return false;
         }
 
-        job.RowMap.Clear();
-        foreach (var row in row_map)
-            job.RowMap.Add(row);
+        job.RowMap.Set(row_map.Sources, row_map.SourceIds, row_map.EventIndices);
         job.SourceData = source;
         job.BatchIds = batches;
         job.WarningText = "";
@@ -69,12 +67,12 @@ public sealed class IntegrationJobRunner
         IntegrationJob job,
         out float[,] source,
         out int[] batches,
-        out List<IntegrationJobRowMap> row_map,
+        out IntegrationJobRowMap row_map,
         out string warning)
     {
         source = new float[0, 0];
         batches = [];
-        row_map = [];
+        row_map = new IntegrationJobRowMap();
         warning = "";
 
         var selected_populations = job.Populations
@@ -167,6 +165,10 @@ public sealed class IntegrationJobRunner
 
         source = new float[rows.Count, selected_features.Length];
         batches = new int[rows.Count];
+        var row_map_sources = new List<IntegrationJobRowMapSource>();
+        var row_map_source_lookup = new Dictionary<(Guid GroupId, Guid SampleId, Guid GateId, PopulationRegion Region), int>();
+        var row_map_source_ids = new int[rows.Count];
+        var row_map_event_indices = new int[rows.Count];
         for (int row = 0; row < rows.Count; row++)
         {
             var item = rows[row];
@@ -183,16 +185,26 @@ public sealed class IntegrationJobRunner
             }
 
             batches[row] = batch_ids[batch_lookup[item.Sample.Id]];
-            row_map.Add(new IntegrationJobRowMap
+            (Guid GroupId, Guid SampleId, Guid GateId, PopulationRegion Region) source_key =
+                (item.Selection.GroupId, item.Sample.Id, item.Selection.GateId, item.Selection.Region);
+            if (!row_map_source_lookup.TryGetValue(source_key, out int source_id))
             {
-                GroupId = item.Selection.GroupId,
-                SampleId = item.Sample.Id,
-                GateId = item.Selection.GateId,
-                Region = item.Selection.Region,
-                EventIndex = item.EventIndex
-            });
+                source_id = row_map_sources.Count;
+                row_map_source_lookup[source_key] = source_id;
+                row_map_sources.Add(new IntegrationJobRowMapSource
+                {
+                    GroupId = source_key.GroupId,
+                    SampleId = source_key.SampleId,
+                    GateId = source_key.GateId,
+                    Region = source_key.Region
+                });
+            }
+
+            row_map_source_ids[row] = source_id;
+            row_map_event_indices[row] = item.EventIndex;
         }
 
+        row_map.Set(row_map_sources, row_map_source_ids, row_map_event_indices);
         return true;
     }
 

@@ -40,6 +40,10 @@ public sealed class MainWindowViewModel : NotifyBase
     private int contour_level_count = 10;
     private int density_smoothing = 9;
     private string status_text = "Append samples to grouping to begin analysis";
+    private string python_engine_status_text = "Script engine ready.";
+    private bool is_python_engine_progress_visible;
+    private bool is_python_engine_progress_indeterminate;
+    private double python_engine_progress;
     private string python_script_text = "";
     private string python_script_output = "";
     private string python_script_name = "";
@@ -59,6 +63,7 @@ public sealed class MainWindowViewModel : NotifyBase
     private PagePlotElement? subscribed_page_menu_element;
     private EquivalentSampleChoice? selected_equivalent_sample_choice;
     private bool syncing_equivalent_sample_choices;
+    private bool applying_gate_view_options;
     private bool is_plot_transform_preparing;
     private CancellationTokenSource? plot_transform_preparation_cancellation;
     private bool is_gate_recalculating;
@@ -152,6 +157,7 @@ public sealed class MainWindowViewModel : NotifyBase
 
     public MainWindowViewModel()
     {
+        Python.PythonExtensionRuntime.StatusChanged += UpdatePythonExecutionStatus;
         foreach (string path in RecentFileStore.Load())
             Workspace.RecentFilePaths.Add(path);
         ReloadScriptRepositories();
@@ -169,7 +175,7 @@ public sealed class MainWindowViewModel : NotifyBase
         EditCompensationCommand = new RelayCommand(_ => _ = edit_selected_compensation_async(), _ => selected_group is not null && selected_compensation is not null);
         ExpandProjectTreeCommand = new RelayCommand(_ => set_project_tree_expanded(true));
         CollapseProjectTreeCommand = new RelayCommand(_ => set_project_tree_expanded(false));
-        DeleteSelectedCommand = new RelayCommand(_ => delete_selected());
+        DeleteSelectedCommand = new RelayCommand(_ => delete_selected(), _ => can_delete_selected_node());
         AddPolygonGateCommand = new RelayCommand(_ => _ = add_gate_async(GateKind.Polygon), _ => can_create_gate_kind(GateKind.Polygon));
         AddRectangleGateCommand = new RelayCommand(_ => _ = add_gate_async(GateKind.Rectangle), _ => can_create_gate_kind(GateKind.Rectangle));
         AddOffsetQuadrantGateCommand = new RelayCommand(_ => _ = add_gate_async(GateKind.OffsetQuadrant), _ => can_create_gate_kind(GateKind.OffsetQuadrant));
@@ -194,7 +200,7 @@ public sealed class MainWindowViewModel : NotifyBase
         DeletePageElementCommand = new RelayCommand(_ => delete_selected_page_element(), _ => selected_page_element is not null);
         RefreshIntegrationJobFeaturesCommand = new RelayCommand(_ => refresh_selected_integration_job_features(), _ => selected_integration_job is not null && IsIntegrationJobIdle);
         RunIntegrationJobCommand = new RelayCommand(_ => _ = run_integration_job_async(), _ => selected_integration_job is { HasIntegrated: false } && IsIntegrationJobIdle);
-        RunIntegrationMacroCommand = new RelayCommand(_ => _ = run_selected_integration_macro_async(), _ => selected_integration_job is { HasIntegrated: true } && selected_integration_macro is not null && IsIntegrationJobIdle && !IsPythonScriptRunning);
+        RunIntegrationMacroCommand = new RelayCommand(_ => _ = run_selected_integration_macro_async(), _ => selected_integration_job is { HasIntegrated: true } && IsIntegrationJobIdle && !IsPythonScriptRunning);
         CancelIntegrationJobCommand = new RelayCommand(_ => cancel_selected_integration_job(), _ => selected_integration_job is not null);
         ApplyWorkspaceMetadataCommand = new RelayCommand(_ => CommitWorkspaceSampleMetadata(), _ => IsWorkspaceMetadataMode);
         AddStringMetadataColumnCommand = new RelayCommand(_ => _ = add_metadata_column_async(MetadataColumnKind.String));
@@ -380,6 +386,7 @@ public sealed class MainWindowViewModel : NotifyBase
             OnPropertyChanged(nameof(CanCreateOneDimensionalGate));
             OnPropertyChanged(nameof(CanCreateTwoDimensionalGate));
             enforce_active_tool_allowed();
+            sync_selected_gate_preferred_view();
             refresh_plot_gates();
         }
     }
@@ -480,43 +487,71 @@ public sealed class MainWindowViewModel : NotifyBase
     public bool ShowOutlierPoints
     {
         get => show_outlier_points;
-        set => SetField(ref show_outlier_points, value);
+        set
+        {
+            if (SetField(ref show_outlier_points, value))
+                sync_selected_gate_preferred_view();
+        }
     }
 
     public bool DrawLargeDots
     {
         get => draw_large_dots;
-        set => SetField(ref draw_large_dots, value);
+        set
+        {
+            if (SetField(ref draw_large_dots, value))
+                sync_selected_gate_preferred_view();
+        }
     }
 
     public bool ShowGridlines
     {
         get => show_gridlines;
-        set => SetField(ref show_gridlines, value);
+        set
+        {
+            if (SetField(ref show_gridlines, value))
+                sync_selected_gate_preferred_view();
+        }
     }
 
     public bool ShowGateAnnotations
     {
         get => show_gate_annotations;
-        set => SetField(ref show_gate_annotations, value);
+        set
+        {
+            if (SetField(ref show_gate_annotations, value))
+                sync_selected_gate_preferred_view();
+        }
     }
 
     public bool ShowGateAnnotationNames
     {
         get => show_gate_annotation_names;
-        set => SetField(ref show_gate_annotation_names, value);
+        set
+        {
+            if (SetField(ref show_gate_annotation_names, value))
+                sync_selected_gate_preferred_view();
+        }
     }
 
     public int ContourLevelCount
     {
         get => contour_level_count;
-        set => SetField(ref contour_level_count, Math.Clamp(value, 2, 80));
+        set
+        {
+            if (SetField(ref contour_level_count, Math.Clamp(value, 2, 80)))
+                sync_selected_gate_preferred_view();
+        }
     }
 
     public int DensitySmoothing
     {
         get => density_smoothing;
-        set => SetField(ref density_smoothing, Math.Clamp(value, 0, 12));
+        set
+        {
+            if (SetField(ref density_smoothing, Math.Clamp(value, 0, 12)))
+                sync_selected_gate_preferred_view();
+        }
     }
 
     public AxisSettings XAxis
@@ -595,6 +630,30 @@ public sealed class MainWindowViewModel : NotifyBase
     {
         get => status_text;
         set => SetField(ref status_text, value);
+    }
+
+    public string PythonEngineStatusText
+    {
+        get => python_engine_status_text;
+        private set => SetField(ref python_engine_status_text, value);
+    }
+
+    public bool IsPythonEngineProgressVisible
+    {
+        get => is_python_engine_progress_visible;
+        private set => SetField(ref is_python_engine_progress_visible, value);
+    }
+
+    public bool IsPythonEngineProgressIndeterminate
+    {
+        get => is_python_engine_progress_indeterminate;
+        private set => SetField(ref is_python_engine_progress_indeterminate, value);
+    }
+
+    public double PythonEngineProgress
+    {
+        get => python_engine_progress;
+        private set => SetField(ref python_engine_progress, value);
     }
 
     public bool IsPageEditorMode
@@ -1049,7 +1108,7 @@ public sealed class MainWindowViewModel : NotifyBase
         refresh_selected_statistics();
         StatusText = $"Loaded workspace: {System.IO.Path.GetFileName(file_path)}";
         raise_command_states();
-        schedule_loaded_workspace_compensation(Workspace.Groups.ToArray(), System.IO.Path.GetFileName(file_path));
+        schedule_loaded_workspace_recalculation(Workspace.Groups.ToArray(), System.IO.Path.GetFileName(file_path));
     }
 
     public void RecalculateSelectedGroup()
@@ -1174,10 +1233,9 @@ public sealed class MainWindowViewModel : NotifyBase
             context.execute(code);
             void refresh()
             {
-#if RECALC_AFTER_SCRIPT
                 foreach (var group in Workspace.Groups)
                     group.RecalculateSamples();
-#endif
+                refresh_selected_population_reference();
                 bool metadata_changed = !metadata_snapshot.SequenceEqual(snapshot_workspace_metadata());
                 SelectedGroup ??= Workspace.Groups.FirstOrDefault();
                 SelectedSample ??= selected_group?.Samples.FirstOrDefault();
@@ -1340,17 +1398,18 @@ public sealed class MainWindowViewModel : NotifyBase
         StatusText = $"Ran macro: {macro.Name}";
     }
 
-    public void ApplyStatisticScript(PythonScriptDefinition script)
+    public void ApplyStatisticScript(PythonScriptDefinition script, string parameters_json = "[]")
     {
         if (selected_group is null || script.Kind != PythonScriptRepositoryKind.Statistic)
             return;
 
         Python.PythonExtensionRuntime.ValidateStatisticSource(script.Source, "entry");
         var definition = new StatisticDefinition();
-        definition.SetPythonMethod(script.Source, "entry", script.Name);
+        definition.SetPythonMethod(script.Source, "entry", script.Name, parameters_json);
         var definitions = selected_gate?.Statistics ?? selected_group.Statistics;
         definitions.Add(definition);
         selected_group.RecalculateSamples();
+        refresh_selected_population_reference();
         refresh_project_tree();
         refresh_selected_statistics();
         StatusText = $"Added Python statistic: {script.Name}";
@@ -1407,6 +1466,20 @@ public sealed class MainWindowViewModel : NotifyBase
         PythonScriptLog = string.IsNullOrEmpty(PythonScriptLog)
             ? text
             : PythonScriptLog + Environment.NewLine + text;
+    }
+
+    public void UpdatePythonExecutionStatus(Python.PythonExecutionStatus status)
+    {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(() => UpdatePythonExecutionStatus(status));
+            return;
+        }
+
+        PythonEngineStatusText = status.Description;
+        IsPythonEngineProgressVisible = status.IsVisible;
+        IsPythonEngineProgressIndeterminate = status.IsIndeterminate;
+        PythonEngineProgress = status.Progress ?? 0;
     }
 
     public void SwapAxes()
@@ -1689,12 +1762,15 @@ public sealed class MainWindowViewModel : NotifyBase
         if (selected_integration_job is null)
             return;
         var job = selected_integration_job;
-        await run_integration_job_stage_async(job, runner => runner.RunIntegration(job));
+        bool integrated = await run_integration_job_stage_async(job, runner => runner.RunIntegration(job));
         finish_integration_job_step(job, "Integration complete");
+        if (integrated && job.HasIntegrated)
+            await run_builtin_integration_macros_async(job);
     }
 
-    private async Task run_integration_job_stage_async(IntegrationJob job, Func<IntegrationJobRunner, bool> action)
+    private async Task<bool> run_integration_job_stage_async(IntegrationJob job, Func<IntegrationJobRunner, bool> action)
     {
+        bool result = false;
         try
         {
             job.CancellationRequested = false;
@@ -1705,7 +1781,7 @@ public sealed class MainWindowViewModel : NotifyBase
             OnPropertyChanged(nameof(IsSelectedIntegrationJobConfigEditable));
             OnPropertyChanged(nameof(IsSelectedIntegrationJobConfigReadOnly));
             raise_command_states();
-            await Task.Run(() => action(new IntegrationJobRunner(Workspace)));
+            result = await Task.Run(() => action(new IntegrationJobRunner(Workspace)));
         }
         catch (OperationCanceledException exception)
         {
@@ -1725,6 +1801,8 @@ public sealed class MainWindowViewModel : NotifyBase
             OnPropertyChanged(nameof(IsSelectedIntegrationJobConfigEditable));
             raise_command_states();
         }
+
+        return result && job.Status != IntegrationJobStatus.Failed && job.Status != IntegrationJobStatus.Cancelled && !job.HasWarning;
     }
 
     private void cancel_selected_integration_job()
@@ -1741,26 +1819,36 @@ public sealed class MainWindowViewModel : NotifyBase
 
     private async Task run_selected_integration_macro_async()
     {
-        if (selected_integration_macro is null || selected_integration_job is not { HasIntegrated: true })
+        if (selected_integration_job is not { HasIntegrated: true } job)
             return;
 
+        await run_builtin_integration_macros_async(job);
+    }
+
+    private async Task run_builtin_integration_macros_async(IntegrationJob job)
+    {
         IsPythonScriptRunning = true;
-        PythonScriptOutput = "Running ...";
+        PythonScriptOutput = "Running built-in integration scripts ...";
         PythonScriptLog = "";
         try
         {
-            await RunMacroAsync(selected_integration_macro);
+            await Task.Run(() =>
+            {
+                gated.Python.PythonExtensionRuntime.ExecuteIntegrationJobScript("avares://gated/Python/integration_umap.py", Workspace, job);
+                gated.Python.PythonExtensionRuntime.ExecuteIntegrationJobScript("avares://gated/Python/integration_leiden.py", Workspace, job);
+            });
             PythonScriptOutput = "Completed.";
-            StatusText = $"Ran macro: {selected_integration_macro.Name}";
+            StatusText = "Ran built-in integration scripts.";
         }
         catch (Exception exception)
         {
             PythonScriptOutput = exception.Message;
-            StatusText = $"Python macro failed: {exception.Message}";
+            StatusText = $"Built-in integration script failed: {exception.Message}";
         }
         finally
         {
             IsPythonScriptRunning = false;
+            refresh_after_embedding_changes();
             raise_command_states();
         }
     }
@@ -1769,6 +1857,16 @@ public sealed class MainWindowViewModel : NotifyBase
     {
         StatusText = job.HasWarning ? job.WarningText : success_status;
         refresh_project_tree();
+        raise_command_states();
+    }
+
+    private void refresh_after_embedding_changes()
+    {
+        refresh_axis_choices();
+        refresh_selected_page_axis_choices();
+        refresh_project_tree();
+        refresh_selection_sidebars();
+        OnPropertyChanged(nameof(PlotPopulation));
         raise_command_states();
     }
 
@@ -2221,7 +2319,36 @@ public sealed class MainWindowViewModel : NotifyBase
             group_to_recalculate = null;
         }
         else if (selected_node?.Kind == ProjectNodeKind.IntegrationJob && selected_integration_job is not null)
+        {
             Workspace.IntegrationJobs.Remove(selected_integration_job);
+            group_to_recalculate = null;
+        }
+        else if (selected_node?.Kind == ProjectNodeKind.Embedding &&
+                 selected_sample is not null &&
+                 !string.IsNullOrWhiteSpace(selected_node.EmbeddingName) &&
+                 !string.Equals(selected_node.EmbeddingName, "Populations", StringComparison.Ordinal))
+        {
+            string embedding_name = selected_node.EmbeddingName;
+            selected_sample.Embeddings.Remove(embedding_name);
+            clear_removed_embedding_references(selected_sample, embedding_name);
+            SelectedNode = null;
+            refresh_after_embedding_changes();
+            StatusText = $"Deleted embedding: {embedding_name}";
+            return;
+        }
+        else if (selected_node?.Kind == ProjectNodeKind.StatisticDefinition &&
+                 selected_group is not null &&
+                 selected_node.StatisticDefinition is not null)
+        {
+            if (selected_node.Gate is not null)
+                selected_node.Gate.Statistics.Remove(selected_node.StatisticDefinition);
+            else
+                selected_group.Statistics.Remove(selected_node.StatisticDefinition);
+        }
+        else
+        {
+            return;
+        }
 
         group_to_recalculate?.RecalculateSamples();
         selected_group = Workspace.Groups.FirstOrDefault();
@@ -2230,9 +2357,50 @@ public sealed class MainWindowViewModel : NotifyBase
         selected_population = null;
         selected_integration_job = null;
         refresh_project_tree();
+        refresh_axis_choices();
+        refresh_selected_page_axis_choices();
         refresh_selection_sidebars();
         refresh_plot_gates();
         refresh_selected_statistics();
+    }
+
+    private bool can_delete_selected_node() =>
+        selected_node?.Kind switch
+        {
+            ProjectNodeKind.Sample => selected_group is not null && selected_sample is not null,
+            ProjectNodeKind.Gate or ProjectNodeKind.GatePopulationSlot or ProjectNodeKind.Population => selected_group is not null && selected_gate is not null,
+            ProjectNodeKind.Group => selected_group is not null,
+            ProjectNodeKind.IntegrationJob => selected_integration_job is not null,
+            ProjectNodeKind.Embedding => selected_sample is not null &&
+                                         !string.IsNullOrWhiteSpace(selected_node.EmbeddingName) &&
+                                         !string.Equals(selected_node.EmbeddingName, "Populations", StringComparison.Ordinal),
+            ProjectNodeKind.StatisticDefinition => selected_group is not null && selected_node.StatisticDefinition is not null,
+            _ => false
+        };
+
+    private void clear_removed_embedding_references(FlowSample sample, string embedding_name)
+    {
+        if (ReferenceEquals(selected_sample, sample))
+        {
+            if (XAxis.ChannelName == embedding_name)
+                XAxis.ChannelName = selected_group?.Channels.FirstOrDefault()?.Name ?? "";
+            if (YAxis.ChannelName == embedding_name)
+                YAxis.ChannelName = selected_group?.Channels.Skip(1).FirstOrDefault()?.Name ?? selected_group?.Channels.FirstOrDefault()?.Name ?? "";
+            if (DotColor.ChannelName == embedding_name)
+                DotColor.ChannelName = "";
+        }
+
+        foreach (var layout in Workspace.PageLayouts)
+        foreach (var element in layout.Elements.Where(element => ReferenceEquals(element.Sample, sample)))
+        {
+            var group = element.Group;
+            if (element.XAxis.ChannelName == embedding_name)
+                element.XAxis.ChannelName = group?.Channels.FirstOrDefault()?.Name ?? "";
+            if (element.YAxis.ChannelName == embedding_name)
+                element.YAxis.ChannelName = group?.Channels.Skip(1).FirstOrDefault()?.Name ?? group?.Channels.FirstOrDefault()?.Name ?? "";
+            if (element.DotColor.ChannelName == embedding_name)
+                element.DotColor.ChannelName = "";
+        }
     }
 
     private void apply_selected_compensation()
@@ -2268,25 +2436,24 @@ public sealed class MainWindowViewModel : NotifyBase
         _ = apply_compensation_async(group, completion_status, force_compensation, cancellation);
     }
 
-    private void schedule_loaded_workspace_compensation(IReadOnlyList<FlowGroup> groups, string file_name)
+    private void schedule_loaded_workspace_recalculation(IReadOnlyList<FlowGroup> groups, string file_name)
     {
-        groups = groups
-            .Where(group => group.AppliedCompensation?.Values.GetLength(0) > 0)
-            .ToArray();
+        groups = groups.Where(group => group.Samples.Count > 0).ToArray();
         if (groups.Count == 0)
             return;
 
+        bool has_compensation = groups.Any(has_applied_compensation);
         compensation_application_cancellation?.Cancel();
 
         var cancellation = new CancellationTokenSource();
         compensation_application_cancellation = cancellation;
         IsCompensationApplying = true;
-        StatusText = "Applying compensation ...";
+        StatusText = has_compensation ? "Applying compensation ..." : "Calculating statistics ...";
 
-        _ = apply_loaded_workspace_compensation_async(groups, $"Loaded workspace: {file_name}", cancellation);
+        _ = recalculate_loaded_workspace_async(groups, $"Loaded workspace: {file_name}", cancellation);
     }
 
-    private async Task apply_loaded_workspace_compensation_async(
+    private async Task recalculate_loaded_workspace_async(
         IReadOnlyList<FlowGroup> groups,
         string completion_status,
         CancellationTokenSource cancellation)
@@ -2299,7 +2466,7 @@ public sealed class MainWindowViewModel : NotifyBase
                 foreach (var group in groups)
                 {
                     cancellation.Token.ThrowIfCancellationRequested();
-                    group.ApplyCompensationToSamples(force_compensation: true, cancellation.Token);
+                    group.RecalculateSamples(has_applied_compensation(group), cancellation.Token);
                 }
             }, cancellation.Token);
             succeeded = true;
@@ -2314,7 +2481,7 @@ public sealed class MainWindowViewModel : NotifyBase
             {
                 if (!ReferenceEquals(compensation_application_cancellation, cancellation))
                     return;
-                StatusText = $"Compensation failed: {exception.Message}";
+                StatusText = $"Load recalculation failed: {exception.Message}";
             });
         }
         finally
@@ -2330,13 +2497,20 @@ public sealed class MainWindowViewModel : NotifyBase
                 compensation_application_cancellation.Dispose();
                 compensation_application_cancellation = null;
                 IsCompensationApplying = false;
+                refresh_selected_population_reference();
+                refresh_project_tree();
                 OnPropertyChanged(nameof(PlotGate));
                 OnPropertyChanged(nameof(PlotPopulation));
+                refresh_plot_gates();
+                refresh_selected_statistics();
                 if (succeeded)
                     StatusText = completion_status;
             });
         }
     }
+
+    private static bool has_applied_compensation(FlowGroup group) =>
+        group.AppliedCompensation?.Values.GetLength(0) > 0;
 
     private async Task apply_compensation_async(FlowGroup group, string completion_status, bool force_compensation, CancellationTokenSource cancellation)
     {
@@ -2873,6 +3047,21 @@ public sealed class MainWindowViewModel : NotifyBase
                     ? StatusText
                     : $"Embedding: {node.EmbeddingName}";
                 break;
+            case ProjectNodeKind.StatisticDefinition:
+                SelectedIntegrationJob = null;
+                IsWorkspaceMetadataMode = false;
+                if (node.Group is not null)
+                    SelectedGroup = node.Group;
+                SelectedGate = node.Gate;
+                SelectedSample = selected_group?.Samples.FirstOrDefault();
+                SelectedPopulation = node.Gate is null ? null : resolve_population_for_slot(selected_sample, node.Gate, PopulationRegion.Primary);
+                SelectedCompensation = null;
+                if (node.Gate is not null)
+                    apply_axis_from_gate_context(node.Gate);
+                StatusText = $"Statistic: {node.Name}";
+                needs_plot_refresh = node.Gate is not null;
+                needs_statistics_refresh = true;
+                break;
             case ProjectNodeKind.Gate:
                 SelectedIntegrationJob = null;
                 IsWorkspaceMetadataMode = false;
@@ -2976,22 +3165,33 @@ public sealed class MainWindowViewModel : NotifyBase
         string? preferred_y_channel_name = has_preferred_view ? view!.YChannel : gate.YChannel;
         bool has_y_channel = !string.IsNullOrWhiteSpace(preferred_y_channel_name) && axis_choice_exists(preferred_y_channel_name);
 
-        XAxis = new AxisSettings
+        applying_gate_view_options = true;
+        try
         {
-            ChannelName = preferred_x_channel_name,
-            Minimum = has_preferred_view ? view!.XMinimum : gate.XMinimum,
-            Maximum = has_preferred_view ? view!.XMaximum : gate.XMaximum,
-            Scale = (has_preferred_view ? view!.XScale : gate.XScale).Clone()
-        };
-        if (has_y_channel)
-        {
-            YAxis = new AxisSettings
+            XAxis = new AxisSettings
             {
-                ChannelName = preferred_y_channel_name!,
-                Minimum = has_preferred_view ? view!.YMinimum : gate.YMinimum,
-                Maximum = has_preferred_view ? view!.YMaximum : gate.YMaximum,
-                Scale = (has_preferred_view ? view!.YScale : gate.YScale).Clone()
+                ChannelName = preferred_x_channel_name,
+                Minimum = has_preferred_view ? view!.XMinimum : gate.XMinimum,
+                Maximum = has_preferred_view ? view!.XMaximum : gate.XMaximum,
+                Scale = (has_preferred_view ? view!.XScale : gate.XScale).Clone()
             };
+            if (has_y_channel)
+            {
+                YAxis = new AxisSettings
+                {
+                    ChannelName = preferred_y_channel_name!,
+                    Minimum = has_preferred_view ? view!.YMinimum : gate.YMinimum,
+                    Maximum = has_preferred_view ? view!.YMaximum : gate.YMaximum,
+                    Scale = (has_preferred_view ? view!.YScale : gate.YScale).Clone()
+                };
+            }
+
+            if (has_preferred_view)
+                apply_gate_plot_options(view!);
+        }
+        finally
+        {
+            applying_gate_view_options = false;
         }
     }
 
@@ -3024,8 +3224,46 @@ public sealed class MainWindowViewModel : NotifyBase
                 XScale = gate.PreferredXScale,
                 YMinimum = gate.PreferredYMinimum,
                 YMaximum = gate.PreferredYMaximum,
-                YScale = gate.PreferredYScale
+                YScale = gate.PreferredYScale,
+                PlotMode = gate.PreferredPlotMode,
+                ShowOutlierPoints = gate.PreferredShowOutlierPoints,
+                DrawLargeDots = gate.PreferredDrawLargeDots,
+                ShowGridlines = gate.PreferredShowGridlines,
+                ShowGateAnnotations = gate.PreferredShowGateAnnotations,
+                ShowGateAnnotationNames = gate.PreferredShowGateAnnotationNames,
+                ContourLevelCount = gate.PreferredContourLevelCount,
+                DensitySmoothing = gate.PreferredDensitySmoothing
             };
+    }
+
+    private void apply_gate_plot_options(GateViewOptions view)
+    {
+        selected_plot_mode = view.PlotMode;
+        show_outlier_points = view.ShowOutlierPoints;
+        draw_large_dots = view.DrawLargeDots;
+        show_gridlines = view.ShowGridlines;
+        show_gate_annotations = view.ShowGateAnnotations;
+        show_gate_annotation_names = view.ShowGateAnnotationNames;
+        contour_level_count = Math.Clamp(view.ContourLevelCount, 2, 80);
+        density_smoothing = Math.Clamp(view.DensitySmoothing, 0, 12);
+        OnPropertyChanged(nameof(SelectedPlotMode));
+        OnPropertyChanged(nameof(EffectivePlotMode));
+        OnPropertyChanged(nameof(IsYAxisEnabled));
+        OnPropertyChanged(nameof(IsDensityPlotMode));
+        OnPropertyChanged(nameof(IsDotplotPlotMode));
+        OnPropertyChanged(nameof(IsContourPlotMode));
+        OnPropertyChanged(nameof(IsZebraPlotMode));
+        OnPropertyChanged(nameof(IsHistogramPlotMode));
+        OnPropertyChanged(nameof(CanCreateOneDimensionalGate));
+        OnPropertyChanged(nameof(CanCreateTwoDimensionalGate));
+        OnPropertyChanged(nameof(ShowOutlierPoints));
+        OnPropertyChanged(nameof(DrawLargeDots));
+        OnPropertyChanged(nameof(ShowGridlines));
+        OnPropertyChanged(nameof(ShowGateAnnotations));
+        OnPropertyChanged(nameof(ShowGateAnnotationNames));
+        OnPropertyChanged(nameof(ContourLevelCount));
+        OnPropertyChanged(nameof(DensitySmoothing));
+        enforce_active_tool_allowed();
     }
 
     private void reset_axes_from_group(FlowGroup group)
@@ -3124,6 +3362,14 @@ public sealed class MainWindowViewModel : NotifyBase
         gate.PreferredYMinimum = view.YMinimum;
         gate.PreferredYMaximum = view.YMaximum;
         gate.PreferredYScale = view.YScale.Clone();
+        gate.PreferredPlotMode = view.PlotMode;
+        gate.PreferredShowOutlierPoints = view.ShowOutlierPoints;
+        gate.PreferredDrawLargeDots = view.DrawLargeDots;
+        gate.PreferredShowGridlines = view.ShowGridlines;
+        gate.PreferredShowGateAnnotations = view.ShowGateAnnotations;
+        gate.PreferredShowGateAnnotationNames = view.ShowGateAnnotationNames;
+        gate.PreferredContourLevelCount = view.ContourLevelCount;
+        gate.PreferredDensitySmoothing = view.DensitySmoothing;
     }
 
     private bool is_strategy_gate_view_context() =>
@@ -3136,7 +3382,15 @@ public sealed class MainWindowViewModel : NotifyBase
             XChannel = XAxis.ChannelName,
             XMinimum = XAxis.Minimum,
             XMaximum = XAxis.Maximum,
-            XScale = XAxis.Scale.Clone()
+            XScale = XAxis.Scale.Clone(),
+            PlotMode = EffectivePlotMode,
+            ShowOutlierPoints = ShowOutlierPoints,
+            DrawLargeDots = DrawLargeDots,
+            ShowGridlines = ShowGridlines,
+            ShowGateAnnotations = ShowGateAnnotations,
+            ShowGateAnnotationNames = ShowGateAnnotationNames,
+            ContourLevelCount = ContourLevelCount,
+            DensitySmoothing = DensitySmoothing
         };
         if (IsYAxisEnabled)
         {
@@ -3158,12 +3412,20 @@ public sealed class MainWindowViewModel : NotifyBase
             XScale = view.XScale.Clone(),
             YMinimum = view.YMinimum,
             YMaximum = view.YMaximum,
-            YScale = view.YScale.Clone()
+            YScale = view.YScale.Clone(),
+            PlotMode = view.PlotMode,
+            ShowOutlierPoints = view.ShowOutlierPoints,
+            DrawLargeDots = view.DrawLargeDots,
+            ShowGridlines = view.ShowGridlines,
+            ShowGateAnnotations = view.ShowGateAnnotations,
+            ShowGateAnnotationNames = view.ShowGateAnnotationNames,
+            ContourLevelCount = view.ContourLevelCount,
+            DensitySmoothing = view.DensitySmoothing
         };
 
     private void sync_selected_gate_preferred_view()
     {
-        if (selected_gate is null)
+        if (selected_gate is null || applying_gate_view_options)
             return;
 
         copy_current_view_to_preferred_view(selected_gate);
@@ -3500,6 +3762,18 @@ public sealed class MainWindowViewModel : NotifyBase
         {
             string group_key = $"group:{group.Id}";
             var group_node = create_project_node(ProjectNodeKind.Group, group.Name, group_key, group: group, depth: 1);
+            for (int index = 0; index < group.Statistics.Count; index++)
+            {
+                var statistic = group.Statistics[index];
+                group_node.Children.Add(create_project_node(
+                    ProjectNodeKind.StatisticDefinition,
+                    statistic_name(statistic),
+                    $"{group_key}:stat:{index}:{statistic.Kind}:{statistic.ChannelName}",
+                    group: group,
+                    statistic_definition: statistic,
+                    depth: 2));
+            }
+
             var gates_node = create_project_node(ProjectNodeKind.GateFolder, "Gating strategies", $"{group_key}:gates", group: group, depth: 2);
             foreach (var gate in group.Gates)
                 append_gate_node(gates_node, gate, group, $"{group_key}:gate:{gate.Id}", 3);
@@ -3626,6 +3900,8 @@ public sealed class MainWindowViewModel : NotifyBase
                 return $"Frequency of Parent (%)";
             case StatisticKind.FrequencyOfAll:
                 return $"Frequency of All (%)";
+            case StatisticKind.Python:
+                return python_statistic_name(statistic);
 
             default: return $"{statistic.Kind}";
         }  
@@ -3889,7 +4165,16 @@ public sealed class MainWindowViewModel : NotifyBase
     }
 
     private static bool statistic_matches_definition(StatisticResult result, StatisticDefinition definition) =>
-        result.Kind == definition.Kind && result.ChannelName == definition.ChannelName;
+        result.Kind == definition.Kind &&
+        result.ChannelName == definition.ChannelName &&
+        (definition.Kind != StatisticKind.Python ||
+         result.PythonDisplayName == python_statistic_name(definition) &&
+         result.PythonSource == definition.PythonSource &&
+         result.PythonCallableName == definition.PythonCallableName &&
+         result.PythonParametersJson == definition.PythonParametersJson);
+
+    private static string python_statistic_name(StatisticDefinition definition) =>
+        string.IsNullOrWhiteSpace(definition.PythonDisplayName) ? definition.PythonCallableName : definition.PythonDisplayName;
 
     private static string unique_column_name(string preferred_name, IReadOnlyCollection<string> existing_names)
     {

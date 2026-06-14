@@ -1,4 +1,5 @@
 
 using Avalonia.Controls;
-namespace czi.Styles.Themes.Dark;
+namespace gated.Styles.Themes.Dark;
+
 public class Palettes : ResourceDictionary;

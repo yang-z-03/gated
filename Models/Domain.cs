@@ -5,6 +5,7 @@ using System.ComponentModel;
 using System.Linq;
 using System.Threading;
 using Avalonia;
+using Python.Runtime;
 
 namespace gated.Models;
 
@@ -333,6 +334,14 @@ public sealed class GateViewOptions
     public double YMinimum { get; set; }
     public double YMaximum { get; set; } = 262144.0;
     public AxisScale YScale { get; set; } = new();
+    public PlotMode PlotMode { get; set; } = PlotMode.Density;
+    public bool ShowOutlierPoints { get; set; } = true;
+    public bool DrawLargeDots { get; set; }
+    public bool ShowGridlines { get; set; } = true;
+    public bool ShowGateAnnotations { get; set; } = true;
+    public bool ShowGateAnnotationNames { get; set; }
+    public int ContourLevelCount { get; set; } = 10;
+    public int DensitySmoothing { get; set; } = 9;
 
     public bool HasView => !string.IsNullOrWhiteSpace(XChannel);
 }
@@ -364,6 +373,14 @@ public sealed class GateDefinition : NotifyBase
     public double PreferredYMaximum { get; set; } = 262144.0;
     public AxisScale PreferredXScale { get; set; } = new();
     public AxisScale PreferredYScale { get; set; } = new();
+    public PlotMode PreferredPlotMode { get; set; } = PlotMode.Density;
+    public bool PreferredShowOutlierPoints { get; set; } = true;
+    public bool PreferredDrawLargeDots { get; set; }
+    public bool PreferredShowGridlines { get; set; } = true;
+    public bool PreferredShowGateAnnotations { get; set; } = true;
+    public bool PreferredShowGateAnnotationNames { get; set; }
+    public int PreferredContourLevelCount { get; set; } = 10;
+    public int PreferredDensitySmoothing { get; set; } = 9;
     public Dictionary<string, GateViewOptions> SamplePreferredViews { get; } = new(StringComparer.Ordinal);
     public PopulationRegion ParentPopulationRegion { get; set; } = PopulationRegion.Primary;
     public GateDefinition? Parent { get; set; }
@@ -444,13 +461,13 @@ public sealed class StatisticDefinition
     public string PythonCallableName { get; set; } = "entry";
     public int PythonApiVersion { get; set; } = 1;
     public string PythonDisplayName { get; set; } = "";
-    public double[] PythonParameters { get; set; } = [];
+    public string PythonParametersJson { get; set; } = "[]";
 
     public void SetPythonMethod(
         string source,
         string callable_name = "entry",
         string? display_name = null,
-        IEnumerable<double>? parameters = null)
+        string? parameters_json = null)
     {
         if (string.IsNullOrWhiteSpace(source))
             throw new ArgumentException("Python statistic source cannot be empty.", nameof(source));
@@ -463,7 +480,7 @@ public sealed class StatisticDefinition
         PythonCallableName = callable_name;
         PythonDisplayName = string.IsNullOrWhiteSpace(display_name) ? callable_name : display_name.Trim();
         PythonApiVersion = 1;
-        PythonParameters = parameters?.ToArray() ?? [];
+        PythonParametersJson = string.IsNullOrWhiteSpace(parameters_json) ? "[]" : parameters_json;
     }
 }
 
@@ -472,6 +489,11 @@ public sealed class StatisticResult
     public StatisticKind Kind { get; init; }
     public string ChannelName { get; init; } = "";
     public double Value { get; init; }
+    public PyObject? PythonValue { get; init; }
+    public string PythonFormattedValue { get; init; } = "";
+    public string PythonSource { get; init; } = "";
+    public string PythonCallableName { get; init; } = "";
+    public string PythonParametersJson { get; init; } = "";
 
     public string DisplayName
     {
@@ -527,7 +549,7 @@ public sealed class StatisticResult
                 case StatisticKind.FrequencyOfAll:
                     return $"{Value:0.##}%";
                 case StatisticKind.Python:
-                    return double.IsNaN(Value) ? "" : Value.ToString("N2");
+                    return PythonFormattedValue;
 
                 default:
                     return Value.ToString("N2");

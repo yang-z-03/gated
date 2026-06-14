@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Globalization;
+using System.Runtime.InteropServices;
 using gated.Models;
 
 namespace gated.Services;
@@ -213,33 +214,58 @@ public sealed class FcsReader
     {
         file_stream.Position = data_start;
         var data = new float[event_count, channel_count];
+        int expected_value_count = event_count * channel_count;
 
         if (data_type == DataType.UnsignedBinaryInteger)
         {
             int bit_width = int.Parse(text["p1b"]);
             int byte_width = bit_width / 8;
-            var buffer = new byte[event_count * channel_count * byte_width];
+            var buffer = new byte[expected_value_count * byte_width];
             file_stream.ReadExactly(buffer, 0, buffer.Length);
-            for (int row = 0; row < event_count; row++)
-            for (int column = 0; column < channel_count; column++)
-                data[row, column] = read_integer(buffer, (row * channel_count + column) * byte_width, byte_width, byte_order);
+            for (int index = 0; index < expected_value_count; index++)
+                data[index / channel_count, index % channel_count] = read_integer(buffer, index * byte_width, byte_width, byte_order);
             return data;
         }
 
         int value_width = data_type == DataType.Float ? 4 : 8;
-        int value_count = (data_stop - data_start + 1) / value_width;
-        var bytes = new byte[value_count * value_width];
-        file_stream.ReadExactly(bytes, 0, bytes.Length);
-        for (int row = 0; row < event_count; row++)
-        for (int column = 0; column < channel_count; column++)
+        int byte_count = expected_value_count * value_width;
+        if (data_stop >= data_start && data_stop - data_start + 1 < byte_count)
+            throw new InvalidDataException("FCS DATA segment is shorter than the declared event matrix.");
+
+        if (data_type == DataType.Float && byte_order == ByteOrder.LittleEndian == BitConverter.IsLittleEndian)
         {
-            int offset = (row * channel_count + column) * value_width;
-            data[row, column] = data_type == DataType.Float
+            read_float_matrix(file_stream, data);
+            return data;
+        }
+
+        var bytes = new byte[byte_count];
+        file_stream.ReadExactly(bytes, 0, bytes.Length);
+
+        if (data_type == DataType.Double && byte_order == ByteOrder.LittleEndian == BitConverter.IsLittleEndian)
+        {
+            var doubles = MemoryMarshal.Cast<byte, double>(bytes);
+            for (int index = 0; index < expected_value_count; index++)
+                data[index / channel_count, index % channel_count] = Convert.ToSingle(doubles[index]);
+            return data;
+        }
+
+        for (int index = 0; index < expected_value_count; index++)
+        {
+            int offset = index * value_width;
+            data[index / channel_count, index % channel_count] = data_type == DataType.Float
                 ? read_float(bytes, offset, byte_order)
                 : Convert.ToSingle(read_double(bytes, offset, byte_order));
         }
-
         return data;
+    }
+
+    private static void read_float_matrix(FileStream file_stream, float[,] data)
+    {
+        if (data.Length == 0)
+            return;
+
+        var values = MemoryMarshal.CreateSpan(ref data[0, 0], data.Length);
+        file_stream.ReadExactly(MemoryMarshal.AsBytes(values));
     }
 
     private static float read_integer(byte[] buffer, int offset, int byte_width, ByteOrder byte_order)

@@ -1,0 +1,5 @@
+Version 0.27.0
+
+- Well establismed statistics and scripting framework
+- Faster reader optimization
+- UMAP and Leiden after integration

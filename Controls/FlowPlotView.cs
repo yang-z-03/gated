@@ -20,6 +20,9 @@ namespace gated.Controls;
 
 public sealed class FlowPlotView : Control
 {
+    private const double large_dot_radius = 1.75;
+    private const double large_dot_opacity = 0.6;
+
     public static readonly StyledProperty<FlowGroup?> GroupProperty =
         AvaloniaProperty.Register<FlowPlotView, FlowGroup?>(nameof(Group));
 
@@ -802,7 +805,7 @@ public sealed class FlowPlotView : Control
 
             var color = colors?[x_bin, y_bin] ?? Colors.Black;
             if (large_dots)
-                set_pixel_rect(pixels, x_bin, density_size - 1 - y_bin, 2, color);
+                set_large_dot(pixels, x_bin, density_size - 1 - y_bin, color, density[x_bin, y_bin]);
             else
                 set_pixel(pixels, x_bin, density_size - 1 - y_bin, color);
         }
@@ -2013,18 +2016,49 @@ public sealed class FlowPlotView : Control
             return;
 
         int offset = (y * density_size + x) * 4;
-        pixels[offset] = color.B;
-        pixels[offset + 1] = color.G;
-        pixels[offset + 2] = color.R;
+        pixels[offset] = premultiply(color.B, color.A);
+        pixels[offset + 1] = premultiply(color.G, color.A);
+        pixels[offset + 2] = premultiply(color.R, color.A);
         pixels[offset + 3] = color.A;
     }
 
-    private static void set_pixel_rect(byte[] pixels, int center_x, int center_y, int radius, Color color)
+    private static void set_large_dot(byte[] pixels, int center_x, int center_y, Color color, int count)
     {
+        if (count <= 0)
+            return;
+
+        byte alpha = to_alpha(color.A * (1 - Math.Pow(1 - large_dot_opacity, count)));
+        int radius = (int)Math.Ceiling(large_dot_radius);
         for (int y = center_y - radius; y <= center_y + radius; y++)
         for (int x = center_x - radius; x <= center_x + radius; x++)
-            set_pixel(pixels, x, y, color);
+        {
+            double distance = Math.Sqrt((x - center_x) * (x - center_x) + (y - center_y) * (y - center_y));
+            if (distance > large_dot_radius)
+                continue;
+
+            blend_pixel(pixels, x, y, Color.FromArgb(alpha, color.R, color.G, color.B));
+        }
     }
+
+    private static void blend_pixel(byte[] pixels, int x, int y, Color color)
+    {
+        if (x < 0 || x >= density_size || y < 0 || y >= density_size)
+            return;
+
+        int offset = (y * density_size + x) * 4;
+        byte source_alpha = color.A;
+        double inverse_alpha = 1 - source_alpha / 255.0;
+        pixels[offset] = to_alpha(premultiply(color.B, source_alpha) + pixels[offset] * inverse_alpha);
+        pixels[offset + 1] = to_alpha(premultiply(color.G, source_alpha) + pixels[offset + 1] * inverse_alpha);
+        pixels[offset + 2] = to_alpha(premultiply(color.R, source_alpha) + pixels[offset + 2] * inverse_alpha);
+        pixels[offset + 3] = to_alpha(source_alpha + pixels[offset + 3] * inverse_alpha);
+    }
+
+    private static byte premultiply(byte channel, byte alpha) =>
+        Convert.ToByte(channel * alpha / 255);
+
+    private static byte to_alpha(double value) =>
+        Convert.ToByte(Math.Clamp((int)Math.Round(value), 0, 255));
 
     private sealed record ContourGeometry(IReadOnlyList<ContourSegment> Segments);
 

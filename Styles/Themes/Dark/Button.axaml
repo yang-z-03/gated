@@ -11,10 +11,21 @@
     <StaticResource x:Key="ButtonDefaultBackground" ResourceKey="SemiColorFill0" />
     <StaticResource x:Key="ButtonDefaultPointeroverBackground" ResourceKey="SemiColorFill1" />
     <StaticResource x:Key="ButtonDefaultPressedBackground" ResourceKey="SemiColorFill2" />
-    <SolidColorBrush x:Key="ButtonDefaultBorderBrush" Color="Transparent" />
-    <SolidColorBrush x:Key="ButtonDefaultPointeroverBorderBrush" Color="Transparent" />
-    <SolidColorBrush x:Key="ButtonDefaultPressedBorderBrush" Color="Transparent" />
-    <SolidColorBrush x:Key="ButtonDefaultDisabledBorderBrush" Color="Transparent" />
+    <StaticResource x:Key="ButtonDefaultFocusBackground" ResourceKey="SemiColorFill1" />
+    <StaticResource x:Key="ButtonDefaultDisabledBackground" ResourceKey="SemiColorDisabledFill" />
+    <StaticResource x:Key="ButtonDefaultBorderBrush" ResourceKey="SemiColorBorder" />
+    <StaticResource x:Key="ButtonDefaultPointeroverBorderBrush" ResourceKey="SemiColorPrimaryPointerover" />
+    <StaticResource x:Key="ButtonDefaultPressedBorderBrush" ResourceKey="SemiColorPrimaryActive" />
+    <StaticResource x:Key="ButtonDefaultFocusBorderBrush" ResourceKey="SemiColorPrimary" />
+    <StaticResource x:Key="ButtonDefaultDisabledBorderBrush" ResourceKey="SemiColorDisabledFill" />
+    <StaticResource x:Key="ButtonDangerBackground" ResourceKey="SemiColorDangerLight" />
+    <StaticResource x:Key="ButtonDangerPointeroverBackground" ResourceKey="SemiColorDangerLightPointerover" />
+    <StaticResource x:Key="ButtonDangerPressedBackground" ResourceKey="SemiColorDangerLightActive" />
+    <StaticResource x:Key="ButtonDangerFocusBackground" ResourceKey="SemiColorDangerLightPointerover" />
+    <StaticResource x:Key="ButtonDangerBorderBrush" ResourceKey="SemiColorDanger" />
+    <StaticResource x:Key="ButtonDangerPointeroverBorderBrush" ResourceKey="SemiColorDangerPointerover" />
+    <StaticResource x:Key="ButtonDangerPressedBorderBrush" ResourceKey="SemiColorDangerActive" />
+    <StaticResource x:Key="ButtonDangerFocusBorderBrush" ResourceKey="SemiColorDanger" />
     <!--  end Light  -->
     <!--  Solid  -->
     <StaticResource x:Key="ButtonSolidForeground" ResourceKey="SemiColorWhite" />

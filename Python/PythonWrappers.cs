@@ -226,11 +226,13 @@ public sealed class IntegrationJob
     public string name => Model.Name;
     public string batch_column => Model.BatchColumnName;
     public PyObject features => PythonObjects.List(Model.SelectedFeatureNames);
-    public PyObject batch_ids => PythonObjects.List(Model.BatchIds);
+    public PyObject batch_ids => PythonArrayConverter.ToNumpy(Model.BatchIds);
     public bool has_integrated_matrix => Model.CurrentMatrix is not null;
-    public PyObject source_matrix => PythonArrayConverter.ToNumpy(Model.SourceData ?? new float[0, 0]);
+    public PyObject matrix => PythonArrayConverter.ToNumpy(Model.SourceData ?? new float[0, 0]);
     public PyObject logicle_matrix => PythonArrayConverter.ToNumpy(Model.LogicleNormalized ?? new float[0, 0]);
     public PyObject integrated_matrix => PythonArrayConverter.ToNumpy(Model.CurrentMatrix ?? new float[0, 0]);
+    public PyObject row_source_ids => PythonArrayConverter.ToNumpy(Model.RowMap.SourceIds);
+    public PyObject row_event_indices => PythonArrayConverter.ToNumpy(Model.RowMap.EventIndices);
 
     public PyObject row_map
     {
@@ -238,29 +240,188 @@ public sealed class IntegrationJob
         {
             return PythonExtensionRuntime.WithGil(() =>
             {
-                var rows = new PyList();
-                foreach (var row in Model.RowMap)
-                {
-                    var sample = find_sample(row.SampleId);
-                    var group = workspace.Groups.FirstOrDefault(item => item.Samples.Any(sample => sample.Id == row.SampleId));
-                    var dict = new PyDict();
-                    dict.SetItem("group", (group?.Name ?? "").ToPython());
-                    dict.SetItem("sample", (sample?.Name ?? "").ToPython());
-                    dict.SetItem("sample_id", row.SampleId.ToString().ToPython());
-                    dict.SetItem("gate_id", row.GateId.ToString().ToPython());
-                    dict.SetItem("region", row.Region.ToString().ToPython());
-                    dict.SetItem("event_index", row.EventIndex.ToPython());
-                    rows.Append(dict);
-                }
-
-                dynamic pandas = Py.Import("pandas");
-                return pandas.DataFrame(rows);
+                var dict = new PyDict();
+                using PyObject sources = row_sources();
+                using PyObject source_ids = row_source_ids;
+                using PyObject event_indices = row_event_indices;
+                dict.SetItem("sources", sources);
+                dict.SetItem("source_ids", source_ids);
+                dict.SetItem("event_indices", event_indices);
+                return dict;
             });
+        }
+    }
+
+    public PyObject row_sources()
+    {
+        return PythonExtensionRuntime.WithGil(() =>
+        {
+            var rows = new PyList();
+            for (int source_id = 0; source_id < Model.RowMap.Sources.Count; source_id++)
+            {
+                var source = Model.RowMap.Sources[source_id];
+                var group = workspace.Groups.FirstOrDefault(item => item.Id == source.GroupId);
+                var sample = find_sample(source.SampleId);
+                var dict = new PyDict();
+                using PyObject py_source_id = source_id.ToPython();
+                using PyObject py_group = (group?.Name ?? "").ToPython();
+                using PyObject py_sample = (sample?.Name ?? "").ToPython();
+                using PyObject py_group_id = source.GroupId.ToString().ToPython();
+                using PyObject py_sample_id = source.SampleId.ToString().ToPython();
+                using PyObject py_gate_id = source.GateId.ToString().ToPython();
+                using PyObject py_region = source.Region.ToString().ToPython();
+                dict.SetItem("source_id", py_source_id);
+                dict.SetItem("group", py_group);
+                dict.SetItem("sample", py_sample);
+                dict.SetItem("group_id", py_group_id);
+                dict.SetItem("sample_id", py_sample_id);
+                dict.SetItem("gate_id", py_gate_id);
+                dict.SetItem("region", py_region);
+                rows.Append(dict);
+            }
+
+            dynamic pandas = Py.Import("pandas");
+            return pandas.DataFrame(rows);
+        });
+    }
+
+    public PyObject row_map_frame()
+    {
+        return PythonExtensionRuntime.WithGil(() =>
+        {
+            var rows = new PyList();
+            for (int row = 0; row < Model.RowMap.Count; row++)
+            {
+                int source_id = Model.RowMap.SourceIds[row];
+                var source = source_id >= 0 && source_id < Model.RowMap.Sources.Count
+                    ? Model.RowMap.Sources[source_id]
+                    : null;
+                var sample = source is null ? null : find_sample(source.SampleId);
+                var group = source is null ? null : workspace.Groups.FirstOrDefault(item => item.Id == source.GroupId);
+                var dict = new PyDict();
+                using PyObject py_group = (group?.Name ?? "").ToPython();
+                using PyObject py_sample = (sample?.Name ?? "").ToPython();
+                using PyObject py_sample_id = (source?.SampleId.ToString() ?? "").ToPython();
+                using PyObject py_gate_id = (source?.GateId.ToString() ?? "").ToPython();
+                using PyObject py_region = (source?.Region.ToString() ?? "").ToPython();
+                using PyObject py_event_index = Model.RowMap.EventIndices[row].ToPython();
+                dict.SetItem("group", py_group);
+                dict.SetItem("sample", py_sample);
+                dict.SetItem("sample_id", py_sample_id);
+                dict.SetItem("gate_id", py_gate_id);
+                dict.SetItem("region", py_region);
+                dict.SetItem("event_index", py_event_index);
+                rows.Append(dict);
+            }
+
+            dynamic pandas = Py.Import("pandas");
+            return pandas.DataFrame(rows);
+        });
+    }
+
+    public void set_embedding(string name, PyObject value)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            throw new ArgumentException("Embedding name cannot be empty.", nameof(name));
+        if (string.Equals(name, "Populations", StringComparison.Ordinal))
+            throw new ArgumentException("Embedding 'Populations' is generated from gates and cannot be overwritten.", nameof(name));
+
+        var input = PythonArrayConverter.ToEmbeddingArray(value);
+        if (input.Values.Length != Model.RowMap.Count)
+            throw new ArgumentException($"Embedding '{name}' expects {Model.RowMap.Count} values, one for each integration job row.");
+
+        var samples = Model.RowMap.Sources
+            .Select(source => find_sample(source.SampleId))
+            .Where(sample => sample is not null)
+            .Cast<FlowSample>()
+            .DistinctBy(sample => sample.Id)
+            .ToDictionary(sample => sample.Id);
+
+        var sample_values = new Dictionary<Guid, float[]>();
+        var sample_categories = new Dictionary<Guid, Dictionary<int, string>>();
+        foreach (var sample in samples.Values)
+        {
+            bool existing_matches = sample.Embeddings.TryGetValue(name, out var existing) &&
+                                    existing.Values.Length == sample.EventCount &&
+                                    existing.Kind == input.Kind;
+            sample_values[sample.Id] = existing_matches
+                ? existing!.Values.ToArray()
+                : Enumerable.Repeat(float.NaN, sample.EventCount).ToArray();
+            sample_categories[sample.Id] = existing_matches && existing is not null
+                ? new Dictionary<int, string>(existing.Categories)
+                : new Dictionary<int, string>();
+        }
+
+        var remapped_by_sample = new Dictionary<Guid, float[]>();
+        if (input.Kind == EmbeddingValueKind.Integer)
+        {
+            foreach (Guid sample_id in samples.Keys)
+                remapped_by_sample[sample_id] = remap_category_values(input.Values, input.Categories, sample_categories[sample_id]);
+        }
+
+        for (int row = 0; row < Model.RowMap.Count; row++)
+        {
+            int source_id = Model.RowMap.SourceIds[row];
+            if (source_id < 0 || source_id >= Model.RowMap.Sources.Count)
+                continue;
+            var source = Model.RowMap.Sources[source_id];
+            if (!samples.TryGetValue(source.SampleId, out var sample))
+                continue;
+            int event_index = Model.RowMap.EventIndices[row];
+            if (event_index < 0 || event_index >= sample.EventCount)
+                continue;
+            sample_values[sample.Id][event_index] = input.Kind == EmbeddingValueKind.Integer
+                ? remapped_by_sample[sample.Id][row]
+                : input.Values[row];
+        }
+
+        foreach (var sample in samples.Values)
+        {
+            var embedding = new EmbeddingData { Kind = input.Kind, Values = sample_values[sample.Id] };
+            foreach (var category in sample_categories[sample.Id])
+                embedding.Categories[category.Key] = category.Value;
+            sample.Embeddings[name] = embedding;
+            sample.InvalidateNormalizedChannelCache();
         }
     }
 
     private FlowSample? find_sample(Guid sample_id) =>
         workspace.Groups.SelectMany(group => group.Samples).FirstOrDefault(sample => sample.Id == sample_id);
+
+    private static float[] remap_category_values(
+        float[] values,
+        IReadOnlyDictionary<int, string> input_categories,
+        Dictionary<int, string> target_categories)
+    {
+        var ids_by_label = target_categories.ToDictionary(item => item.Value, item => item.Key, StringComparer.Ordinal);
+        var id_map = new Dictionary<int, int>();
+        foreach (var input_category in input_categories)
+        {
+            if (!ids_by_label.TryGetValue(input_category.Value, out int target_id))
+            {
+                target_id = target_categories.Count == 0 ? 1 : target_categories.Keys.Max() + 1;
+                target_categories[target_id] = input_category.Value;
+                ids_by_label[input_category.Value] = target_id;
+            }
+
+            id_map[input_category.Key] = target_id;
+        }
+
+        var mapped = new float[values.Length];
+        for (int index = 0; index < values.Length; index++)
+        {
+            if (float.IsNaN(values[index]) || float.IsInfinity(values[index]))
+            {
+                mapped[index] = float.NaN;
+                continue;
+            }
+
+            int source_id = Convert.ToInt32(values[index]);
+            mapped[index] = id_map.TryGetValue(source_id, out int target_id) ? target_id : float.NaN;
+        }
+
+        return mapped;
+    }
 }
 
 public sealed class Grouping
@@ -399,13 +560,13 @@ public sealed class Strategy
 
     public StatisticDefinition define_statistics_python(
         string source,
-        string callable_name = "statistic",
+        string callable_name = "entry",
         string? display_name = null,
         PyObject? parameters = null)
     {
         PythonExtensionRuntime.ValidateStatisticSource(source, callable_name);
         var definition = new Models.StatisticDefinition();
-        definition.SetPythonMethod(source, callable_name, display_name, PythonArrayConverter.ToDoubleArray(parameters));
+        definition.SetPythonMethod(source, callable_name, display_name, PythonExtensionRuntime.ToJson(parameters));
         definitions().Add(definition);
         group.RecalculateSamples();
         return new StatisticDefinition(group, definition);
@@ -528,8 +689,7 @@ public sealed class Sample
     public PyObject populations => PythonObjects.Dict(population_items());
     public Strategy strategy => new(group, null);
     public PyObject population_keys => PythonObjects.List(population_items().Select(item => item.Key));
-
-    public PyObject get_compensated_matrix() => PythonArrayConverter.ToNumpy(Model.CompensatedEvents);
+    public PyObject compensated_matrix => PythonArrayConverter.ToNumpy(Model.CompensatedEvents);
 
     public Population __getitem__(string population_key) =>
         population_items().ToDictionary(item => item.Key, item => item.Value, StringComparer.Ordinal).TryGetValue(population_key, out var population)
@@ -587,8 +747,7 @@ public sealed class Population
     public PyObject populations => PythonObjects.Dict(population_items());
     public Strategy strategy => new(resolve_group(), model?.Gate);
     public PyObject population_keys => PythonObjects.List(population_items().Select(item => item.Key));
-
-    public PyObject get_compensated_matrix() => PythonArrayConverter.ToNumpy(PythonArrayConverter.SelectRows(sample.CompensatedEvents, indices()));
+    public PyObject compensated_matrix => PythonArrayConverter.ToNumpy(PythonArrayConverter.SelectRows(sample.CompensatedEvents, indices()));
 
     public void set_embedding(string name, PyObject value)
     {
@@ -747,12 +906,12 @@ public sealed class StatisticDefinition
 
     public string get_method() => Model.PythonSource;
 
-    public void set_method(string source, string callable_name = "statistic", string? display_name = null, PyObject? parameters = null)
+    public void set_method(string source, string callable_name = "entry", string? display_name = null, PyObject? parameters = null)
     {
         PythonExtensionRuntime.EnsureInitialized();
         PythonExtensionRuntime.ValidateStatisticSource(source, callable_name);
         PythonExtensionRuntime.WithGil(() =>
-            Model.SetPythonMethod(source, callable_name, display_name, PythonArrayConverter.ToDoubleArray(parameters)));
+            Model.SetPythonMethod(source, callable_name, display_name, PythonExtensionRuntime.ToJson(parameters)));
         group.RecalculateSamples();
     }
 }
