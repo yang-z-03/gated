@@ -158,7 +158,8 @@ public static class PythonExtensionRuntime
         try
         {
             PythonEngine.Exec(code, globals, globals);
-        } catch (PythonException pex)
+        } 
+        catch (PythonException pex)
         {
             string error_loc = "<Unk>";
             try
@@ -177,9 +178,9 @@ public static class PythonExtensionRuntime
     }
 
     // Internal calls only. Not exposed to user script.
-    public static void ExecuteIntegrationJobScript(string resource_path, FlowWorkspace workspace, gated.Models.IntegrationJob job)
+    public static void ExecutePlatformScript(string resource_path, FlowWorkspace workspace, gated.Models.Platform platform)
     {
-        report_status("Script running ...", null, true, true);
+        report_status("Platform script running ...", null, true, true);
         try
         {
             caller_thread.InvokeWithGil(() =>
@@ -187,7 +188,8 @@ public static class PythonExtensionRuntime
                 using var globals = new PyDict();
                 globals.SetItem("__builtins__", Py.Import("builtins"));
                 globals.SetItem("workspace", new Workspace(workspace).ToPython());
-                globals.SetItem("integration_job", new IntegrationJob(workspace, job).ToPython());
+                var wrapper = Platform.Wrap(workspace, platform);
+                globals.SetItem("platform", wrapper.ToPython());
                 globals.SetItem("np", (numpy_module ?? Py.Import("numpy")));
                 globals.SetItem("pd", (pandas_module ?? Py.Import("pandas")));
                 globals.SetItem("application", new PythonApplication().ToPython());
@@ -253,15 +255,21 @@ public static class PythonExtensionRuntime
 
     public static string ToJson(PyObject? value)
     {
+        using (Py.GIL())
+        {
         return caller_thread.InvokeWithGil(() =>
         {
+            using (Py.GIL())
+            {
             if (value is null || value.IsNone())
                 return "[]";
 
             dynamic json = Py.Import("json");
             using PyObject text = json.dumps(value);
             return text.As<string>();
+            }
         });
+        }
     }
 
     public static void ValidateStatisticSource(string source, string callable_name)
@@ -549,6 +557,8 @@ public static class PythonExtensionRuntime
 
     private static string format_statistic_result(PyDict globals, PyObject result)
     {
+        using (Py.GIL())
+        {
         using PyObject key = "format".ToPython();
         if (globals.HasKey(key))
         {
@@ -561,6 +571,7 @@ public static class PythonExtensionRuntime
         }
 
         return result.IsNone() ? "" : result.ToString() ?? "";
+        }
     }
 
     private static void ensure_callable(PyDict globals, string name, string description)
@@ -795,19 +806,35 @@ public sealed class PythonApplication
     public string msgbox(string title, string content, string buttons = "ok") =>
         PythonExtensionRuntime.MsgBox(title, content, buttons);
 
-    public PyObject input(PyObject requires) => PythonExtensionRuntime.RequestInput(requires);
+    public PyObject input(PyObject requires)
+    {
+        using (Py.GIL())
+            return PythonExtensionRuntime.RequestInput(requires);
+    }
 
-    public PyObject require_channel(string name, PyObject? @default = null, bool multiple = false) =>
-        PythonExtensionRuntime.CreateRequirement("channel", name, @default, multiple);
+    public PyObject require_channel(string name, PyObject? @default = null, bool multiple = false)
+    {
+        using (Py.GIL())
+            return PythonExtensionRuntime.CreateRequirement("channel", name, @default, multiple);
+    }
 
-    public PyObject require_integer(string name, PyObject? @default = null, PyObject? min = null, PyObject? max = null) =>
-        PythonExtensionRuntime.CreateRequirement("integer", name, @default ?? 0.ToPython(), false, py_double(min), py_double(max));
+    public PyObject require_integer(string name, PyObject? @default = null, PyObject? min = null, PyObject? max = null)
+    {
+        using (Py.GIL())
+            return PythonExtensionRuntime.CreateRequirement("integer", name, @default ?? 0.ToPython(), false, py_double(min), py_double(max));
+    }
 
-    public PyObject require_float(string name, PyObject? @default = null, PyObject? min = null, PyObject? max = null) =>
-        PythonExtensionRuntime.CreateRequirement("float", name, @default ?? 0.0.ToPython(), false, py_double(min), py_double(max));
+    public PyObject require_float(string name, PyObject? @default = null, PyObject? min = null, PyObject? max = null)
+    {
+        using (Py.GIL())
+            return PythonExtensionRuntime.CreateRequirement("float", name, @default ?? 0.0.ToPython(), false, py_double(min), py_double(max));
+    }
 
-    public PyObject require_enum(string name, PyObject possible_values, PyObject? @default = null) =>
-        PythonExtensionRuntime.CreateRequirement("enum", name, @default, false, possible_values: possible_values);
+    public PyObject require_enum(string name, PyObject possible_values, PyObject? @default = null)
+    {
+        using (Py.GIL())
+            return PythonExtensionRuntime.CreateRequirement("enum", name, @default, false, possible_values: possible_values);
+    }
 
     public PyObject require_option(string name, bool @default = false) =>
         PythonExtensionRuntime.CreateRequirement("option", name, @default.ToPython());

@@ -877,8 +877,14 @@ public sealed class FlowPlotView : Control
         }
     }
 
-    private bool is_gate_hidden_by_plot_mode(GateDefinition gate) =>
-        PlotMode == PlotMode.Histogram && !gate.IsOneDimensional;
+    private bool is_gate_hidden_by_plot_mode(GateDefinition gate)
+    {
+        if (XAxis is null || gate.XChannel != XAxis.ChannelName)
+            return true;
+        if (gate.IsOneDimensional || string.IsNullOrWhiteSpace(gate.YChannel))
+            return PlotMode != PlotMode.Histogram;
+        return PlotMode == PlotMode.Histogram || YAxis is null || gate.YChannel != YAxis.ChannelName;
+    }
 
     private void draw_gate(DrawingContext context, GateDefinition gate)
     {
@@ -1146,7 +1152,7 @@ public sealed class FlowPlotView : Control
         if (sample_count > 0)
             parent_frequency /= sample_count;
 
-        string name = gate.HasLinkedPopulations ? $"{gate.Name} {population_region_name(region)}" : gate.Name;
+        string name = gate.PopulationName(region);
         string statistics = $"{event_count:N0}  {parent_frequency:0.#}%";
         string label = ShowGateAnnotationNames ? $"{name}  {statistics}" : statistics;
         var text = new FormattedText(
@@ -1209,21 +1215,6 @@ public sealed class FlowPlotView : Control
     private static IReadOnlyList<PopulationRegion> annotation_regions(GateDefinition gate) =>
         gate.HasLinkedPopulations ? gate.PopulationRegions : [PopulationRegion.Primary];
 
-    private static string population_region_name(PopulationRegion region) =>
-        region switch
-        {
-            PopulationRegion.TopRight => "top right",
-            PopulationRegion.TopLeft => "top left",
-            PopulationRegion.BottomRight => "bottom right",
-            PopulationRegion.BottomLeft => "bottom left",
-            PopulationRegion.More => "more",
-            PopulationRegion.Less => "less",
-            PopulationRegion.InRange => "in range",
-            PopulationRegion.BelowRange => "below",
-            PopulationRegion.AboveRange => "above",
-            _ => "population"
-        };
-
     private void draw_grid(DrawingContext context)
     {
         if (XAxis is null || YAxis is null)
@@ -1283,16 +1274,30 @@ public sealed class FlowPlotView : Control
                 draw_right_aligned_text(context, format_axis_value(value), new Point(plot_rect.Left - 10, y - 7), 10, Color.FromRgb(128, 128, 128));
             }
 
-            draw_vertical_centered_text(context, YAxis.ChannelName ?? "", new Point(plot_rect.Left - 62, plot_rect.Top + plot_rect.Height / 2), 14, Color.FromRgb(190, 198, 210));
+            draw_vertical_centered_text(context, axis_title(YAxis), new Point(plot_rect.Left - 62, plot_rect.Top + plot_rect.Height / 2), 14, Color.FromRgb(190, 198, 210));
         }
 
         draw_centered_text(
             context,
-            XAxis.ChannelName ?? "",
+            axis_title(XAxis),
             new Point(plot_rect.Left + plot_rect.Width / 2, plot_rect.Bottom + 34),
             14,
             Color.FromRgb(190, 198, 210),
             bolded: true);
+    }
+
+    private string axis_title(AxisSettings axis)
+    {
+        string name = axis.ChannelName ?? "";
+        if (string.IsNullOrWhiteSpace(name))
+            return "";
+
+        var channel = Sample?.Channels.FirstOrDefault(item => item.Name == name) ??
+                      Group?.Channels.FirstOrDefault(item => item.Name == name);
+        string label = channel?.Label?.Trim() ?? "";
+        return string.IsNullOrWhiteSpace(label) || string.Equals(label, name, StringComparison.Ordinal)
+            ? name
+            : $"{label} ({name})";
     }
 
     private IEnumerable<FlowSample> resolve_samples()
@@ -1318,12 +1323,24 @@ public sealed class FlowPlotView : Control
 
         if (Gate is not null)
         {
+            if (Gate.HasLinkedPopulations)
+                return resolve_parent_event_indices(sample, Gate);
+
             var population = find_population(sample.Populations, Gate);
             if (population is not null)
                 return population.GetPlotEventIndices();
         }
 
         return sample.GetPlotEventIndices();
+    }
+
+    private static int[] resolve_parent_event_indices(FlowSample sample, GateDefinition gate)
+    {
+        if (gate.Parent is null)
+            return sample.GetPlotEventIndices();
+
+        var parent = find_population(sample.Populations, gate.Parent, gate.ParentPopulationRegion);
+        return parent?.GetPlotEventIndices() ?? sample.GetPlotEventIndices();
     }
 
     private static PopulationResult? find_population(IEnumerable<PopulationResult> populations, GateDefinition gate, PopulationRegion? region = null)
@@ -1790,10 +1807,7 @@ public sealed class FlowPlotView : Control
 
     private static string format_axis_value(double value)
     {
-        if (Math.Abs(value) >= 1000)
-            return $"{value / 1000:0.#}k";
-
-        return value.ToString("0.#", CultureInfo.InvariantCulture);
+        return Configuration.FormatAxisValue(value);
     }
 
     private bool is_histogram_mode() =>
@@ -1819,11 +1833,7 @@ public sealed class FlowPlotView : Control
 
     private static IEnumerable<double> major_axis_ticks(AxisSettings axis)
     {
-        double[] values = axis.ScaleKind == CoordinateScaleKind.Logicle
-            ? [0, 1000, 10000, 100000]
-            : [0, 50000, 100000, 150000, 200000];
-
-        return values.Where(value => is_tick_in_range(value, axis));
+        return Configuration.MajorAxisTicks(axis).Where(value => is_tick_in_range(value, axis));
     }
 
     private static IEnumerable<double> minor_axis_ticks(AxisSettings axis)
@@ -1831,32 +1841,9 @@ public sealed class FlowPlotView : Control
         if (axis.Maximum <= axis.Minimum)
             yield break;
 
-        if (axis.ScaleKind == CoordinateScaleKind.Logicle)
-        {
-            for (int multiplier = 2; multiplier <= 9; multiplier++)
-            {
-                double value = multiplier * 1000;
-                if (is_tick_in_range(value, axis))
-                    yield return value;
-            }
-
-            for (int multiplier = 2; multiplier <= 9; multiplier++)
-            {
-                double value = multiplier * 10000;
-                if (is_tick_in_range(value, axis))
-                    yield return value;
-            }
-
-            yield break;
-        }
-
-        for (double value = 10000; value < 200000; value += 10000)
-        {
-            if (value % 50000 == 0)
-                continue;
+        foreach (double value in Configuration.MinorAxisTicks(axis))
             if (is_tick_in_range(value, axis))
                 yield return value;
-        }
     }
 
     private static bool is_tick_in_range(double value, AxisSettings? axis) =>

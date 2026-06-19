@@ -1,0 +1,59 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:gated.Controls"
+             xmlns:platforms="clr-namespace:gated.ViewModels.Platforms"
+             x:Class="gated.Controls.CellCyclePlatformView"
+             x:DataType="platforms:CellCyclePlatformEditorViewModel">
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+    <StackPanel Margin="24" Spacing="14" MaxWidth="650" Width="650" HorizontalAlignment="Center">
+      <TextBlock Foreground="{DynamicResource SemiColorText1}" Text="{Binding KindName}" />
+      <TextBox FontSize="20" Padding="6" FontWeight="Light" Text="{Binding Platform.Name, UpdateSourceTrigger=PropertyChanged}" />
+      <Border IsVisible="{Binding HasWarning}" BorderBrush="#B7791F" BorderThickness="1" CornerRadius="6" Padding="10" Background="#2A2112">
+        <TextBlock Foreground="#F6C56B" TextWrapping="Wrap" Text="{Binding Platform.WarningText}" />
+      </Border>
+      <Border Height="360" Background="{DynamicResource SemiColorBackground1}" Margin="0 0 60 0" ClipToBounds="True">
+        <controls:PlatformResultPlotView Platform="{Binding Platform}" />
+      </Border>
+      <Grid ColumnDefinitions="100,170,*" ColumnSpacing="8">
+        <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Fit on channel" VerticalAlignment="Center"/>
+        <ComboBox Grid.Column="1" Classes="Small" ItemsSource="{Binding ChannelChoices}" SelectedItem="{Binding SelectedChannel}">
+          <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding DisplayLabel}" /></DataTemplate></ComboBox.ItemTemplate>
+        </ComboBox>
+      </Grid>
+      <Border Height="210" BorderBrush="#505050" BorderThickness="1" CornerRadius="8" Background="#1e1e1e" ClipToBounds="True">
+        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Margin="8">
+          <controls:PlatformPopulationFitTableView Platform="{Binding Platform}" SelectionChangedCommand="{Binding SelectionChangedCommand}" DropCommand="{Binding DropPopulationCommand}" IsReadOnly="{Binding IsReadOnly}" />
+        </ScrollViewer>
+      </Border>
+      <Expander Header="Transformation" IsExpanded="True">
+        <StackPanel Margin="0,8,0,12" Spacing="8">
+          <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+            <StackPanel><TextBlock Foreground="{DynamicResource SemiColorText2}" Text="X minimum" Margin="0 0 0 8"/><TextBox Text="{Binding AxisMinimum, UpdateSourceTrigger=PropertyChanged}" /></StackPanel>
+            <StackPanel Grid.Column="1"><TextBlock Foreground="{DynamicResource SemiColorText2}" Text="X maximum" Margin="0 0 0 8"/><TextBox Text="{Binding AxisMaximum, UpdateSourceTrigger=PropertyChanged}" /></StackPanel>
+          </Grid>
+          <Grid ColumnDefinitions="150,*,*,*,*" ColumnSpacing="8">
+            <StackPanel><TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Transform" Margin="0 0 0 8"/><ComboBox Classes="Small" ItemsSource="{Binding TransformationChoices}" SelectedItem="{Binding AxisTransform}" /></StackPanel>
+            <StackPanel Grid.Column="1"><TextBlock Foreground="{DynamicResource SemiColorText2}" Text="T" Margin="0 0 0 8"/><TextBox Text="{Binding LogicleT, UpdateSourceTrigger=PropertyChanged}" /></StackPanel>
+            <StackPanel Grid.Column="2"><TextBlock Foreground="{DynamicResource SemiColorText2}" Text="W" Margin="0 0 0 8"/><TextBox Text="{Binding LogicleW, UpdateSourceTrigger=PropertyChanged}" /></StackPanel>
+            <StackPanel Grid.Column="3"><TextBlock Foreground="{DynamicResource SemiColorText2}" Text="M" Margin="0 0 0 8"/><TextBox Text="{Binding LogicleM, UpdateSourceTrigger=PropertyChanged}" /></StackPanel>
+            <StackPanel Grid.Column="4"><TextBlock Foreground="{DynamicResource SemiColorText2}" Text="A" Margin="0 0 0 8"/><TextBox Text="{Binding LogicleA, UpdateSourceTrigger=PropertyChanged}" /></StackPanel>
+          </Grid>
+          <Grid ColumnDefinitions="150,*" ColumnSpacing="8">
+            <StackPanel><TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Window size" Margin="0 0 0 8"/><NumericUpDown Classes="Small" Minimum="0" Maximum="50" Value="{Binding SmoothingHalfWindow}" /></StackPanel>
+            <CheckBox Grid.Column="1" VerticalAlignment="Bottom" Margin="0 0 0 4" Content="Data smoothing before fit" IsChecked="{Binding SmoothBeforeFit}" />
+          </Grid>
+        </StackPanel>
+      </Expander>
+      <Expander Header="Model" IsExpanded="True">
+        <Grid Margin="0,8,0,12" ColumnDefinitions="*,*,*" ColumnSpacing="12">
+          <StackPanel><TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Model" Margin="0 0 0 8"/><ComboBox Classes="Small" ItemsSource="{Binding CellCycleModelChoices}" SelectedItem="{Binding CellCycleModel}" /></StackPanel>
+          <StackPanel Grid.Column="1" Spacing="8"><CheckBox Content="Draw model sum" IsChecked="{Binding CellCycleDrawModelSum}" /><CheckBox Content="Draw components" IsChecked="{Binding CellCycleDrawComponents}" /></StackPanel>
+          <StackPanel Grid.Column="2"><CheckBox Content="Fill components" IsChecked="{Binding CellCycleFillComponents}" /></StackPanel>
+        </Grid>
+      </Expander>
+      <ProgressBar Height="5" Minimum="0" Maximum="1" Value="{Binding Platform.ProgressFraction}" IsVisible="{Binding Platform.IsRunning}" />
+      <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="{Binding Platform.ProgressText}" IsVisible="{Binding Platform.IsRunning}" />
+      <DockPanel Margin="0 4 0 18"><Button Classes="Small" Command="{Binding RunCommand}"><TextBlock Text="{Binding RunCaption}" /></Button><Button DockPanel.Dock="Right" Classes="Small" Command="{Binding CancelCommand}"><TextBlock Text="Stop" /></Button></DockPanel>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

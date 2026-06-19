@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Linq;
 using Avalonia;
 
 namespace gated.Models;
@@ -18,11 +20,21 @@ public sealed class PageLayout : NotifyBase
     }
 }
 
-public sealed class PagePlotElement : NotifyBase
+public enum PageElementKind
+{
+    FlowPlot,
+    PlatformPlot,
+    StatisticTable,
+    PlatformStatisticTable
+}
+
+public class PagePlotElement : NotifyBase
 {
     private double x;
     private double y;
     private double size = 260;
+    private double width = 260;
+    private double height = 260;
     private string title = "Plot";
     private PlotMode plot_mode = PlotMode.Dotplot;
     private bool show_gridlines = true;
@@ -36,11 +48,18 @@ public sealed class PagePlotElement : NotifyBase
     private int contour_level_count = 10;
     private int density_smoothing = 6;
 
-    public Guid Id { get; } = Guid.NewGuid();
+    public Guid Id { get; init; } = Guid.NewGuid();
+    public virtual PageElementKind ElementKind => PageElementKind.FlowPlot;
+    public virtual double MinimumWidth => 120;
+    public virtual double MinimumHeight => 80;
+    public virtual bool HasFixedHeight => false;
+    public Guid? ParentElementId { get; init; }
     public FlowGroup? Group { get; init; }
     public FlowSample? Sample { get; init; }
     public GateDefinition? Gate { get; init; }
     public PopulationResult? Population { get; init; }
+    public bool UsesPopulation { get; init; }
+    public PopulationRegion PopulationRegion { get; init; } = PopulationRegion.Primary;
     public AxisSettings XAxis { get; init; } = new();
     public AxisSettings YAxis { get; init; } = new();
     public DotColorSettings DotColor { get; init; } = new();
@@ -60,7 +79,45 @@ public sealed class PagePlotElement : NotifyBase
     public double Size
     {
         get => size;
-        set => SetField(ref size, Math.Round(Math.Clamp(value, 120, 640), 1), nameof(Size));
+        set
+        {
+            double value_clamped = Math.Round(Math.Clamp(value, 120, 640), 1);
+            if (!SetField(ref size, value_clamped, nameof(Size)))
+                return;
+            width = clamp_width(value_clamped);
+            height = clamp_height(value_clamped);
+            OnPropertyChanged(nameof(Width));
+            OnPropertyChanged(nameof(Height));
+            OnPropertyChanged(nameof(Bounds));
+        }
+    }
+
+    public double Width
+    {
+        get => width;
+        set
+        {
+            if (SetField(ref width, clamp_width(value), nameof(Width)))
+                OnPropertyChanged(nameof(Bounds));
+        }
+    }
+
+    public double Height
+    {
+        get => height;
+        set
+        {
+            if (SetField(ref height, clamp_height(value), nameof(Height)))
+                OnPropertyChanged(nameof(Bounds));
+        }
+    }
+
+    private double clamp_width(double value) => Math.Round(Math.Clamp(value, MinimumWidth, 1600), 1);
+
+    private double clamp_height(double value)
+    {
+        double minimum = MinimumHeight;
+        return Math.Round(HasFixedHeight ? minimum : Math.Clamp(value, minimum, 1200), 1);
     }
 
     public string Title
@@ -137,5 +194,62 @@ public sealed class PagePlotElement : NotifyBase
 
     public bool IsHistogram => PlotMode == PlotMode.Histogram || Gate?.IsOneDimensional == true;
 
-    public Rect Bounds => new(X, Y, Size, Size);
+    public Rect Bounds => new(X, Y, Width, Height);
+}
+
+public sealed class StatisticTableElement : PagePlotElement
+{
+    public override PageElementKind ElementKind => PageElementKind.StatisticTable;
+    public ObservableCollection<StatisticTableColumn> Columns { get; } = new();
+    public override bool HasFixedHeight => true;
+    public override double MinimumWidth => table_width(new[] { "Sample" }.Concat(Columns.Select(column => column.Title)));
+    public override double MinimumHeight => table_height(Math.Max(1, Group?.Samples.Count ?? 0));
+
+    private static double table_width(IEnumerable<string> columns) =>
+        Math.Clamp(20 + columns.Sum(column => Math.Clamp((column?.Length ?? 0) * 7.0 + 22, 54, 190)), 160, 1600);
+
+    private static double table_height(int rows) => 48 + (rows + 1) * 20;
+}
+
+public sealed class PlatformPlotElement : PagePlotElement
+{
+    public override PageElementKind ElementKind => PageElementKind.PlatformPlot;
+    public override double MinimumWidth => 160;
+    public override double MinimumHeight => 120;
+    public Platform? Platform { get; init; }
+    public string PlotKey { get; init; } = "";
+}
+
+public sealed class PlatformStatisticTableElement : PagePlotElement
+{
+    public override PageElementKind ElementKind => PageElementKind.PlatformStatisticTable;
+    public override bool HasFixedHeight => true;
+    public override double MinimumWidth
+    {
+        get
+        {
+            var table = Platform?.ResultTables.FirstOrDefault();
+            if (table is null)
+                return 160;
+            return Math.Clamp(20 + table.Columns.Sum(column => Math.Clamp((column?.Length ?? 0) * 7.0 + 22, 54, 190)), 160, 1600);
+        }
+    }
+    public override double MinimumHeight
+    {
+        get
+        {
+            var table = Platform?.ResultTables.FirstOrDefault();
+            int rows = table?.Rows.Count ?? Math.Max(1, Platform?.PlatformStatistics.Count ?? 0);
+            return 48 + (rows + 1) * 20;
+        }
+    }
+    public Platform? Platform { get; init; }
+}
+
+public sealed class StatisticTableColumn
+{
+    public FlowGroup? Group { get; init; }
+    public GateDefinition? Gate { get; init; }
+    public StatisticDefinition? Statistic { get; init; }
+    public string Title { get; init; } = "";
 }

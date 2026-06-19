@@ -266,33 +266,51 @@ class Grouping:
         '''Returns a sample by name, equivalent to grouping[sample].'''
         ...
 
-class IntegrationJob:
+class ViewOptions:
     '''
-    A prepared integration job with source, normalized, and integrated matrices.
+    Axis/view transformation settings for one channel or embedding.
+    '''
+    min: float
+    max: float
+    t: float
+    w: float
+    m: float
+    a: float
 
-    Row map data is exposed in a compact columnar form. ``row_map["source_ids"]``
-    and ``row_map["event_indices"]`` are readonly NumPy arrays with one entry per
-    matrix row. ``row_map["sources"]`` is a small DataFrame keyed by source_id with
-    group, sample, gate, and region metadata.
+class PlatformPopulation:
+    group: str
+    sample: str
+    name: str
+    population: str
+    group_id: str
+    sample_id: str
+    gate_id: str
+    region: str
+    selected: bool
+
+class Platform:
+    '''
+    Base platform wrapper. Names intentionally match the C# Platform model.
     '''
     name: str
-    batch_column: str
-    features: list[str]
-    batch_ids: np.ndarray
-    has_integrated_matrix: bool
+    populations: list[PlatformPopulation]
+    channels: list[str]
     matrix: np.ndarray
-    logicle_matrix: np.ndarray
-    integrated_matrix: np.ndarray
-    row_source_ids: np.ndarray
-    row_event_indices: np.ndarray
-    row_map: dict[str, np.ndarray | pd.DataFrame]
+    compensated: np.ndarray
+    transform: Literal["linear", "logarithm", "logicle"]
+    transformations: dict[str, ViewOptions]
+    transformed: np.ndarray
+    series: dict[str, object]
+    models: dict[str, object]
+    components: dict[str, list[object]]
+    result: dict[str, object]
+    parameters: dict[str, object]
+    has_graphics: bool
+    has_data_table: bool
+    row_map: pd.DataFrame
 
-    def row_sources(self) -> pd.DataFrame:
-        '''Returns the compact row source lookup table keyed by source_id.'''
-        ...
-
-    def row_map_frame(self) -> pd.DataFrame:
-        '''Returns an expanded row-map DataFrame for compatibility; this allocates per-row data.'''
+    def sample_metadata(self, sample_name: str, column_name: str) -> str:
+        '''Returns a workspace metadata value for a sample, or an empty string if unavailable.'''
         ...
 
     def set_embedding(self, name: str, value: np.ndarray):
@@ -302,6 +320,57 @@ class IntegrationJob:
         Numeric arrays create floating-point embeddings. String arrays create categorical embeddings.
         '''
         ...
+
+    def clear_results(self):
+        '''Clears platform result tables, plot series, and statistics before writing new results.'''
+        ...
+
+    def set_result_table(self, key: str, title: str, columns: list[str], rows: list[list[str]]):
+        '''Writes a named table result that can be rendered in layouts.'''
+        ...
+
+    def set_plot_series(self, key: str, title: str, x: np.ndarray, y: np.ndarray, x_label: str = "", y_label: str = ""):
+        '''Writes a named x/y plot series result that can be rendered in layouts.'''
+        ...
+
+    def set_fit_curve(self, key: str, title: str, kind: str, source_id: int, parameters: list[float], normalizer: float = 1.0, x_label: str = "", y_label: str = ""):
+        '''Writes a parameterized fitted curve. kind is Gaussian, GaussianSum, CellCycleSum, Linear, or Exponential.'''
+        ...
+
+    def add_component_gamma(self, key: str, alpha: float, beta: float, amplitude: float):
+        ...
+
+    def add_component_normal(self, key: str, mu: float, sigma: float, amplitude: float):
+        ...
+
+    def add_component_exponential(self, key: str, slope: float, expn: float, intercept: float):
+        ...
+
+    def set_fit_addition(self, key: str, models: list[str], weights: list[float], intercept: float = 0):
+        ...
+
+    def set_statistic(self, name: str, value):
+        '''Writes a named platform statistic shown in linked layout statistic tables.'''
+        ...
+
+class UnivariatePlatform(Platform):
+    major: str
+    histogram: np.ndarray
+    smoothed: np.ndarray
+    smoothing_window: int
+    enable_smoothing: bool
+
+class BivariatePlatform(Platform):
+    major: str
+    minor: str
+    trend: np.ndarray
+    binned: np.ndarray
+    smoothed: np.ndarray
+    smoothing_window: int
+    enable_smoothing: bool
+
+class MultivariatePlatform(Platform):
+    normalized: np.ndarray
 
 class Workspace:
     '''
@@ -318,14 +387,13 @@ class Workspace:
         A list of groupings in the workspace. Each grouping represents a collection of samples that are 
         analyzed together. A grouping can have multiple samples.
 
-    integration_jobs: readonly list[IntegrationJob]
-        Integration jobs with source, logicle-normalized, integrated matrices, row maps, features,
-        and batch ids for downstream Python macros.
+    platforms: readonly dict[str, Platform]
+        Prepared platforms keyed by platform name.
     '''
 
     metadata: pd.DataFrame
     groupings: list[Grouping]
-    integration_jobs: list[IntegrationJob]
+    platforms: dict[str, Platform]
     def add_grouping(self, name: str) -> Grouping: ...
     def apply_metadata(self, dataframe: pd.DataFrame): 
         '''
@@ -336,8 +404,10 @@ class Workspace:
     def __getitem__(self, grouping: str) -> Grouping: ...
 
 workspace: Workspace
+
+platform: Platform
 '''
-Main workspace instance
+Current platform when running an embedded platform resource script.
 '''
 
 class Application:

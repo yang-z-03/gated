@@ -19,6 +19,16 @@ public static class PythonArrayConverter
         }
     }
 
+    public static PyObject ToNumpy(double[,] matrix)
+    {
+        using (Py.GIL())
+        {
+            int row_count = matrix.GetLength(0);
+            int column_count = matrix.GetLength(1);
+            return to_numpy_view(matrix, matrix.LongLength * sizeof(double), "float64", row_count, column_count);
+        }
+    }
+
     public static PyObject ToNumpy(double[] values)
     {
         using (Py.GIL())

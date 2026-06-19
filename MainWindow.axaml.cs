@@ -65,7 +65,7 @@ public partial class MainWindow : Window
         update_recent_items_menu();
         update_script_repository_menus();
         update_page_editor_viewport_size();
-        page_editor_scroll.PropertyChanged += (_, e) =>
+        page_editor.PropertyChanged += (_, e) =>
         {
             if (e.Property == BoundsProperty)
                 update_page_editor_viewport_size();
@@ -134,7 +134,7 @@ public partial class MainWindow : Window
 
     private void update_page_editor_viewport_size()
     {
-        page_editor.ViewportSize = page_editor_scroll.Bounds.Size;
+        page_editor.ViewportSize = page_editor.Bounds.Size;
     }
 
     private void update_recent_items_menu()
@@ -393,7 +393,7 @@ public partial class MainWindow : Window
             or ProjectNodeKind.Population
             or ProjectNodeKind.Embedding
             or ProjectNodeKind.StatisticDefinition
-            or ProjectNodeKind.IntegrationJob;
+            or ProjectNodeKind.Platform;
 
     private async void open_fcs_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
         await open_fcs_files_async();
@@ -1144,6 +1144,8 @@ public partial class MainWindow : Window
         catch (Exception exception)
         {
             view_model.StatusText = $"Failed to load workspace: {exception.Message}";
+            if (exception is NotSupportedException)
+                await show_message_dialog("Workspace version incompatible", exception.Message);
         }
     }
 
@@ -1477,10 +1479,10 @@ public partial class MainWindow : Window
             : $"{file_paths.Count} FCS samples";
 
     private async void export_page_png_click(object? sender, RoutedEventArgs e) =>
-        await export_page_bitmap("Export page as PNG", "page.png", "png", transparent_background: true);
+        await export_page_bitmap("Export page as PNG", "page.png", "png", allow_transparent_background: true);
 
     private async void export_page_jpg_click(object? sender, RoutedEventArgs e) =>
-        await export_page_bitmap("Export page as JPEG", "page.jpg", "jpg", transparent_background: false);
+        await export_page_bitmap("Export page as JPEG", "page.jpg", "jpg", allow_transparent_background: false);
 
     private async void export_page_svg_click(object? sender, RoutedEventArgs e)
     {
@@ -1510,7 +1512,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task export_page_bitmap(string title, string suggested_name, string extension, bool transparent_background)
+    private async Task export_page_bitmap(string title, string suggested_name, string extension, bool allow_transparent_background)
     {
         var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
@@ -1529,7 +1531,11 @@ public partial class MainWindow : Window
 
         try
         {
-            page_editor.SaveBitmap(file.Path.LocalPath, transparent_background);
+            page_editor.SaveBitmap(
+                file.Path.LocalPath,
+                allow_transparent_background && view_model.ExportBitmapTransparentBackground,
+                view_model.ExportBitmapDpi,
+                view_model.ExportBitmapApplyRasterizationResolution);
             view_model.StatusText = $"Exported page: {System.IO.Path.GetFileName(file.Path.LocalPath)}";
         }
         catch (Exception exception)

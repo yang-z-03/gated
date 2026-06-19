@@ -381,6 +381,8 @@ public sealed class GateDefinition : NotifyBase
     public bool PreferredShowGateAnnotationNames { get; set; }
     public int PreferredContourLevelCount { get; set; } = 10;
     public int PreferredDensitySmoothing { get; set; } = 9;
+    public Dictionary<PopulationRegion, string> PopulationNames { get; } = new();
+    public Dictionary<PopulationRegion, GateViewOptions> PopulationPreferredViews { get; } = new();
     public Dictionary<string, GateViewOptions> SamplePreferredViews { get; } = new(StringComparer.Ordinal);
     public PopulationRegion ParentPopulationRegion { get; set; } = PopulationRegion.Primary;
     public GateDefinition? Parent { get; set; }
@@ -451,6 +453,28 @@ public sealed class GateDefinition : NotifyBase
         ],
         _ => [PopulationRegion.Primary]
     };
+
+    public string PopulationName(PopulationRegion region)
+    {
+        if (region == PopulationRegion.Primary)
+            return Name;
+        if (PopulationNames.TryGetValue(region, out string? name) && !string.IsNullOrWhiteSpace(name))
+            return name;
+
+        return region switch
+        {
+            PopulationRegion.TopRight => "Top right",
+            PopulationRegion.TopLeft => "Top left",
+            PopulationRegion.BottomRight => "Bottom right",
+            PopulationRegion.BottomLeft => "Bottom left",
+            PopulationRegion.More => "More",
+            PopulationRegion.Less => "Less",
+            PopulationRegion.InRange => "In range",
+            PopulationRegion.BelowRange => "Below range",
+            PopulationRegion.AboveRange => "Above range",
+            _ => "Population"
+        };
+    }
 }
 
 public sealed class StatisticDefinition
@@ -583,19 +607,7 @@ public sealed class PopulationResult : NotifyBase
         }
     }
 
-    public string DisplayName => Region switch
-    {
-        PopulationRegion.TopRight => $"{Gate.Name}: Top right",
-        PopulationRegion.TopLeft => $"{Gate.Name}: Top left",
-        PopulationRegion.BottomRight => $"{Gate.Name}: Bottom right",
-        PopulationRegion.BottomLeft => $"{Gate.Name}: Bottom left",
-        PopulationRegion.More => $"{Gate.Name}: More",
-        PopulationRegion.Less => $"{Gate.Name}: Less",
-        PopulationRegion.InRange => $"{Gate.Name}: In range",
-        PopulationRegion.BelowRange => $"{Gate.Name}: Below range",
-        PopulationRegion.AboveRange => $"{Gate.Name}: Above range",
-        _ => Gate.Name
-    };
+    public string DisplayName => Gate.PopulationName(Region);
 
     public int EventCount
     {
@@ -1249,6 +1261,7 @@ public sealed class FlowGroup : NotifyBase
     public ObservableCollection<GateDefinition> Gates { get; } = new();
     public ObservableCollection<StatisticDefinition> Statistics { get; } = new();
     public ObservableCollection<CompensationMatrix> CompensationCandidates { get; } = new();
+    public GateViewOptions RootViewOptions { get; set; } = new();
     public string ChannelProfile { get; private set; } = "";
 
     public CompensationMatrix? AppliedCompensation
@@ -1409,7 +1422,7 @@ public sealed class FlowWorkspace : NotifyBase
 
     public ObservableCollection<FlowGroup> Groups { get; } = new();
     public ObservableCollection<PageLayout> PageLayouts { get; } = new();
-    public ObservableCollection<IntegrationJob> IntegrationJobs { get; } = new();
+    public ObservableCollection<Platform> IntegrationJobs { get; } = new();
     public ObservableCollection<string> RecentFilePaths { get; } = new();
     public Dictionary<string, MetadataColumnKind> MetadataColumns { get; } = new(StringComparer.Ordinal);
 }

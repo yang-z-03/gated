@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
+using System.Text.Json;
 using Avalonia;
 using gated.Models;
 using gated.Services;
@@ -53,7 +55,7 @@ public sealed class Workspace
     }
 
     public PyObject groupings => PythonObjects.List(Model.Groups.Select(group => new Grouping(Model, group)));
-    public PyObject integration_jobs => PythonObjects.List(Model.IntegrationJobs.Select(job => new IntegrationJob(Model, job)));
+    public PyObject platforms => PythonObjects.Dict(Model.IntegrationJobs.Select(job => KeyValuePair.Create(job.Name, Platform.Wrap(Model, job))));
 
     public Grouping add_grouping(string name)
     {
@@ -71,15 +73,12 @@ public sealed class Workspace
 
     public Grouping this[string grouping] => __getitem__(grouping);
 
-    public IntegrationJob integration_job(string name) =>
-        Model.IntegrationJobs
-            .Select(job => new IntegrationJob(Model, job))
-            .FirstOrDefault(job => job.name == name)
-        ?? throw new KeyNotFoundException($"Integration job '{name}' was not found.");
-
     public void apply_metadata(PyObject dataframe)
     {
+        using (Py.GIL())
         PythonExtensionRuntime.WithGil(() => {
+            using (Py.GIL())
+            {
             dynamic pandas = Py.Import("pandas");
             using PyObject frame = pandas.DataFrame(dataframe);
             var metadata_columns = new PyList(frame.GetAttr("columns").InvokeMethod("tolist"))
@@ -122,6 +121,7 @@ public sealed class Workspace
                         continue;
                     sample.Metadata[column] = python_metadata_value_to_string(value!, Model.MetadataColumns[column]);
                 }
+            }
             }
         });
     }
@@ -170,6 +170,8 @@ public sealed class Workspace
 
     private static MetadataColumnKind infer_metadata_kind_from_frame(PyObject frame, dynamic pandas, string column)
     {
+        using (Py.GIL())
+        {
         using PyObject series = frame.GetItem(column);
         using PyObject values = series.InvokeMethod("dropna").InvokeMethod("tolist");
         var list = new PyList(values);
@@ -188,15 +190,21 @@ public sealed class Workspace
         if (all_numeric)
             return MetadataColumnKind.Float;
         return MetadataColumnKind.String;
+        }
     }
 
-    private static string python_metadata_value_to_string(PyObject value, MetadataColumnKind kind) =>
-        kind switch
+    private static string python_metadata_value_to_string(PyObject value, MetadataColumnKind kind)
+    {
+        using (Py.GIL())
         {
-            MetadataColumnKind.Integer => Convert.ToInt32(value.As<double>()).ToString(),
-            MetadataColumnKind.Float => value.As<double>().ToString("G17"),
-            _ => value.As<string>() ?? value.ToString() ?? ""
-        };
+            return kind switch
+            {
+                MetadataColumnKind.Integer => Convert.ToInt32(value.As<double>()).ToString(),
+                MetadataColumnKind.Float => value.As<double>().ToString("G17"),
+                _ => value.As<string>() ?? value.ToString() ?? ""
+            };
+        }
+    }
 
     internal static string unique_name(string? preferred, IEnumerable<string> existing, string fallback)
     {
@@ -212,115 +220,239 @@ public sealed class Workspace
     }
 }
 
-public sealed class IntegrationJob
+public class Platform
 {
-    private readonly FlowWorkspace workspace;
-    internal readonly Models.IntegrationJob Model;
+    protected readonly FlowWorkspace workspace;
+    internal readonly Models.Platform Model;
 
-    internal IntegrationJob(FlowWorkspace workspace, Models.IntegrationJob model)
+    internal Platform(FlowWorkspace workspace, Models.Platform model)
     {
         this.workspace = workspace;
         Model = model;
     }
 
-    public string name => Model.Name;
-    public string batch_column => Model.BatchColumnName;
-    public PyObject features => PythonObjects.List(Model.SelectedFeatureNames);
-    public PyObject batch_ids => PythonArrayConverter.ToNumpy(Model.BatchIds);
-    public bool has_integrated_matrix => Model.CurrentMatrix is not null;
-    public PyObject matrix => PythonArrayConverter.ToNumpy(Model.SourceData ?? new float[0, 0]);
-    public PyObject logicle_matrix => PythonArrayConverter.ToNumpy(Model.LogicleNormalized ?? new float[0, 0]);
-    public PyObject integrated_matrix => PythonArrayConverter.ToNumpy(Model.CurrentMatrix ?? new float[0, 0]);
-    public PyObject row_source_ids => PythonArrayConverter.ToNumpy(Model.RowMap.SourceIds);
-    public PyObject row_event_indices => PythonArrayConverter.ToNumpy(Model.RowMap.EventIndices);
-
-    public PyObject row_map
-    {
-        get
+    internal static Platform Wrap(FlowWorkspace workspace, Models.Platform model) =>
+        model switch
         {
-            return PythonExtensionRuntime.WithGil(() =>
+            Models.UnivariatePlatform univariate => new UnivariatePlatform(workspace, univariate),
+            Models.BivariatePlatform bivariate => new BivariatePlatform(workspace, bivariate),
+            Models.MultivariatePlatform multivariate => new MultivariatePlatform(workspace, multivariate),
+            _ => new Platform(workspace, model)
+        };
+
+    public string name => Model.Name;
+    public string transform => transform_name(Model.Axis.Transform);
+    public PyObject transformations => PythonObjects.Dict(build_transformations());
+    public PyObject parameters => PythonObjects.Dict(Model.Parameters);
+    public PyObject channels => PythonObjects.List(Model.SelectedFeatureNames);
+    public PyObject populations => PythonObjects.List(platform_populations());
+    public PyObject matrix => PythonArrayConverter.ToNumpy(Model.Matrix ?? new float[0, 0]);
+    public PyObject compensated => PythonArrayConverter.ToNumpy(Model.Compensated ?? new float[0, 0]);
+    public PyObject transformed => PythonArrayConverter.ToNumpy(Model.Transformed ?? new float[0, 0]);
+    public PyObject series => PythonObjects.Dict(Model.Series);
+    public PyObject models => PythonObjects.Dict(Model.Models);
+    public PyObject components => PythonObjects.Dict(Model.Components);
+    public PyObject result => result_tables();
+    public bool has_graphics => Model.HasGraphics;
+    public bool has_data_table => Model.HasDataTable;
+    public PyObject row_map => build_row_map();
+
+    public void clear_results()
+    {
+        Model.ClearFitResults();
+    }
+
+    public void set_result_table(string key, string title, PyObject columns, PyObject rows)
+    {
+        using (Py.GIL())
+        {
+            var table = new PlatformResultTable
             {
-                var dict = new PyDict();
-                using PyObject sources = row_sources();
-                using PyObject source_ids = row_source_ids;
-                using PyObject event_indices = row_event_indices;
-                dict.SetItem("sources", sources);
-                dict.SetItem("source_ids", source_ids);
-                dict.SetItem("event_indices", event_indices);
-                return dict;
-            });
+                Key = string.IsNullOrWhiteSpace(key) ? "results" : key,
+                Title = string.IsNullOrWhiteSpace(title) ? "Results" : title,
+                Columns = PlatformPythonHelpers.StringArray(columns)
+            };
+
+            foreach (var row in PlatformPythonHelpers.Rows(rows))
+                table.Rows.Add(row);
+
+            var existing = Model.ResultTables.FirstOrDefault(item => item.Key == table.Key);
+            if (existing is not null)
+                Model.ResultTables.Remove(existing);
+            Model.ResultTables.Add(table);
         }
     }
 
-    public PyObject row_sources()
+    public void set_plot_series(string key, string title, PyObject x, PyObject y, string x_label = "", string y_label = "")
     {
-        return PythonExtensionRuntime.WithGil(() =>
+        using (Py.GIL())
         {
-            var rows = new PyList();
-            for (int source_id = 0; source_id < Model.RowMap.Sources.Count; source_id++)
+            var series = new PlatformPlotSeries
             {
-                var source = Model.RowMap.Sources[source_id];
-                var group = workspace.Groups.FirstOrDefault(item => item.Id == source.GroupId);
-                var sample = find_sample(source.SampleId);
-                var dict = new PyDict();
-                using PyObject py_source_id = source_id.ToPython();
-                using PyObject py_group = (group?.Name ?? "").ToPython();
-                using PyObject py_sample = (sample?.Name ?? "").ToPython();
-                using PyObject py_group_id = source.GroupId.ToString().ToPython();
-                using PyObject py_sample_id = source.SampleId.ToString().ToPython();
-                using PyObject py_gate_id = source.GateId.ToString().ToPython();
-                using PyObject py_region = source.Region.ToString().ToPython();
-                dict.SetItem("source_id", py_source_id);
-                dict.SetItem("group", py_group);
-                dict.SetItem("sample", py_sample);
-                dict.SetItem("group_id", py_group_id);
-                dict.SetItem("sample_id", py_sample_id);
-                dict.SetItem("gate_id", py_gate_id);
-                dict.SetItem("region", py_region);
-                rows.Append(dict);
-            }
-
-            dynamic pandas = Py.Import("pandas");
-            return pandas.DataFrame(rows);
-        });
+                Key = string.IsNullOrWhiteSpace(key) ? "plot" : key,
+                Title = string.IsNullOrWhiteSpace(title) ? "Plot" : title,
+                XLabel = x_label ?? "",
+                YLabel = y_label ?? "",
+                X = PlatformPythonHelpers.DoubleArray(x),
+                Y = PlatformPythonHelpers.DoubleArray(y)
+            };
+    
+            var existing = Model.PlotSeries.FirstOrDefault(item => item.Key == series.Key);
+            if (existing is not null)
+                Model.PlotSeries.Remove(existing);
+            Model.PlotSeries.Add(series);
+            Model.Series[series.Key] = series;
+        }
     }
 
-    public PyObject row_map_frame()
+    public void set_fit_curve(string key, string title, string kind, int source_id, PyObject parameters, double normalizer = 1.0, string x_label = "", string y_label = "")
     {
-        return PythonExtensionRuntime.WithGil(() =>
+        using (Py.GIL())
         {
-            var rows = new PyList();
-            for (int row = 0; row < Model.RowMap.Count; row++)
-            {
-                int source_id = Model.RowMap.SourceIds[row];
-                var source = source_id >= 0 && source_id < Model.RowMap.Sources.Count
-                    ? Model.RowMap.Sources[source_id]
-                    : null;
-                var sample = source is null ? null : find_sample(source.SampleId);
-                var group = source is null ? null : workspace.Groups.FirstOrDefault(item => item.Id == source.GroupId);
-                var dict = new PyDict();
-                using PyObject py_group = (group?.Name ?? "").ToPython();
-                using PyObject py_sample = (sample?.Name ?? "").ToPython();
-                using PyObject py_sample_id = (source?.SampleId.ToString() ?? "").ToPython();
-                using PyObject py_gate_id = (source?.GateId.ToString() ?? "").ToPython();
-                using PyObject py_region = (source?.Region.ToString() ?? "").ToPython();
-                using PyObject py_event_index = Model.RowMap.EventIndices[row].ToPython();
-                dict.SetItem("group", py_group);
-                dict.SetItem("sample", py_sample);
-                dict.SetItem("sample_id", py_sample_id);
-                dict.SetItem("gate_id", py_gate_id);
-                dict.SetItem("region", py_region);
-                dict.SetItem("event_index", py_event_index);
-                rows.Append(dict);
-            }
+            if (!Enum.TryParse(kind, ignoreCase: true, out PlatformFitCurveKind curve_kind))
+                throw new ArgumentException($"Unknown fit curve kind '{kind}'.", nameof(kind));
 
-            dynamic pandas = Py.Import("pandas");
-            return pandas.DataFrame(rows);
-        });
+            var curve = new PlatformFitCurve
+            {
+                Key = string.IsNullOrWhiteSpace(key) ? "fit" : key,
+                Title = string.IsNullOrWhiteSpace(title) ? "Fit" : title,
+                Kind = curve_kind,
+                SourceId = source_id,
+                Parameters = PlatformPythonHelpers.DoubleArray(parameters),
+                Normalizer = double.IsFinite(normalizer) && normalizer > 0 ? normalizer : 1.0,
+                XLabel = x_label ?? "",
+                YLabel = y_label ?? "",
+                FitTransformation = Model.Axis.Transform,
+                FitLogicle = Model.Axis.Logicle
+            };
+
+            var existing = Model.FitCurves.FirstOrDefault(item => item.Key == curve.Key);
+            if (existing is not null)
+                Model.FitCurves.Remove(existing);
+            Model.FitCurves.Add(curve);
+            Model.Models[curve.Key] = curve;
+        }
+    }
+
+    public void add_component_normal(string key, double mu, double sigma, double amplitude)
+    {
+        var curve = create_curve(key, key, PlatformFitCurveKind.Gaussian, -1, [amplitude, mu, sigma]);
+        add_component_curve(key, curve);
+    }
+
+    public void add_component_gamma(string key, double alpha, double beta, double amplitude)
+    {
+        var curve = create_curve(key, key, PlatformFitCurveKind.Gamma, -1, [alpha, beta, amplitude]);
+        add_component_curve(key, curve);
+    }
+
+    public void add_component_exponential(string key, double slope, double expn, double intercept)
+    {
+        var curve = create_curve(key, key, PlatformFitCurveKind.Exponential, -1, [slope, expn, intercept]);
+        add_component_curve(key, curve);
+    }
+
+    public void set_fit_addition(string key, PyObject models, PyObject weights, double intercept = 0)
+    {
+        using (Py.GIL())
+        {
+            string[] model_keys = PlatformPythonHelpers.StringArray(models);
+            double[] weight_values = PlatformPythonHelpers.DoubleArray(weights);
+            if (model_keys.Length != weight_values.Length)
+                throw new ArgumentException("models and weights must have the same length.");
+            var curve = create_curve(key, key, PlatformFitCurveKind.Addition, -1, [], model_keys: model_keys, weights: weight_values, intercept: intercept);
+            set_model_curve(key, curve);
+        }
+    }
+
+    public void set_statistic(string name, object? value)
+    {
+        using (Py.GIL())
+        {
+            if (string.IsNullOrWhiteSpace(name))
+                return;
+    
+            var existing = Model.PlatformStatistics.FirstOrDefault(item => item.Name == name);
+            if (existing is not null)
+                Model.PlatformStatistics.Remove(existing);
+            Model.PlatformStatistics.Add(new PlatformStatisticResult { Name = name, Value = value?.ToString() ?? "" });
+        }
+    }
+
+    private PlatformFitCurve create_curve(
+        string key,
+        string title,
+        PlatformFitCurveKind kind,
+        int source_id,
+        double[] parameters,
+        double normalizer = 1.0,
+        string x_label = "",
+        string y_label = "",
+        string[]? model_keys = null,
+        double[]? weights = null,
+        double intercept = 0) =>
+        new()
+        {
+            Key = string.IsNullOrWhiteSpace(key) ? kind.ToString().ToLowerInvariant() : key,
+            Title = string.IsNullOrWhiteSpace(title) ? key : title,
+            Kind = kind,
+            SourceId = source_id,
+            Parameters = parameters,
+            Normalizer = double.IsFinite(normalizer) && normalizer > 0 ? normalizer : 1.0,
+            XLabel = x_label,
+            YLabel = y_label,
+            FitTransformation = Model.Axis.Transform,
+            FitLogicle = Model.Axis.Logicle,
+            ModelKeys = model_keys ?? [],
+            Weights = weights ?? [],
+            Intercept = intercept
+        };
+
+    private void add_component_curve(string key, PlatformFitCurve curve)
+    {
+        if (!Model.Components.TryGetValue(key, out var curves))
+        {
+            curves = new List<PlatformFitCurve>();
+            Model.Components[key] = curves;
+        }
+        curves.Add(curve);
+        var existing = Model.FitCurves.FirstOrDefault(item => item.Key == curve.Key);
+        if (existing is not null)
+            Model.FitCurves.Remove(existing);
+        Model.FitCurves.Add(curve);
+    }
+
+    private void set_model_curve(string key, PlatformFitCurve curve)
+    {
+        Model.Models[key] = curve;
+        upsert_fit_curve(curve);
+    }
+
+    private void upsert_fit_curve(PlatformFitCurve curve)
+    {
+        var existing = Model.FitCurves.FirstOrDefault(item => item.Key == curve.Key);
+        if (existing is not null)
+            Model.FitCurves.Remove(existing);
+        Model.FitCurves.Add(curve);
+        Model.Models[curve.Key] = curve;
+    }
+
+    public string sample_metadata(string sample_name, string column_name)
+    {
+        using (Py.GIL())
+        {
+            if (string.IsNullOrWhiteSpace(sample_name) || string.IsNullOrWhiteSpace(column_name))
+                return "";
+            var sample = workspace.Groups.SelectMany(group => group.Samples)
+                .FirstOrDefault(item => string.Equals(item.Name, sample_name, StringComparison.Ordinal));
+            return sample is not null && sample.Metadata.TryGetValue(column_name, out string? value) ? value ?? "" : "";
+        }
     }
 
     public void set_embedding(string name, PyObject value)
     {
+        using (Py.GIL())
+        {
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Embedding name cannot be empty.", nameof(name));
         if (string.Equals(name, "Populations", StringComparison.Ordinal))
@@ -328,7 +460,7 @@ public sealed class IntegrationJob
 
         var input = PythonArrayConverter.ToEmbeddingArray(value);
         if (input.Values.Length != Model.RowMap.Count)
-            throw new ArgumentException($"Embedding '{name}' expects {Model.RowMap.Count} values, one for each integration job row.");
+            throw new ArgumentException($"Embedding '{name}' expects {Model.RowMap.Count} values, one for each platform row.");
 
         var samples = Model.RowMap.Sources
             .Select(source => find_sample(source.SampleId))
@@ -356,7 +488,7 @@ public sealed class IntegrationJob
         if (input.Kind == EmbeddingValueKind.Integer)
         {
             foreach (Guid sample_id in samples.Keys)
-                remapped_by_sample[sample_id] = remap_category_values(input.Values, input.Categories, sample_categories[sample_id]);
+                remapped_by_sample[sample_id] = PlatformPythonHelpers.RemapCategoryValues(input.Values, input.Categories, sample_categories[sample_id]);
         }
 
         for (int row = 0; row < Model.RowMap.Count; row++)
@@ -383,12 +515,209 @@ public sealed class IntegrationJob
             sample.Embeddings[name] = embedding;
             sample.InvalidateNormalizedChannelCache();
         }
+        }
     }
 
-    private FlowSample? find_sample(Guid sample_id) =>
+    private PyObject build_row_map()
+    {
+        return PythonExtensionRuntime.WithGil(() =>
+        {
+            var rows = new PyList();
+            for (int row = 0; row < Model.RowMap.Count; row++)
+            {
+                int source_id = Model.RowMap.SourceIds[row];
+                var source = source_id >= 0 && source_id < Model.RowMap.Sources.Count
+                    ? Model.RowMap.Sources[source_id]
+                    : null;
+                var sample = source is null ? null : find_sample(source.SampleId);
+                var group = source is null ? null : workspace.Groups.FirstOrDefault(item => item.Id == source.GroupId);
+                var population = source is null || sample is null ? null : find_population(sample.Populations, source.GateId, source.Region);
+                var dict = new PyDict();
+                dict.SetItem("row", row.ToPython());
+                dict.SetItem("source_id", source_id.ToPython());
+                dict.SetItem("group", (group?.Name ?? "").ToPython());
+                dict.SetItem("sample", (sample?.Name ?? "").ToPython());
+                dict.SetItem("population", (population?.DisplayName ?? sample?.Name ?? "").ToPython());
+                dict.SetItem("group_id", (source?.GroupId.ToString() ?? "").ToPython());
+                dict.SetItem("sample_id", (source?.SampleId.ToString() ?? "").ToPython());
+                dict.SetItem("gate_id", (source?.GateId.ToString() ?? "").ToPython());
+                dict.SetItem("region", (source?.Region.ToString() ?? "").ToPython());
+                dict.SetItem("event_index", Model.RowMap.EventIndices[row].ToPython());
+                rows.Append(dict);
+            }
+
+            dynamic pandas = Py.Import("pandas");
+            return pandas.DataFrame(rows);
+        });
+    }
+
+    protected FlowSample? find_sample(Guid sample_id) =>
         workspace.Groups.SelectMany(group => group.Samples).FirstOrDefault(sample => sample.Id == sample_id);
 
-    private static float[] remap_category_values(
+    private IEnumerable<PlatformPopulation> platform_populations() =>
+        Model.Populations
+            .Where(row => Model.Kind == PlatformKind.Integration ? row.IsSelected : row.IsPopulation && row.IsPlatformDropped)
+            .Select(row => new PlatformPopulation(row));
+
+    private IEnumerable<KeyValuePair<string, ViewOptions>> build_transformations()
+    {
+        foreach (string channel in Model.SelectedFeatureNames)
+        {
+            if (Model.Transformations.TryGetValue(channel, out var options))
+                yield return KeyValuePair.Create(channel, new ViewOptions(options));
+            else
+                yield return KeyValuePair.Create(channel, new ViewOptions(Model));
+        }
+    }
+
+    private PyObject result_tables() =>
+        PythonObjects.Dict(Model.ResultTables.Select(table => KeyValuePair.Create(table.Key, table)));
+
+    private static string transform_name(PlatformTransformationKind kind) =>
+        kind switch
+        {
+            PlatformTransformationKind.Logarithm => "logarithm",
+            PlatformTransformationKind.Logicle => "logicle",
+            _ => "linear"
+        };
+
+    private static PopulationResult? find_population(IEnumerable<PopulationResult> populations, Guid gate_id, PopulationRegion region)
+    {
+        foreach (var population in populations)
+        {
+            if (population.Gate.Id == gate_id && population.Region == region)
+                return population;
+            var child = find_population(population.Children, gate_id, region);
+            if (child is not null)
+                return child;
+        }
+
+        return null;
+    }
+}
+
+public sealed class UnivariatePlatform : Platform
+{
+    private readonly Models.UnivariatePlatform model;
+
+    internal UnivariatePlatform(FlowWorkspace workspace, Models.UnivariatePlatform model) : base(workspace, model)
+    {
+        this.model = model;
+    }
+
+    public string major => model.Major;
+    public PyObject histogram => PythonArrayConverter.ToNumpy(model.Histogram);
+    public PyObject smoothed => PythonArrayConverter.ToNumpy(model.Smoothed);
+    public int smoothing_window => model.SmoothingWindow;
+    public bool enable_smoothing => model.EnableSmoothing;
+}
+
+public sealed class BivariatePlatform : Platform
+{
+    private readonly Models.BivariatePlatform model;
+
+    internal BivariatePlatform(FlowWorkspace workspace, Models.BivariatePlatform model) : base(workspace, model)
+    {
+        this.model = model;
+    }
+
+    public string major => model.Major;
+    public string minor => model.Minor;
+    public PyObject trend => PythonArrayConverter.ToNumpy(model.Trend);
+    public PyObject binned => PythonArrayConverter.ToNumpy(model.Binned);
+    public PyObject smoothed => PythonArrayConverter.ToNumpy(model.Smoothed);
+    public int smoothing_window => model.SmoothingWindow;
+    public bool enable_smoothing => model.EnableSmoothing;
+}
+
+public sealed class MultivariatePlatform : Platform
+{
+    private readonly Models.MultivariatePlatform model;
+
+    internal MultivariatePlatform(FlowWorkspace workspace, Models.MultivariatePlatform model) : base(workspace, model)
+    {
+        this.model = model;
+    }
+
+    public PyObject normalized => PythonArrayConverter.ToNumpy(model.Normalized ?? new float[0, 0]);
+}
+
+public sealed class ViewOptions
+{
+    private readonly PlatformChannelTransformation? options;
+    private readonly Models.Platform? platform;
+
+    internal ViewOptions(PlatformChannelTransformation options)
+    {
+        this.options = options;
+    }
+
+    internal ViewOptions(Models.Platform platform)
+    {
+        this.platform = platform;
+    }
+
+    public double min => options?.Minimum ?? platform?.Axis.Minimum ?? 0;
+    public double max => options?.Maximum ?? platform?.Axis.Maximum ?? 0;
+    public double t => options?.Logicle.T ?? platform?.Axis.Logicle.T ?? 0;
+    public double w => options?.Logicle.W ?? platform?.Axis.Logicle.W ?? 0;
+    public double m => options?.Logicle.M ?? platform?.Axis.Logicle.M ?? 0;
+    public double a => options?.Logicle.A ?? platform?.Axis.Logicle.A ?? 0;
+}
+
+public sealed class PlatformPopulation
+{
+    private readonly IntegrationJobPopulationSelection model;
+
+    internal PlatformPopulation(IntegrationJobPopulationSelection model)
+    {
+        this.model = model;
+    }
+
+    public string group => model.GroupName;
+    public string sample => model.SampleName;
+    public string name => model.PopulationName;
+    public string population => model.PopulationName;
+    public string group_id => model.GroupId.ToString();
+    public string sample_id => model.SampleId.ToString();
+    public string gate_id => model.GateId.ToString();
+    public string region => model.Region.ToString();
+    public bool selected => model.IsSelected;
+}
+
+internal static class PlatformPythonHelpers
+{
+    public static string[] StringArray(PyObject value)
+    {
+        using (Py.GIL())
+        {
+        dynamic json = Py.Import("json");
+        using PyObject text = json.dumps(value);
+        return JsonSerializer.Deserialize<string[]>(text.As<string>()) ?? [];
+        }
+    }
+
+    public static double[] DoubleArray(PyObject value)
+    {
+        using (Py.GIL())
+        {
+        dynamic json = Py.Import("json");
+        using PyObject text = json.dumps(value);
+        return JsonSerializer.Deserialize<double[]>(text.As<string>()) ?? [];
+        }
+    }
+
+    public static IEnumerable<string[]> Rows(PyObject value)
+    {
+        using (Py.GIL())
+        {
+        dynamic json = Py.Import("json");
+        using PyObject text = json.dumps(value);
+        return JsonSerializer.Deserialize<List<string[]>>(text.As<string>()) ?? [];
+        }
+    }
+
+    public static float[] RemapCategoryValues(
         float[] values,
         IReadOnlyDictionary<int, string> input_categories,
         Dictionary<int, string> target_categories)
@@ -467,9 +796,13 @@ public sealed class Grouping
 
     public Compensation create_compensation(string key, PyObject channels, PyObject matrix)
     {
+        using (Py.GIL())
+        {
         PythonExtensionRuntime.EnsureInitialized();
         return PythonExtensionRuntime.WithGil(() =>
         {
+            using (Py.GIL())
+            {
             var channel_names = PythonArrayConverter.To<string>(new PyList(channels));
             var values = PythonArrayConverter.ToFloatMatrix(matrix);
             if (values.GetLength(0) != channel_names.Count || values.GetLength(1) != channel_names.Count)
@@ -477,7 +810,9 @@ public sealed class Grouping
 
             var compensation = CompensationMatrix.Create(key, channel_names, values);
             return new Compensation(Model.RegisterCompensation(compensation, make_applied_if_first: false));
+            }
         });
+        }
     }
 
     public Sample __getitem__(string sample) =>
@@ -564,34 +899,58 @@ public sealed class Strategy
         string? display_name = null,
         PyObject? parameters = null)
     {
+        using (Py.GIL())
+        {
         PythonExtensionRuntime.ValidateStatisticSource(source, callable_name);
         var definition = new Models.StatisticDefinition();
         definition.SetPythonMethod(source, callable_name, display_name, PythonExtensionRuntime.ToJson(parameters));
         definitions().Add(definition);
         group.RecalculateSamples();
         return new StatisticDefinition(group, definition);
+        }
     }
 
-    public Strategy define_gate_polygon(string name, string population_key, string channel1, string channel2, PyObject vertices) =>
-        add_gate(name, GateKind.Polygon, population_key, channel1, channel2, PythonArrayConverter.ToFloatMatrix(vertices));
+    public Strategy define_gate_polygon(string name, string population_key, string channel1, string channel2, PyObject vertices)
+    {
+        using (Py.GIL())
+            return add_gate(name, GateKind.Polygon, population_key, channel1, channel2, PythonArrayConverter.ToFloatMatrix(vertices));
+    }
 
-    public Strategy define_gate_rectangle(string name, string population_key, string channel1, string channel2, PyObject rectangle) =>
-        add_gate(name, GateKind.Rectangle, population_key, channel1, channel2, PythonArrayConverter.ToFloatMatrix(rectangle));
+    public Strategy define_gate_rectangle(string name, string population_key, string channel1, string channel2, PyObject rectangle)
+    {
+        using (Py.GIL())
+            return add_gate(name, GateKind.Rectangle, population_key, channel1, channel2, PythonArrayConverter.ToFloatMatrix(rectangle));
+    }
 
-    public Strategy define_gate_quadrant(string name, string population_key, string channel1, string channel2, PyObject center) =>
-        add_gate(name, GateKind.Quadrant, population_key, channel1, channel2, PythonArrayConverter.ToFloatMatrix(center));
+    public Strategy define_gate_quadrant(string name, string population_key, string channel1, string channel2, PyObject center)
+    {
+        using (Py.GIL())
+            return add_gate(name, GateKind.Quadrant, population_key, channel1, channel2, PythonArrayConverter.ToFloatMatrix(center));
+    }
 
-    public Strategy define_gate_curly(string name, string population_key, string channel1, string channel2, PyObject center) =>
-        add_gate(name, GateKind.CurlyQuadrant, population_key, channel1, channel2, PythonArrayConverter.ToFloatMatrix(center));
+    public Strategy define_gate_curly(string name, string population_key, string channel1, string channel2, PyObject center)
+    {
+        using (Py.GIL())
+            return add_gate(name, GateKind.CurlyQuadrant, population_key, channel1, channel2, PythonArrayConverter.ToFloatMatrix(center));
+    }
 
-    public Strategy define_gate_offset(string name, string population_key, string channel1, string channel2, PyObject positions) =>
-        add_gate(name, GateKind.OffsetQuadrant, population_key, channel1, channel2, PythonArrayConverter.ToFloatMatrix(positions));
+    public Strategy define_gate_offset(string name, string population_key, string channel1, string channel2, PyObject positions)
+    {
+        using (Py.GIL())
+            return add_gate(name, GateKind.OffsetQuadrant, population_key, channel1, channel2, PythonArrayConverter.ToFloatMatrix(positions));
+    }
 
-    public Strategy define_gate_threshold(string name, string population_key, string channel1, PyObject position) =>
-        add_gate(name, GateKind.Threshold, population_key, channel1, null, PythonArrayConverter.ToFloatMatrix(position));
+    public Strategy define_gate_threshold(string name, string population_key, string channel1, PyObject position)
+    {
+        using (Py.GIL())
+            return add_gate(name, GateKind.Threshold, population_key, channel1, null, PythonArrayConverter.ToFloatMatrix(position));
+    }
 
-    public Strategy define_gate_range(string name, string population_key, string channel1, PyObject positions) =>
-        add_gate(name, GateKind.Range, population_key, channel1, null, PythonArrayConverter.ToFloatMatrix(positions));
+    public Strategy define_gate_range(string name, string population_key, string channel1, PyObject positions)
+    {
+        using (Py.GIL())
+            return add_gate(name, GateKind.Range, population_key, channel1, null, PythonArrayConverter.ToFloatMatrix(positions));
+    }
 
     public Strategy define_gate_overlap(string name, string population_key, string gate2, string population2) =>
         add_boolean_gate(name, GateKind.Overlap, population_key, gate2, population2);
@@ -751,6 +1110,8 @@ public sealed class Population
 
     public void set_embedding(string name, PyObject value)
     {
+        using (Py.GIL())
+        {
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Embedding name cannot be empty.", nameof(name));
         if (string.Equals(name, "Populations", StringComparison.Ordinal))
@@ -795,6 +1156,7 @@ public sealed class Population
             embedding.Categories[category.Key] = category.Value;
         sample.Embeddings[name] = embedding;
         sample.InvalidateNormalizedChannelCache();
+        }
     }
 
     private static float[] remap_category_values(
@@ -908,11 +1270,17 @@ public sealed class StatisticDefinition
 
     public void set_method(string source, string callable_name = "entry", string? display_name = null, PyObject? parameters = null)
     {
-        PythonExtensionRuntime.EnsureInitialized();
-        PythonExtensionRuntime.ValidateStatisticSource(source, callable_name);
-        PythonExtensionRuntime.WithGil(() =>
-            Model.SetPythonMethod(source, callable_name, display_name, PythonExtensionRuntime.ToJson(parameters)));
-        group.RecalculateSamples();
+        using (Py.GIL())
+        {
+            PythonExtensionRuntime.EnsureInitialized();
+            PythonExtensionRuntime.ValidateStatisticSource(source, callable_name);
+            PythonExtensionRuntime.WithGil(() =>
+            {
+                using (Py.GIL())
+                    Model.SetPythonMethod(source, callable_name, display_name, PythonExtensionRuntime.ToJson(parameters));
+            });
+            group.RecalculateSamples();
+        }
     }
 }
 
@@ -932,6 +1300,22 @@ public sealed class Compensation
 
 internal static class PythonObjects
 {
+    public static PyObject Dict(IEnumerable<KeyValuePair<string, object?>> values)
+    {
+        return PythonExtensionRuntime.WithGil(() =>
+        {
+            var dict = new PyDict();
+            foreach (var pair in values)
+            {
+                using PyObject key = pair.Key.ToPython();
+                using PyObject value = object_to_python(pair.Value);
+                dict.SetItem(key, value);
+            }
+
+            return dict;
+        });
+    }
+
     public static PyObject List<T>(IEnumerable<T> values)
     {
         return PythonExtensionRuntime.WithGil(() =>
@@ -961,5 +1345,26 @@ internal static class PythonObjects
 
             return dict;
         });
+    }
+
+    private static PyObject object_to_python(object? value) =>
+        value switch
+        {
+            null => Py.Import("builtins").GetAttr("None"),
+            string text => text.ToPython(),
+            bool boolean => boolean.ToPython(),
+            int integer => integer.ToPython(),
+            long integer => integer.ToPython(),
+            float number => number.ToPython(),
+            double number => number.ToPython(),
+            decimal number => Convert.ToDouble(number, CultureInfo.InvariantCulture).ToPython(),
+            JsonElement element => json_element_to_python(element),
+            _ => value.ToPython()
+        };
+
+    private static PyObject json_element_to_python(JsonElement element)
+    {
+        dynamic json = Py.Import("json");
+        return json.loads(element.GetRawText());
     }
 }

@@ -90,14 +90,16 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
         pressed_point = point;
         drag_started = false;
 
-        select_node(node);
-
         double chevron_left = 8 + node.Depth * indent_width;
         bool on_chevron = point.X >= chevron_left && point.X <= chevron_left + chevron_width + 4;
         if (node.HasChildren && on_chevron)
         {
             if (ToggleNodeCommand?.CanExecute(node) == true)
                 ToggleNodeCommand.Execute(node);
+        }
+        else if (!is_draggable_node(node))
+        {
+            select_node(node);
         }
 
         e.Handled = true;
@@ -113,7 +115,7 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
         if (Math.Abs(point.X - pressed_point.X) < 6 && Math.Abs(point.Y - pressed_point.Y) < 6)
             return;
 
-        if (pressed_node.Kind is not (ProjectNodeKind.Gate or ProjectNodeKind.Population))
+        if (!is_draggable_node(pressed_node))
             return;
 
         drag_started = true;
@@ -126,9 +128,21 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
         base.OnPointerReleased(e);
+        if (pressed_node is not null && !drag_started)
+            select_node(pressed_node);
         pressed_node = null;
         drag_started = false;
     }
+
+    private static bool is_draggable_node(ProjectNode node) =>
+        node.Kind is ProjectNodeKind.Gate
+            or ProjectNodeKind.GatePopulationSlot
+            or ProjectNodeKind.Population
+            or ProjectNodeKind.Sample
+            or ProjectNodeKind.Group
+            or ProjectNodeKind.GateFolder
+            or ProjectNodeKind.StatisticDefinition
+            or ProjectNodeKind.Platform;
 
     protected override Size MeasureOverride(Size availableSize)
     {
@@ -260,7 +274,7 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
                 break;
 
             case ProjectNodeKind.IntegrationJobFolder:
-            case ProjectNodeKind.IntegrationJob:
+            case ProjectNodeKind.Platform:
             case ProjectNodeKind.Embedding:
                 icon.Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri("avares://gated/Resources/embedding.svg")));
                 break;
