@@ -28,7 +28,6 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
     public static readonly StyledProperty<ICommand?> ToggleNodeCommandProperty =
         AvaloniaProperty.Register<ProjectTreeView, ICommand?>(nameof(ToggleNodeCommand));
 
-    private const double header_height = 30;
     private const double row_height = 25;
     private const double indent_width = 25;
     private const double chevron_width = 21;
@@ -40,6 +39,8 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
     private ProjectNode? pressed_node;
     private Point pressed_point;
     private bool drag_started;
+
+    public event EventHandler<ProjectNodeContextRequestedEventArgs>? NodeContextRequested;
 
     static ProjectTreeView()
     {
@@ -85,6 +86,18 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
         var node = node_at(point.Y);
         if (node is null)
             return;
+
+        var properties = e.GetCurrentPoint(this).Properties;
+        if (properties.IsRightButtonPressed)
+        {
+            if (is_context_menu_node(node))
+            {
+                select_node(node);
+                NodeContextRequested?.Invoke(this, new ProjectNodeContextRequestedEventArgs(node, point));
+                e.Handled = true;
+            }
+            return;
+        }
 
         pressed_node = node;
         pressed_point = point;
@@ -144,10 +157,18 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
             or ProjectNodeKind.StatisticDefinition
             or ProjectNodeKind.Platform;
 
+    private static bool is_context_menu_node(ProjectNode node) =>
+        node.Kind is ProjectNodeKind.Sample
+            or ProjectNodeKind.Population
+            or ProjectNodeKind.GateFolder
+            or ProjectNodeKind.Gate
+            or ProjectNodeKind.GatePopulationSlot
+            or ProjectNodeKind.Platform;
+
     protected override Size MeasureOverride(Size availableSize)
     {
         double width = double.IsInfinity(availableSize.Width) ? 320 : availableSize.Width;
-        double height = header_height + Math.Max(1, ProjectNodes.Length) * row_height;
+        double height = Math.Max(1, ProjectNodes.Length) * row_height;
         return new Size(width, height);
     }
 
@@ -165,12 +186,11 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
         base.Render(context);
         var bounds = Bounds;
         context.FillRectangle(Brushes.Transparent, bounds);
-        draw_header(context, bounds);
 
         var nodes = ProjectNodes;
         if (nodes.Length == 0)
         {
-            draw_text(context, "No workspace nodes", new Point(10, header_height + 6), font_size, Color.FromRgb(130, 136, 148));
+            draw_text(context, "No workspace nodes", new Point(10, 6), font_size, Color.FromRgb(130, 136, 148));
             return;
         }
 
@@ -185,7 +205,7 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
 
     private ProjectNode? node_at(double y)
     {
-        int index = (int)Math.Floor((y - header_height) / row_height);
+        int index = (int)Math.Floor(y / row_height);
         var nodes = ProjectNodes;
         if (index < 0 || index >= nodes.Length)
             return null;
@@ -199,22 +219,22 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
             SelectNodeCommand.Execute(node);
     }
 
-    private void draw_header(DrawingContext context, Rect bounds)
-    {
-        var border_pen = new Pen(new SolidColorBrush(Color.FromRgb(64, 66, 72)), 1);
-        draw_text(context, "Workspace", new Point(10, 6), font_size, Color.FromRgb(164, 168, 178));
-        draw_text(context, "Statistics", new Point(Math.Max(10, bounds.Width - count_width + 8), 6), font_size, Color.FromRgb(164, 168, 178));
-    }
-
     private void draw_node(DrawingContext context, ProjectNode node, int index, double width)
     {
-        double top = header_height + index * row_height;
+        double top = index * row_height;
         var row_rect = new Rect(4, top + 1, Math.Max(0, width - 8), row_height - 2);
         Color row_background = Color.FromRgb(30, 30, 30);
         if (node.IsSelected)
         {
             row_background = Color.FromRgb(52, 58, 70);
-            context.FillRectangle(new SolidColorBrush(Color.FromRgb(52, 58, 70)), row_rect, 4);
+            context.DrawRectangle(
+                new Pen(new SolidColorBrush(Color.FromRgb(29, 117, 219)), 1.5),
+                new Rect(row_rect.Left - 1, row_rect.Top - 1, row_rect.Width + 2, row_rect.Height + 2), 6);
+
+            context.FillRectangle(
+                new SolidColorBrush(Color.FromRgb(52, 58, 70)),
+                // new SolidColorBrush(Color.FromRgb(29, 117, 219)),
+                new Rect(row_rect.Left + 1, row_rect.Top + 1, row_rect.Width - 2, row_rect.Height - 2), 4);
         }
 
         double x = 6 + node.Depth * indent_width;
@@ -408,4 +428,16 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
         InvalidateVisual();
         InvalidateMeasure();
     }
+}
+
+public sealed class ProjectNodeContextRequestedEventArgs : EventArgs
+{
+    public ProjectNodeContextRequestedEventArgs(ProjectNode node, Point point)
+    {
+        Node = node;
+        Point = point;
+    }
+
+    public ProjectNode Node { get; }
+    public Point Point { get; }
 }

@@ -7,8 +7,10 @@ using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 using System.Threading.Tasks;
+using System.Windows.Input;
 using Avalonia.Data;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Input;
 using Avalonia.Media;
@@ -65,6 +67,7 @@ public partial class MainWindow : Window
         update_recent_items_menu();
         update_script_repository_menus();
         update_page_editor_viewport_size();
+        project_tree.NodeContextRequested += project_tree_node_context_requested;
         page_editor.PropertyChanged += (_, e) =>
         {
             if (e.Property == BoundsProperty)
@@ -1282,6 +1285,303 @@ public partial class MainWindow : Window
     {
         if (view_model.SelectedPageElement is not null)
             view_model.SelectedPageElement.DotColor.Palette = palette;
+    }
+
+    private void project_tree_node_context_requested(object? sender, ProjectNodeContextRequestedEventArgs e)
+    {
+        var menu = build_project_tree_context_menu(e.Node);
+        if (menu.Items.Count == 0)
+            return;
+
+        project_tree.ContextMenu = menu;
+        menu.Open(project_tree);
+    }
+
+    private ContextMenu build_project_tree_context_menu(ProjectNode node)
+    {
+        var menu = new ContextMenu
+        {
+            DataContext = view_model,
+            Placement = PlacementMode.Pointer
+        };
+
+        switch (node.Kind)
+        {
+            case ProjectNodeKind.Sample:
+                add_menu_items(menu,
+                    command_menu_item("Rename sample", view_model.RenameSelectedNodeCommand),
+                    command_menu_item("Delete selected samples", view_model.DeleteSelectedCommand),
+                    new Separator(),
+                    click_menu_item("Append samples to groups", open_fcs_menu_item_click),
+                    command_menu_item("Concatenate", view_model.ConcatenateSamplesCommand),
+                    new Separator(),
+                    build_plotting_context_menu(),
+                    build_gating_context_menu(include_gate_management: false),
+                    build_statistics_context_menu(include_platform_items: false),
+                    new Separator(),
+                    command_menu_item("Expand", view_model.ExpandProjectTreeCommand),
+                    command_menu_item("Collapse", view_model.CollapseProjectTreeCommand));
+                break;
+
+            case ProjectNodeKind.Population:
+                add_menu_items(menu,
+                    command_menu_item("Rename population", view_model.RenameSelectedNodeCommand),
+                    command_menu_item("Delete selected gate", view_model.DeleteSelectedCommand),
+                    new Separator(),
+                    build_plotting_context_menu(),
+                    build_gating_context_menu(include_gate_management: true),
+                    build_statistics_context_menu(include_platform_items: false));
+                break;
+
+            case ProjectNodeKind.GateFolder:
+                add_menu_items(menu,
+                    build_plotting_context_menu(),
+                    build_gating_context_menu(include_gate_management: false),
+                    build_statistics_context_menu(include_platform_items: false),
+                    new Separator(),
+                    command_menu_item("Expand", view_model.ExpandProjectTreeCommand),
+                    command_menu_item("Collapse", view_model.CollapseProjectTreeCommand));
+                break;
+
+            case ProjectNodeKind.Gate:
+            case ProjectNodeKind.GatePopulationSlot:
+                add_menu_items(menu,
+                    command_menu_item("Rename gate", view_model.RenameSelectedNodeCommand),
+                    command_menu_item("Delete selected gate", view_model.DeleteSelectedCommand),
+                    new Separator(),
+                    build_plotting_context_menu(),
+                    build_gating_context_menu(include_gate_management: true),
+                    build_statistics_context_menu(include_platform_items: false));
+                break;
+
+            case ProjectNodeKind.Platform:
+                add_menu_items(menu,
+                    command_menu_item("Rename platform", view_model.RenameIntegrationJobCommand),
+                    command_menu_item("Delete platform", view_model.DeleteSelectedCommand),
+                    new Separator(),
+                    build_statistics_context_menu(include_platform_items: true));
+                break;
+        }
+
+        return menu;
+    }
+
+    private MenuItem build_plotting_context_menu()
+    {
+        var menu = parent_menu_item("Plotting",
+            radio_click_menu_item("Density", view_model.IsDensityPlotMode, density_menu_item_click),
+            radio_click_menu_item("Dotplot", view_model.IsDotplotPlotMode, dotplot_menu_item_click),
+            radio_click_menu_item("Contour", view_model.IsContourPlotMode, contour_menu_item_click),
+            radio_click_menu_item("Zebra", view_model.IsZebraPlotMode, zebra_menu_item_click),
+            radio_click_menu_item("Histogram", view_model.IsHistogramPlotMode, histogram_menu_item_click),
+            new Separator(),
+            bound_check_menu_item("Show outlier points", nameof(MainWindowViewModel.ShowOutlierPoints)),
+            bound_check_menu_item("Draw large dots", nameof(MainWindowViewModel.DrawLargeDots)),
+            bound_check_menu_item("Show gridlines", nameof(MainWindowViewModel.ShowGridlines)),
+            bound_check_menu_item("Show gate annotations", nameof(MainWindowViewModel.ShowGateAnnotations)),
+            bound_check_menu_item("Show gate annotation names", nameof(MainWindowViewModel.ShowGateAnnotationNames)),
+            new Separator(),
+            channel_context_menu("X selected channel", view_model.AxisChoices, view_model.SelectedXAxisChoice, editor_x_channel_menu_item_click),
+            channel_context_menu("Y selected channel", view_model.AxisChoices, view_model.SelectedYAxisChoice, editor_y_channel_menu_item_click),
+            channel_context_menu("Dot color", view_model.ColorChoices, view_model.SelectedDotColorChoice, editor_color_channel_menu_item_click),
+            bound_check_menu_item("Coloring in log scale", "DotColor.UseLogScale"),
+            parent_menu_item("Dot color palette",
+                click_menu_item("Viridis", viridis_color_menu_item_click),
+                click_menu_item("Plasma", plasma_color_menu_item_click),
+                click_menu_item("Turbo", turbo_color_menu_item_click),
+                click_menu_item("Gray", gray_color_menu_item_click)),
+            parent_menu_item("X axis scale",
+                bound_radio_menu_item("Linear", nameof(MainWindowViewModel.IsEditorXAxisLinearScale)),
+                bound_radio_menu_item("Logicle", nameof(MainWindowViewModel.IsEditorXAxisLogicleScale))),
+            parent_menu_item("Y axis scale",
+                bound_radio_menu_item("Linear", nameof(MainWindowViewModel.IsEditorYAxisLinearScale)),
+                bound_radio_menu_item("Logicle", nameof(MainWindowViewModel.IsEditorYAxisLogicleScale))));
+        menu.IsEnabled = view_model.IsDefaultAnalysisMode;
+        return menu;
+    }
+
+    private MenuItem build_gating_context_menu(bool include_gate_management)
+    {
+        var menu = parent_menu_item("Gating",
+            radio_click_menu_item("View", view_model.IsViewTool, view_tool_menu_item_click),
+            radio_click_menu_item("Polygon gate", view_model.IsPolygonTool, polygon_tool_menu_item_click, view_model.CanCreateTwoDimensionalGate),
+            radio_click_menu_item("Rectangle gate", view_model.IsRectangleTool, rectangle_tool_menu_item_click, view_model.CanCreateTwoDimensionalGate),
+            radio_click_menu_item("Quad gate", view_model.IsQuadrantTool, quadrant_tool_menu_item_click, view_model.CanCreateTwoDimensionalGate),
+            radio_click_menu_item("Curly quad gate", view_model.IsCurlyQuadrantTool, curly_quadrant_tool_menu_item_click, view_model.CanCreateTwoDimensionalGate),
+            radio_click_menu_item("Offset quad gate", view_model.IsOffsetQuadrantTool, offset_quadrant_tool_menu_item_click, view_model.CanCreateTwoDimensionalGate),
+            radio_click_menu_item("Threshold gate", view_model.IsThresholdTool, threshold_tool_menu_item_click, view_model.CanCreateOneDimensionalGate),
+            radio_click_menu_item("Range gate", view_model.IsRangeTool, range_tool_menu_item_click, view_model.CanCreateOneDimensionalGate),
+            new Separator(),
+            command_menu_item("Merge", view_model.AddMergeGateCommand),
+            command_menu_item("Exclude", view_model.AddExcludeGateCommand),
+            command_menu_item("Overlap", view_model.AddOverlapGateCommand));
+
+        if (include_gate_management)
+        {
+            menu.Items.Add(new Separator());
+            menu.Items.Add(command_menu_item("Rename gate", view_model.RenameGateCommand));
+            menu.Items.Add(command_menu_item("Delete selected gate", view_model.DeleteSelectedCommand));
+        }
+
+        menu.IsEnabled = view_model.IsDefaultAnalysisMode;
+        return menu;
+    }
+
+    private MenuItem build_statistics_context_menu(bool include_platform_items)
+    {
+        var menu = parent_menu_item("Statistics",
+            command_menu_item("Mean", view_model.AddMeanStatisticCommand),
+            command_menu_item("Median", view_model.AddMedianStatisticCommand),
+            command_menu_item("Geometric mean", view_model.AddGeometricMeanStatisticCommand),
+            command_menu_item("Coefficient of variation (CV)", view_model.AddCoefficientOfVariationStatisticCommand),
+            command_menu_item("Standard deviation (SD)", view_model.AddStandardDeviationStatisticCommand),
+            command_menu_item("Frequency of parent population", view_model.AddFrequencyOfParentStatisticCommand),
+            command_menu_item("Frequency of all", view_model.AddFrequencyOfAllStatisticCommand),
+            command_menu_item("Number of events", view_model.AddCountStatisticCommand),
+            command_menu_item("Delete selected statistic", view_model.DeleteSelectedCommand),
+            new Separator(),
+            click_menu_item("Create macro", create_macro_menu_item_click),
+            script_context_menu("Run macros", view_model.MacroScripts, run_macro_menu_item_click),
+            script_context_menu("Edit macros", view_model.MacroScripts, edit_script_menu_item_click),
+            new Separator(),
+            click_menu_item("Create Python statistic", create_statistic_script_menu_item_click),
+            script_context_menu("Python statistics", view_model.StatisticScripts, apply_statistic_script_menu_item_click),
+            script_context_menu("Edit Python statistics", view_model.StatisticScripts, edit_script_menu_item_click),
+            new Separator(),
+            build_create_platform_context_menu());
+
+        if (include_platform_items)
+        {
+            menu.Items.Add(command_menu_item("Rename platform", view_model.RenameIntegrationJobCommand));
+            menu.Items.Add(command_menu_item("Delete platform", view_model.DeleteSelectedCommand));
+        }
+
+        return menu;
+    }
+
+    private MenuItem build_create_platform_context_menu() =>
+        parent_menu_item("Create platform",
+            command_menu_item("Integration", view_model.CreateIntegrationJobCommand, "Integration"),
+            command_menu_item("Cell cycle", view_model.CreateIntegrationJobCommand, "CellCycle"),
+            command_menu_item("Proliferation", view_model.CreateIntegrationJobCommand, "Proliferation"),
+            command_menu_item("Intensity comparison", view_model.CreateIntegrationJobCommand, "IntensityComparison"));
+
+    private MenuItem channel_context_menu(string header, IEnumerable<AxisChoice> choices, AxisChoice? selected, EventHandler<RoutedEventArgs> click)
+    {
+        var menu = new MenuItem { Header = header };
+        string selected_name = selected?.Name ?? "";
+        foreach (var choice in choices)
+        {
+            var item = new MenuItem
+            {
+                Header = create_channel_menu_header(choice),
+                ToggleType = MenuItemToggleType.Radio,
+                IsChecked = selected_name == choice.Name,
+                Tag = choice
+            };
+            item.Click += click;
+            menu.Items.Add(item);
+        }
+
+        return menu;
+    }
+
+    private MenuItem script_context_menu(
+        string header,
+        IEnumerable<gated.Services.PythonScriptDefinition> scripts,
+        EventHandler<RoutedEventArgs> click)
+    {
+        var menu = new MenuItem { Header = header };
+        var script_list = scripts.OrderBy(script => script.Name, StringComparer.OrdinalIgnoreCase).ToArray();
+        if (script_list.Length == 0)
+        {
+            menu.Items.Add(new MenuItem { Header = "Empty", IsEnabled = false });
+            return menu;
+        }
+
+        foreach (var script in script_list)
+        {
+            var item = new MenuItem
+            {
+                Header = script.Name,
+                Tag = script
+            };
+            item.Click += click;
+            menu.Items.Add(item);
+        }
+
+        return menu;
+    }
+
+    private MenuItem parent_menu_item(string header, params object[] items)
+    {
+        var menu = new MenuItem
+        {
+            Header = header,
+            DataContext = view_model
+        };
+        foreach (var item in items)
+            menu.Items.Add(item);
+        return menu;
+    }
+
+    private MenuItem command_menu_item(string header, ICommand? command, object? parameter = null)
+    {
+        var item = new MenuItem
+        {
+            Header = header,
+            Command = command,
+            CommandParameter = parameter
+        };
+        if (command is null)
+            item.IsEnabled = false;
+        return item;
+    }
+
+    private static MenuItem click_menu_item(string header, EventHandler<RoutedEventArgs> click)
+    {
+        var item = new MenuItem { Header = header };
+        item.Click += click;
+        return item;
+    }
+
+    private static MenuItem radio_click_menu_item(string header, bool is_checked, EventHandler<RoutedEventArgs> click, bool is_enabled = true)
+    {
+        var item = click_menu_item(header, click);
+        item.ToggleType = MenuItemToggleType.Radio;
+        item.IsChecked = is_checked;
+        item.IsEnabled = is_enabled;
+        return item;
+    }
+
+    private MenuItem bound_check_menu_item(string header, string property_path)
+    {
+        var item = new MenuItem
+        {
+            Header = header,
+            ToggleType = MenuItemToggleType.CheckBox,
+            DataContext = view_model
+        };
+        item.Bind(MenuItem.IsCheckedProperty, new Binding(property_path) { Mode = BindingMode.TwoWay });
+        return item;
+    }
+
+    private MenuItem bound_radio_menu_item(string header, string property_path)
+    {
+        var item = new MenuItem
+        {
+            Header = header,
+            ToggleType = MenuItemToggleType.Radio,
+            DataContext = view_model
+        };
+        item.Bind(MenuItem.IsCheckedProperty, new Binding(property_path) { Mode = BindingMode.TwoWay });
+        return item;
+    }
+
+    private static void add_menu_items(ContextMenu menu, params object[] items)
+    {
+        foreach (var item in items)
+            menu.Items.Add(item);
     }
 
     private void populate_channel_menu(MenuItem menu, IEnumerable<AxisChoice> choices, AxisChoice? selected, EventHandler<RoutedEventArgs> click)

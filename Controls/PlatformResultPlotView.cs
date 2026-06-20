@@ -54,7 +54,8 @@ public sealed class PlatformResultPlotView : Control
             ? preview_kinetics_series(Platform)
             : preview_histogram_series(Platform);
         var fit_series = fit_curve_series(Platform);
-        var series = observed_series.Concat(fit_series).ToArray();
+        var scripted_model_series = scripted_model_plot_series(Platform);
+        var series = observed_series.Concat(fit_series).Concat(scripted_model_series).ToArray();
         if (series.Length == 0)
             series = filter_visible_series(Platform, Platform?.PlotSeries.ToArray() ?? []);
         bool has_data = series.Length > 0;
@@ -134,7 +135,8 @@ public sealed class PlatformResultPlotView : Control
             ? preview_kinetics_series(platform)
             : preview_histogram_series(platform);
         var fit_series = fit_curve_series(platform);
-        var series = observed_series.Concat(fit_series).ToArray();
+        var scripted_model_series = scripted_model_plot_series(platform);
+        var series = observed_series.Concat(fit_series).Concat(scripted_model_series).ToArray();
         if (series.Length == 0)
             series = filter_visible_series(platform, platform?.PlotSeries.ToArray() ?? []);
         return normalize_plot_series(platform, series);
@@ -451,6 +453,15 @@ public sealed class PlatformResultPlotView : Control
         return result.ToArray();
     }
 
+    private static PlatformPlotSeries[] scripted_model_plot_series(Platform? platform)
+    {
+        if (platform is null || platform.PlotSeries.Count == 0)
+            return [];
+        return filter_visible_series(platform, platform.PlotSeries.ToArray())
+            .Where(item => is_model_sum_series(platform, item.Key) || is_component_series(platform, item.Key))
+            .ToArray();
+    }
+
     private static PlatformPlotSeries? evaluate_fit_curve(Platform platform, PlatformFitCurve curve)
     {
         int resolution = 400;
@@ -632,7 +643,7 @@ public sealed class PlatformResultPlotView : Control
             new SolidColorBrush(color),
             is_component_series(platform, item.Key) ? 1.6 : is_model_sum_series(platform, item.Key) ? 2.7 : 1.8);
         if (is_component_series(platform, item.Key))
-            pen.DashStyle = DashStyle.Dot;
+            pen.DashStyle = DashStyle.Dash;
         return pen;
     }
 

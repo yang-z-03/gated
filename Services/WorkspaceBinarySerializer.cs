@@ -11,7 +11,7 @@ namespace gated.Services;
 public sealed class WorkspaceBinarySerializer
 {
     private const uint magic = 0x44544731;
-    private const int version = 37;
+    private const int version = 38;
 
     public void Save(FlowWorkspace workspace, string file_path)
     {
@@ -64,7 +64,7 @@ public sealed class WorkspaceBinarySerializer
         var workspace = new FlowWorkspace { Name = read_string(reader) };
         int group_count = reader.ReadInt32();
         for (int index = 0; index < group_count; index++)
-            workspace.Groups.Add(read_group(reader, read_group_root_view));
+            workspace.Groups.Add(read_group(reader, read_group_root_view, file_version));
 
         read_integration_jobs(reader, workspace, file_version);
         read_page_layouts(reader, workspace, file_version);
@@ -112,6 +112,12 @@ public sealed class WorkspaceBinarySerializer
         write_string(writer, group.Name);
         write_statistics(writer, group.Statistics);
         write_gate_view_options(writer, group.RootViewOptions);
+        writer.Write(group.SampleRootViewOptions.Count);
+        foreach (var item in group.SampleRootViewOptions.OrderBy(item => item.Key, StringComparer.Ordinal))
+        {
+            write_string(writer, item.Key);
+            write_gate_view_options(writer, item.Value);
+        }
 
         writer.Write(group.CompensationCandidates.Count);
         int applied_index = group.AppliedCompensation is null
@@ -130,13 +136,21 @@ public sealed class WorkspaceBinarySerializer
             write_sample(writer, sample);
     }
 
-    private static FlowGroup read_group(BinaryReader reader, bool read_root_view)
+    private static FlowGroup read_group(BinaryReader reader, bool read_root_view, int file_version)
     {
         Guid id = new Guid(reader.ReadBytes(16));
         var group = new FlowGroup { Id = id, Name = read_string(reader) };
         read_statistics(reader, group.Statistics);
         if (read_root_view)
+        {
             group.RootViewOptions = read_gate_view_options(reader);
+            if (file_version >= 38)
+            {
+                int sample_root_view_count = reader.ReadInt32();
+                for (int index = 0; index < sample_root_view_count; index++)
+                    group.SampleRootViewOptions[read_string(reader)] = read_gate_view_options(reader);
+            }
+        }
 
         int compensation_count = reader.ReadInt32();
         int applied_index = reader.ReadInt32();

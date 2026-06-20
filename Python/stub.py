@@ -297,7 +297,6 @@ class Platform:
     channels: list[str]
     matrix: np.ndarray
     compensated: np.ndarray
-    transform: Literal["linear", "logarithm", "logicle"]
     transformations: dict[str, ViewOptions]
     transformed: np.ndarray
     series: dict[str, object]

@@ -1694,9 +1694,9 @@ public sealed class MainWindowViewModel : NotifyBase
             _ => "Integration"
         };
         int index = Workspace.IntegrationJobs.Count + 1;
-        while (Workspace.IntegrationJobs.Any(job => job.Name == $"{prefix} platform {index}"))
+        while (Workspace.IntegrationJobs.Any(job => job.Name == $"{prefix} {index}"))
             index++;
-        return $"{prefix} platform {index}";
+        return $"{prefix} {index}";
     }
 
     private void populate_integration_job_choices(Platform job)
@@ -2914,6 +2914,7 @@ public sealed class MainWindowViewModel : NotifyBase
 
     private static void remove_sample_preferred_views(FlowGroup group, string sample_name)
     {
+        group.SampleRootViewOptions.Remove(sample_name);
         foreach (var gate in all_gates(group.Gates))
         {
             gate.SamplePreferredViews.Remove(sample_name);
@@ -2926,6 +2927,9 @@ public sealed class MainWindowViewModel : NotifyBase
     {
         if (old_name == new_name)
             return;
+
+        if (group.SampleRootViewOptions.Remove(old_name, out var root_view))
+            group.SampleRootViewOptions[new_name] = root_view;
 
         foreach (var gate in all_gates(group.Gates))
         {
@@ -3545,7 +3549,7 @@ public sealed class MainWindowViewModel : NotifyBase
         var region = selected_population?.Region ??
             (selected_node?.Kind == ProjectNodeKind.GatePopulationSlot ? selected_node.PopulationRegion : PopulationRegion.Primary);
 
-        if (selected_sample is not null && selected_population is not null)
+        if (selected_node?.Kind == ProjectNodeKind.Population && selected_sample is not null && selected_population is not null)
         {
             if (gate.SamplePreferredViews.TryGetValue(sample_preferred_view_key(selected_sample.Name, region), out var sample_view) ||
                 gate.SamplePreferredViews.TryGetValue(selected_sample.Name, out sample_view))
@@ -3555,27 +3559,7 @@ public sealed class MainWindowViewModel : NotifyBase
         if (gate.PopulationPreferredViews.TryGetValue(region, out var population_view))
             return population_view;
 
-        return string.IsNullOrWhiteSpace(gate.PreferredXChannel)
-            ? null
-            : new GateViewOptions
-            {
-                XChannel = gate.PreferredXChannel,
-                YChannel = gate.PreferredYChannel,
-                XMinimum = gate.PreferredXMinimum,
-                XMaximum = gate.PreferredXMaximum,
-                XScale = gate.PreferredXScale,
-                YMinimum = gate.PreferredYMinimum,
-                YMaximum = gate.PreferredYMaximum,
-                YScale = gate.PreferredYScale,
-                PlotMode = gate.PreferredPlotMode,
-                ShowOutlierPoints = gate.PreferredShowOutlierPoints,
-                DrawLargeDots = gate.PreferredDrawLargeDots,
-                ShowGridlines = gate.PreferredShowGridlines,
-                ShowGateAnnotations = gate.PreferredShowGateAnnotations,
-                ShowGateAnnotationNames = gate.PreferredShowGateAnnotationNames,
-                ContourLevelCount = gate.PreferredContourLevelCount,
-                DensitySmoothing = gate.PreferredDensitySmoothing
-            };
+        return legacy_preferred_view(gate);
     }
 
     private void apply_gate_plot_options(GateViewOptions view)
@@ -3623,9 +3607,10 @@ public sealed class MainWindowViewModel : NotifyBase
 
     private void apply_axes_from_group_root_view(FlowGroup group)
     {
-        if (group.RootViewOptions.HasView && group.Channels.Any(channel => channel.Name == group.RootViewOptions.XChannel))
+        var root_view = root_view_for_current_context(group);
+        if (root_view.HasView && group.Channels.Any(channel => channel.Name == root_view.XChannel))
         {
-            var view = group.RootViewOptions;
+            var view = root_view;
             applying_gate_view_options = true;
             try
             {
@@ -3656,7 +3641,33 @@ public sealed class MainWindowViewModel : NotifyBase
         }
 
         reset_axes_from_group(group);
-        group.RootViewOptions = current_gate_view();
+        set_root_view_for_current_context(group, current_gate_view());
+    }
+
+    private GateViewOptions root_view_for_current_context(FlowGroup group) =>
+        selected_node?.Kind == ProjectNodeKind.Sample && selected_sample is not null
+            ? sample_root_view_or_default(group, selected_sample.Name)
+            : group.RootViewOptions;
+
+    private static GateViewOptions root_view_for_node(FlowGroup group, ProjectNode node) =>
+        node.Kind == ProjectNodeKind.Sample && node.Sample is not null
+            ? sample_root_view_or_default(group, node.Sample.Name)
+            : group.RootViewOptions;
+
+    private static GateViewOptions sample_root_view_or_default(FlowGroup group, string sample_name) =>
+        group.SampleRootViewOptions.TryGetValue(sample_name, out var view)
+            ? view
+            : group.RootViewOptions;
+
+    private void set_root_view_for_current_context(FlowGroup group, GateViewOptions view)
+    {
+        if (selected_node?.Kind == ProjectNodeKind.Sample && selected_sample is not null)
+        {
+            group.SampleRootViewOptions[selected_sample.Name] = view;
+            return;
+        }
+
+        group.RootViewOptions = view;
     }
 
     private void set_axis(ref AxisSettings axis_field, AxisSettings value, PropertyChangedEventHandler handler)
@@ -3725,21 +3736,14 @@ public sealed class MainWindowViewModel : NotifyBase
         var view = current_gate_view();
         var region = selected_population?.Region ??
             (selected_node?.Kind == ProjectNodeKind.GatePopulationSlot ? selected_node.PopulationRegion : PopulationRegion.Primary);
-        if (selected_sample is not null && selected_population is not null)
+        if (selected_node?.Kind == ProjectNodeKind.Population && selected_sample is not null && selected_population is not null)
         {
-            if (is_strategy_gate_view_context() && selected_group is not null)
-            {
-                foreach (var sample in selected_group.Samples)
-                    gate.SamplePreferredViews[sample_preferred_view_key(sample.Name, region)] = clone_gate_view(view);
-                gate.PopulationPreferredViews[region] = clone_gate_view(view);
-                return;
-            }
-
             gate.SamplePreferredViews[sample_preferred_view_key(selected_sample.Name, region)] = view;
             return;
         }
 
-        if (region != PopulationRegion.Primary || selected_node?.Kind == ProjectNodeKind.GatePopulationSlot)
+        if (region != PopulationRegion.Primary ||
+            selected_node?.Kind is ProjectNodeKind.Gate or ProjectNodeKind.GatePopulationSlot)
         {
             gate.PopulationPreferredViews[region] = view;
             return;
@@ -3763,11 +3767,31 @@ public sealed class MainWindowViewModel : NotifyBase
         gate.PreferredDensitySmoothing = view.DensitySmoothing;
     }
 
-    private bool is_strategy_gate_view_context() =>
-        selected_node?.Kind is ProjectNodeKind.Gate or ProjectNodeKind.GatePopulationSlot;
-
     private static string sample_preferred_view_key(string sample_name, PopulationRegion region) =>
         region == PopulationRegion.Primary ? sample_name : $"{sample_name}\t{(int)region}";
+
+    private static GateViewOptions? legacy_preferred_view(GateDefinition gate) =>
+        string.IsNullOrWhiteSpace(gate.PreferredXChannel)
+            ? null
+            : new GateViewOptions
+            {
+                XChannel = gate.PreferredXChannel,
+                YChannel = gate.PreferredYChannel,
+                XMinimum = gate.PreferredXMinimum,
+                XMaximum = gate.PreferredXMaximum,
+                XScale = gate.PreferredXScale,
+                YMinimum = gate.PreferredYMinimum,
+                YMaximum = gate.PreferredYMaximum,
+                YScale = gate.PreferredYScale,
+                PlotMode = gate.PreferredPlotMode,
+                ShowOutlierPoints = gate.PreferredShowOutlierPoints,
+                DrawLargeDots = gate.PreferredDrawLargeDots,
+                ShowGridlines = gate.PreferredShowGridlines,
+                ShowGateAnnotations = gate.PreferredShowGateAnnotations,
+                ShowGateAnnotationNames = gate.PreferredShowGateAnnotationNames,
+                ContourLevelCount = gate.PreferredContourLevelCount,
+                DensitySmoothing = gate.PreferredDensitySmoothing
+            };
 
     private GateViewOptions current_gate_view()
     {
@@ -3796,27 +3820,6 @@ public sealed class MainWindowViewModel : NotifyBase
         return view;
     }
 
-    private static GateViewOptions clone_gate_view(GateViewOptions view) =>
-        new()
-        {
-            XChannel = view.XChannel,
-            YChannel = view.YChannel,
-            XMinimum = view.XMinimum,
-            XMaximum = view.XMaximum,
-            XScale = view.XScale.Clone(),
-            YMinimum = view.YMinimum,
-            YMaximum = view.YMaximum,
-            YScale = view.YScale.Clone(),
-            PlotMode = view.PlotMode,
-            ShowOutlierPoints = view.ShowOutlierPoints,
-            DrawLargeDots = view.DrawLargeDots,
-            ShowGridlines = view.ShowGridlines,
-            ShowGateAnnotations = view.ShowGateAnnotations,
-            ShowGateAnnotationNames = view.ShowGateAnnotationNames,
-            ContourLevelCount = view.ContourLevelCount,
-            DensitySmoothing = view.DensitySmoothing
-        };
-
     private void sync_selected_gate_preferred_view()
     {
         if (applying_gate_view_options)
@@ -3830,8 +3833,8 @@ public sealed class MainWindowViewModel : NotifyBase
 
         if (selected_group is not null &&
             selected_population is null &&
-            selected_node?.Kind is null or ProjectNodeKind.Group)
-            selected_group.RootViewOptions = current_gate_view();
+            selected_node?.Kind is null or ProjectNodeKind.Group or ProjectNodeKind.Sample)
+            set_root_view_for_current_context(selected_group, current_gate_view());
     }
 
     private void schedule_plot_transform_preparation()
@@ -4709,7 +4712,7 @@ public sealed class MainWindowViewModel : NotifyBase
         if (node.Group is null)
             return;
 
-        var (x_axis, y_axis, view) = axes_for_root_page_node(node.Group);
+        var (x_axis, y_axis, view) = axes_for_root_page_node(node);
         var element = new PagePlotElement
         {
             Group = node.Group,
@@ -4879,37 +4882,7 @@ public sealed class MainWindowViewModel : NotifyBase
         if (gate.PopulationPreferredViews.TryGetValue(region, out var population_view))
             return population_view;
 
-        if (node.Kind != ProjectNodeKind.Population && node.Group is not null)
-        {
-            foreach (var sample in node.Group.Samples)
-            {
-                if (gate.SamplePreferredViews.TryGetValue(sample_preferred_view_key(sample.Name, region), out var strategy_sample_view) ||
-                    gate.SamplePreferredViews.TryGetValue(sample.Name, out strategy_sample_view))
-                    return strategy_sample_view;
-            }
-        }
-
-        return string.IsNullOrWhiteSpace(gate.PreferredXChannel)
-            ? null
-            : new GateViewOptions
-            {
-                XChannel = gate.PreferredXChannel,
-                YChannel = gate.PreferredYChannel,
-                XMinimum = gate.PreferredXMinimum,
-                XMaximum = gate.PreferredXMaximum,
-                XScale = gate.PreferredXScale,
-                YMinimum = gate.PreferredYMinimum,
-                YMaximum = gate.PreferredYMaximum,
-                YScale = gate.PreferredYScale,
-                PlotMode = gate.PreferredPlotMode,
-                ShowOutlierPoints = gate.PreferredShowOutlierPoints,
-                DrawLargeDots = gate.PreferredDrawLargeDots,
-                ShowGridlines = gate.PreferredShowGridlines,
-                ShowGateAnnotations = gate.PreferredShowGateAnnotations,
-                ShowGateAnnotationNames = gate.PreferredShowGateAnnotationNames,
-                ContourLevelCount = gate.PreferredContourLevelCount,
-                DensitySmoothing = gate.PreferredDensitySmoothing
-            };
+        return legacy_preferred_view(gate);
     }
 
     private (AxisSettings XAxis, AxisSettings YAxis) axes_for_page_node(GateDefinition gate, ProjectNode node, GateViewOptions? preferred_view)
@@ -4938,11 +4911,13 @@ public sealed class MainWindowViewModel : NotifyBase
         return (x_axis, y_axis);
     }
 
-    private (AxisSettings XAxis, AxisSettings YAxis, GateViewOptions? View) axes_for_root_page_node(FlowGroup group)
+    private (AxisSettings XAxis, AxisSettings YAxis, GateViewOptions? View) axes_for_root_page_node(ProjectNode node)
     {
-        if (group.RootViewOptions.HasView && group.Channels.Any(channel => channel.Name == group.RootViewOptions.XChannel))
+        var group = node.Group!;
+        var root_view = root_view_for_node(group, node);
+        if (root_view.HasView && group.Channels.Any(channel => channel.Name == root_view.XChannel))
         {
-            var view = group.RootViewOptions;
+            var view = root_view;
             var x_axis = new AxisSettings
             {
                 ChannelName = view.XChannel,
@@ -5062,9 +5037,24 @@ public sealed class MainWindowViewModel : NotifyBase
             ? channel.Maximum
             : range.Maximum;
         axis.Maximum = Math.Min(axis.Maximum, theoretical_maximum);
-        if (actual_channel_maximum(group, sample, population, channel.Name) is not { } actual_maximum ||
+        if (actual_channel_range(group, sample, population, channel.Name) is not { } actual_range ||
+            !double.IsFinite(actual_range.Minimum) ||
+            !double.IsFinite(actual_range.Maximum))
+            return;
+
+        if (Configuration.IsTimeChannel(channel.Name))
+        {
+            axis.ScaleKind = CoordinateScaleKind.Linear;
+            axis.Minimum = actual_range.Minimum;
+            axis.Maximum = actual_range.Maximum > actual_range.Minimum
+                ? actual_range.Maximum
+                : actual_range.Minimum + 1e-6;
+            return;
+        }
+
+        double actual_maximum = actual_range.Maximum;
+        if (
             actual_maximum <= 0 ||
-            !double.IsFinite(actual_maximum) ||
             !double.IsFinite(theoretical_maximum) ||
             theoretical_maximum <= 0)
             return;
@@ -5079,31 +5069,41 @@ public sealed class MainWindowViewModel : NotifyBase
         }
     }
 
-    private static double? actual_channel_maximum(FlowGroup? group, FlowSample? sample, PopulationResult? population, string channel_name)
+    private static (double Minimum, double Maximum)? actual_channel_range(FlowGroup? group, FlowSample? sample, PopulationResult? population, string channel_name)
     {
         if (string.IsNullOrWhiteSpace(channel_name))
             return null;
 
+        double minimum = double.PositiveInfinity;
         double maximum = double.NegativeInfinity;
         if (sample is not null)
         {
-            accumulate_channel_maximum(sample, population?.EventIndices, channel_name, ref maximum);
+            accumulate_channel_range(sample, population?.EventIndices, channel_name, ref minimum, ref maximum);
         }
         else if (group is not null)
         {
             foreach (var group_sample in group.Samples)
-                accumulate_channel_maximum(group_sample, event_indices: null, channel_name, ref maximum);
+                accumulate_channel_range(group_sample, event_indices: null, channel_name, ref minimum, ref maximum);
         }
 
-        return double.IsNegativeInfinity(maximum) ? null : maximum;
+        return double.IsPositiveInfinity(minimum) || double.IsNegativeInfinity(maximum)
+            ? null
+            : (minimum, maximum);
     }
 
-    private static void accumulate_channel_maximum(FlowSample sample, int[]? event_indices, string channel_name, ref double maximum)
+    private static void accumulate_channel_range(FlowSample sample, int[]? event_indices, string channel_name, ref double minimum, ref double maximum)
     {
         var values = sample.GetChannelValues(channel_name, event_indices);
         foreach (float value in values)
-            if (!float.IsNaN(value) && !float.IsInfinity(value) && value > maximum)
+        {
+            if (float.IsNaN(value) || float.IsInfinity(value))
+                continue;
+
+            if (value < minimum)
+                minimum = value;
+            if (value > maximum)
                 maximum = value;
+        }
     }
 
     private static IEnumerable<float> embedding_values(FlowSample? sample, PopulationResult? population, string embedding_name)

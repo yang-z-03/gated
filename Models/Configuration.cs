@@ -7,11 +7,17 @@ namespace gated.Models;
 
 public static class Configuration
 {
-    private static readonly string[] linear_channel_name_fragments = ["FSC", "SSC", "TIME"];
+    private static readonly string[] linear_channel_name_fragments = ["FSC", "SSC"];
+
+    public static bool IsTimeChannel(string channel_name) =>
+        !string.IsNullOrWhiteSpace(channel_name) &&
+        channel_name.Contains("TIME", StringComparison.OrdinalIgnoreCase);
 
     public static bool PreferLinearChannel(string channel_name)
     {
         if (string.IsNullOrWhiteSpace(channel_name))
+            return true;
+        if (IsTimeChannel(channel_name))
             return true;
         return linear_channel_name_fragments.Any(fragment =>
             channel_name.Contains(fragment, StringComparison.OrdinalIgnoreCase));
