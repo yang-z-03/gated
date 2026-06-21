@@ -1,11 +1,9 @@
-import math
 
+import math
 import numpy as np
 from scipy import optimize, stats
 
-
 _BINS = 400
-
 
 def _fmt(value):
     if value is None or not np.isfinite(value):

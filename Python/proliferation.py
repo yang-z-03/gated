@@ -1,9 +1,8 @@
-import math
 
+import math
 import numpy as np
 from scipy import optimize, signal
 from scipy.integrate import trapezoid
-
 
 _BINS = 400
 _MAX_FLOWFIT_PEAKS = 20

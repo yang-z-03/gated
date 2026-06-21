@@ -1,5 +1,7 @@
+
 _script = jedi.Script(__code)
 _result = []
+
 _api_attribute_docs = {
     'Workspace.metadata': 'metadata: pd.DataFrame\n\nA typed pandas DataFrame containing one row per sample. Group and Sample are read-only identity columns; all other columns are sample metadata. This is a copy; use apply_metadata(dataframe) to replace workspace metadata with the edited table.',
     'Workspace.groupings': 'groupings: list[Grouping]\n\nThe grouping collection in the current workspace. Use workspace[group_name] to retrieve one grouping by name.',
@@ -30,6 +32,7 @@ _api_attribute_docs = {
     'Compensation.channels': 'channels: list[str]\n\nOrdered channel names covered by the compensation matrix.',
     'Compensation.matrix': 'matrix: np.ndarray\n\nThe compensation matrix as a NumPy copy.'
 }
+
 def _definition_class(_item):
     try:
         _position = _item.get_definition_start_position()
@@ -46,6 +49,7 @@ def _definition_class(_item):
             return _text.split('class ', 1)[1].split(':', 1)[0].split('(', 1)[0].strip()
         _index -= 1
     return ''
+
 def _api_attribute_doc(_item):
     _name = getattr(_item, 'name', '') or ''
     if not _name:
@@ -54,6 +58,7 @@ def _api_attribute_doc(_item):
     if not _class_name:
         return ''
     return _api_attribute_docs.get(f'{_class_name}.{_name}', '')
+
 for _item in _script.complete(__line, __column):
     _name = getattr(_item, 'name', '')
     _type = getattr(_item, 'type', '')
@@ -75,5 +80,6 @@ for _item in _script.complete(__line, __column):
         'signature': _signature,
         'docstring': _api_attribute_doc(_item) or (_item.docstring(raw=True) if hasattr(_item, 'docstring') else '')
     })
+    
 import json as _json
 _result_json = _json.dumps(_result)

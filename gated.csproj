@@ -2,8 +2,9 @@
     <PropertyGroup>
         <OutputType>WinExe</OutputType>
         <TargetFramework>net10.0</TargetFramework>
-        <Version>0.28.0</Version>
+        <Version>0.29.0</Version>
         <Nullable>enable</Nullable>
+        <RuntimeIdentifiers>win-x64;osx-x64;osx-arm64;linux-x64</RuntimeIdentifiers>
         <ApplicationManifest>app.manifest</ApplicationManifest>
         <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
         <ApplicationIcon>gated.ico</ApplicationIcon>
@@ -154,7 +155,66 @@
       <AvaloniaResource Include="gated.ico" />
     </ItemGroup>
 
-    <Target Name="PublishUpdater" AfterTargets="Build" Condition="'$(MSBuildProjectName)' == 'gated'">
-      <Exec Command="dotnet publish &quot;$(MSBuildProjectDirectory)\Updater\update.csproj&quot; -c &quot;$(Configuration)&quot; -r win-x64 --self-contained true -p:PublishSingleFile=true -p:PublishDir=&quot;$(TargetDir)&quot;" />
+    <PropertyGroup>
+      <ReleaseArtifactsDir>$(MSBuildProjectDirectory)\artifacts\release\</ReleaseArtifactsDir>
+      <GatedReleaseVersionFile>0-29-0</GatedReleaseVersionFile>
+      <UpdaterReleaseVersionFile>3-0-0</UpdaterReleaseVersionFile>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <ReleaseRuntime Include="win-x64">
+        <DotNetRuntime>win-x64</DotNetRuntime>
+        <RuntimeAsset>win-x64</RuntimeAsset>
+      </ReleaseRuntime>
+      <ReleaseRuntime Include="osx-x64">
+        <DotNetRuntime>osx-x64</DotNetRuntime>
+        <RuntimeAsset>osx-x64</RuntimeAsset>
+      </ReleaseRuntime>
+      <ReleaseRuntime Include="osx-arm64">
+        <DotNetRuntime>osx-arm64</DotNetRuntime>
+        <RuntimeAsset>osx-arm64</RuntimeAsset>
+      </ReleaseRuntime>
+      <ReleaseRuntime Include="posix-x64">
+        <DotNetRuntime>linux-x64</DotNetRuntime>
+        <RuntimeAsset>linux-x64</RuntimeAsset>
+      </ReleaseRuntime>
+    </ItemGroup>
+
+    <Target Name="PublishReleaseArtifacts">
+      <MSBuild Projects="$(MSBuildProjectFullPath)"
+               Targets="Publish"
+               Properties="Configuration=$(Configuration);RuntimeIdentifier=%(ReleaseRuntime.DotNetRuntime);SelfContained=true;PublishDir=$(ReleaseArtifactsDir)gated-%(ReleaseRuntime.Identity)\;GatedSkipReleasePublish=true" />
+      <MSBuild Projects="$(MSBuildProjectDirectory)\Updater\update.csproj"
+               Targets="Restore;Publish"
+               Properties="Configuration=$(Configuration);RuntimeIdentifier=%(ReleaseRuntime.DotNetRuntime);SelfContained=true;PublishSingleFile=true;PublishDir=$(ReleaseArtifactsDir)updater-%(ReleaseRuntime.Identity)\" />
+      <MSBuild Projects="$(MSBuildProjectFullPath)"
+               Targets="TrimPublishedRuntimeAssets"
+               Properties="PublishOutputDir=$(ReleaseArtifactsDir)gated-%(ReleaseRuntime.Identity)\;RuntimeAsset=%(ReleaseRuntime.RuntimeAsset);GatedSkipReleasePublish=true" />
+      <MSBuild Projects="$(MSBuildProjectFullPath)"
+               Targets="TrimPublishedRuntimeAssets"
+               Properties="PublishOutputDir=$(ReleaseArtifactsDir)updater-%(ReleaseRuntime.Identity)\;RuntimeAsset=%(ReleaseRuntime.RuntimeAsset);GatedSkipReleasePublish=true" />
+      <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;$paths=@('$(ReleaseArtifactsDir)gated-$(GatedReleaseVersionFile)-%(ReleaseRuntime.Identity).zip','$(ReleaseArtifactsDir)updater-$(UpdaterReleaseVersionFile)-%(ReleaseRuntime.Identity).zip'); foreach ($path in $paths) { for ($i=0; $i -lt 12; $i++) { try { if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force -ErrorAction Stop }; break } catch { if ($i -eq 11) { throw }; Start-Sleep -Milliseconds 500 } } }&quot;" />
+      <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;Compress-Archive -Path '$(ReleaseArtifactsDir)gated-%(ReleaseRuntime.Identity)\*' -DestinationPath '$(ReleaseArtifactsDir)gated-$(GatedReleaseVersionFile)-%(ReleaseRuntime.Identity).zip' -Force&quot;" />
+      <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;Compress-Archive -Path '$(ReleaseArtifactsDir)updater-%(ReleaseRuntime.Identity)\*' -DestinationPath '$(ReleaseArtifactsDir)updater-$(UpdaterReleaseVersionFile)-%(ReleaseRuntime.Identity).zip' -Force&quot;" />
+      <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;$paths=@('$(ReleaseArtifactsDir)gated-%(ReleaseRuntime.Identity)','$(ReleaseArtifactsDir)updater-%(ReleaseRuntime.Identity)'); foreach ($path in $paths) { for ($i=0; $i -lt 12; $i++) { try { if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction Stop }; break } catch { if ($i -eq 11) { throw }; Start-Sleep -Milliseconds 500 } } }&quot;" />
+      <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;$paths=@('$(MSBuildProjectDirectory)\bin\Release','$(MSBuildProjectDirectory)\Updater\bin\Release'); foreach ($path in $paths) { for ($i=0; $i -lt 12; $i++) { try { if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction Stop }; break } catch { if ($i -eq 11) { throw }; Start-Sleep -Milliseconds 500 } } }&quot;" />
+    </Target>
+
+    <Target Name="PublishDebugWindowsUpdater"
+            AfterTargets="Build"
+            Condition="'$(MSBuildProjectName)' == 'gated' and '$(Configuration)' == 'Debug' and '$(GatedSkipDebugUpdaterPublish)' != 'true'">
+      <MSBuild Projects="$(MSBuildProjectDirectory)\Updater\update.csproj"
+               Targets="Restore;Publish"
+               Properties="Configuration=$(Configuration);RuntimeIdentifier=win-x64;SelfContained=true;PublishSingleFile=true;PublishDir=$(TargetDir);GatedSkipDebugUpdaterPublish=true" />
+      <RemoveDir Directories="$(MSBuildProjectDirectory)\Updater\bin;$(MSBuildProjectDirectory)\Updater\obj;$(MSBuildProjectDirectory)\obj\debug-updater" />
+    </Target>
+
+    <Target Name="TrimPublishedRuntimeAssets" Condition="'$(PublishOutputDir)' != '' and Exists('$(PublishOutputDir)runtimes')">
+      <ItemGroup>
+        <PublishedRuntimeDirectory Include="$(PublishOutputDir)runtimes\*" />
+        <PublishedRuntimeDirectoryToRemove Include="@(PublishedRuntimeDirectory)"
+                                           Condition="'%(Filename)' != '$(RuntimeAsset)'" />
+      </ItemGroup>
+      <RemoveDir Directories="@(PublishedRuntimeDirectoryToRemove)" />
     </Target>
 </Project>

@@ -91,11 +91,9 @@ public partial class MainWindow : Window
         };
         WindowPlacementStore.Restore(this);
         restore_panel_layout(WindowPlacementStore.Load());
-        configure_native_menu();
+        configure_platform_window_chrome();
         update_window_margin_for_state();
     }
-
-    partial void configure_native_menu();
 
     private void page_mode_switch_click(object? sender, RoutedEventArgs e)
     {
@@ -107,7 +105,7 @@ public partial class MainWindow : Window
 
     private void update_window_margin_for_state()
     {
-        if (OperatingSystem.IsMacOS())
+        if (!OperatingSystem.IsWindows())
         {
             window.Margin = new Thickness(0);
             return;
@@ -116,6 +114,28 @@ public partial class MainWindow : Window
         if (WindowState == WindowState.Maximized)
             window.Margin = new Thickness(8);
         else window.Margin = new Thickness(0);
+    }
+
+    private void configure_platform_window_chrome()
+    {
+        ExtendClientAreaChromeHints = Avalonia.Platform.ExtendClientAreaChromeHints.Default;
+        SystemDecorations = SystemDecorations.Full;
+        ExtendClientAreaTitleBarHeightHint = 0;
+
+        if (OperatingSystem.IsLinux())
+        {
+            ExtendClientAreaToDecorationsHint = false;
+            titleBar.IsVisible = false;
+            return;
+        }
+
+        ExtendClientAreaToDecorationsHint = true;
+
+        if (OperatingSystem.IsMacOS())
+        {
+            pageModeSwitch.Margin = new Thickness(5, 6, 5, 6);
+            minimizeButton.IsVisible = false;
+        }
     }
 
     private void restore_panel_layout(WindowPlacementStore.WindowPlacement? placement)
@@ -909,7 +929,7 @@ public partial class MainWindow : Window
 
     public async Task<bool> BootstrapPythonIfMissingAsync()
     {
-        if (File.Exists(Path.Combine(AppContext.BaseDirectory, "python", "python.exe")))
+        if (File.Exists(gated.Shared.PlatformSupport.EmbeddedPythonLibraryPath(AppContext.BaseDirectory)))
             return false;
 
         var manager = new UpdateManager();
@@ -1149,7 +1169,7 @@ public partial class MainWindow : Window
     }
 
     private static string update_suppression_path() =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Gated", "update-suppression.txt");
+        Path.Combine(gated.Shared.PlatformSupport.PersistenceDirectory, "update-suppression.txt");
 
     private async Task show_message_dialog(string title, string message)
     {

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using gated.Shared;
 
 namespace gated.Services;
 
@@ -11,7 +12,7 @@ public static class RecentFileStore
     private const int maximum_count = 20;
 
     private static string store_path() =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Gated", "recent-files.json");
+        Path.Combine(PlatformSupport.PersistenceDirectory, "recent-files.json");
 
     public static IReadOnlyList<string> Load()
     {

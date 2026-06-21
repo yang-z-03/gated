@@ -1,8 +1,11 @@
+
 _script = jedi.Script(__code)
 _result = None
 _items = _script.help(__line, __column)
+
 if not _items:
     _items = _script.infer(__line, __column)
+
 _api_attribute_docs = {
     'Workspace.metadata': 'metadata: pd.DataFrame\n\nA typed pandas DataFrame containing one row per sample. Group and Sample are read-only identity columns; all other columns are sample metadata. This is a copy; use apply_metadata(dataframe) to replace workspace metadata with the edited table.',
     'Workspace.groupings': 'groupings: list[Grouping]\n\nThe grouping collection in the current workspace. Use workspace[group_name] to retrieve one grouping by name.',
@@ -33,7 +36,9 @@ _api_attribute_docs = {
     'Compensation.channels': 'channels: list[str]\n\nOrdered channel names covered by the compensation matrix.',
     'Compensation.matrix': 'matrix: np.ndarray\n\nThe compensation matrix as a NumPy copy.'
 }
+
 _api_class_names = {'Workspace', 'Grouping', 'Sample', 'Population', 'Strategy', 'StatisticDefinition', 'Compensation'}
+
 def _definition_class(_item):
     try:
         _position = _item.get_definition_start_position()
@@ -50,6 +55,7 @@ def _definition_class(_item):
             return _text.split('class ', 1)[1].split(':', 1)[0].split('(', 1)[0].strip()
         _index -= 1
     return ''
+
 def _api_attribute_doc(_item):
     _name = getattr(_item, 'name', '') or ''
     if not _name:
@@ -58,6 +64,7 @@ def _api_attribute_doc(_item):
     if not _class_name:
         return ''
     return _api_attribute_docs.get(f'{_class_name}.{_name}', '')
+
 def _best_inferred_doc(_item):
     try:
         _inferred = _item.infer() if hasattr(_item, 'infer') else []
@@ -72,6 +79,7 @@ def _best_inferred_doc(_item):
         if _doc and (_name in _api_class_names or not _doc.startswith(_name + ':')):
             return _doc
     return ''
+
 def _doc_blocks(_doc):
     if not _doc:
         return []
@@ -121,6 +129,7 @@ def _doc_blocks(_doc):
         return _blocks if _blocks else [{'kind': 'raw', 'text': _doc}]
     except Exception:
         return [{'kind': 'raw', 'text': _doc}]
+
 if _items:
     _item = _items[0]
     _type = getattr(_item, 'type', '')
@@ -148,5 +157,6 @@ if _items:
         'docstring': _doc,
         'docblocks': _doc_blocks(_doc)
     }
+
 import json as _json
 _result_json = _json.dumps(_result)

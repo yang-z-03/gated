@@ -17,6 +17,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml.Linq;
+using gated.Shared;
 
 namespace gated.Updater;
 
@@ -219,7 +220,7 @@ public sealed partial class UpdaterWindow : Window
             ? []
             : download_archives(target.Archives, staging_root, "base", progress);
         var python = target.Requirements.FirstOrDefault(requirement => requirement.Type == "package" && requirement.Name == "python");
-        bool python_exists = File.Exists(Path.Combine(options.InstallRoot, "python", "python.exe"));
+        bool python_exists = File.Exists(PlatformSupport.EmbeddedPythonLibraryPath(options.InstallRoot));
         bool python_required = python is not null &&
             (python.OverrideIfExist || !python_exists || (!options.RequirementsOnly && !installed.HasRequirement(python.InstallKey)));
         StagedArchive? staged_python = null;
@@ -431,6 +432,7 @@ public sealed partial class UpdaterWindow : Window
         return new VersionEntry(
             new AppVersion(required_int(element, "major"), required_int(element, "minor"), required_int(element, "patch")),
             (string?)element.Attribute("platform"),
+            (string?)element.Attribute("arch"),
             (string?)element.Attribute("minimal"),
             element.Elements("archive").Select(parse_archive).ToArray(),
             requirements,
@@ -650,6 +652,9 @@ public sealed partial class UpdaterWindow : Window
 
     private static IEnumerable<ProcessUse> find_processes_running_from_installation(string install_root, string updater_path)
     {
+        if (!OperatingSystem.IsWindows())
+            yield break;
+
         string full_root = Path.GetFullPath(install_root);
         string current_process_path = Environment.ProcessPath ?? updater_path;
         foreach (var process in Process.GetProcesses())
@@ -693,7 +698,8 @@ public sealed partial class UpdaterWindow : Window
             {
                 string name = process.ProcessName;
                 if (!name.Equals("python", StringComparison.OrdinalIgnoreCase) &&
-                    !name.Equals("pythonw", StringComparison.OrdinalIgnoreCase))
+                    !name.Equals("pythonw", StringComparison.OrdinalIgnoreCase) &&
+                    !name.Equals("python3", StringComparison.OrdinalIgnoreCase))
                     continue;
 
                 string? path;
@@ -784,14 +790,14 @@ public sealed partial class UpdaterWindow : Window
         if (!full_root.EndsWith(Path.DirectorySeparatorChar))
             full_root += Path.DirectorySeparatorChar;
 
-        return full_path.StartsWith(full_root, StringComparison.OrdinalIgnoreCase);
+        return full_path.StartsWith(full_root, path_comparison());
     }
 
     private static bool is_path_under_or_same(string path, string root)
     {
         string full_path = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar);
         string full_root = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar);
-        return string.Equals(full_path, full_root, StringComparison.OrdinalIgnoreCase) || is_path_under(path, root);
+        return string.Equals(full_path, full_root, path_comparison()) || is_path_under(path, root);
     }
 
     private static void copy_directory(string source_root, string target_root, string updater_path, Action<string, double?> progress, double start, double weight)
@@ -813,14 +819,11 @@ public sealed partial class UpdaterWindow : Window
 
     private static string find_python(string install_root)
     {
-        string[] candidates =
-        [
-            Path.Combine(install_root, "python", "python.exe"),
-            Path.Combine(install_root, "python", "python")
-        ];
-        string? python = candidates.FirstOrDefault(File.Exists);
-        if (python is null)
-            throw new FileNotFoundException("Embedded Python was not found after installation.", candidates[0]);
+        string python = PlatformSupport.EmbeddedPythonExecutablePath(install_root);
+        if (!File.Exists(python) && OperatingSystem.IsWindows())
+            python = Path.Combine(install_root, "python", "python");
+        if (!File.Exists(python))
+            throw new FileNotFoundException("Embedded Python was not found after installation.", PlatformSupport.EmbeddedPythonExecutablePath(install_root));
         return python;
     }
 
@@ -1129,15 +1132,20 @@ public sealed partial class UpdaterWindow : Window
         if (!full_root.EndsWith(Path.DirectorySeparatorChar))
             full_root += Path.DirectorySeparatorChar;
 
-        if (!combined.Equals(Path.GetFullPath(root), StringComparison.OrdinalIgnoreCase) &&
-            !combined.StartsWith(full_root, StringComparison.OrdinalIgnoreCase))
+        if (!combined.Equals(Path.GetFullPath(root), path_comparison()) &&
+            !combined.StartsWith(full_root, path_comparison()))
             throw new InvalidDataException("Path is outside the target directory.");
 
         return combined;
     }
 
     private static bool is_same_path(string left, string right) =>
-        string.Equals(Path.GetFullPath(left).TrimEnd(Path.DirectorySeparatorChar), Path.GetFullPath(right).TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase);
+        string.Equals(Path.GetFullPath(left).TrimEnd(Path.DirectorySeparatorChar), Path.GetFullPath(right).TrimEnd(Path.DirectorySeparatorChar), path_comparison());
+
+    private static StringComparison path_comparison() =>
+        OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
 
     private static void delete_quietly(string path)
     {
@@ -1197,6 +1205,7 @@ internal sealed record UpdatePlan(
 internal sealed record VersionEntry(
     AppVersion Version,
     string? Platform,
+    string? Arch,
     string? MinimalSystemVersion,
     IReadOnlyList<UpdateArchive> Archives,
     IReadOnlyList<Requirement> Requirements,
@@ -1204,23 +1213,18 @@ internal sealed record VersionEntry(
 {
     public bool IsCompatibleWith(SystemInfo system)
     {
-        if (!string.IsNullOrWhiteSpace(Platform) && !string.Equals(normalize_platform(Platform), system.Platform, StringComparison.OrdinalIgnoreCase))
+        if (!string.IsNullOrWhiteSpace(Platform) &&
+            !string.Equals(PlatformSupport.NormalizePlatform(Platform), system.Platform, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        if (!string.IsNullOrWhiteSpace(Arch) &&
+            !string.Equals(PlatformSupport.NormalizeArchitecture(Arch), system.Architecture, StringComparison.OrdinalIgnoreCase))
             return false;
 
         return string.IsNullOrWhiteSpace(MinimalSystemVersion) ||
                !System.Version.TryParse(MinimalSystemVersion, out var minimal) ||
                system.OsVersion.CompareTo(minimal) >= 0;
     }
-
-    private static string normalize_platform(string platform) =>
-        platform.Trim().ToLowerInvariant() switch
-        {
-            "win" => "windows",
-            "mac" => "macos",
-            "osx" => "macos",
-            "darwin" => "macos",
-            _ => platform.Trim().ToLowerInvariant()
-        };
 }
 
 internal sealed record Requirement(
@@ -1296,15 +1300,13 @@ internal readonly record struct AppVersion(int Major, int Minor, int Patch) : IC
     }
 }
 
-internal sealed record SystemInfo(string Platform, Version OsVersion)
+internal sealed record SystemInfo(string Platform, string Architecture, Version OsVersion)
 {
     public static SystemInfo Current()
     {
-        string platform =
-            OperatingSystem.IsWindows() ? "windows" :
-            OperatingSystem.IsMacOS() ? "macos" :
-            OperatingSystem.IsLinux() ? "linux" :
-            "unknown";
-        return new SystemInfo(platform, Environment.OSVersion.Version);
+        return new SystemInfo(
+            PlatformSupport.CurrentPlatform,
+            PlatformSupport.CurrentArchitecture,
+            Environment.OSVersion.Version);
     }
 }

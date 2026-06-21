@@ -169,17 +169,17 @@
     </Window.Styles>
 
     <DockPanel x:Name="window">
-        <Border DockPanel.Dock="Top" Background="#252530" BorderThickness="0,0,0,0" BorderBrush="#505050">
+        <Border x:Name="titleBar" DockPanel.Dock="Top" Background="#252530" BorderThickness="0,0,0,0" BorderBrush="#505050">
           <Grid Height="40">
             <Rectangle Fill="#252530" PointerPressed="title_bar_pressed"/>
             <DockPanel>
               <Border BorderBrush="#252530" BorderThickness="0 0 0 0"/>
               <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                <ToggleButton Margin="5 6 8 6"
+                <ToggleButton Margin="5 6 8 6" x:Name="pageModeSwitch"
                               Classes="PageModeSwitch"
                               IsChecked="{Binding IsPageEditorMode, Mode=OneWay}"
                               Click="page_mode_switch_click" />
-                <Button Width="30" Height="30" Margin="5 5 0 5" Click="window_minimize" Classes="Title">
+                <Button x:Name="minimizeButton" Width="30" Height="30" Margin="5 5 0 5" Click="window_minimize" Classes="Title">
                   <TextBlock IsHitTestVisible="False" FontFamily="{DynamicResource SemiFontFamilyIcon}" Text="&#xe1d8;" 
                              HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="14"/>
                 </Button>

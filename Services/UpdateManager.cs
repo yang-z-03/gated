@@ -11,6 +11,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml.Linq;
+using gated.Shared;
 
 namespace gated.Services;
 
@@ -62,9 +63,6 @@ public sealed class UpdateManager
         IProgress<UpdateProgress>? progress = null,
         CancellationToken cancellation_token = default)
     {
-        if (!OperatingSystem.IsWindows())
-            throw new PlatformNotSupportedException("Automatic replacement is currently supported on Windows.");
-
         string updater_path = get_updater_path();
         progress?.Report(new UpdateProgress("Checking updater ...", "Fetching updater manifest.", null));
         var versions = await fetch_versions_async(UpdaterManifestUrl, cancellation_token);
@@ -105,7 +103,7 @@ public sealed class UpdateManager
 
             copy_directory(extract_root, Path.GetDirectoryName(updater_path)!);
             if (!File.Exists(updater_path))
-                throw new FileNotFoundException("Updater package did not contain update.exe.", updater_path);
+                throw new FileNotFoundException($"Updater package did not contain {PlatformSupport.UpdaterFileName}.", updater_path);
         }
         finally
         {
@@ -121,9 +119,6 @@ public sealed class UpdateManager
 
     public void LaunchUpdater(UpdateInfo update)
     {
-        if (!OperatingSystem.IsWindows())
-            throw new PlatformNotSupportedException("Automatic replacement is currently supported on Windows.");
-
         string app_path = get_application_path();
         string updater_path = get_updater_path();
         string? local_versions_path = get_local_versions_path();
@@ -153,9 +148,6 @@ public sealed class UpdateManager
 
     public void LaunchPythonBootstrapUpdater()
     {
-        if (!OperatingSystem.IsWindows())
-            throw new PlatformNotSupportedException("Automatic replacement is currently supported on Windows.");
-
         string app_path = get_application_path();
         string updater_path = get_updater_path();
         string? local_versions_path = get_local_versions_path();
@@ -258,6 +250,7 @@ public sealed class UpdateManager
         int minor = parse_required_int(element, "minor");
         int patch = parse_required_int(element, "patch");
         string? platform = (string?)element.Attribute("platform");
+        string? arch = (string?)element.Attribute("arch");
         string? minimal = (string?)element.Attribute("minimal");
         Uri? info_href = element.Element("info")?.Attribute("href") is { } info_attribute
             ? new Uri(info_attribute.Value)
@@ -268,18 +261,16 @@ public sealed class UpdateManager
                 normalize_extract_path((string?)archive.Attribute("extract") ?? ".")))
             .ToArray();
 
-        return new UpdateVersion(new AppVersion(major, minor, patch), platform, minimal, info_href, archives);
+        return new UpdateVersion(new AppVersion(major, minor, patch), platform, arch, minimal, info_href, archives);
     }
 
     public static SystemInfo GetCurrentSystemInfo()
     {
-        string platform =
-            OperatingSystem.IsWindows() ? "windows" :
-            OperatingSystem.IsMacOS() ? "macos" :
-            OperatingSystem.IsLinux() ? "linux" :
-            "unknown";
-
-        return new SystemInfo(platform, Environment.OSVersion.Version, RuntimeInformation.OSDescription);
+        return new SystemInfo(
+            PlatformSupport.CurrentPlatform,
+            PlatformSupport.CurrentArchitecture,
+            Environment.OSVersion.Version,
+            RuntimeInformation.OSDescription);
     }
 
     private static int parse_required_int(XElement element, string attribute)
@@ -304,7 +295,7 @@ public sealed class UpdateManager
     }
 
     private static string get_updater_path() =>
-        Path.Combine(Path.GetDirectoryName(get_application_path())!, "update.exe");
+        Path.Combine(Path.GetDirectoryName(get_application_path())!, PlatformSupport.UpdaterFileName);
 
     private static string? get_local_versions_path()
     {
@@ -356,8 +347,8 @@ public sealed class UpdateManager
         if (!full_root.EndsWith(Path.DirectorySeparatorChar))
             full_root += Path.DirectorySeparatorChar;
 
-        if (!combined.Equals(Path.GetFullPath(root), StringComparison.OrdinalIgnoreCase) &&
-            !combined.StartsWith(full_root, StringComparison.OrdinalIgnoreCase))
+        if (!combined.Equals(Path.GetFullPath(root), path_comparison()) &&
+            !combined.StartsWith(full_root, path_comparison()))
             throw new InvalidDataException("Archive extract path is outside the target directory.");
 
         return combined;
@@ -397,6 +388,11 @@ public sealed class UpdateManager
     }
 
     private static string quote(string value) => "\"" + value.Replace("\"", "\\\"", StringComparison.Ordinal) + "\"";
+
+    private static StringComparison path_comparison() =>
+        OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
 }
 
 public readonly record struct AppVersion(int Major, int Minor, int Patch) : IComparable<AppVersion>
@@ -445,6 +441,7 @@ public sealed record UpdateArchive(Uri Href, string ExtractPath);
 public sealed record UpdateVersion(
     AppVersion Version,
     string? Platform,
+    string? Arch,
     string? MinimalSystemVersion,
     Uri? InfoHref,
     IReadOnlyList<UpdateArchive> Archives)
@@ -452,7 +449,11 @@ public sealed record UpdateVersion(
     public bool IsCompatibleWith(SystemInfo system)
     {
         if (!string.IsNullOrWhiteSpace(Platform) &&
-            !string.Equals(normalize_platform(Platform), system.Platform, StringComparison.OrdinalIgnoreCase))
+            !string.Equals(PlatformSupport.NormalizePlatform(Platform), system.Platform, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        if (!string.IsNullOrWhiteSpace(Arch) &&
+            !string.Equals(PlatformSupport.NormalizeArchitecture(Arch), system.Architecture, StringComparison.OrdinalIgnoreCase))
             return false;
 
         if (!string.IsNullOrWhiteSpace(MinimalSystemVersion) &&
@@ -462,16 +463,6 @@ public sealed record UpdateVersion(
 
         return true;
     }
-
-    private static string normalize_platform(string platform) =>
-        platform.Trim().ToLowerInvariant() switch
-        {
-            "win" => "windows",
-            "mac" => "macos",
-            "osx" => "macos",
-            "darwin" => "macos",
-            _ => platform.Trim().ToLowerInvariant()
-        };
 }
 
 public sealed record UpdateInfo(AppVersion Current, UpdateVersion Latest);
@@ -485,7 +476,7 @@ public sealed record UpdateCheckResult(
     SystemInfo System,
     UpdateInfo? Update);
 
-public sealed record SystemInfo(string Platform, Version OsVersion, string Description)
+public sealed record SystemInfo(string Platform, string Architecture, Version OsVersion, string Description)
 {
-    public string DisplayName => $"{Description}";
+    public string DisplayName => $"{Description} ({Architecture})";
 }

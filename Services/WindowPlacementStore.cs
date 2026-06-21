@@ -4,19 +4,19 @@ using System.Text.Json;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Platform;
+using gated.Shared;
 
 namespace gated.Services;
 
 public static class WindowPlacementStore
 {
-    private const string config_directory_name = "Gated";
     private const string placement_file_name = "window-placement.json";
     private const double minimum_project_tree_width = 260;
     private const double minimum_statistics_panel_height = 120;
     private static readonly JsonSerializerOptions json_options = new() { WriteIndented = true };
 
     public static string ConfigDirectory =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), config_directory_name);
+        PlatformSupport.PersistenceDirectory;
 
     private static string placement_file_path => Path.Combine(ConfigDirectory, placement_file_name);
 

@@ -13,6 +13,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Media;
 using Avalonia.Threading;
 using gated.Models;
+using gated.Shared;
 using Python.Runtime;
 using Avalonia.Platform;
 
@@ -74,7 +75,7 @@ public static class PythonExtensionRuntime
             if (engine_initialized)
                 return;
 
-            Runtime.PythonDLL = Path.Combine(AppContext.BaseDirectory, "python", "python313.dll");
+            Runtime.PythonDLL = PlatformSupport.EmbeddedPythonLibraryPath(AppContext.BaseDirectory);
             PythonEngine.Initialize();
             engine_initialized = true;
         }
