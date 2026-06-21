@@ -34,6 +34,7 @@
         <PackageReference Include="pythonnet" Version="3.1.0" />
         <PackageReference Include="TextMateSharp.Grammars" Version="2.0.3" />
         <PackageReference Include="Tmds.DBus.Protocol" Version="0.21.3" />
+        <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="3.116.1" />
     </ItemGroup>
 
     <ItemGroup>
@@ -179,42 +180,4 @@
         <RuntimeAsset>linux-x64</RuntimeAsset>
       </ReleaseRuntime>
     </ItemGroup>
-
-    <Target Name="PublishReleaseArtifacts">
-      <MSBuild Projects="$(MSBuildProjectFullPath)"
-               Targets="Publish"
-               Properties="Configuration=$(Configuration);RuntimeIdentifier=%(ReleaseRuntime.DotNetRuntime);SelfContained=true;PublishDir=$(ReleaseArtifactsDir)gated-%(ReleaseRuntime.Identity)\;GatedSkipReleasePublish=true" />
-      <MSBuild Projects="$(MSBuildProjectDirectory)\Updater\update.csproj"
-               Targets="Restore;Publish"
-               Properties="Configuration=$(Configuration);RuntimeIdentifier=%(ReleaseRuntime.DotNetRuntime);SelfContained=true;PublishSingleFile=true;PublishDir=$(ReleaseArtifactsDir)updater-%(ReleaseRuntime.Identity)\" />
-      <MSBuild Projects="$(MSBuildProjectFullPath)"
-               Targets="TrimPublishedRuntimeAssets"
-               Properties="PublishOutputDir=$(ReleaseArtifactsDir)gated-%(ReleaseRuntime.Identity)\;RuntimeAsset=%(ReleaseRuntime.RuntimeAsset);GatedSkipReleasePublish=true" />
-      <MSBuild Projects="$(MSBuildProjectFullPath)"
-               Targets="TrimPublishedRuntimeAssets"
-               Properties="PublishOutputDir=$(ReleaseArtifactsDir)updater-%(ReleaseRuntime.Identity)\;RuntimeAsset=%(ReleaseRuntime.RuntimeAsset);GatedSkipReleasePublish=true" />
-      <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;$paths=@('$(ReleaseArtifactsDir)gated-$(GatedReleaseVersionFile)-%(ReleaseRuntime.Identity).zip','$(ReleaseArtifactsDir)updater-$(UpdaterReleaseVersionFile)-%(ReleaseRuntime.Identity).zip'); foreach ($path in $paths) { for ($i=0; $i -lt 12; $i++) { try { if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force -ErrorAction Stop }; break } catch { if ($i -eq 11) { throw }; Start-Sleep -Milliseconds 500 } } }&quot;" />
-      <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;Compress-Archive -Path '$(ReleaseArtifactsDir)gated-%(ReleaseRuntime.Identity)\*' -DestinationPath '$(ReleaseArtifactsDir)gated-$(GatedReleaseVersionFile)-%(ReleaseRuntime.Identity).zip' -Force&quot;" />
-      <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;Compress-Archive -Path '$(ReleaseArtifactsDir)updater-%(ReleaseRuntime.Identity)\*' -DestinationPath '$(ReleaseArtifactsDir)updater-$(UpdaterReleaseVersionFile)-%(ReleaseRuntime.Identity).zip' -Force&quot;" />
-      <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;$paths=@('$(ReleaseArtifactsDir)gated-%(ReleaseRuntime.Identity)','$(ReleaseArtifactsDir)updater-%(ReleaseRuntime.Identity)'); foreach ($path in $paths) { for ($i=0; $i -lt 12; $i++) { try { if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction Stop }; break } catch { if ($i -eq 11) { throw }; Start-Sleep -Milliseconds 500 } } }&quot;" />
-      <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;$paths=@('$(MSBuildProjectDirectory)\bin\Release','$(MSBuildProjectDirectory)\Updater\bin\Release'); foreach ($path in $paths) { for ($i=0; $i -lt 12; $i++) { try { if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction Stop }; break } catch { if ($i -eq 11) { throw }; Start-Sleep -Milliseconds 500 } } }&quot;" />
-    </Target>
-
-    <Target Name="PublishDebugWindowsUpdater"
-            AfterTargets="Build"
-            Condition="'$(MSBuildProjectName)' == 'gated' and '$(Configuration)' == 'Debug' and '$(GatedSkipDebugUpdaterPublish)' != 'true'">
-      <MSBuild Projects="$(MSBuildProjectDirectory)\Updater\update.csproj"
-               Targets="Restore;Publish"
-               Properties="Configuration=$(Configuration);RuntimeIdentifier=win-x64;SelfContained=true;PublishSingleFile=true;PublishDir=$(TargetDir);GatedSkipDebugUpdaterPublish=true" />
-      <RemoveDir Directories="$(MSBuildProjectDirectory)\Updater\bin;$(MSBuildProjectDirectory)\Updater\obj;$(MSBuildProjectDirectory)\obj\debug-updater" />
-    </Target>
-
-    <Target Name="TrimPublishedRuntimeAssets" Condition="'$(PublishOutputDir)' != '' and Exists('$(PublishOutputDir)runtimes')">
-      <ItemGroup>
-        <PublishedRuntimeDirectory Include="$(PublishOutputDir)runtimes\*" />
-        <PublishedRuntimeDirectoryToRemove Include="@(PublishedRuntimeDirectory)"
-                                           Condition="'%(Filename)' != '$(RuntimeAsset)'" />
-      </ItemGroup>
-      <RemoveDir Directories="@(PublishedRuntimeDirectoryToRemove)" />
-    </Target>
 </Project>

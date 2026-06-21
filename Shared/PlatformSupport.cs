@@ -34,6 +34,9 @@ public static class PlatformSupport
     public static string EmbeddedPythonLibraryPath(string application_root) =>
         Path.Combine(application_root, EmbeddedPythonLibraryRelativePath);
 
+    public static string EmbeddedPythonHome(string application_root) =>
+        Path.Combine(application_root, "python");
+
     public static string EmbeddedPythonExecutablePath(string application_root) =>
         Path.Combine(application_root, EmbeddedPythonExecutableRelativePath);
 

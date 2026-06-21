@@ -1,8 +1,10 @@
+using System;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Data.Core.Plugins;
 using Avalonia.Markup.Xaml;
 using gated.Python;
+using gated.Shared;
 
 namespace gated;
 
@@ -19,6 +21,7 @@ public partial class App : Application
         {
             desktop.Exit += (_, _) => PythonExtensionRuntime.Shutdown();
             BindingPlugins.PropertyAccessors.Add(new DataRowViewPropertyAccessorPlugin());
+            Environment.SetEnvironmentVariable("PYTHONHOME", PlatformSupport.EmbeddedPythonHome(AppContext.BaseDirectory));
             var window = new MainWindow();
             desktop.MainWindow = window;
             var args = desktop.Args ?? [];
