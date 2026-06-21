@@ -42,6 +42,9 @@ public partial class MainWindow : Window
     private bool channel_menu_update_pending;
     private bool close_confirmed;
     private bool close_prompt_active;
+    private bool plot_properties_panel_visible = true;
+    private double analysis_properties_panel_width = 336;
+    private double layout_properties_panel_width = 336;
 
     public MainWindow()
     {
@@ -87,18 +90,82 @@ public partial class MainWindow : Window
             }
         };
         WindowPlacementStore.Restore(this);
+        restore_panel_layout(WindowPlacementStore.Load());
+        configure_native_menu();
         update_window_margin_for_state();
+    }
+
+    partial void configure_native_menu();
+
+    private void page_mode_switch_click(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not ToggleButton toggle)
+            return;
+
+        view_model.IsPageEditorMode = toggle.IsChecked == true;
     }
 
     private void update_window_margin_for_state()
     {
+        if (OperatingSystem.IsMacOS())
+        {
+            window.Margin = new Thickness(0);
+            return;
+        }
+
         if (WindowState == WindowState.Maximized)
             window.Margin = new Thickness(8);
         else window.Margin = new Thickness(0);
     }
 
+    private void restore_panel_layout(WindowPlacementStore.WindowPlacement? placement)
+    {
+        if (placement?.ProjectTreeWidth is { } project_tree_width)
+            main_workspace_grid.ColumnDefinitions[0].Width = new GridLength(project_tree_width);
+        if (placement?.StatisticsPanelHeight is { } statistics_panel_height)
+            analysis_mode_grid.RowDefinitions[2].Height = new GridLength(statistics_panel_height);
+    }
+
+    private double current_project_tree_width() =>
+        main_workspace_grid.ColumnDefinitions[0].ActualWidth;
+
+    private double current_statistics_panel_height() =>
+        analysis_mode_grid.RowDefinitions[2].ActualHeight;
+
+    private void toggle_plot_properties_menu_item_click(object? sender, RoutedEventArgs e) =>
+        set_plot_properties_panel_visible(sender is not MenuItem item || item.IsChecked != false);
+
+    private void set_plot_properties_panel_visible(bool is_visible)
+    {
+        if (plot_properties_panel_visible == is_visible)
+            return;
+
+        plot_properties_panel_visible = is_visible;
+        if (!is_visible)
+        {
+            analysis_properties_panel_width = Math.Max(336, analysis_plot_grid.ColumnDefinitions[1].ActualWidth);
+            layout_properties_panel_width = Math.Max(336, layout_mode_grid.ColumnDefinitions[1].ActualWidth);
+        }
+
+        set_properties_panel_column(analysis_plot_grid, analysis_properties_panel, 1, is_visible, analysis_properties_panel_width);
+        set_properties_panel_column(layout_mode_grid, layout_properties_panel, 1, is_visible, layout_properties_panel_width);
+        toggle_plot_properties_menu_item.IsChecked = is_visible;
+        toggle_layout_properties_menu_item.IsChecked = is_visible;
+        update_page_editor_viewport_size();
+    }
+
+    private static void set_properties_panel_column(Grid grid, Control panel, int column_index, bool is_visible, double visible_width)
+    {
+        panel.IsVisible = is_visible;
+        grid.ColumnDefinitions[column_index].Width = is_visible
+            ? new GridLength(Math.Max(240, visible_width))
+            : new GridLength(0);
+    }
+
     private void view_model_property_changed(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(MainWindowViewModel.IsDefaultAnalysisMode) && view_model.IsPageEditorMode)
+            page_editor.RefreshRenderCachesSequentially(view_model.PageElements);
         if (e.PropertyName == nameof(MainWindowViewModel.StatisticTable))
             update_statistics_columns();
         if (e.PropertyName == nameof(MainWindowViewModel.WorkspaceMetadataTable))
@@ -331,7 +398,8 @@ public partial class MainWindow : Window
 
         if (e.KeyModifiers == KeyModifiers.Control && e.Key == Key.R)
         {
-            execute_shortcut_command(view_model.CollapseProjectTreeCommand, e);
+            e.Handled = true;
+            set_plot_properties_panel_visible(!plot_properties_panel_visible);
             return;
         }
 
@@ -1427,6 +1495,8 @@ public partial class MainWindow : Window
                     build_statistics_context_menu("Create statistics ..."),
                     build_plotting_context_menu("Default plotting options"),
                     new Separator(),
+                    command_menu_item("Copy hierarchy view options to group", view_model.CopyHierarchyViewOptionsToGroupCommand),
+                    new Separator(),
                     command_menu_item("Recalculate gating scheme", view_model.RecalculateSelectedGateCommand),
                     command_menu_item("Recalculate statistics", view_model.RecalculateSelectedGroupCommand),
                     new Separator(),
@@ -1463,6 +1533,8 @@ public partial class MainWindow : Window
                 add_menu_items(menu,
                     build_create_gate_context_menu(),
                     build_plotting_context_menu("Default plotting options"),
+                    new Separator(),
+                    command_menu_item("Copy hierarchy view options to group", view_model.CopyHierarchyViewOptionsToGroupCommand),
                     new Separator(),
                     command_menu_item("Recalculate gating scheme", view_model.RecalculateSelectedGroupCommand),
                     click_menu_item("Split sample ...", split_sample_menu_item_click),
@@ -2159,7 +2231,7 @@ public partial class MainWindow : Window
         if (choice == ScriptSaveChoice.Save && !await save_workspace_async())
             return;
 
-        WindowPlacementStore.Save(this);
+        WindowPlacementStore.Save(this, current_project_tree_width(), current_statistics_panel_height());
         close_confirmed = true;
         var lifetime = Application.Current?.ApplicationLifetime;
         if (lifetime is ClassicDesktopStyleApplicationLifetime desktop)

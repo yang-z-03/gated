@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Layout;
+using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using Avalonia.Threading;
 using System;
@@ -19,98 +20,77 @@ using System.Xml.Linq;
 
 namespace gated.Updater;
 
-public sealed class UpdaterWindow : Window
+public sealed partial class UpdaterWindow : Window
 {
     private const string default_versions_url = "https://raw.githubusercontent.com/yang-z-03/gated/refs/heads/master/.github/versions";
     private static readonly HttpClient http_client = new() { Timeout = TimeSpan.FromSeconds(30) };
 
     private readonly string[] args;
-    private readonly TextBlock title = text("Checking for updates", 20, FontWeight.Light, brush(255, 255, 255));
-    private readonly TextBlock subtitle = text("Preparing updater.", 13);
-    private readonly StackPanel steps = new() { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 8, 0, 0) };
-    private readonly ContentControl page_host = new();
-    private readonly Button back_button = new() { Content = "Back", IsEnabled = false };
-    private readonly Button cancel_button = new() { Content = "Cancel" };
-    private readonly Button next_button = new() { Content = "Next", Classes = { "Primary" }, IsEnabled = false };
-    private readonly ProgressBar progress = new() { Minimum = 0, Maximum = 100, Height = 8 };
-    private readonly TextBlock progress_detail = text("", 12).also(block =>
-    {
-        block.TextWrapping = TextWrapping.NoWrap;
-        block.TextTrimming = TextTrimming.None;
-        block.MaxLines = 1;
-        block.ClipToBounds = true;
-        block.OpacityMask = right_fade_mask();
-    });
+    private readonly TextBlock title;
+    private readonly TextBlock subtitle;
+    private readonly Border[] step_indicators;
+    private readonly Control summary_page;
+    private readonly Control review_page;
+    private readonly Control install_page;
+    private readonly Control failure_page;
+    private readonly StackPanel review_content;
+    private readonly TextBlock summary_base_package;
+    private readonly TextBlock summary_python;
+    private readonly TextBlock summary_python_packages;
+    private readonly TextBlock summary_scripts;
+    private readonly TextBlock failure_primary;
+    private readonly TextBlock failure_secondary;
+    private readonly Button back_button;
+    private readonly Button cancel_button;
+    private readonly Button next_button;
+    private readonly ProgressBar progress;
+    private readonly TextBlock progress_detail;
 
     private UpdateOptions? options;
     private UpdatePlan? plan;
     private int page_index;
 
+    public UpdaterWindow() : this([])
+    {
+    }
+
     public UpdaterWindow(string[] args)
     {
         this.args = args;
-        Title = "Gated Updater";
-        Width = 680;
-        Height = 500;
-        MinWidth = 680;
-        MinHeight = 500;
-        MaxWidth = 680;
-        MaxHeight = 500;
-        WindowStartupLocation = WindowStartupLocation.CenterScreen;
-        FontFamily = new FontFamily("Adobe Clean, Roboto, Inter, SF Pro Text, Arial");
-        Background = brush(40, 40, 40);
-
-        Content = new Grid
-        {
-            RowDefinitions = new RowDefinitions("Auto,*,Auto"),
-            Margin = new Thickness(24),
-            Children =
-            {
-                new StackPanel
-                {
-                    Spacing = 8,
-                    Background = brush(30, 30, 30),
-                    Children =
-                    {
-                        title,
-                        subtitle,
-                        steps
-                    }
-                },
-                page_host,
-                new Grid
-                {
-                    ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto"),
-                    Margin = new Thickness(0, 18, 0, 0),
-                    Background = brush(30, 30, 30),
-                    Children =
-                    {
-                        new StackPanel
-                        {
-                            Spacing = 5,
-                            Children = { progress, progress_detail },
-                            Margin = new Thickness(0, 0, 25, 0)
-                        },
-                        back_button,
-                        cancel_button,
-                        next_button
-                    }
-                }
-            }
-        };
-        Grid.SetRow(page_host, 1);
-        Grid.SetRow(((Grid)Content).Children[2], 2);
-        Grid.SetColumn(back_button, 1);
-        Grid.SetColumn(cancel_button, 2);
-        Grid.SetColumn(next_button, 3);
-        back_button.Margin = new Thickness(0, 0, 8, 0);
-        cancel_button.Margin = new Thickness(0, 0, 8, 0);
+        AvaloniaXamlLoader.Load(this);
+        title = require_control<TextBlock>("TitleText");
+        subtitle = require_control<TextBlock>("SubtitleText");
+        step_indicators =
+        [
+            require_control<Border>("StepPrepare"),
+            require_control<Border>("StepReview"),
+            require_control<Border>("StepInstall")
+        ];
+        summary_page = require_control<Control>("SummaryPage");
+        review_page = require_control<Control>("ReviewPage");
+        install_page = require_control<Control>("InstallPage");
+        failure_page = require_control<Control>("FailurePage");
+        review_content = require_control<StackPanel>("ReviewContent");
+        summary_base_package = require_control<TextBlock>("SummaryBasePackage");
+        summary_python = require_control<TextBlock>("SummaryPython");
+        summary_python_packages = require_control<TextBlock>("SummaryPythonPackages");
+        summary_scripts = require_control<TextBlock>("SummaryScripts");
+        failure_primary = require_control<TextBlock>("FailurePrimary");
+        failure_secondary = require_control<TextBlock>("FailureSecondary");
+        back_button = require_control<Button>("BackButton");
+        cancel_button = require_control<Button>("CancelButton");
+        next_button = require_control<Button>("NextButton");
+        progress = require_control<ProgressBar>("Progress");
+        progress_detail = require_control<TextBlock>("ProgressDetail");
 
         back_button.Click += (_, _) => show_page(Math.Max(0, page_index - 1));
         cancel_button.Click += (_, _) => close_application();
         next_button.Click += async (_, _) => await advance();
         Opened += async (_, _) => await initialize();
     }
+
+    private T require_control<T>(string name) where T : Control =>
+        this.FindControl<T>(name) ?? throw new InvalidOperationException($"UpdaterWindow control '{name}' was not found.");
 
     private async Task initialize()
     {
@@ -172,14 +152,16 @@ public sealed class UpdaterWindow : Window
         {
             title.Text = options?.RequirementsOnly == true ? "Python runtime is ready" : $"Gated {plan.TargetVersion} is ready";
             subtitle.Text = "Required archives have been staged. Review the planned installation before applying it.";
-            page_host.Content = build_summary_page(plan);
+            populate_summary_page(plan);
+            show_only(summary_page);
             set_ready("Downloads ready", "All required update archives are available locally.");
         }
         else if (index == 1)
         {
             title.Text = "Review changes";
             subtitle.Text = "Confirm package, Python, macro, statistic, and pip changes.";
-            page_host.Content = build_review_page(plan);
+            populate_review_page(plan);
+            show_only(review_page);
             set_ready("Waiting for confirmation", "No installation files have been replaced yet.");
         }
         else
@@ -188,7 +170,7 @@ public sealed class UpdaterWindow : Window
             subtitle.Text = options?.RequirementsOnly == true
                 ? "Installing embedded Python and reconciling Python packages."
                 : "Replacing application files and reconciling Python packages.";
-            page_host.Content = build_progress_page();
+            show_only(install_page);
             back_button.IsEnabled = false;
             next_button.IsEnabled = false;
         }
@@ -351,27 +333,19 @@ public sealed class UpdaterWindow : Window
         }
     }
 
-    private Control build_summary_page(UpdatePlan update_plan)
+    private void populate_summary_page(UpdatePlan update_plan)
     {
-        return new StackPanel
-        {
-            Margin = new Thickness(0, 24, 0, 0),
-            Spacing = 12,
-            Children =
-            {
-                info_row("Base package", options?.RequirementsOnly == true ? "Main program will not be updated" : $"{update_plan.BaseArchives.Count} archive(s) staged"),
-                info_row("Embedded Python", update_plan.PythonRequired ? "Will be installed or replaced" : "Installed version satisfies metadata"),
-                info_row("Python packages", $"{update_plan.PythonPackages.Count(package => !package.Satisfied)} package(s) need pip changes"),
-                info_row("Macros and statistics", $"{update_plan.ProtectedItems.Count(item => item.Compatible)} kept, {update_plan.ProtectedItems.Count(item => !item.Compatible)} removed")
-            }
-        };
+        summary_base_package.Text = options?.RequirementsOnly == true ? "Main program will not be updated" : $"{update_plan.BaseArchives.Count} archive(s) staged";
+        summary_python.Text = update_plan.PythonRequired ? "Will be installed or replaced" : "Installed version satisfies metadata";
+        summary_python_packages.Text = $"{update_plan.PythonPackages.Count(package => !package.Satisfied)} package(s) need pip changes";
+        summary_scripts.Text = $"{update_plan.ProtectedItems.Count(item => item.Compatible)} kept, {update_plan.ProtectedItems.Count(item => !item.Compatible)} removed";
     }
 
-    private Control build_review_page(UpdatePlan update_plan)
+    private void populate_review_page(UpdatePlan update_plan)
     {
-        var list = new StackPanel { Spacing = 14 };
-        list.Children.Add(section("Package"));
-        list.Children.Add(table(
+        review_content.Children.Clear();
+        review_content.Children.Add(section("Package"));
+        review_content.Children.Add(table(
             ["Item", "Current", "Requested", "Action"],
             [[
                 "Gated",
@@ -381,16 +355,16 @@ public sealed class UpdaterWindow : Window
             ]],
             [1, 2]));
 
-        list.Children.Add(section("Embedded Python"));
+        review_content.Children.Add(section("Embedded Python"));
         string python_version = update_plan.PythonRequirement is null
             ? "not requested"
             : $"{update_plan.PythonRequirement.Major}.{update_plan.PythonRequirement.Minor}";
-        list.Children.Add(table(
+        review_content.Children.Add(table(
             ["Requirement", "Installed", "Requested", "Action"],
             [["python", update_plan.PythonRequired ? "missing or forced" : "installed", python_version, update_plan.PythonRequired ? "Fresh install" : "Keep"]],
             [2]));
 
-        list.Children.Add(section("Python packages"));
+        review_content.Children.Add(section("Python packages"));
         var package_rows = update_plan.PythonPackages.Count == 0
             ? [["none", "", "", "No package requirements"]]
             : update_plan.PythonPackages
@@ -402,9 +376,9 @@ public sealed class UpdaterWindow : Window
                     package.Satisfied ? "Keep" : "Install"
                 })
                 .ToArray();
-        list.Children.Add(table(["Package", "Installed", "Requested", "Action"], package_rows, [1, 2]));
+        review_content.Children.Add(table(["Package", "Installed", "Requested", "Action"], package_rows, [1, 2]));
 
-        list.Children.Add(section("Macros and statistics"));
+        review_content.Children.Add(section("Macros and statistics"));
         var script_rows = update_plan.ProtectedItems.Count == 0
             ? [["none", "", "", "", "No existing macro or statistic definitions"]]
             : update_plan.ProtectedItems
@@ -419,30 +393,9 @@ public sealed class UpdaterWindow : Window
                     item.Compatible ? "Keep" : "Remove"
                 })
                 .ToArray();
-        list.Children.Add(table(["Type", "Name", "API", "Required", "Action"], script_rows, [2, 3]));
-        list.Children.Add(new Grid() { Height = 20 });
-
-        return new ScrollViewer
-        {
-            Margin = new Thickness(0, 18, 0, 0),
-            VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
-            OpacityMask = bottom_fade_mask(),
-            Content = list
-        };
+        review_content.Children.Add(table(["Type", "Name", "API", "Required", "Action"], script_rows, [2, 3]));
+        review_content.Children.Add(new Grid() { Height = 20 });
     }
-
-    private Control build_progress_page() =>
-        new StackPanel
-        {
-            Margin = new Thickness(0, 32, 0, 0),
-            Spacing = 4,
-            Children =
-            {
-                text("Applying update. This window will restart Gated when finished.", 13),
-                text("Do not launch Gated manually until the updater has completed.", 13)
-            }
-        };
 
     private static VersionEntry[] load_versions(UpdateOptions options)
     {
@@ -975,16 +928,8 @@ public sealed class UpdaterWindow : Window
 
     private void render_steps(int active)
     {
-        steps.Children.Clear();
-        string[] labels = ["Prepare", "Review", "Install"];
-        for (int i = 0; i < labels.Length; i++)
-            steps.Children.Add(new Border
-            {
-                CornerRadius = new CornerRadius(4),
-                Padding = new Thickness(10, 4),
-                Background = i == active ? brush(63, 104, 171) : brush(45, 49, 57),
-                Child = text(labels[i], 12, FontWeight.SemiBold)
-            });
+        for (int i = 0; i < step_indicators.Length; i++)
+            step_indicators[i].Background = i == active ? brush(63, 104, 171) : brush(45, 49, 57);
     }
 
     private void report(string message, double? value) =>
@@ -1014,30 +959,15 @@ public sealed class UpdaterWindow : Window
         subtitle.Text = exception.Message;
         if (exception is ArgumentException)
         {
-            page_host.Content = new StackPanel
-            {
-                Margin = new Thickness(0, 32, 0, 0),
-                Spacing = 12,
-                Children =
-                {
-                    text("This is an updater utility and should only be called via the program itself.", 13),
-                    text("Never run it manually.", 13),
-                }
-            };
+            failure_primary.Text = "This is an updater utility and should only be called via the program itself.";
+            failure_secondary.Text = "Never run it manually.";
         }
         else
         {
-            page_host.Content = new StackPanel
-            {
-                Margin = new Thickness(0, 32, 0, 0),
-                Spacing = 12,
-                Children =
-                {
-                    text("Exception occurs when running installation task. This is an internal error, report to the developers for future fix. You can file an issue on the project page: https://github.com/yang-z-03/gated/issues and mark \'Installer failure\' tag for maintainer to capture the error.", 13),
-                    text("It is unfortunate that your previous installation may have been broken by the partial installation. Visiting https://github.com/yang-z-03/gated/releases and download a copy yourself in replace, that you can proceed using the software.", 13)
-                }
-            };
+            failure_primary.Text = "Exception occurs when running installation task. This is an internal error, report to the developers for future fix. You can file an issue on the project page: https://github.com/yang-z-03/gated/issues and mark 'Installer failure' tag for maintainer to capture the error.";
+            failure_secondary.Text = "It is unfortunate that your previous installation may have been broken by the partial installation. Visiting https://github.com/yang-z-03/gated/releases and download a copy yourself in replace, that you can proceed using the software.";
         }
+        show_only(failure_page);
         progress.IsVisible = false;
         back_button.IsEnabled = false;
         cancel_button.Content = "Close";
@@ -1045,24 +975,13 @@ public sealed class UpdaterWindow : Window
         next_button.IsEnabled = false;
     }
 
-    private static Control info_row(string name, string value, IBrush? accent = null) =>
-        new Border
-        {
-            Background = brush(40, 44, 52),
-            BorderBrush = brush(68, 73, 84),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(4),
-            Padding = new Thickness(12, 9),
-            Child = new Grid
-            {
-                ColumnDefinitions = new ColumnDefinitions("150,*"),
-                Children =
-                {
-                    text(name, 12, FontWeight.SemiBold, accent ?? brush(215, 220, 230)),
-                    text(value, 12)
-                }
-            }
-        }.also(row => Grid.SetColumn(((Grid)row.Child!).Children[1], 1));
+    private void show_only(Control page)
+    {
+        summary_page.IsVisible = ReferenceEquals(page, summary_page);
+        review_page.IsVisible = ReferenceEquals(page, review_page);
+        install_page.IsVisible = ReferenceEquals(page, install_page);
+        failure_page.IsVisible = ReferenceEquals(page, failure_page);
+    }
 
     private static Control table(string[] headers, IReadOnlyList<string[]> rows, int[]? code_columns = null)
     {
@@ -1109,32 +1028,6 @@ public sealed class UpdaterWindow : Window
             Child = grid
         };
     }
-
-    private static LinearGradientBrush bottom_fade_mask() =>
-        new()
-        {
-            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-            EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
-            GradientStops =
-            {
-                new GradientStop(Colors.Black, 0),
-                new GradientStop(Colors.Black, 0.88),
-                new GradientStop(Colors.Transparent, 1)
-            }
-        };
-
-    private static LinearGradientBrush right_fade_mask() =>
-        new()
-        {
-            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-            EndPoint = new RelativePoint(1, 0, RelativeUnit.Relative),
-            GradientStops =
-            {
-                new GradientStop(Colors.Black, 0),
-                new GradientStop(Colors.Black, 0.86),
-                new GradientStop(Colors.Transparent, 1)
-            }
-        };
 
     private static IBrush? action_brush(string value) =>
         value is "Keep" ? brush(129, 201, 149) :

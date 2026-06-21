@@ -119,6 +119,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
     public ICommand RecalculateSelectedGroupCommand { get; }
     public ICommand RecalculateSelectedGateCommand { get; }
     public ICommand RecalculateSelectedStatisticCommand { get; }
+    public ICommand CopyHierarchyViewOptionsToGroupCommand { get; }
     public ICommand RefreshSelectedLayoutCommand { get; }
     public ICommand ExpandProjectTreeCommand { get; }
     public ICommand CollapseProjectTreeCommand { get; }
@@ -184,6 +185,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         RecalculateSelectedGroupCommand = new RelayCommand(_ => RecalculateSelectedGroup(), _ => selected_group is not null);
         RecalculateSelectedGateCommand = new RelayCommand(_ => RecalculateEditedGate(selected_gate), _ => selected_group is not null);
         RecalculateSelectedStatisticCommand = new RelayCommand(_ => recalculate_selected_statistic(), _ => selected_group is not null && selected_statistic_definition() is not null);
+        CopyHierarchyViewOptionsToGroupCommand = new RelayCommand(_ => copy_hierarchy_view_options_to_group(), _ => can_copy_hierarchy_view_options_to_group());
         RefreshSelectedLayoutCommand = new RelayCommand(_ => RefreshLayoutCanvas(), _ => selected_page_layout is not null);
         ExpandProjectTreeCommand = new RelayCommand(_ => set_project_tree_expanded(true));
         CollapseProjectTreeCommand = new RelayCommand(_ => set_project_tree_expanded(false));
@@ -674,7 +676,6 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 SelectedIntegrationJob = null;
                 IsWorkspaceMetadataMode = false;
                 IsPythonScriptEditorMode = false;
-                RefreshLayoutCanvas();
             }
             OnPropertyChanged(nameof(IsDefaultAnalysisMode));
             StatusText = value
@@ -853,7 +854,6 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 return;
             SelectedPageElement = selected_page_layout?.Elements.LastOrDefault();
             OnPropertyChanged(nameof(PageElements));
-            RefreshLayoutCanvas();
             if (RenameLayoutCommand is RelayCommand rename_layout)
                 rename_layout.RaiseCanExecuteChanged();
             if (RefreshSelectedLayoutCommand is RelayCommand refresh_layout)
@@ -2608,13 +2608,13 @@ public sealed partial class MainWindowViewModel : NotifyBase
             case ProjectNodeKind.LayoutFolder:
                 SelectedIntegrationJob = null;
                 IsWorkspaceMetadataMode = false;
-                IsPageEditorMode = true;
                 SelectedPageLayout = Workspace.PageLayouts.FirstOrDefault();
+                IsPageEditorMode = true;
                 break;
             case ProjectNodeKind.Layout:
                 SelectedIntegrationJob = null;
-                IsPageEditorMode = true;
                 SelectedPageLayout = node.Layout;
+                IsPageEditorMode = true;
                 break;
             case ProjectNodeKind.IntegrationJobFolder:
                 IsPageEditorMode = false;
@@ -2764,9 +2764,15 @@ public sealed partial class MainWindowViewModel : NotifyBase
             case ProjectNodeKind.Group:
                 SelectedIntegrationJob = null;
                 IsWorkspaceMetadataMode = false;
-                if (node.Group is not null && selected_group is null)
+                if (node.Group is not null)
                     SelectedGroup = node.Group;
+                SelectedSample = null;
+                SelectedPopulation = null;
+                SelectedGate = null;
                 SelectedCompensation = null;
+                apply_root_axis_context();
+                needs_plot_refresh = true;
+                needs_statistics_refresh = true;
                 break;
         }
 
@@ -2971,6 +2977,88 @@ public sealed partial class MainWindowViewModel : NotifyBase
             ContourLevelCount = view.ContourLevelCount,
             DensitySmoothing = view.DensitySmoothing
         };
+
+    private bool can_copy_hierarchy_view_options_to_group() =>
+        selected_group is not null &&
+        selected_sample is not null &&
+        selected_node?.Kind is ProjectNodeKind.Sample or ProjectNodeKind.Population;
+
+    private void copy_hierarchy_view_options_to_group()
+    {
+        if (!can_copy_hierarchy_view_options_to_group() ||
+            selected_group is null ||
+            selected_sample is null ||
+            selected_node is null)
+            return;
+
+        int copied_count = 0;
+        if (selected_node.Kind == ProjectNodeKind.Sample)
+        {
+            if (selected_group.SampleRootViewOptions.TryGetValue(selected_sample.Name, out var root_view) &&
+                root_view.HasView)
+            {
+                selected_group.RootViewOptions = clone_gate_view_options(root_view);
+                copied_count++;
+            }
+
+            foreach (var population in selected_sample.Populations)
+                copied_count += copy_population_hierarchy_view_options_to_group(selected_sample.Name, population);
+        }
+        else if (selected_population is not null)
+        {
+            copied_count += copy_population_hierarchy_view_options_to_group(selected_sample.Name, selected_population);
+        }
+
+        refresh_plot_gates();
+        refresh_project_tree();
+        raise_command_states();
+        StatusText = copied_count == 1
+            ? "Copied 1 hierarchy view option to grouping defaults"
+            : $"Copied {copied_count} hierarchy view options to grouping defaults";
+    }
+
+    private static int copy_population_hierarchy_view_options_to_group(string sample_name, PopulationResult population)
+    {
+        int copied_count = 0;
+        var gate = population.Gate;
+        string key = sample_preferred_view_key(sample_name, population.Region);
+        if (gate.SamplePreferredViews.TryGetValue(key, out var view) && view.HasView)
+        {
+            set_gate_population_default_view(gate, population.Region, clone_gate_view_options(view));
+            copied_count++;
+        }
+
+        foreach (var child in population.Children)
+            copied_count += copy_population_hierarchy_view_options_to_group(sample_name, child);
+
+        return copied_count;
+    }
+
+    private static void set_gate_population_default_view(GateDefinition gate, PopulationRegion region, GateViewOptions view)
+    {
+        if (region != PopulationRegion.Primary || gate.PopulationRegions.Count != 1)
+        {
+            gate.PopulationPreferredViews[region] = view;
+            return;
+        }
+
+        gate.PreferredXChannel = view.XChannel;
+        gate.PreferredXMinimum = view.XMinimum;
+        gate.PreferredXMaximum = view.XMaximum;
+        gate.PreferredXScale = view.XScale.Clone();
+        gate.PreferredYChannel = view.YChannel;
+        gate.PreferredYMinimum = view.YMinimum;
+        gate.PreferredYMaximum = view.YMaximum;
+        gate.PreferredYScale = view.YScale.Clone();
+        gate.PreferredPlotMode = view.PlotMode;
+        gate.PreferredShowOutlierPoints = view.ShowOutlierPoints;
+        gate.PreferredDrawLargeDots = view.DrawLargeDots;
+        gate.PreferredShowGridlines = view.ShowGridlines;
+        gate.PreferredShowGateAnnotations = view.ShowGateAnnotations;
+        gate.PreferredShowGateAnnotationNames = view.ShowGateAnnotationNames;
+        gate.PreferredContourLevelCount = view.ContourLevelCount;
+        gate.PreferredDensitySmoothing = view.DensitySmoothing;
+    }
 
     private static GateViewOptions root_view_for_current_selection(FlowGroup group, ProjectNodeKind? node_kind, FlowSample? sample) =>
         node_kind switch
@@ -3874,6 +3962,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
             RecalculateSelectedGroupCommand,
             RecalculateSelectedGateCommand,
             RecalculateSelectedStatisticCommand,
+            CopyHierarchyViewOptionsToGroupCommand,
             RefreshSelectedLayoutCommand,
             DeleteSelectedCommand,
             CreateIntegrationJobCommand,

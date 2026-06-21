@@ -5,7 +5,7 @@ using gated.Services;
 
 namespace gated.ViewModels;
 
-public sealed partial class MainWindowViewModel
+public sealed partial class MainWindowViewModel 
 {
     public Platform? SelectedIntegrationJob
     {

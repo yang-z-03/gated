@@ -8,6 +8,8 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Input;
 using Avalonia;
 using Avalonia.Controls;
@@ -16,6 +18,7 @@ using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
+using Avalonia.Threading;
 using gated.Models;
 using gated.ViewModels;
 
@@ -82,6 +85,8 @@ public sealed class PageEditorView : Control
     private readonly Dictionary<Guid, (string Key, ContourGeometry? Geometry)> contour_geometry_cache = new();
     private readonly Dictionary<Guid, (string Key, WriteableBitmap? Bitmap)> plot_bitmap_cache = new();
     private readonly Dictionary<Guid, (string Key, RenderTargetBitmap Bitmap)> element_bitmap_cache = new();
+    private readonly HashSet<Guid> refreshing_element_ids = new();
+    private CancellationTokenSource? render_cache_refresh_cancellation;
 
     static PageEditorView()
     {
@@ -130,6 +135,7 @@ public sealed class PageEditorView : Control
         base.Render(context);
         var bounds = Bounds;
         context.FillRectangle(Brushes.White, bounds);
+
         var clip = new Rect(bounds.Size);
         using (context.PushClip(clip))
         using (context.PushTransform(Matrix.CreateTranslation(-scroll_offset.X, -scroll_offset.Y)))
@@ -144,6 +150,74 @@ public sealed class PageEditorView : Control
                 draw_resize_grips(context, SelectedElement);
         }
         draw_manual_scrollbars(context, bounds);
+    }
+
+    public void RefreshRenderCachesSequentially(IEnumerable? elements)
+    {
+        var work_items = (elements ?? Array.Empty<PagePlotElement>())
+            .OfType<PagePlotElement>()
+            .Where(element => element.ElementKind == PageElementKind.FlowPlot)
+            .Select(element => new LayoutCacheWorkItem(
+                element,
+                density_grid_key(element),
+                contour_geometry_key(element),
+                element.PlotMode == PlotMode.Contour))
+            .ToArray();
+        if (work_items.Length == 0)
+            return;
+
+        render_cache_refresh_cancellation?.Cancel();
+        render_cache_refresh_cancellation?.Dispose();
+        render_cache_refresh_cancellation = new CancellationTokenSource();
+        var token = render_cache_refresh_cancellation.Token;
+        refreshing_element_ids.Clear();
+        foreach (var item in work_items)
+            refreshing_element_ids.Add(item.Element.Id);
+
+        _ = refresh_render_caches_sequentially_async(work_items, token);
+    }
+
+    private async Task refresh_render_caches_sequentially_async(IReadOnlyList<LayoutCacheWorkItem> work_items, CancellationToken token)
+    {
+        foreach (var item in work_items)
+        {
+            LayoutCacheResult result;
+            try
+            {
+                result = await Task.Run(() => create_layout_cache_result(item), token);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
+            if (token.IsCancellationRequested)
+                return;
+
+            density_grid_cache[result.ElementId] = (result.DensityKey, result.Grid);
+            if (result.NeedsContour)
+                contour_geometry_cache[result.ElementId] = (result.ContourKey, result.Contour);
+            else
+                contour_geometry_cache.Remove(result.ElementId);
+            plot_bitmap_cache.Remove(result.ElementId);
+            element_bitmap_cache.Remove(result.ElementId);
+            refreshing_element_ids.Remove(result.ElementId);
+            InvalidateVisual();
+            await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+        }
+    }
+
+    private LayoutCacheResult create_layout_cache_result(LayoutCacheWorkItem item)
+    {
+        var grid = create_density_grid(item.Element);
+        ContourGeometry? contour = null;
+        if (item.NeedsContour && grid is not null)
+        {
+            var normalized = smooth_density(normalized_density_grid(grid.Density, grid.MaxDensity), item.Element.DensitySmoothing);
+            contour = new ContourGeometry(create_contour_segments(normalized, contour_levels(item.Element.ContourLevelCount)), normalized.GetLength(0));
+        }
+
+        return new LayoutCacheResult(item.Element.Id, item.DensityKey, grid, item.ContourKey, contour, item.NeedsContour);
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
@@ -770,6 +844,9 @@ public sealed class PageEditorView : Control
         string key = element_bitmap_key(element);
         if (element_bitmap_cache.TryGetValue(element.Id, out var cached) && cached.Key == key)
             return cached.Bitmap;
+        if (refreshing_element_ids.Contains(element.Id) &&
+            element_bitmap_cache.TryGetValue(element.Id, out cached))
+            return cached.Bitmap;
 
         int width = Math.Max(1, (int)Math.Ceiling(element.Width * render_scale));
         int height = Math.Max(1, (int)Math.Ceiling(element.Height * render_scale));
@@ -890,6 +967,9 @@ public sealed class PageEditorView : Control
         string key = plot_bitmap_key(element);
         if (plot_bitmap_cache.TryGetValue(element.Id, out var cached) && cached.Key == key)
             return cached.Bitmap;
+        if (refreshing_element_ids.Contains(element.Id) &&
+            plot_bitmap_cache.TryGetValue(element.Id, out cached))
+            return cached.Bitmap;
 
         var bitmap = element.IsHistogram ? create_histogram_bitmap(element) : create_density_bitmap(element);
         plot_bitmap_cache[element.Id] = (key, bitmap);
@@ -918,6 +998,9 @@ public sealed class PageEditorView : Control
         string key = density_grid_key(element);
         if (density_grid_cache.TryGetValue(element.Id, out var cached) && cached.Key == key)
             return cached.Grid;
+        if (refreshing_element_ids.Contains(element.Id) &&
+            density_grid_cache.TryGetValue(element.Id, out cached))
+            return cached.Grid;
 
         var grid = create_density_grid(element);
         density_grid_cache[element.Id] = (key, grid);
@@ -939,6 +1022,9 @@ public sealed class PageEditorView : Control
     {
         string key = contour_geometry_key(element);
         if (contour_geometry_cache.TryGetValue(element.Id, out var cached) && cached.Key == key)
+            return cached.Geometry;
+        if (refreshing_element_ids.Contains(element.Id) &&
+            contour_geometry_cache.TryGetValue(element.Id, out cached))
             return cached.Geometry;
 
         var grid = get_density_grid(element);
@@ -1628,6 +1714,7 @@ public sealed class PageEditorView : Control
 
     private void remove_element_caches(Guid id)
     {
+        refreshing_element_ids.Remove(id);
         density_grid_cache.Remove(id);
         contour_geometry_cache.Remove(id);
         plot_bitmap_cache.Remove(id);
@@ -1636,6 +1723,8 @@ public sealed class PageEditorView : Control
 
     private void clear_render_caches()
     {
+        render_cache_refresh_cancellation?.Cancel();
+        refreshing_element_ids.Clear();
         density_grid_cache.Clear();
         contour_geometry_cache.Clear();
         plot_bitmap_cache.Clear();
@@ -2571,6 +2660,10 @@ public sealed class PageEditorView : Control
     private sealed record ContourGeometry(IReadOnlyList<ContourSegment> Segments, int Size);
 
     private readonly record struct ContourSegment(Point Start, Point End);
+
+    private sealed record LayoutCacheWorkItem(PagePlotElement Element, string DensityKey, string ContourKey, bool NeedsContour);
+
+    private sealed record LayoutCacheResult(Guid ElementId, string DensityKey, DensityGrid? Grid, string ContourKey, ContourGeometry? Contour, bool NeedsContour);
 
     private readonly record struct ScrollbarGeometry(Rect HorizontalTrack, Rect HorizontalThumb, Rect VerticalTrack, Rect VerticalThumb);
 
