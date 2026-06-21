@@ -7,7 +7,7 @@
   <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
     <StackPanel Margin="24" Spacing="14" MaxWidth="650" Width="650" HorizontalAlignment="Center">
       <TextBlock Foreground="{DynamicResource SemiColorText1}" Text="{Binding KindName}" />
-      <TextBox FontSize="20" Padding="6" FontWeight="Light" Text="{Binding Platform.Name, UpdateSourceTrigger=PropertyChanged}" />
+      <TextBox FontSize="20" Padding="6" FontWeight="Light" Text="{Binding Platform.Name}" />
       <Border IsVisible="{Binding HasWarning}" BorderBrush="#B7791F" BorderThickness="1" CornerRadius="6" Padding="10" Background="#2A2112"><TextBlock Foreground="#F6C56B" TextWrapping="Wrap" Text="{Binding Platform.WarningText}" /></Border>
       <Border Height="360" Background="{DynamicResource SemiColorBackground1}" Margin="0 0 60 0" ClipToBounds="True"><controls:PlatformResultPlotView Platform="{Binding Platform}" /></Border>
       <Grid ColumnDefinitions="100,170,*" ColumnSpacing="8">
@@ -43,7 +43,7 @@
       </Expander>
       <ProgressBar Height="5" Minimum="0" Maximum="1" Value="{Binding Platform.ProgressFraction}" IsVisible="{Binding Platform.IsRunning}" />
       <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="{Binding Platform.ProgressText}" IsVisible="{Binding Platform.IsRunning}" />
-      <DockPanel Margin="0 4 0 18"><Button Classes="Small" Command="{Binding RunCommand}"><TextBlock Text="{Binding RunCaption}" /></Button><Button DockPanel.Dock="Right" Classes="Small" Command="{Binding CancelCommand}"><TextBlock Text="Stop" /></Button></DockPanel>
+      <DockPanel Margin="0 4 0 18"><Button Classes="Small" Command="{Binding RunCommand}"><StackPanel Orientation="Horizontal" Spacing="6"><Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/run.svg}" /><TextBlock Text="{Binding RunCaption}" /></StackPanel></Button><Button DockPanel.Dock="Right" Classes="Small Danger" Command="{Binding CancelCommand}"><StackPanel Orientation="Horizontal" Spacing="6"><Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/stop.svg}" /><TextBlock Text="Stop" /></StackPanel></Button></DockPanel>
     </StackPanel>
   </ScrollViewer>
 </UserControl>

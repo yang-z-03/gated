@@ -50,6 +50,7 @@ public partial class MainWindow : Window
         view_model.RequestTextInputAsync = show_text_input_dialog;
         view_model.RequestScriptSaveChoiceAsync = show_script_save_dialog;
         view_model.RequestChoiceInputAsync = show_choice_input_dialog;
+        view_model.RequestMultipleChoiceInputAsync = show_multiple_choice_input_dialog;
         view_model.RequestBooleanGateInputAsync = show_boolean_gate_input_dialog;
         view_model.RequestCompensationEditorAsync = show_compensation_editor_dialog;
         gated.Python.PythonExtensionRuntime.InputRequested = show_python_input_dialog_blocking;
@@ -396,10 +397,19 @@ public partial class MainWindow : Window
             or ProjectNodeKind.Population
             or ProjectNodeKind.Embedding
             or ProjectNodeKind.StatisticDefinition
+            or ProjectNodeKind.StatisticValue
+            or ProjectNodeKind.Layout
+            or ProjectNodeKind.Compensation
             or ProjectNodeKind.Platform;
 
     private async void open_fcs_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
         await open_fcs_files_async();
+
+    private async void concatenate_samples_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
+        await concatenate_samples_async();
+
+    private async void split_sample_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
+        await split_sample_async();
 
     private async Task open_fcs_files_async()
     {
@@ -493,6 +503,16 @@ public partial class MainWindow : Window
     private async void about_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         await new AboutWindow().ShowDialog(this);
+    }
+
+    private async void preferences_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        bool saved = await new PreferencesWindow().ShowDialog<bool>(this);
+        if (saved)
+        {
+            view_model.RefreshConfigurationAssumptions();
+            view_model.StatusText = "Preferences updated";
+        }
     }
 
     private async void create_macro_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
@@ -1307,68 +1327,163 @@ public partial class MainWindow : Window
 
         switch (node.Kind)
         {
-            case ProjectNodeKind.Sample:
+            case ProjectNodeKind.Workspace:
                 add_menu_items(menu,
-                    command_menu_item("Rename sample", view_model.RenameSelectedNodeCommand),
-                    command_menu_item("Delete selected samples", view_model.DeleteSelectedCommand),
+                    command_menu_item("Rename workspace ...", view_model.RenameWorkspaceCommand),
+                    command_menu_item("Create group ...", view_model.CreateGroupCommand),
+                    click_menu_item("Append FCS samples ...", open_fcs_menu_item_click),
                     new Separator(),
-                    click_menu_item("Append samples to groups", open_fcs_menu_item_click),
-                    command_menu_item("Concatenate", view_model.ConcatenateSamplesCommand),
-                    new Separator(),
-                    build_plotting_context_menu(),
-                    build_gating_context_menu(include_gate_management: false),
-                    build_statistics_context_menu(include_platform_items: false),
-                    new Separator(),
-                    command_menu_item("Expand", view_model.ExpandProjectTreeCommand),
-                    command_menu_item("Collapse", view_model.CollapseProjectTreeCommand));
+                    command_menu_item("Expand all", view_model.ExpandProjectTreeCommand),
+                    command_menu_item("Collapse all", view_model.CollapseProjectTreeCommand));
                 break;
 
-            case ProjectNodeKind.Population:
+            case ProjectNodeKind.Metadata:
                 add_menu_items(menu,
-                    command_menu_item("Rename population", view_model.RenameSelectedNodeCommand),
-                    command_menu_item("Delete selected gate", view_model.DeleteSelectedCommand),
-                    new Separator(),
-                    build_plotting_context_menu(),
-                    build_gating_context_menu(include_gate_management: true),
-                    build_statistics_context_menu(include_platform_items: false));
+                    command_menu_item("Add string column ...", view_model.AddStringMetadataColumnCommand),
+                    command_menu_item("Add floating point column ...", view_model.AddFloatMetadataColumnCommand),
+                    command_menu_item("Add integer column ...", view_model.AddIntegerMetadataColumnCommand));
                 break;
 
-            case ProjectNodeKind.GateFolder:
+            case ProjectNodeKind.LayoutFolder:
                 add_menu_items(menu,
-                    build_plotting_context_menu(),
-                    build_gating_context_menu(include_gate_management: false),
-                    build_statistics_context_menu(include_platform_items: false),
-                    new Separator(),
-                    command_menu_item("Expand", view_model.ExpandProjectTreeCommand),
-                    command_menu_item("Collapse", view_model.CollapseProjectTreeCommand));
+                    command_menu_item("Create layout ...", view_model.CreateLayoutCommand));
                 break;
 
-            case ProjectNodeKind.Gate:
-            case ProjectNodeKind.GatePopulationSlot:
+            case ProjectNodeKind.Layout:
                 add_menu_items(menu,
-                    command_menu_item("Rename gate", view_model.RenameSelectedNodeCommand),
-                    command_menu_item("Delete selected gate", view_model.DeleteSelectedCommand),
+                    command_menu_item("Rename layout ...", view_model.RenameLayoutCommand),
+                    command_menu_item("Delete layout", view_model.DeleteSelectedCommand),
                     new Separator(),
-                    build_plotting_context_menu(),
-                    build_gating_context_menu(include_gate_management: true),
-                    build_statistics_context_menu(include_platform_items: false));
+                    command_menu_item("Force refresh layout", view_model.RefreshSelectedLayoutCommand),
+                    click_menu_item("Export as PNG ...", export_page_png_click),
+                    click_menu_item("Export as JPG ...", export_page_jpg_click),
+                    click_menu_item("Export as SVG ...", export_page_svg_click));
+                break;
+
+            case ProjectNodeKind.IntegrationJobFolder:
+                add_menu_items(menu,
+                    command_menu_item("Create integration", view_model.CreateIntegrationJobCommand, "Integration"),
+                    command_menu_item("Create cell cycle model", view_model.CreateIntegrationJobCommand, "CellCycle"),
+                    command_menu_item("Create proliferation model", view_model.CreateIntegrationJobCommand, "Proliferation"),
+                    command_menu_item("Create intensity comparison", view_model.CreateIntegrationJobCommand, "IntensityComparison"));
                 break;
 
             case ProjectNodeKind.Platform:
                 add_menu_items(menu,
-                    command_menu_item("Rename platform", view_model.RenameIntegrationJobCommand),
-                    command_menu_item("Delete platform", view_model.DeleteSelectedCommand),
+                    command_menu_item("Rename platform ...", view_model.RenameIntegrationJobCommand),
+                    command_menu_item("Delete platform", view_model.DeleteSelectedCommand));
+                break;
+
+            case ProjectNodeKind.Group:
+                add_menu_items(menu,
+                    command_menu_item("Rename grouping ...", view_model.RenameGroupCommand),
+                    command_menu_item("Delete grouping", view_model.DeleteSelectedCommand),
+                    click_menu_item("Append FCS to grouping ...", open_fcs_menu_item_click),
                     new Separator(),
-                    build_statistics_context_menu(include_platform_items: true));
+                    click_menu_item("Concatenate samples ...", concatenate_samples_menu_item_click),
+                    new Separator(),
+                    build_plotting_context_menu("Default plotting options"),
+                    new Separator(),
+                    command_menu_item("Expand all", view_model.ExpandProjectTreeCommand),
+                    command_menu_item("Collapse all", view_model.CollapseProjectTreeCommand));
+                break;
+
+            case ProjectNodeKind.GateFolder:
+                add_menu_items(menu,
+                    build_create_gate_context_menu(),
+                    build_plotting_context_menu("Default plotting options"),
+                    new Separator(),
+                    command_menu_item("Recalculate gating scheme", view_model.RecalculateSelectedGroupCommand),
+                    new Separator(),
+                    command_menu_item("Expand all", view_model.ExpandProjectTreeCommand),
+                    command_menu_item("Collapse all", view_model.CollapseProjectTreeCommand));
+                break;
+
+            case ProjectNodeKind.Gate:
+            {
+                bool hide_population = node.Gate?.PopulationRegions.Count(region => region == PopulationRegion.Primary) == 1 &&
+                    node.Gate.PopulationRegions.Count == 1;
+                string population_name = node.Gate?.PopulationName(PopulationRegion.Primary) ?? "population";
+                add_menu_items(menu,
+                    build_create_gate_context_menu(),
+                    build_statistics_context_menu(hide_population ? "Create statistics ..." : $"Create statistics ({population_name}) ..."),
+                    build_plotting_context_menu(hide_population ? "Default plotting options" : $"Default plotting options ({population_name})"),
+                    new Separator(),
+                    command_menu_item("Recalculate gating scheme", view_model.RecalculateSelectedGateCommand),
+                    command_menu_item("Recalculate statistics", view_model.RecalculateSelectedGroupCommand),
+                    new Separator(),
+                    command_menu_item("Rename gating strategy ...", view_model.RenameSelectedNodeCommand),
+                    command_menu_item("Delete strategy", view_model.DeleteSelectedCommand),
+                    new Separator(),
+                    command_menu_item("Expand all", view_model.ExpandProjectTreeCommand),
+                    command_menu_item("Collapse all", view_model.CollapseProjectTreeCommand));
+                break;
+            }
+
+            case ProjectNodeKind.GatePopulationSlot:
+            case ProjectNodeKind.Population:
+                add_menu_items(menu,
+                    build_create_gate_context_menu(),
+                    build_statistics_context_menu("Create statistics ..."),
+                    build_plotting_context_menu("Default plotting options"),
+                    new Separator(),
+                    command_menu_item("Recalculate gating scheme", view_model.RecalculateSelectedGateCommand),
+                    command_menu_item("Recalculate statistics", view_model.RecalculateSelectedGroupCommand),
+                    new Separator(),
+                    command_menu_item("Rename population ...", view_model.RenameSelectedNodeCommand),
+                    new Separator(),
+                    command_menu_item("Expand all", view_model.ExpandProjectTreeCommand),
+                    command_menu_item("Collapse all", view_model.CollapseProjectTreeCommand));
+                break;
+
+            case ProjectNodeKind.StatisticDefinition:
+            case ProjectNodeKind.StatisticValue:
+                add_menu_items(menu,
+                    command_menu_item("Recalculate", view_model.RecalculateSelectedStatisticCommand),
+                    new Separator(),
+                    command_menu_item("Rename statistics ...", view_model.RenameSelectedNodeCommand),
+                    command_menu_item("Delete statistics", view_model.DeleteSelectedCommand));
+                break;
+
+            case ProjectNodeKind.CompensationFolder:
+                add_menu_items(menu,
+                    command_menu_item("Create compensation ...", view_model.CreateCompensationCommand),
+                    command_menu_item("Re-apply compensation", view_model.ReapplyCompensationCommand));
+                break;
+
+            case ProjectNodeKind.Compensation:
+                add_menu_items(menu,
+                    command_menu_item("Apply compensation", view_model.ApplyCompensationCommand),
+                    new Separator(),
+                    command_menu_item("Rename compensation ...", view_model.RenameSelectedNodeCommand),
+                    command_menu_item("Delete compensation", view_model.DeleteSelectedCommand));
+                break;
+
+            case ProjectNodeKind.Sample:
+                add_menu_items(menu,
+                    build_create_gate_context_menu(),
+                    build_plotting_context_menu("Default plotting options"),
+                    new Separator(),
+                    command_menu_item("Recalculate gating scheme", view_model.RecalculateSelectedGroupCommand),
+                    click_menu_item("Split sample ...", split_sample_menu_item_click),
+                    new Separator(),
+                    command_menu_item("Expand all", view_model.ExpandProjectTreeCommand),
+                    command_menu_item("Collapse all", view_model.CollapseProjectTreeCommand));
+                break;
+
+            case ProjectNodeKind.Embedding:
+                add_menu_items(menu,
+                    command_menu_item("Rename embedding ...", view_model.RenameSelectedNodeCommand),
+                    command_menu_item("Delete embedding", view_model.DeleteSelectedCommand));
                 break;
         }
 
         return menu;
     }
 
-    private MenuItem build_plotting_context_menu()
+    private MenuItem build_plotting_context_menu(string header = "Plotting")
     {
-        var menu = parent_menu_item("Plotting",
+        var menu = parent_menu_item(header,
             radio_click_menu_item("Density", view_model.IsDensityPlotMode, density_menu_item_click),
             radio_click_menu_item("Dotplot", view_model.IsDotplotPlotMode, dotplot_menu_item_click),
             radio_click_menu_item("Contour", view_model.IsContourPlotMode, contour_menu_item_click),
@@ -1400,6 +1515,20 @@ public partial class MainWindow : Window
         return menu;
     }
 
+    private MenuItem build_create_gate_context_menu()
+    {
+        var menu = parent_menu_item("Create gate",
+            radio_click_menu_item("Polygon gate", view_model.IsPolygonTool, polygon_tool_menu_item_click, view_model.CanCreateTwoDimensionalGate),
+            radio_click_menu_item("Rectangle gate", view_model.IsRectangleTool, rectangle_tool_menu_item_click, view_model.CanCreateTwoDimensionalGate),
+            radio_click_menu_item("Quad gate", view_model.IsQuadrantTool, quadrant_tool_menu_item_click, view_model.CanCreateTwoDimensionalGate),
+            radio_click_menu_item("Curly quad gate", view_model.IsCurlyQuadrantTool, curly_quadrant_tool_menu_item_click, view_model.CanCreateTwoDimensionalGate),
+            radio_click_menu_item("Offset quad gate", view_model.IsOffsetQuadrantTool, offset_quadrant_tool_menu_item_click, view_model.CanCreateTwoDimensionalGate),
+            radio_click_menu_item("Threshold gate", view_model.IsThresholdTool, threshold_tool_menu_item_click, view_model.CanCreateOneDimensionalGate),
+            radio_click_menu_item("Range gate", view_model.IsRangeTool, range_tool_menu_item_click, view_model.CanCreateOneDimensionalGate));
+        menu.IsEnabled = view_model.IsDefaultAnalysisMode;
+        return menu;
+    }
+
     private MenuItem build_gating_context_menu(bool include_gate_management)
     {
         var menu = parent_menu_item("Gating",
@@ -1427,36 +1556,18 @@ public partial class MainWindow : Window
         return menu;
     }
 
-    private MenuItem build_statistics_context_menu(bool include_platform_items)
+    private MenuItem build_statistics_context_menu(string header = "Statistics")
     {
-        var menu = parent_menu_item("Statistics",
-            command_menu_item("Mean", view_model.AddMeanStatisticCommand),
-            command_menu_item("Median", view_model.AddMedianStatisticCommand),
-            command_menu_item("Geometric mean", view_model.AddGeometricMeanStatisticCommand),
-            command_menu_item("Coefficient of variation (CV)", view_model.AddCoefficientOfVariationStatisticCommand),
-            command_menu_item("Standard deviation (SD)", view_model.AddStandardDeviationStatisticCommand),
-            command_menu_item("Frequency of parent population", view_model.AddFrequencyOfParentStatisticCommand),
-            command_menu_item("Frequency of all", view_model.AddFrequencyOfAllStatisticCommand),
-            command_menu_item("Number of events", view_model.AddCountStatisticCommand),
-            command_menu_item("Delete selected statistic", view_model.DeleteSelectedCommand),
-            new Separator(),
-            click_menu_item("Create macro", create_macro_menu_item_click),
-            script_context_menu("Run macros", view_model.MacroScripts, run_macro_menu_item_click),
-            script_context_menu("Edit macros", view_model.MacroScripts, edit_script_menu_item_click),
-            new Separator(),
-            click_menu_item("Create Python statistic", create_statistic_script_menu_item_click),
-            script_context_menu("Python statistics", view_model.StatisticScripts, apply_statistic_script_menu_item_click),
-            script_context_menu("Edit Python statistics", view_model.StatisticScripts, edit_script_menu_item_click),
-            new Separator(),
-            build_create_platform_context_menu());
-
-        if (include_platform_items)
-        {
-            menu.Items.Add(command_menu_item("Rename platform", view_model.RenameIntegrationJobCommand));
-            menu.Items.Add(command_menu_item("Delete platform", view_model.DeleteSelectedCommand));
-        }
-
-        return menu;
+        return parent_menu_item(header,
+            command_menu_item("Sum ...", view_model.AddCountStatisticCommand),
+            command_menu_item("Mean ...", view_model.AddMeanStatisticCommand),
+            command_menu_item("Median ...", view_model.AddMedianStatisticCommand),
+            command_menu_item("Geometric mean ...", view_model.AddGeometricMeanStatisticCommand),
+            command_menu_item("Coefficient of variation (CV) ...", view_model.AddCoefficientOfVariationStatisticCommand),
+            command_menu_item("Standard deviation (SD) ...", view_model.AddStandardDeviationStatisticCommand),
+            command_menu_item("Frequency of parent population ...", view_model.AddFrequencyOfParentStatisticCommand),
+            command_menu_item("Frequency of all ...", view_model.AddFrequencyOfAllStatisticCommand),
+            script_context_menu("Python statistics", view_model.StatisticScripts, apply_statistic_script_menu_item_click));
     }
 
     private MenuItem build_create_platform_context_menu() =>
@@ -1533,7 +1644,7 @@ public partial class MainWindow : Window
             Command = command,
             CommandParameter = parameter
         };
-        if (command is null)
+        if (command is null || !command.CanExecute(parameter))
             item.IsEnabled = false;
         return item;
     }
@@ -1777,6 +1888,143 @@ public partial class MainWindow : Window
         file_paths.Count == 1
             ? file_paths[0]
             : $"{file_paths.Count} FCS samples";
+
+    private async Task concatenate_samples_async()
+    {
+        var group = view_model.SelectedGroup;
+        if (group is null || group.Samples.Count == 0)
+            return;
+
+        var result = await new ConcatenateSamplesWindow(group).ShowDialog<ConcatenateSamplesResult?>(this);
+        if (result is null)
+            return;
+
+        var sample = build_concatenated_sample(result);
+        view_model.AddArtificialSample(group, sample, $"Concatenated {result.Sources.Count} selection(s)");
+    }
+
+    private static FlowSample build_concatenated_sample(ConcatenateSamplesResult result)
+    {
+        var first_sample = result.Sources[0].Sample;
+        int column_count = first_sample.ChannelCount;
+        var selected_rows = result.Sources
+            .Select(source => (source.Sample, Indices: source.EventIndices ?? Enumerable.Range(0, source.Sample.EventCount).ToArray()))
+            .ToArray();
+        int row_count = selected_rows.Sum(source => source.Indices.Length);
+        var raw_events = new float[row_count, column_count];
+        var time_columns = first_sample.Channels
+            .Where(channel => Configuration.IsTimeChannel(channel.Name))
+            .Select(channel => channel.Index)
+            .Where(index => index >= 0 && index < column_count)
+            .ToArray();
+        var joined_time_next = time_columns.ToDictionary(index => index, _ => 0f);
+
+        int target_row = 0;
+        foreach (var source in selected_rows)
+        {
+            var time_offsets = new Dictionary<int, float>();
+            foreach (int time_column in time_columns)
+            {
+                float first_time = source.Indices.Length == 0 ? 0 : source.Sample.RawEvents[source.Indices[0], time_column];
+                time_offsets[time_column] = result.JoinTime ? joined_time_next[time_column] - first_time : 0f;
+            }
+
+            foreach (int source_row in source.Indices)
+            {
+                for (int column = 0; column < column_count; column++)
+                {
+                    float value = source.Sample.RawEvents[source_row, column];
+                    if (result.JoinTime && time_offsets.TryGetValue(column, out float offset))
+                        value += offset;
+                    raw_events[target_row, column] = value;
+                }
+                target_row++;
+            }
+
+            if (!result.JoinTime)
+                continue;
+
+            foreach (int time_column in time_columns)
+            {
+                if (source.Indices.Length == 0)
+                    continue;
+                float adjusted_maximum = source.Indices
+                    .Select(index => source.Sample.RawEvents[index, time_column] + time_offsets[time_column])
+                    .Max();
+                joined_time_next[time_column] = adjusted_maximum + estimate_time_step(source.Sample, source.Indices, time_column);
+            }
+        }
+
+        return new FlowSample(result.Name, first_sample.Channels, raw_events);
+    }
+
+    private static float estimate_time_step(FlowSample sample, IReadOnlyList<int> indices, int time_column)
+    {
+        float step = 1f;
+        for (int index = 1; index < indices.Count; index++)
+        {
+            float delta = sample.RawEvents[indices[index], time_column] - sample.RawEvents[indices[index - 1], time_column];
+            if (delta > 0)
+                step = Math.Min(step <= 0 ? delta : step, delta);
+        }
+        return step <= 0 ? 1f : step;
+    }
+
+    private async Task split_sample_async()
+    {
+        var group = view_model.SelectedGroup;
+        var sample = view_model.SelectedSample;
+        if (group is null || sample is null)
+            return;
+
+        var time_channel = sample.Channels.FirstOrDefault(channel => Configuration.IsTimeChannel(channel.Name));
+        if (time_channel is null)
+        {
+            await show_message_dialog("Split sample", "The selected sample does not contain a time channel.");
+            return;
+        }
+
+        var ssc_channel = sample.Channels.FirstOrDefault(channel => Configuration.IsSscChannel(channel.Name))?.Name;
+        var result = await new SplitSampleWindow(sample, time_channel.Name, ssc_channel).ShowDialog<SplitSampleResult?>(this);
+        if (result is null)
+            return;
+
+        var fragments = build_split_samples(sample, time_channel.Index, result);
+        if (fragments.Count == 0)
+        {
+            await show_message_dialog("Split sample", "No events fell inside the selected time ranges.");
+            return;
+        }
+
+        view_model.AddArtificialSamples(group, fragments, $"Split sample: {sample.Name}");
+    }
+
+    private static IReadOnlyList<FlowSample> build_split_samples(FlowSample sample, int time_column, SplitSampleResult result)
+    {
+        var fragments = new List<FlowSample>();
+        for (int fragment_index = 0; fragment_index < result.Fragments.Count; fragment_index++)
+        {
+            var fragment = result.Fragments[fragment_index];
+            bool is_last = fragment_index == result.Fragments.Count - 1;
+            var indices = Enumerable.Range(0, sample.EventCount)
+                .Where(row =>
+                {
+                    float time = sample.RawEvents[row, time_column];
+                    return time >= fragment.Start && (is_last ? time <= fragment.End : time < fragment.End);
+                })
+                .ToArray();
+            if (indices.Length == 0)
+                continue;
+
+            var raw_events = new float[indices.Length, sample.ChannelCount];
+            for (int row = 0; row < indices.Length; row++)
+            for (int column = 0; column < sample.ChannelCount; column++)
+                raw_events[row, column] = sample.RawEvents[indices[row], column];
+            fragments.Add(new FlowSample(fragment.Name, sample.Channels, raw_events));
+        }
+
+        return fragments;
+    }
 
     private async void export_page_png_click(object? sender, RoutedEventArgs e) =>
         await export_page_bitmap("Export page as PNG", "page.png", "png", allow_transparent_background: true);
@@ -2153,6 +2401,78 @@ public partial class MainWindow : Window
         return await dialog.ShowDialog<string?>(this);
     }
 
+    private async Task<IReadOnlyList<string>?> show_multiple_choice_input_dialog(string title, System.Collections.Generic.IReadOnlyList<AxisChoice> choices)
+    {
+        var checks = choices.Select(choice => new CheckBox
+        {
+            Content = channel_content(new StatisticChannelChoice(choice.Name, choice.Label)),
+            Tag = choice.Name,
+            IsChecked = true,
+            Foreground = Brushes.White,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left
+        }).ToArray();
+        var stack = new StackPanel { Spacing = 6 };
+        foreach (var check in checks)
+            stack.Children.Add(check);
+
+        var dialog = new Window
+        {
+            Title = title,
+            Width = 440,
+            MinWidth = 380,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = Background,
+            SizeToContent = SizeToContent.Height,
+            Content = new StackPanel
+            {
+                Margin = new Thickness(16),
+                Spacing = 12,
+                Children =
+                {
+                    new TextBlock { Text = title },
+                    new Border
+                    {
+                        BorderThickness = new Thickness(1),
+                        BorderBrush = new SolidColorBrush(Color.FromRgb(50, 50, 50)),
+                        CornerRadius = new CornerRadius(6),
+                        Background = new SolidColorBrush(Color.FromRgb(22, 22, 24)),
+                        Child = new ScrollViewer
+                        {
+                            MaxHeight = 240,
+                            Margin = new Thickness(8),
+                            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                            Content = stack
+                        }
+                    },
+                    new StackPanel
+                    {
+                        Orientation = Avalonia.Layout.Orientation.Horizontal,
+                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                        Spacing = 8,
+                        Children =
+                        {
+                            new Button { Content = "Cancel", MinWidth = 80, IsCancel = true },
+                            new Button { Content = "OK", MinWidth = 80, IsDefault = true }
+                        }
+                    }
+                }
+            }
+        };
+
+        var buttons = ((StackPanel)((StackPanel)dialog.Content).Children[2]).Children;
+        apply_small_button_classes((Control)dialog.Content);
+        ((Button)buttons[0]).Click += (_, _) => dialog.Close(null);
+        ((Button)buttons[1]).Click += (_, _) => dialog.Close(checks
+            .Where(check => check.IsChecked == true)
+            .Select(check => check.Tag?.ToString() ?? "")
+            .Where(value => value.Length > 0)
+            .ToArray());
+        dialog.AttachedToVisualTree += (_, _) => checks.FirstOrDefault()?.Focus();
+
+        return await dialog.ShowDialog<IReadOnlyList<string>?>(this);
+    }
+
     private async Task<BooleanGateSelection?> show_boolean_gate_input_dialog(string title, System.Collections.Generic.IReadOnlyList<BooleanPopulationChoice> choices)
     {
         ComboBox make_combo() => new()
@@ -2225,303 +2545,6 @@ public partial class MainWindow : Window
 
     private async Task<bool> show_compensation_editor_dialog(CompensationMatrix compensation)
     {
-        var values = (float[,])compensation.Values.Clone();
-        var channels = compensation.ChannelNames.ToArray();
-        var group = view_model.SelectedGroup;
-        var population_choices = build_compensation_preview_population_choices(group).ToArray();
-        var name_box = new TextBox
-        {
-            Text = compensation.Name,
-            MinWidth = 280,
-            Margin = new Thickness(0, 4, 0, 4)
-        };
-        var population_box = new ComboBox
-        {
-            ItemsSource = population_choices,
-            SelectedIndex = population_choices.Length > 0 ? 0 : -1,
-            Classes = { "Small" },
-            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch
-        };
-        var preview = new CompensationPreviewView
-        {
-            Margin = new Thickness(0, 8, 0, 16)
-        };
-
-        double text_width = Math.Max(80, channels.DefaultIfEmpty("").Max(channel => channel.Length) * 8 + 24);
-        double matrix_table_width = text_width + channels.Length * 85 + 28;
-        double preview_table_width = 82 + Math.Max(0, channels.Length - 1) * 96 + 28;
-        double preview_table_height = 28 + Math.Max(0, channels.Length - 1) * 96;
-        double preview_viewport_height = preview_table_height + 16 <= 500 ? preview_table_height + 16 : 500;
-        double dialog_width = Math.Clamp(Math.Max(matrix_table_width, preview_table_width) + 48, 520, 1300);
-
-        var table = new Grid
-        {
-            RowSpacing = 5,
-            ColumnSpacing = 5,
-            Margin = new Thickness(0, 16, 0, 16)
-        };
-        table.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
-        for (int column = 0; column < channels.Length; column++)
-            table.ColumnDefinitions.Add(new ColumnDefinition(new GridLength(80)));
-        table.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
-        for (int row = 0; row < channels.Length; row++)
-            table.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
-
-        for (int column = 0; column < channels.Length; column++)
-        {
-            var header = new TextBlock
-            {
-                Text = channels[column],
-                Foreground = Brushes.White,
-                FontWeight = FontWeight.SemiBold,
-                TextAlignment = TextAlignment.Center
-            };
-            Grid.SetColumn(header, column + 1);
-            table.Children.Add(header);
-        }
-
-        var inputs = new Dictionary<(int Row, int Column), TextBox>();
-        for (int row = 0; row < channels.Length; row++)
-        {
-            var row_header = new TextBlock
-            {
-                Text = channels[row],
-                Foreground = new SolidColorBrush(Color.FromRgb(164, 168, 178)),
-                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
-                TextAlignment = TextAlignment.Right,
-                Margin = new Thickness(0, 0, 4, 0)
-            };
-            Grid.SetRow(row_header, row + 1);
-            table.Children.Add(row_header);
-
-            for (int column = 0; column < channels.Length; column++)
-            {
-                var input = new TextBox
-                {
-                    Text = row == column ? "100" : format_compensation_percent(values[row, column]),
-                    MinWidth = 80,
-                    IsEnabled = row != column,
-                    HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Right
-                };
-                Grid.SetRow(input, row + 1);
-                Grid.SetColumn(input, column + 1);
-                table.Children.Add(input);
-                inputs[(row, column)] = input;
-            }
-        }
-
-        var error_text = new TextBlock
-        {
-            Foreground = Brushes.IndianRed,
-            IsVisible = false
-        };
-
-        void update_preview()
-        {
-            if (!try_read_compensation_inputs(inputs, channels, values, error_text, show_errors: false, out var preview_values))
-                return;
-
-            preview.Configure(group, channels, preview_values, population_box.SelectedItem as CompensationPreviewPopulationChoice);
-        }
-
-        foreach (var input in inputs.Values)
-            input.GetObservable(TextBox.TextProperty).Subscribe(_ => update_preview());
-        
-        population_box.SelectionChanged += (_, _) => update_preview();
-        update_preview();
-        var matrix_scroll = new ScrollViewer
-        {
-            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
-            VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
-            MaxHeight = 500,
-            Content = table
-        };
-        var preview_scroll = new ScrollViewer
-        {
-            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
-            VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
-            Background = new SolidColorBrush(Color.FromRgb(30, 30, 30)),
-            Height = preview_viewport_height,
-            Content = preview
-        };
-        var preview_expander = new Expander
-        {
-            Header = "Preview",
-            IsExpanded = false,
-            Margin = new Thickness(0, 12, 0, 16),
-            Content = new StackPanel
-            {
-                Spacing = 8,
-                Children =
-                {
-                    new StackPanel
-                    {
-                        Orientation = Avalonia.Layout.Orientation.Horizontal,
-                        Spacing = 10,
-                        Children =
-                        {
-                            new TextBlock
-                            {
-                                Text = "Population",
-                                Foreground = new SolidColorBrush(Color.FromRgb(164, 168, 178)),
-                                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
-                            },
-                            population_box
-                        }
-                    },
-                    preview_scroll
-                }
-            }
-        };
-
-        var dialog = new Window
-        {
-            Title = "Compensation table editor",
-            Width = dialog_width,
-            SizeToContent = SizeToContent.Height,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Background = Background,
-            Content = new Grid
-            {
-                Margin = new Thickness(16),
-                RowDefinitions =
-                {
-                    new RowDefinition(GridLength.Auto),
-                    new RowDefinition(GridLength.Auto),
-                    new RowDefinition(GridLength.Auto),
-                    new RowDefinition(GridLength.Auto),
-                    new RowDefinition(GridLength.Auto),
-                    new RowDefinition(GridLength.Auto)
-                },
-                Children =
-                {
-                    new TextBlock { Text = "Name", Foreground = new SolidColorBrush(Color.FromRgb(164, 168, 178)) },
-                    name_box,
-                    matrix_scroll,
-                    preview_expander,
-                    error_text,
-                    new StackPanel
-                    {
-                        Orientation = Avalonia.Layout.Orientation.Horizontal,
-                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
-                        Spacing = 8,
-                        Children =
-                        {
-                            new Button { Content = "Cancel", MinWidth = 80, IsCancel = true },
-                            new Button { Content = "OK", MinWidth = 80, IsDefault = true }
-                        }
-                    }
-                }
-            }
-        };
-
-        var grid = (Grid)dialog.Content;
-        Grid.SetRow(name_box, 1);
-        Grid.SetRow((Control)grid.Children[2], 2);
-        Grid.SetRow((Control)grid.Children[3], 3);
-        Grid.SetRow(error_text, 4);
-        Grid.SetRow((Control)grid.Children[5], 5);
-
-        var buttons = ((StackPanel)grid.Children[5]).Children;
-        apply_small_button_classes(grid);
-        ((Button)buttons[0]).Click += (_, _) => dialog.Close(false);
-        ((Button)buttons[1]).Click += (_, _) =>
-        {
-            if (!try_read_compensation_inputs(inputs, channels, values, error_text, show_errors: true, out var parsed_values))
-                return;
-
-            compensation.Name = string.IsNullOrWhiteSpace(name_box.Text) ? compensation.Name : name_box.Text.Trim();
-            compensation.ReplaceValues(parsed_values);
-            dialog.Close(true);
-        };
-
-        return await dialog.ShowDialog<bool>(this);
-    }
-
-    private static bool try_read_compensation_inputs(
-        IReadOnlyDictionary<(int Row, int Column), TextBox> inputs,
-        IReadOnlyList<string> channels,
-        float[,] fallback_values,
-        TextBlock error_text,
-        bool show_errors,
-        out float[,] parsed_values)
-    {
-        parsed_values = (float[,])fallback_values.Clone();
-        for (int row = 0; row < channels.Count; row++)
-        for (int column = 0; column < channels.Count; column++)
-        {
-            if (row == column)
-            {
-                parsed_values[row, column] = 1.0f;
-                continue;
-            }
-
-            string? text = inputs[(row, column)].Text;
-            if (float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out float parsed))
-            {
-                parsed_values[row, column] = parsed / 100.0f;
-                continue;
-            }
-
-            if (show_errors)
-            {
-                error_text.Text = $"Invalid number at {channels[row]} / {channels[column]}.";
-                error_text.IsVisible = true;
-            }
-            return false;
-        }
-
-        error_text.IsVisible = false;
-        return true;
-    }
-
-    private static IEnumerable<CompensationPreviewPopulationChoice> build_compensation_preview_population_choices(FlowGroup? group)
-    {
-        yield return new CompensationPreviewPopulationChoice("All events", null, PopulationRegion.Primary);
-        if (group is null)
-            yield break;
-
-        foreach (var gate in all_preview_gates(group.Gates))
-        foreach (var region in gate.PopulationRegions)
-            yield return new CompensationPreviewPopulationChoice(
-                gate.PopulationRegions.Count == 1 ? gate.Name : $"{gate.Name}: {population_region_name(region)}",
-                gate.Id,
-                region);
-    }
-
-    private static IEnumerable<GateDefinition> all_preview_gates(IEnumerable<GateDefinition> gates)
-    {
-        foreach (var gate in gates)
-        {
-            yield return gate;
-            foreach (var child in all_preview_gates(gate.Children))
-                yield return child;
-        }
-    }
-
-    private static string population_region_name(PopulationRegion region) =>
-        region switch
-        {
-            PopulationRegion.TopRight => "Top right",
-            PopulationRegion.TopLeft => "Top left",
-            PopulationRegion.BottomRight => "Bottom right",
-            PopulationRegion.BottomLeft => "Bottom left",
-            PopulationRegion.More => "More",
-            PopulationRegion.Less => "Less",
-            PopulationRegion.InRange => "In range",
-            PopulationRegion.BelowRange => "Below range",
-            PopulationRegion.AboveRange => "Above range",
-            _ => "Population"
-        };
-
-    private static string format_compensation_percent(float value)
-    {
-        float percent = value * 100.0f;
-        if (Math.Abs(percent) < 0.0000001f)
-            return "0";
-        if (Math.Abs(percent - 1.0f) < 0.0000001f)
-            return "1";
-
-        return percent.ToString("F2", CultureInfo.InvariantCulture);
+        return await new CompensationEditorWindow(compensation).ShowDialog<bool>(this);
     }
 }

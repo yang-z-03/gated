@@ -7,7 +7,7 @@
         WindowStartupLocation="CenterOwner"
         x:CompileBindings="False"
         Title="Please wait"
-        Background="#303030">
+        Background="#252525">
     <Border Padding="22" MinWidth="420">
         <StackPanel Spacing="10">
             <TextBlock Text="{Binding DialogTitle}" TextAlignment="Center"

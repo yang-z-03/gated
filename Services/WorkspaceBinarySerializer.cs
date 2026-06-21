@@ -11,7 +11,7 @@ namespace gated.Services;
 public sealed class WorkspaceBinarySerializer
 {
     private const uint magic = 0x44544731;
-    private const int version = 38;
+    private const int version = 40;
 
     public void Save(FlowWorkspace workspace, string file_path)
     {
@@ -112,6 +112,7 @@ public sealed class WorkspaceBinarySerializer
         write_string(writer, group.Name);
         write_statistics(writer, group.Statistics);
         write_gate_view_options(writer, group.RootViewOptions);
+        write_gate_view_options(writer, group.GateRootViewOptions);
         writer.Write(group.SampleRootViewOptions.Count);
         foreach (var item in group.SampleRootViewOptions.OrderBy(item => item.Key, StringComparer.Ordinal))
         {
@@ -140,10 +141,12 @@ public sealed class WorkspaceBinarySerializer
     {
         Guid id = new Guid(reader.ReadBytes(16));
         var group = new FlowGroup { Id = id, Name = read_string(reader) };
-        read_statistics(reader, group.Statistics);
+        read_statistics(reader, group.Statistics, file_version);
         if (read_root_view)
         {
             group.RootViewOptions = read_gate_view_options(reader);
+            if (file_version >= 40)
+                group.GateRootViewOptions = read_gate_view_options(reader);
             if (file_version >= 38)
             {
                 int sample_root_view_count = reader.ReadInt32();
@@ -163,7 +166,7 @@ public sealed class WorkspaceBinarySerializer
 
         int gate_count = reader.ReadInt32();
         for (int index = 0; index < gate_count; index++)
-            group.Gates.Add(read_gate(reader, parent: null));
+            group.Gates.Add(read_gate(reader, parent: null, file_version));
 
         int sample_count = reader.ReadInt32();
         for (int index = 0; index < sample_count; index++)
@@ -472,7 +475,7 @@ public sealed class WorkspaceBinarySerializer
             write_gate(writer, child);
     }
 
-    private static GateDefinition read_gate(BinaryReader reader, GateDefinition? parent)
+    private static GateDefinition read_gate(BinaryReader reader, GateDefinition? parent, int file_version)
     {
         Guid id = new Guid(reader.ReadBytes(16));
         var gate = new GateDefinition
@@ -536,7 +539,7 @@ public sealed class WorkspaceBinarySerializer
         for (int index = 0; index < vertex_count; index++)
             gate.Vertices.Add(new Point(reader.ReadDouble(), reader.ReadDouble()));
 
-        read_statistics(reader, gate.Statistics);
+        read_statistics(reader, gate.Statistics, file_version);
         gate.IsTreeExpanded = reader.ReadBoolean();
         if (reader.ReadBoolean())
             gate.BooleanFirstGateId = new Guid(reader.ReadBytes(16));
@@ -547,7 +550,7 @@ public sealed class WorkspaceBinarySerializer
 
         int child_count = reader.ReadInt32();
         for (int index = 0; index < child_count; index++)
-            gate.Children.Add(read_gate(reader, gate));
+            gate.Children.Add(read_gate(reader, gate, file_version));
 
         return gate;
     }
@@ -1538,6 +1541,7 @@ public sealed class WorkspaceBinarySerializer
         {
             writer.Write((int)statistic.Kind);
             write_string(writer, statistic.ChannelName);
+            write_string(writer, statistic.DisplayName);
             if (statistic.Kind != StatisticKind.Python)
                 continue;
 
@@ -1549,7 +1553,7 @@ public sealed class WorkspaceBinarySerializer
         }
     }
 
-    private static void read_statistics(BinaryReader reader, ICollection<StatisticDefinition> statistics)
+    private static void read_statistics(BinaryReader reader, ICollection<StatisticDefinition> statistics, int file_version)
     {
         int count = reader.ReadInt32();
         for (int index = 0; index < count; index++)
@@ -1559,6 +1563,8 @@ public sealed class WorkspaceBinarySerializer
                 Kind = (StatisticKind)reader.ReadInt32(),
                 ChannelName = read_string(reader)
             };
+            if (file_version >= 39)
+                statistic.DisplayName = read_string(reader);
             if (statistic.Kind == StatisticKind.Python)
             {
                 statistic.PythonSource = read_string(reader);

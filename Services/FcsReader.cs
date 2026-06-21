@@ -41,9 +41,22 @@ public sealed class FcsReader
         var values = read_data(file_stream, data_start, data_stop, channel_count, event_count, data_type, byte_order, text);
         string sample_name = Path.GetFileNameWithoutExtension(file_path);
         var sample = new FlowSample(sample_name, channels, values);
+        string cytometer_name = cytometer_name_from_text(text);
+        sample.Metadata[Configuration.CytometerMetadataKey] = cytometer_name;
+        Configuration.RememberCytometer(cytometer_name, channels);
         if (try_parse_spillover(text, sample_name, out var spillover))
             sample.DefaultCompensation = spillover;
         return sample;
+    }
+
+    private static string cytometer_name_from_text(Dictionary<string, string> text)
+    {
+        foreach (string key in new[] { "cyt", "cytometer", "instrname", "instrument", "machine" })
+        {
+            if (text.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value))
+                return value.Trim();
+        }
+        return Configuration.DefaultCytometerName;
     }
 
     private static Dictionary<string, object> parse_header(FileStream file_stream, long offset)

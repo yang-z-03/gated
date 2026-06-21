@@ -1,33 +1,123 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Globalization;
+using System.IO;
 using System.Linq;
+using System.Text.Json;
+using gated.Services;
 
 namespace gated.Models;
 
+public enum ChannelSemanticKind
+{
+    Other,
+    FSC,
+    SSC,
+    Time
+}
+
+public sealed class CytometerPreference
+{
+    public string Name { get; set; } = "";
+    public ObservableCollection<ChannelAssumption> Channels { get; set; } = new();
+}
+
+public sealed class ChannelAssumption
+{
+    public string Pattern { get; set; } = "";
+    public ChannelSemanticKind Kind { get; set; }
+    public CoordinateScaleKind Scale { get; set; } = CoordinateScaleKind.Logicle;
+    public bool UseObservedRange { get; set; }
+}
+
+public sealed class CytometerPreferenceStore
+{
+    public string SelectedCytometerName { get; set; } = Configuration.DefaultCytometerName;
+    public ObservableCollection<CytometerPreference> Cytometers { get; set; } = new();
+}
+
 public static class Configuration
 {
-    private static readonly string[] linear_channel_name_fragments = ["FSC", "SSC"];
+    public const string DefaultCytometerName = "Default";
+    public const string CytometerMetadataKey = "Cytometer";
+    private const string file_name = "cytometer-preferences.json";
+    private static readonly JsonSerializerOptions json_options = new() { WriteIndented = true };
+    private static CytometerPreferenceStore store = load_store();
 
-    public static bool IsTimeChannel(string channel_name) =>
-        !string.IsNullOrWhiteSpace(channel_name) &&
-        channel_name.Contains("TIME", StringComparison.OrdinalIgnoreCase);
+    public static CytometerPreferenceStore Preferences => store;
 
-    public static bool PreferLinearChannel(string channel_name)
+    public static IReadOnlyList<string> CytometerNames =>
+        store.Cytometers.Select(item => item.Name).Where(name => !string.IsNullOrWhiteSpace(name)).ToArray();
+
+    public static CytometerPreference CreatePreferenceFromDefault(string name)
     {
-        if (string.IsNullOrWhiteSpace(channel_name))
-            return true;
-        if (IsTimeChannel(channel_name))
-            return true;
-        return linear_channel_name_fragments.Any(fragment =>
-            channel_name.Contains(fragment, StringComparison.OrdinalIgnoreCase));
+        var source = store.Cytometers.FirstOrDefault(item => item.Name == DefaultCytometerName) ?? create_default_preference();
+        var created = clone_preference(source);
+        created.Name = normalize_cytometer_name(name);
+        return created;
     }
 
-    public static PlatformTransformationKind DefaultPlatformTransformationForChannel(string channel_name) =>
-        PreferLinearChannel(channel_name) ? PlatformTransformationKind.Linear : PlatformTransformationKind.Logicle;
+    public static void RememberCytometer(string? name, IEnumerable<ChannelDefinition> channels)
+    {
+        name = normalize_cytometer_name(name);
+        if (string.IsNullOrWhiteSpace(name))
+            name = DefaultCytometerName;
 
-    public static CoordinateScaleKind DefaultCoordinateScaleForChannel(string channel_name) =>
-        PreferLinearChannel(channel_name) ? CoordinateScaleKind.Linear : CoordinateScaleKind.Logicle;
+        var preference = get_or_create_preference(name);
+        foreach (var channel in channels)
+        {
+            if (preference.Channels.Any(item => pattern_matches(item.Pattern, channel.Name)))
+                continue;
+            var inferred = infer_channel(channel.Name);
+            if (inferred.Kind == ChannelSemanticKind.Other)
+                continue;
+            preference.Channels.Add(inferred);
+        }
+        SavePreferences();
+    }
+
+    public static string CytometerNameForSample(FlowSample? sample) =>
+        sample is not null && sample.Metadata.TryGetValue(CytometerMetadataKey, out var name)
+            ? normalize_cytometer_name(name)
+            : store.SelectedCytometerName;
+
+    public static void SavePreferences()
+    {
+        try
+        {
+            Directory.CreateDirectory(WindowPlacementStore.ConfigDirectory);
+            File.WriteAllText(store_path(), JsonSerializer.Serialize(store, json_options));
+        }
+        catch
+        {
+        }
+    }
+
+    public static void ReloadPreferences() => store = load_store();
+
+    public static void ResetPreferences()
+    {
+        store = ensure_defaults(new CytometerPreferenceStore());
+        SavePreferences();
+    }
+
+    public static bool IsTimeChannel(string channel_name) =>
+        ChannelKind(channel_name) == ChannelSemanticKind.Time;
+
+    public static bool IsSscChannel(string channel_name) =>
+        ChannelKind(channel_name) == ChannelSemanticKind.SSC;
+
+    public static ChannelSemanticKind ChannelKind(string channel_name, string? cytometer_name = null) =>
+        assumption_for_channel(channel_name, cytometer_name)?.Kind ?? infer_channel(channel_name).Kind;
+
+    public static PlatformTransformationKind DefaultPlatformTransformationForChannel(string channel_name) =>
+        DefaultCoordinateScaleForChannel(channel_name) == CoordinateScaleKind.Linear
+            ? PlatformTransformationKind.Linear
+            : PlatformTransformationKind.Logicle;
+
+    public static CoordinateScaleKind DefaultCoordinateScaleForChannel(string channel_name, string? cytometer_name = null) =>
+        assumption_for_channel(channel_name, cytometer_name)?.Scale ?? infer_channel(channel_name).Scale;
 
     public static (double Minimum, double Maximum) DefaultChannelRange(double channel_maximum)
     {
@@ -86,6 +176,106 @@ public static class Configuration
             return (value / 1000).ToString("0.#k", CultureInfo.InvariantCulture);
         return value.ToString(Math.Abs(value) < 1 ? "0.##" : "0.#", CultureInfo.InvariantCulture);
     }
+
+    private static CytometerPreferenceStore load_store()
+    {
+        try
+        {
+            string path = store_path();
+            if (File.Exists(path))
+            {
+                var loaded = JsonSerializer.Deserialize<CytometerPreferenceStore>(File.ReadAllText(path), json_options);
+                if (loaded is not null)
+                    return ensure_defaults(loaded);
+            }
+        }
+        catch
+        {
+        }
+
+        return ensure_defaults(new CytometerPreferenceStore());
+    }
+
+    private static CytometerPreferenceStore ensure_defaults(CytometerPreferenceStore loaded)
+    {
+        if (loaded.Cytometers.All(item => item.Name != DefaultCytometerName))
+            loaded.Cytometers.Insert(0, create_default_preference());
+        if (string.IsNullOrWhiteSpace(loaded.SelectedCytometerName))
+            loaded.SelectedCytometerName = DefaultCytometerName;
+        return loaded;
+    }
+
+    private static CytometerPreference create_default_preference() =>
+        new()
+        {
+            Name = DefaultCytometerName,
+            Channels =
+            {
+                new ChannelAssumption { Pattern = "FSC-A", Kind = ChannelSemanticKind.FSC, Scale = CoordinateScaleKind.Linear },
+                new ChannelAssumption { Pattern = "FSC-H", Kind = ChannelSemanticKind.FSC, Scale = CoordinateScaleKind.Linear },
+                new ChannelAssumption { Pattern = "FSC-W", Kind = ChannelSemanticKind.FSC, Scale = CoordinateScaleKind.Linear },
+                new ChannelAssumption { Pattern = "SSC-A", Kind = ChannelSemanticKind.SSC, Scale = CoordinateScaleKind.Linear },
+                new ChannelAssumption { Pattern = "SSC-H", Kind = ChannelSemanticKind.SSC, Scale = CoordinateScaleKind.Linear },
+                new ChannelAssumption { Pattern = "SSC-W", Kind = ChannelSemanticKind.SSC, Scale = CoordinateScaleKind.Linear },
+                new ChannelAssumption { Pattern = "Time", Kind = ChannelSemanticKind.Time, Scale = CoordinateScaleKind.Linear, UseObservedRange = true }
+            }
+        };
+
+    private static ChannelAssumption infer_channel(string channel_name)
+    {
+        if (string.IsNullOrWhiteSpace(channel_name))
+            return new ChannelAssumption { Pattern = channel_name, Kind = ChannelSemanticKind.Other };
+        if (channel_name.Contains("TIME", StringComparison.OrdinalIgnoreCase))
+            return new ChannelAssumption { Pattern = channel_name, Kind = ChannelSemanticKind.Time, Scale = CoordinateScaleKind.Linear, UseObservedRange = true };
+        if (channel_name.Contains("FSC", StringComparison.OrdinalIgnoreCase))
+            return new ChannelAssumption { Pattern = channel_name, Kind = ChannelSemanticKind.FSC, Scale = CoordinateScaleKind.Linear };
+        if (channel_name.Contains("SSC", StringComparison.OrdinalIgnoreCase))
+            return new ChannelAssumption { Pattern = channel_name, Kind = ChannelSemanticKind.SSC, Scale = CoordinateScaleKind.Linear };
+        return new ChannelAssumption { Pattern = channel_name, Kind = ChannelSemanticKind.Other, Scale = CoordinateScaleKind.Logicle };
+    }
+
+    private static ChannelAssumption? assumption_for_channel(string channel_name, string? cytometer_name)
+    {
+        cytometer_name = normalize_cytometer_name(cytometer_name);
+        var ordered = string.IsNullOrWhiteSpace(cytometer_name)
+            ? store.Cytometers
+            : store.Cytometers.Where(item => item.Name == cytometer_name).Concat(store.Cytometers.Where(item => item.Name == DefaultCytometerName));
+        return ordered.SelectMany(item => item.Channels).FirstOrDefault(item => pattern_matches(item.Pattern, channel_name));
+    }
+
+    private static CytometerPreference get_or_create_preference(string name)
+    {
+        var existing = store.Cytometers.FirstOrDefault(item => item.Name == name);
+        if (existing is not null)
+            return existing;
+        var created = CreatePreferenceFromDefault(name);
+        store.Cytometers.Add(created);
+        return created;
+    }
+
+    private static CytometerPreference clone_preference(CytometerPreference source)
+    {
+        var clone = new CytometerPreference { Name = source.Name };
+        foreach (var assumption in source.Channels)
+            clone.Channels.Add(new ChannelAssumption
+            {
+                Pattern = assumption.Pattern,
+                Kind = assumption.Kind,
+                Scale = assumption.Scale,
+                UseObservedRange = assumption.UseObservedRange
+            });
+        return clone;
+    }
+
+    private static bool pattern_matches(string pattern, string channel_name) =>
+        !string.IsNullOrWhiteSpace(pattern) &&
+        !string.IsNullOrWhiteSpace(channel_name) &&
+        channel_name.Contains(pattern, StringComparison.OrdinalIgnoreCase);
+
+    private static string normalize_cytometer_name(string? name) =>
+        string.IsNullOrWhiteSpace(name) ? DefaultCytometerName : name.Trim();
+
+    private static string store_path() => Path.Combine(WindowPlacementStore.ConfigDirectory, file_name);
 
     private static IEnumerable<double> linear_ticks(double minimum, double maximum, int minimum_count, int maximum_count)
     {

@@ -58,7 +58,7 @@ public sealed class UpdaterWindow : Window
         MaxHeight = 500;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         FontFamily = new FontFamily("Adobe Clean, Roboto, Inter, SF Pro Text, Arial");
-        Background = brush(31, 34, 40);
+        Background = brush(40, 40, 40);
 
         Content = new Grid
         {
@@ -69,6 +69,7 @@ public sealed class UpdaterWindow : Window
                 new StackPanel
                 {
                     Spacing = 8,
+                    Background = brush(30, 30, 30),
                     Children =
                     {
                         title,
@@ -81,6 +82,7 @@ public sealed class UpdaterWindow : Window
                 {
                     ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto"),
                     Margin = new Thickness(0, 18, 0, 0),
+                    Background = brush(30, 30, 30),
                     Children =
                     {
                         new StackPanel

@@ -7,7 +7,7 @@
   <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
     <StackPanel Margin="24" Spacing="14" MaxWidth="650" Width="650" HorizontalAlignment="Center">
       <TextBlock Foreground="{DynamicResource SemiColorText1}" Text="{Binding KindName}" />
-      <TextBox FontSize="20" Padding="6" FontWeight="Light" Text="{Binding Platform.Name, UpdateSourceTrigger=PropertyChanged}" />
+      <TextBox FontSize="20" Padding="6" FontWeight="Light" Text="{Binding Platform.Name}" />
       <Border IsVisible="{Binding HasWarning}" BorderBrush="#B7791F" BorderThickness="1" CornerRadius="6" Padding="10" Background="#2A2112">
         <TextBlock Foreground="#F6C56B" TextWrapping="Wrap" Text="{Binding Platform.WarningText}" />
       </Border>
@@ -17,14 +17,14 @@
           <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
             <controls:IntegrationJobPopulationTreeView Nodes="{Binding Platform.Populations}"
                                                        SelectionChangedCommand="{Binding SelectionChangedCommand}"
-                                                       IsReadOnly="{Binding IsReadOnly}" />
+                                                       IsReadOnly="{Binding IsSelectionReadOnly}" />
           </ScrollViewer>
         </Border>
         <Border Grid.Column="1" Height="300" BorderBrush="{DynamicResource SemiColorBorder}" BorderThickness="1" CornerRadius="6" Background="#1e1e1e" Padding="8" ClipToBounds="True">
           <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
             <controls:IntegrationJobFeatureListView Items="{Binding Platform.Features}"
-                                                    SelectionChangedCommand="{Binding SelectionChangedCommand}"
-                                                    IsReadOnly="{Binding IsReadOnly}" />
+                                                    SelectionChangedCommand="{Binding FeatureSelectionChangedCommand}"
+                                                    IsReadOnly="{Binding IsSelectionReadOnly}" />
           </ScrollViewer>
         </Border>
       </Grid>
@@ -40,13 +40,18 @@
             <StackPanel Grid.Column="2"><TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Logicle M" Margin="0 0 0 8"/><TextBox Text="{Binding LogicleM, UpdateSourceTrigger=PropertyChanged}" /></StackPanel>
             <StackPanel Grid.Column="3"><TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Logicle A" Margin="0 0 0 8"/><TextBox Text="{Binding LogicleA, UpdateSourceTrigger=PropertyChanged}" /></StackPanel>
           </Grid>
+          <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
+            <StackPanel><TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Quantiles" Margin="0 0 0 8"/><NumericUpDown Classes="Small" Minimum="3" Maximum="1000" Value="{Binding CytoNormQuantileCount}" /></StackPanel>
+            <StackPanel Grid.Column="1"><TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Minimum cells" Margin="0 0 0 8"/><NumericUpDown Classes="Small" Minimum="1" Maximum="1000000" Value="{Binding CytoNormMinimumCellsPerCluster}" /></StackPanel>
+            <StackPanel Grid.Column="2"><TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Goal" Margin="0 0 0 8"/><ComboBox Classes="Small" ItemsSource="{Binding CytoNormGoalChoices}" SelectedItem="{Binding SelectedCytoNormGoalChoice}"><ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding DisplayLabel}" /></DataTemplate></ComboBox.ItemTemplate></ComboBox></StackPanel>
+          </Grid>
         </StackPanel>
       </Expander>
       <ProgressBar Height="5" Minimum="0" Maximum="1" Value="{Binding Platform.ProgressFraction}" IsVisible="{Binding Platform.IsRunning}" />
       <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="{Binding Platform.ProgressText}" IsVisible="{Binding Platform.IsRunning}" />
       <DockPanel Margin="0 4 0 24">
-        <Button Classes="Small" Command="{Binding RunCommand}"><TextBlock Text="{Binding RunCaption}" /></Button>
-        <Button DockPanel.Dock="Right" Classes="Small" Command="{Binding CancelCommand}"><TextBlock Text="Stop" /></Button>
+        <Button Classes="Small" Command="{Binding RunCommand}"><StackPanel Orientation="Horizontal" Spacing="6"><Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/run.svg}" /><TextBlock Text="{Binding RunCaption}" /></StackPanel></Button>
+        <Button DockPanel.Dock="Right" Classes="Small Danger" Command="{Binding CancelCommand}"><StackPanel Orientation="Horizontal" Spacing="6"><Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/stop.svg}" /><TextBlock Text="Stop" /></StackPanel></Button>
       </DockPanel>
     </StackPanel>
   </ScrollViewer>

@@ -480,6 +480,7 @@ public sealed class GateDefinition : NotifyBase
 public sealed class StatisticDefinition
 {
     public StatisticKind Kind { get; set; }
+    public string DisplayName { get; set; } = "";
     public string ChannelName { get; set; } = "";
     public string PythonSource { get; set; } = "";
     public string PythonCallableName { get; set; } = "entry";
@@ -1262,6 +1263,7 @@ public sealed class FlowGroup : NotifyBase
     public ObservableCollection<StatisticDefinition> Statistics { get; } = new();
     public ObservableCollection<CompensationMatrix> CompensationCandidates { get; } = new();
     public GateViewOptions RootViewOptions { get; set; } = new();
+    public GateViewOptions GateRootViewOptions { get; set; } = new();
     public Dictionary<string, GateViewOptions> SampleRootViewOptions { get; } = new(StringComparer.Ordinal);
     public string ChannelProfile { get; private set; } = "";
 

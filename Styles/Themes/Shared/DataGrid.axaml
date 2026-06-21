@@ -1,11 +1,11 @@
 ﻿<ResourceDictionary xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <Thickness x:Key="DataGridCellTextBlockDefaultMargin">12 0</Thickness>
-    <StaticResource x:Key="DataGridCellMinHeight" ResourceKey="SemiHeightControlDefault" />
+	<x:Double x:Key="DataGridCellMinHeight">28</x:Double>
     <StaticResource x:Key="DataGridCellVisualBorderThickness" ResourceKey="SemiBorderThicknessControl" />
-    <StaticResource x:Key="DataGridCellVisualStrokeThickness" ResourceKey="SemiBorderSpacingControl" />
+	<x:Double x:Key="DataGridCellVisualStrokeThickness">0</x:Double>
 
     <Thickness x:Key="DataGridColumnHeaderPadding">12 0 0 0</Thickness>
-    <StaticResource x:Key="DataGridColumnHeaderMinHeight" ResourceKey="SemiHeightControlDefault" />
+	<x:Double x:Key="DataGridColumnHeaderMinHeight">32</x:Double>
     <StaticResource x:Key="DataGridColumnHeaderCornerRadius" ResourceKey="SemiBorderRadiusSmall" />
     <StaticResource x:Key="DataGridColumnHeaderAscendingGlyph" ResourceKey="SemiIconSmallTriangleTop" />
     <StaticResource x:Key="DataGridColumnHeaderDescendingGlyph" ResourceKey="SemiIconSmallTriangleDown" />
@@ -14,12 +14,12 @@
     <StaticResource x:Key="DataGridRowCornerRadius" ResourceKey="SemiBorderRadiusSmall" />
     <StaticResource x:Key="DataGridRowMargin" ResourceKey="SemiThicknessSuperTight" />
 
-    <StaticResource x:Key="DataGridRowGroupHeaderMinHeight" ResourceKey="SemiHeightControlDefault" />
+	<x:Double x:Key="DataGridRowGroupHeaderMinHeight">28</x:Double>
     <StaticResource x:Key="DataGridRowGroupHeaderExpandIconGlyph" ResourceKey="SemiIconChevronRight" />
     <StaticResource x:Key="DataGridRowGroupHeaderVisualStrokeThickness" ResourceKey="SemiBorderSpacingControl" />
 
     <StaticResource x:Key="DataGridDisabledCornerRadius" ResourceKey="SemiBorderRadiusSmall" />
 
     <!-- Grid line thickness -->
-    <x:Double x:Key="DataGridGridLineThickness">1</x:Double>
+    <x:Double x:Key="DataGridGridLineThickness">0</x:Double>
 </ResourceDictionary>

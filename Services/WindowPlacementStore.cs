@@ -7,7 +7,7 @@ using Avalonia.Platform;
 
 namespace gated.Services;
 
-internal static class WindowPlacementStore
+public static class WindowPlacementStore
 {
     private const string config_directory_name = "gated-config";
     private const string placement_file_name = "window-placement.json";

@@ -28,6 +28,7 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
     public static readonly StyledProperty<ICommand?> ToggleNodeCommandProperty =
         AvaloniaProperty.Register<ProjectTreeView, ICommand?>(nameof(ToggleNodeCommand));
 
+    private const double top_padding = 2;
     private const double row_height = 25;
     private const double indent_width = 25;
     private const double chevron_width = 21;
@@ -39,6 +40,7 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
     private ProjectNode? pressed_node;
     private Point pressed_point;
     private bool drag_started;
+    private bool pressed_chevron;
 
     public event EventHandler<ProjectNodeContextRequestedEventArgs>? NodeContextRequested;
 
@@ -104,8 +106,8 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
         drag_started = false;
 
         double chevron_left = 8 + node.Depth * indent_width;
-        bool on_chevron = point.X >= chevron_left && point.X <= chevron_left + chevron_width + 4;
-        if (node.HasChildren && on_chevron)
+        pressed_chevron = node.HasChildren && point.X >= chevron_left && point.X <= chevron_left + chevron_width + 4;
+        if (pressed_chevron)
         {
             if (ToggleNodeCommand?.CanExecute(node) == true)
                 ToggleNodeCommand.Execute(node);
@@ -141,10 +143,11 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
         base.OnPointerReleased(e);
-        if (pressed_node is not null && !drag_started)
+        if (pressed_node is not null && !drag_started && !pressed_chevron)
             select_node(pressed_node);
         pressed_node = null;
         drag_started = false;
+        pressed_chevron = false;
     }
 
     private static bool is_draggable_node(ProjectNode node) =>
@@ -158,17 +161,28 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
             or ProjectNodeKind.Platform;
 
     private static bool is_context_menu_node(ProjectNode node) =>
-        node.Kind is ProjectNodeKind.Sample
+        node.Kind is ProjectNodeKind.Workspace
+            or ProjectNodeKind.Metadata
+            or ProjectNodeKind.LayoutFolder
+            or ProjectNodeKind.Layout
+            or ProjectNodeKind.IntegrationJobFolder
+            or ProjectNodeKind.Platform
+            or ProjectNodeKind.Group
+            or ProjectNodeKind.Sample
             or ProjectNodeKind.Population
             or ProjectNodeKind.GateFolder
             or ProjectNodeKind.Gate
             or ProjectNodeKind.GatePopulationSlot
-            or ProjectNodeKind.Platform;
+            or ProjectNodeKind.StatisticDefinition
+            or ProjectNodeKind.StatisticValue
+            or ProjectNodeKind.CompensationFolder
+            or ProjectNodeKind.Compensation
+            or ProjectNodeKind.Embedding;
 
     protected override Size MeasureOverride(Size availableSize)
     {
         double width = double.IsInfinity(availableSize.Width) ? 320 : availableSize.Width;
-        double height = Math.Max(1, ProjectNodes.Length) * row_height;
+        double height = top_padding + Math.Max(1, ProjectNodes.Length) * row_height;
         return new Size(width, height);
     }
 
@@ -205,7 +219,7 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
 
     private ProjectNode? node_at(double y)
     {
-        int index = (int)Math.Floor(y / row_height);
+        int index = (int)Math.Floor((y - top_padding) / row_height);
         var nodes = ProjectNodes;
         if (index < 0 || index >= nodes.Length)
             return null;
@@ -221,7 +235,7 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
 
     private void draw_node(DrawingContext context, ProjectNode node, int index, double width)
     {
-        double top = index * row_height;
+        double top = top_padding + index * row_height;
         var row_rect = new Rect(4, top + 1, Math.Max(0, width - 8), row_height - 2);
         Color row_background = Color.FromRgb(30, 30, 30);
         if (node.IsSelected)

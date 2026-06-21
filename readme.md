@@ -1,5 +1,4 @@
 
-
 # ![Icon](gated-32.png) Gated: Flow Cytometry Analyser
 
 Gated is a free, light-weight and elegant analyser and visualizer of FCS data.

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
@@ -6,6 +7,7 @@ using System.Threading.Tasks;
 using System.Windows.Input;
 using Avalonia.Threading;
 using gated.Models;
+using gated.Reduction;
 using gated.Services;
 
 namespace gated.ViewModels.Platforms;
@@ -21,6 +23,7 @@ public abstract class PlatformEditorViewModel : NotifyBase
         Platform = platform;
         Platform.PropertyChanged += platform_changed;
         SelectionChangedCommand = new RelayCommand(_ => population_selection_changed());
+        FeatureSelectionChangedCommand = new RelayCommand(_ => feature_selection_changed());
         DropPopulationCommand = new RelayCommand(parameter => drop_population(parameter as ProjectNode), _ => IsEditable);
         RunCommand = new RelayCommand(_ => _ = run_async(), _ => Platform.IsIdle);
         CancelCommand = new RelayCommand(_ => cancel(), _ => Platform is not null);
@@ -32,11 +35,13 @@ public abstract class PlatformEditorViewModel : NotifyBase
     public Platform Platform { get; }
     public ObservableCollection<AxisChoice> ChannelChoices { get; } = new();
     public ObservableCollection<PlatformTransformationKind> TransformationChoices { get; } = new(Enum.GetValues<PlatformTransformationKind>());
-    public ObservableCollection<CellCycleModelKind> CellCycleModelChoices { get; } = new(Enum.GetValues<CellCycleModelKind>());
+    public ObservableCollection<EnumDisplayChoice<CellCycleModelKind>> CellCycleModelChoices { get; } = new(enum_choices<CellCycleModelKind>());
     public ObservableCollection<KineticsFitKind> KineticsFitChoices { get; } = new(Enum.GetValues<KineticsFitKind>());
+    public ObservableCollection<EnumDisplayChoice<CytoNormGoal>> CytoNormGoalChoices { get; } = new(enum_choices<CytoNormGoal>());
     public ObservableCollection<string> BatchColumnChoices { get; } = new();
     public ObservableCollection<string> DisplayChoices { get; } = new();
     public ICommand SelectionChangedCommand { get; }
+    public ICommand FeatureSelectionChangedCommand { get; }
     public ICommand DropPopulationCommand { get; }
     public ICommand RunCommand { get; }
     public ICommand CancelCommand { get; }
@@ -45,6 +50,9 @@ public abstract class PlatformEditorViewModel : NotifyBase
     public virtual string RunCaption => Platform.Kind == PlatformKind.Integration ? "Integrate" : "Run model";
     public bool IsEditable => Platform.IsIdle && !Platform.IsConfigurationLocked;
     public bool IsReadOnly => !IsEditable;
+    public bool IsSelectionReadOnly => Platform.Kind == PlatformKind.Integration
+        ? Platform.IsRunning || (Platform.Status == IntegrationJobStatus.Complete && Platform.HasIntegrated)
+        : IsReadOnly;
     public bool HasWarning => Platform.HasWarning;
     public string KindName => Platform.Kind switch
     {
@@ -199,6 +207,18 @@ public abstract class PlatformEditorViewModel : NotifyBase
         }
     }
 
+    public EnumDisplayChoice<CellCycleModelKind>? SelectedCellCycleModelChoice
+    {
+        get => CellCycleModelChoices.FirstOrDefault(choice => choice.Value.Equals(CellCycleModel));
+        set
+        {
+            if (value is null)
+                return;
+            CellCycleModel = value.Value;
+            OnPropertyChanged();
+        }
+    }
+
     public bool CellCycleDrawModelSum
     {
         get => Platform is not CellCyclePlatform cell_cycle || cell_cycle.DrawModelSum;
@@ -320,6 +340,60 @@ public abstract class PlatformEditorViewModel : NotifyBase
         }
     }
 
+    public int CytoNormQuantileCount
+    {
+        get => Platform is IntegrationPlatform integration ? integration.CytoNormOptions.QuantileCount : 99;
+        set
+        {
+            if (Platform is not IntegrationPlatform integration)
+                return;
+            int next = Math.Clamp(value, 3, 1000);
+            if (integration.CytoNormOptions.QuantileCount == next)
+                return;
+            integration.CytoNormOptions.QuantileCount = next;
+            integration_option_changed(nameof(CytoNormQuantileCount));
+        }
+    }
+
+    public int CytoNormMinimumCellsPerCluster
+    {
+        get => Platform is IntegrationPlatform integration ? integration.CytoNormOptions.MinimumCellsPerCluster : 50;
+        set
+        {
+            if (Platform is not IntegrationPlatform integration)
+                return;
+            int next = Math.Clamp(value, 1, 1000000);
+            if (integration.CytoNormOptions.MinimumCellsPerCluster == next)
+                return;
+            integration.CytoNormOptions.MinimumCellsPerCluster = next;
+            integration_option_changed(nameof(CytoNormMinimumCellsPerCluster));
+        }
+    }
+
+    public CytoNormGoal CytoNormGoal
+    {
+        get => Platform is IntegrationPlatform integration ? integration.CytoNormOptions.Goal : CytoNormGoal.BatchMean;
+        set
+        {
+            if (Platform is not IntegrationPlatform integration || integration.CytoNormOptions.Goal == value)
+                return;
+            integration.CytoNormOptions.Goal = value;
+            integration_option_changed(nameof(CytoNormGoal));
+        }
+    }
+
+    public EnumDisplayChoice<CytoNormGoal>? SelectedCytoNormGoalChoice
+    {
+        get => CytoNormGoalChoices.FirstOrDefault(choice => choice.Value.Equals(CytoNormGoal));
+        set
+        {
+            if (value is null)
+                return;
+            CytoNormGoal = value.Value;
+            OnPropertyChanged();
+        }
+    }
+
     public void Dispose()
     {
         Platform.PropertyChanged -= platform_changed;
@@ -336,14 +410,22 @@ public abstract class PlatformEditorViewModel : NotifyBase
 
     private void refresh_batch_choices()
     {
+        ensure_identity_metadata_schema();
+        string selected = SelectedBatchColumnName;
         BatchColumnChoices.Clear();
         foreach (var choice in Workspace.MetadataColumns
-                     .Where(column => column.Value == MetadataColumnKind.String && column.Key is not ("Group" or "Sample"))
+                     .Where(column => column.Value == MetadataColumnKind.String)
                      .Select(column => column.Key)
                      .OrderBy(name => name, StringComparer.Ordinal))
             BatchColumnChoices.Add(choice);
-        if (Platform is IntegrationPlatform integration && string.IsNullOrWhiteSpace(integration.BatchColumnName))
-            integration.BatchColumnName = BatchColumnChoices.FirstOrDefault() ?? "";
+        if (Platform is IntegrationPlatform integration)
+        {
+            if (!string.IsNullOrWhiteSpace(selected) && BatchColumnChoices.Contains(selected))
+                integration.BatchColumnName = selected;
+            if (string.IsNullOrWhiteSpace(integration.BatchColumnName) || !BatchColumnChoices.Contains(integration.BatchColumnName))
+                integration.BatchColumnName = BatchColumnChoices.FirstOrDefault() ?? "";
+        }
+        OnPropertyChanged(nameof(SelectedBatchColumnName));
     }
 
     private void refresh_display_choices()
@@ -388,6 +470,23 @@ public abstract class PlatformEditorViewModel : NotifyBase
         prepare_preview(preserve_fit_state: true);
         refresh_choices();
         invalidate_commands();
+    }
+
+    private void feature_selection_changed()
+    {
+        update_feature_selection_states();
+        if (Platform.Kind != PlatformKind.Integration)
+        {
+            reset_x_axis_range();
+            Platform.InvalidateFromConfiguration();
+            prepare_preview();
+            refresh_choices();
+        }
+        else if (Platform.HasIntegrated)
+        {
+            Platform.InvalidateFromConfiguration();
+            invalidate_commands();
+        }
     }
 
     private void drop_population(ProjectNode? node)
@@ -478,7 +577,7 @@ public abstract class PlatformEditorViewModel : NotifyBase
                 IsSelected = !previous.TryGetValue(channel.Name, out bool was_selected) || was_selected
             });
         }
-        update_modeling_feature_states();
+        update_feature_selection_states();
         refresh_channel_choices();
     }
 
@@ -502,10 +601,21 @@ public abstract class PlatformEditorViewModel : NotifyBase
         }
     }
 
-    private void update_modeling_feature_states()
+    private void update_feature_selection_states()
     {
         if (Platform.Kind == PlatformKind.Integration)
+        {
+            var rows = Platform.Features.ToArray();
+            apply_hierarchy_states(
+                rows,
+                row => row.RowKey,
+                row => row.ParentKey,
+                row => row.IsSelected,
+                (row, value) => row.IsSelected = value,
+                (row, value) => row.IsEnabled = value,
+                (row, value) => row.IsIndeterminate = value);
             return;
+        }
         string? selected_name = Platform.Features.FirstOrDefault(feature => feature.IsChannel && feature.IsSelected)?.ChannelName ??
                                 Platform.Features.FirstOrDefault(feature => feature.IsChannel)?.ChannelName;
         foreach (var feature in Platform.Features)
@@ -624,6 +734,7 @@ public abstract class PlatformEditorViewModel : NotifyBase
         OnPropertyChanged(nameof(HasWarning));
         OnPropertyChanged(nameof(IsEditable));
         OnPropertyChanged(nameof(IsReadOnly));
+        OnPropertyChanged(nameof(IsSelectionReadOnly));
         if (handling_change || Platform.Kind == PlatformKind.Integration)
             return;
         bool display_change = e.PropertyName is nameof(CellCyclePlatform.DrawModelSum) or
@@ -650,6 +761,7 @@ public abstract class PlatformEditorViewModel : NotifyBase
     {
         OnPropertyChanged(nameof(IsEditable));
         OnPropertyChanged(nameof(IsReadOnly));
+        OnPropertyChanged(nameof(IsSelectionReadOnly));
         if (RunCommand is RelayCommand run)
             run.RaiseCanExecuteChanged();
         if (DropPopulationCommand is RelayCommand drop)
@@ -675,8 +787,13 @@ public abstract class PlatformEditorViewModel : NotifyBase
     private void display_option_changed(string property_name)
     {
         OnPropertyChanged(property_name);
-        if (handling_change || Platform.Kind == PlatformKind.Integration)
+        if (handling_change)
             return;
+        if (Platform.Kind == PlatformKind.Integration)
+        {
+            Platform.InvalidateFromConfiguration();
+            return;
+        }
         handling_change = true;
         try
         {
@@ -687,6 +804,88 @@ public abstract class PlatformEditorViewModel : NotifyBase
             handling_change = false;
         }
     }
+
+    private void ensure_identity_metadata_schema()
+    {
+        Workspace.MetadataColumns["Group"] = MetadataColumnKind.String;
+        Workspace.MetadataColumns["Sample"] = MetadataColumnKind.String;
+        foreach (var group in Workspace.Groups)
+        foreach (var sample in group.Samples)
+        {
+            sample.Metadata["Group"] = group.Name;
+            sample.Metadata["Sample"] = sample.Name;
+        }
+    }
+
+    private static void apply_hierarchy_states<T>(
+        IReadOnlyList<T> rows,
+        Func<T, Guid> key,
+        Func<T, Guid?> parent_key,
+        Func<T, bool> is_selected,
+        Action<T, bool> set_selected,
+        Action<T, bool> set_enabled,
+        Action<T, bool> set_indeterminate)
+    {
+        var selected = rows.ToDictionary(key, is_selected);
+        var indeterminate = rows.ToDictionary(key, _ => false);
+        foreach (var row in rows)
+        {
+            set_enabled(row, true);
+            set_indeterminate(row, false);
+        }
+
+        foreach (var row in rows.OrderByDescending(item => child_depth(rows, item, key, parent_key)))
+        {
+            var children = rows.Where(candidate => parent_key(candidate) == key(row)).ToArray();
+            if (children.Length == 0)
+                continue;
+            bool any_selected = children.Any(child => selected[key(child)] || indeterminate[key(child)]);
+            bool all_selected = children.All(child => selected[key(child)] && !indeterminate[key(child)]);
+            selected[key(row)] = all_selected;
+            indeterminate[key(row)] = any_selected && !all_selected;
+            set_selected(row, all_selected);
+            set_indeterminate(row, any_selected && !all_selected);
+        }
+    }
+
+    private static int child_depth<T>(IReadOnlyList<T> rows, T row, Func<T, Guid> key, Func<T, Guid?> parent_key)
+    {
+        var children = rows.Where(candidate => parent_key(candidate) == key(row)).ToArray();
+        return children.Length == 0 ? 0 : 1 + children.Max(child => child_depth(rows, child, key, parent_key));
+    }
+
+    private void integration_option_changed(string property_name)
+    {
+        OnPropertyChanged(property_name);
+        Platform.InvalidateFromConfiguration();
+    }
+
+    private static EnumDisplayChoice<T>[] enum_choices<T>() where T : struct, Enum =>
+        Enum.GetValues<T>().Select(value => new EnumDisplayChoice<T>(value, display_enum(value))).ToArray();
+
+    private static string display_enum<T>(T value) where T : struct, Enum =>
+        value switch
+        {
+            CellCycleModelKind.DeanJettFox => "Dean-Jett-Fox",
+            _ => split_pascal_case(value.ToString())
+        };
+
+    private static string split_pascal_case(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return "";
+        var words = System.Text.RegularExpressions.Regex.Matches(value, @"[A-Z][a-z0-9]*")
+            .Select(match => match.Value)
+            .ToArray();
+        if (words.Length == 0)
+            return value;
+        return words[0] + (words.Length > 1 ? " " + string.Join(" ", words.Skip(1)).ToLowerInvariant() : "");
+    }
+}
+
+public sealed record EnumDisplayChoice<T>(T Value, string DisplayLabel) where T : struct, Enum
+{
+    public override string ToString() => DisplayLabel;
 }
 
 public sealed class IntegrationPlatformEditorViewModel : PlatformEditorViewModel

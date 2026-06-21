@@ -31,6 +31,8 @@
                 <ResourceInclude Source="avares://gated/Styles/ProgressBar.axaml" />
                 <ResourceInclude Source="avares://gated/Styles/ButtonSpinner.axaml" />
                 <ResourceInclude Source="avares://gated/Styles/NumericUpDown.axaml" />
+                <ResourceInclude Source="avares://gated/Styles/ContextMenu.axaml" />
+                <ResourceInclude Source="avares://gated/Styles/Listbox.axaml" />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Styles.Resources>

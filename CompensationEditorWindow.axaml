@@ -1,0 +1,33 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="gated.CompensationEditorWindow"
+        x:CompileBindings="False"
+		SizeToContent="WidthAndHeight"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        Title="Compensation table editor"
+        Background="#252525">
+    <Grid Margin="18" RowDefinitions="Auto,*,Auto,Auto" RowSpacing="12">
+        <Grid ColumnDefinitions="120,*" ColumnSpacing="10">
+            <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Matrix name" VerticalAlignment="Center" />
+            <TextBox x:Name="nameBox" Grid.Column="1" Classes="Small" />
+        </Grid>
+
+        <Border Grid.Row="1" BorderBrush="#505050" BorderThickness="1" CornerRadius="6" Background="#1e1e1e">
+            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Margin="10">
+                <Grid x:Name="matrixGrid" RowSpacing="5" ColumnSpacing="5" />
+            </ScrollViewer>
+        </Border>
+
+        <TextBlock x:Name="errorText" Grid.Row="2" Foreground="#E07A7A" IsVisible="False" />
+
+        <DockPanel Grid.Row="3">
+            <TextBlock DockPanel.Dock="Left" Foreground="{DynamicResource SemiColorText2}" VerticalAlignment="Center"
+                       Text="Values are spillover percentages. Diagonal entries are fixed at 100." />
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                <Button x:Name="cancelButton" Classes="Small" Content="Cancel" MinWidth="84" />
+                <Button x:Name="okButton" Classes="Small" Content="OK" MinWidth="84" />
+            </StackPanel>
+        </DockPanel>
+    </Grid>
+</Window>
