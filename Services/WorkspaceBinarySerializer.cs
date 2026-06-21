@@ -11,7 +11,7 @@ namespace gated.Services;
 public sealed class WorkspaceBinarySerializer
 {
     private const uint magic = 0x44544731;
-    private const int version = 40;
+    private const int version = 41;
 
     public void Save(FlowWorkspace workspace, string file_path)
     {
@@ -112,7 +112,6 @@ public sealed class WorkspaceBinarySerializer
         write_string(writer, group.Name);
         write_statistics(writer, group.Statistics);
         write_gate_view_options(writer, group.RootViewOptions);
-        write_gate_view_options(writer, group.GateRootViewOptions);
         writer.Write(group.SampleRootViewOptions.Count);
         foreach (var item in group.SampleRootViewOptions.OrderBy(item => item.Key, StringComparer.Ordinal))
         {
@@ -145,8 +144,12 @@ public sealed class WorkspaceBinarySerializer
         if (read_root_view)
         {
             group.RootViewOptions = read_gate_view_options(reader);
-            if (file_version >= 40)
-                group.GateRootViewOptions = read_gate_view_options(reader);
+            if (file_version == 40)
+            {
+                var legacy_gate_root_view = read_gate_view_options(reader);
+                if (!group.RootViewOptions.HasView && legacy_gate_root_view.HasView)
+                    group.RootViewOptions = legacy_gate_root_view;
+            }
             if (file_version >= 38)
             {
                 int sample_root_view_count = reader.ReadInt32();

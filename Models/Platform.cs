@@ -238,7 +238,7 @@ public abstract class Platform : NotifyBase
     public string Name
     {
         get => name;
-        set => SetField(ref name, string.IsNullOrWhiteSpace(value) ? "Platform" : value.Trim());
+        set => SetField(ref name, string.IsNullOrWhiteSpace(value) ? "Platform" : value.Trim(), nameof(Name));
     }
 
     public IntegrationJobStatus Status
@@ -364,11 +364,19 @@ public abstract class Platform : NotifyBase
     public bool HasResults => HasIntegrated || ResultTables.Count > 0 || PlotSeries.Count > 0 || FitCurves.Count > 0 || PlatformStatistics.Count > 0;
     public virtual bool IsConfigurationLocked => false;
 
+    public void NotifyIntegrationDataChanged()
+    {
+        OnPropertyChanged(nameof(HasIntegrated));
+        OnPropertyChanged(nameof(HasResults));
+        OnPropertyChanged(nameof(IsConfigurationLocked));
+    }
+
     public void InvalidateFromConfiguration()
     {
         RowMap.Clear();
         Data.Clear();
         OnConfigurationInvalidated();
+        NotifyIntegrationDataChanged();
         ClearFitResults();
         CurrentStep = Math.Min(CurrentStep, 3);
         WarningText = "Configuration changed. Rerun this platform before downstream steps.";
@@ -399,7 +407,7 @@ public abstract class Platform : NotifyBase
     }
 
     public string[] SelectedFeatureNames => Features
-        .Where(feature => feature.IsSelected && feature.IsChannel && !string.IsNullOrWhiteSpace(feature.ChannelName))
+        .Where(feature => feature.IsSelected && !feature.IsIndeterminate && feature.IsChannel && !string.IsNullOrWhiteSpace(feature.ChannelName))
         .Select(feature => feature.ChannelName)
         .ToArray();
 

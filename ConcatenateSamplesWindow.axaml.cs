@@ -102,7 +102,7 @@ public partial class ConcatenateSamplesWindow : Window
 
     private IReadOnlyList<ConcatenateEventSource> selected_sources()
     {
-        var selected = rows.Where(row => row.IsSelected).ToArray();
+        var selected = rows.Where(row => row.IsSelected && row.IsEnabled && !row.IsIndeterminate).ToArray();
         var sources = new List<ConcatenateEventSource>();
         foreach (var sample in group.Samples)
         {

@@ -36,6 +36,7 @@ public sealed class IntegrationJobRunner
         job.WarningText = "";
         job.Status = IntegrationJobStatus.Ready;
         job.CurrentStep = Math.Max(job.CurrentStep, 3);
+        job.NotifyIntegrationDataChanged();
         return true;
     }
 
@@ -69,6 +70,7 @@ public sealed class IntegrationJobRunner
         job.WarningText = "";
         job.Status = IntegrationJobStatus.Ready;
         job.CurrentStep = Math.Max(job.CurrentStep, 4);
+        job.NotifyIntegrationDataChanged();
         return true;
     }
 

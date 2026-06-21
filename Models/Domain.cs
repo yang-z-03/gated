@@ -1263,7 +1263,6 @@ public sealed class FlowGroup : NotifyBase
     public ObservableCollection<StatisticDefinition> Statistics { get; } = new();
     public ObservableCollection<CompensationMatrix> CompensationCandidates { get; } = new();
     public GateViewOptions RootViewOptions { get; set; } = new();
-    public GateViewOptions GateRootViewOptions { get; set; } = new();
     public Dictionary<string, GateViewOptions> SampleRootViewOptions { get; } = new(StringComparer.Ordinal);
     public string ChannelProfile { get; private set; } = "";
 

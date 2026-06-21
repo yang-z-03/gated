@@ -16,7 +16,7 @@ using PythonWorkspaceContext = gated.Python.PythonWorkspaceContext;
 
 namespace gated.ViewModels;
 
-public sealed class MainWindowViewModel : NotifyBase
+public sealed partial class MainWindowViewModel : NotifyBase
 {
     private readonly ObservableCollection<ProjectNode> project_roots = new();
     private readonly Dictionary<string, bool> project_expansion_state = new();
@@ -51,7 +51,6 @@ public sealed class MainWindowViewModel : NotifyBase
     private string python_script_log = "";
     private PythonScriptDefinition? editing_python_script;
     private PythonScriptDefinition? selected_integration_macro;
-    private string selected_platform_display_choice = "";
     private Platform? subscribed_integration_job;
     private bool is_python_script_dirty;
     private bool syncing_python_script;
@@ -60,6 +59,7 @@ public sealed class MainWindowViewModel : NotifyBase
     private AxisSettings x_axis = new();
     private AxisSettings y_axis = new();
     private DotColorSettings dot_color = new();
+    private readonly HashSet<FlowGroup> groups_pending_root_view_initialization = new();
     private int next_gate_number = 1;
     private bool is_page_editor_mode;
     private PagePlotElement? selected_page_element;
@@ -85,11 +85,7 @@ public sealed class MainWindowViewModel : NotifyBase
     public ObservableCollection<AxisChoice> SelectedPageAxisChoices { get; } = new();
     public ObservableCollection<AxisChoice> SelectedPageColorChoices { get; } = new();
     public ObservableCollection<EquivalentSampleChoice> EquivalentSampleChoices { get; } = new();
-    public ObservableCollection<string> BatchColumnChoices { get; } = new();
     public ObservableCollection<string> MetadataColumnChoices { get; } = new();
-    public ObservableCollection<string> PlatformDisplayChoices { get; } = new();
-    public ObservableCollection<AxisChoice> PlatformChannelChoices { get; } = new();
-    public ObservableCollection<PlatformParameterRow> PlatformParameterRows { get; } = new();
     private DataTable statistic_table = new();
     private DataTable workspace_metadata_table = new();
     public ObservableCollection<GateDefinition> PlotGates { get; } = new();
@@ -98,10 +94,6 @@ public sealed class MainWindowViewModel : NotifyBase
     public ObservableCollection<CoordinateScaleKind> CoordinateScaleChoices { get; } = new(Enum.GetValues<CoordinateScaleKind>());
     public ObservableCollection<PlotMode> PlotModeChoices { get; } = new(Enum.GetValues<PlotMode>());
     public ObservableCollection<PlotColorPalette> PlotColorPaletteChoices { get; } = new(Enum.GetValues<PlotColorPalette>());
-    public ObservableCollection<CytoNormGoal> CytoNormGoalChoices { get; } = new(Enum.GetValues<CytoNormGoal>());
-    public ObservableCollection<PlatformTransformationKind> PlatformTransformationChoices { get; } = new(Enum.GetValues<PlatformTransformationKind>());
-    public ObservableCollection<CellCycleModelKind> CellCycleModelChoices { get; } = new(Enum.GetValues<CellCycleModelKind>());
-    public ObservableCollection<KineticsFitKind> KineticsFitChoices { get; } = new(Enum.GetValues<KineticsFitKind>());
     public ObservableCollection<PythonScriptDefinition> MacroScripts { get; } = new();
     public ObservableCollection<PythonScriptDefinition> StatisticScripts { get; } = new();
     public ObservableCollection<string> RecentFilePaths => Workspace.RecentFilePaths;
@@ -153,8 +145,6 @@ public sealed class MainWindowViewModel : NotifyBase
     public ICommand SelectProjectNodeCommand { get; }
     public ICommand AddPageElementCommand { get; }
     public ICommand DeletePageElementCommand { get; }
-    public ICommand RefreshIntegrationJobFeaturesCommand { get; }
-    public ICommand DropPlatformPopulationCommand { get; }
     public ICommand ApplyWorkspaceMetadataCommand { get; }
     public ICommand AddStringMetadataColumnCommand { get; }
     public ICommand AddIntegerMetadataColumnCommand { get; }
@@ -162,8 +152,6 @@ public sealed class MainWindowViewModel : NotifyBase
     public ICommand OpenPythonScriptEditorCommand { get; }
     public ICommand ClosePythonScriptEditorCommand { get; }
     public ICommand RunPythonScriptCommand { get; }
-    public ICommand IntegrationPopulationSelectionChangedCommand { get; }
-    public ICommand IntegrationFeatureSelectionChangedCommand { get; }
     public ICommand SelectPreviousEquivalentSampleCommand { get; }
     public ICommand SelectNextEquivalentSampleCommand { get; }
     public Func<string, string, Task<string?>>? RequestTextInputAsync { get; set; }
@@ -181,7 +169,7 @@ public sealed class MainWindowViewModel : NotifyBase
         ReloadScriptRepositories();
         CreateGroupCommand = new RelayCommand(_ => create_group());
         CreateLayoutCommand = new RelayCommand(_ => create_layout());
-        CreateIntegrationJobCommand = new RelayCommand(parameter => create_platform(platform_kind_from_parameter(parameter)), _ => Workspace.Groups.Any(group => group.Samples.Count > 0));
+        CreateIntegrationJobCommand = new RelayCommand(parameter => create_platform(PlatformJobInitializer.KindFromParameter(parameter)), _ => Workspace.Groups.Any(group => group.Samples.Count > 0));
         RenameWorkspaceCommand = new RelayCommand(_ => _ = rename_workspace_async());
         RenameIntegrationJobCommand = new RelayCommand(_ => _ = rename_selected_integration_job_async(), _ => selected_integration_job is not null);
         RenameGroupCommand = new RelayCommand(_ => _ = rename_selected_group_async(), _ => selected_group is not null);
@@ -222,8 +210,6 @@ public sealed class MainWindowViewModel : NotifyBase
         SelectProjectNodeCommand = new RelayCommand(parameter => select_project_node(parameter as ProjectNode));
         AddPageElementCommand = new RelayCommand(parameter => add_page_element(parameter as PageDropRequest));
         DeletePageElementCommand = new RelayCommand(_ => delete_selected_page_element(), _ => selected_page_element is not null);
-        RefreshIntegrationJobFeaturesCommand = new RelayCommand(_ => refresh_selected_integration_job_features(), _ => selected_integration_job is not null && IsIntegrationJobIdle);
-        DropPlatformPopulationCommand = new RelayCommand(parameter => drop_platform_population(parameter as ProjectNode), _ => selected_integration_job is { Kind: not PlatformKind.Integration } && IsIntegrationJobIdle);
         ApplyWorkspaceMetadataCommand = new RelayCommand(_ => CommitWorkspaceSampleMetadata(), _ => IsWorkspaceMetadataMode);
         AddStringMetadataColumnCommand = new RelayCommand(_ => _ = add_metadata_column_async(MetadataColumnKind.String));
         AddIntegerMetadataColumnCommand = new RelayCommand(_ => _ = add_metadata_column_async(MetadataColumnKind.Integer));
@@ -231,8 +217,6 @@ public sealed class MainWindowViewModel : NotifyBase
         OpenPythonScriptEditorCommand = new RelayCommand(_ => OpenPythonScriptEditor());
         ClosePythonScriptEditorCommand = new RelayCommand(_ => _ = ClosePythonScriptEditorAsync());
         RunPythonScriptCommand = new RelayCommand(_ => _ = run_python_script_async(), _ => !is_python_script_running);
-        IntegrationPopulationSelectionChangedCommand = new RelayCommand(_ => UpdateIntegrationJobPopulationSelectionStates());
-        IntegrationFeatureSelectionChangedCommand = new RelayCommand(_ => UpdateIntegrationJobFeatureSelectionStates());
         SelectPreviousEquivalentSampleCommand = new RelayCommand(_ => select_relative_equivalent_sample(-1), _ => EquivalentSampleChoices.Count > 1);
         SelectNextEquivalentSampleCommand = new RelayCommand(_ => select_relative_equivalent_sample(1), _ => EquivalentSampleChoices.Count > 1);
         ensure_default_layout();
@@ -700,17 +684,6 @@ public sealed class MainWindowViewModel : NotifyBase
     }
 
     public bool IsIntegrationJobMode => SelectedIntegrationJob is not null;
-    public bool IsSelectedPlatformIntegration => SelectedIntegrationJob?.Kind == PlatformKind.Integration;
-    public bool IsSelectedPlatformModeling => SelectedIntegrationJob is not null && !IsSelectedPlatformIntegration;
-    public string SelectedPlatformKindName => SelectedIntegrationJob?.Kind switch
-    {
-        PlatformKind.CellCycle => "Univariate cell cycle modeling",
-        PlatformKind.Proliferation => "Proliferation modeling",
-        PlatformKind.IntensityComparison => "Population intensity comparison",
-        PlatformKind.Kinetics => "Kinetics analysis",
-        PlatformKind.Integration => "Integration",
-        _ => "Platform"
-    };
     public bool IsWorkspaceMetadataMode
     {
         get => is_workspace_metadata_mode;
@@ -750,9 +723,6 @@ public sealed class MainWindowViewModel : NotifyBase
     }
 
     private void RefreshLayoutCanvas() => LayoutRefreshRevision++;
-    public bool IsIntegrationJobIdle => SelectedIntegrationJob is not { IsRunning: true };
-    public bool IsSelectedIntegrationJobConfigEditable => SelectedIntegrationJob is { IsConfigurationLocked: false } && IsIntegrationJobIdle;
-    public bool IsSelectedIntegrationJobConfigReadOnly => !IsSelectedIntegrationJobConfigEditable;
 
     public string PythonScriptText
     {
@@ -893,124 +863,6 @@ public sealed class MainWindowViewModel : NotifyBase
         }
     }
 
-    public Platform? SelectedIntegrationJob
-    {
-        get => selected_integration_job;
-        private set
-        {
-            unsubscribe_selected_integration_job();
-            if (!SetField(ref selected_integration_job, value))
-            {
-                subscribe_selected_integration_job();
-                return;
-            }
-            subscribe_selected_integration_job();
-            if (value is not null)
-            {
-                IsPythonScriptEditorMode = false;
-                IsWorkspaceMetadataMode = false;
-            }
-            refresh_batch_column_choices();
-            OnPropertyChanged(nameof(IsIntegrationJobMode));
-            OnPropertyChanged(nameof(IsSelectedPlatformIntegration));
-            OnPropertyChanged(nameof(IsSelectedPlatformModeling));
-            OnPropertyChanged(nameof(SelectedPlatformKindName));
-            OnPropertyChanged(nameof(IsCellCyclePlatform));
-            OnPropertyChanged(nameof(IsProliferationPlatform));
-            OnPropertyChanged(nameof(IsIntensityComparisonPlatform));
-            OnPropertyChanged(nameof(IsKineticsPlatform));
-            OnPropertyChanged(nameof(IsDefaultAnalysisMode));
-            OnPropertyChanged(nameof(IsIntegrationJobIdle));
-            OnPropertyChanged(nameof(IsSelectedIntegrationJobConfigEditable));
-            OnPropertyChanged(nameof(IsSelectedIntegrationJobConfigReadOnly));
-            OnPropertyChanged(nameof(SelectedIntegrationJobName));
-            OnPropertyChanged(nameof(SelectedIntegrationJobBatchColumnName));
-            refresh_platform_editor_state();
-            raise_command_states();
-        }
-    }
-
-    public string SelectedIntegrationJobName
-    {
-        get => selected_integration_job?.Name ?? "";
-        set
-        {
-            if (selected_integration_job is null)
-                return;
-            selected_integration_job.Name = value;
-            OnPropertyChanged();
-            refresh_project_tree();
-        }
-    }
-
-    public string SelectedIntegrationJobBatchColumnName
-    {
-        get => selected_integration_job is IntegrationPlatform integration ? integration.BatchColumnName : "";
-        set
-        {
-            if (selected_integration_job is not IntegrationPlatform integration)
-                return;
-            string next = value ?? "";
-            if (string.IsNullOrWhiteSpace(next))
-            {
-                OnPropertyChanged();
-                return;
-            }
-            if (integration.BatchColumnName == next)
-                return;
-            integration.BatchColumnName = next;
-            OnPropertyChanged();
-            if (selected_integration_job.Compensated is not null)
-                selected_integration_job.InvalidateFromConfiguration();
-            raise_command_states();
-        }
-    }
-
-    public string SelectedPlatformDisplayChoice
-    {
-        get => selected_platform_display_choice;
-        set => SetField(ref selected_platform_display_choice, value ?? "");
-    }
-
-    public AxisChoice? SelectedPlatformChannelChoice
-    {
-        get
-        {
-            var selected_name = selected_integration_job?.SelectedFeatureNames.FirstOrDefault();
-            return string.IsNullOrWhiteSpace(selected_name)
-                ? null
-                : PlatformChannelChoices.FirstOrDefault(choice => choice.Name == selected_name);
-        }
-        set
-        {
-            if (selected_integration_job is null || value is null)
-                return;
-            bool changed = false;
-            foreach (var feature in selected_integration_job.Features.Where(feature => feature.IsChannel))
-            {
-                bool next = feature.ChannelName == value.Name;
-                if (feature.IsSelected == next)
-                    continue;
-                feature.IsSelected = next;
-                changed = true;
-            }
-            if (!changed)
-                return;
-            update_modeling_feature_selection_states(selected_integration_job);
-            selected_integration_job.Axis.Transform = Configuration.DefaultPlatformTransformationForChannel(value.Name);
-            reset_platform_x_axis_range(selected_integration_job);
-            selected_integration_job.InvalidateFromConfiguration();
-            prepare_platform_preview(selected_integration_job);
-            refresh_platform_results_only();
-            OnPropertyChanged();
-        }
-    }
-
-    public bool IsCellCyclePlatform => SelectedIntegrationJob?.Kind == PlatformKind.CellCycle;
-    public bool IsProliferationPlatform => SelectedIntegrationJob?.Kind == PlatformKind.Proliferation;
-    public bool IsIntensityComparisonPlatform => SelectedIntegrationJob?.Kind == PlatformKind.IntensityComparison;
-    public bool IsKineticsPlatform => SelectedIntegrationJob?.Kind == PlatformKind.Kinetics;
-
     public PythonScriptDefinition? SelectedIntegrationMacro
     {
         get => selected_integration_macro;
@@ -1083,7 +935,9 @@ public sealed class MainWindowViewModel : NotifyBase
         int loaded_count = 0;
         foreach (var sample in samples)
         {
-            var group = add_sample_to_compatible_group(sample, recalculate: false);
+            var (group, was_empty) = add_sample_to_compatible_group(sample, recalculate: false);
+            if (was_empty)
+                groups_pending_root_view_initialization.Add(group);
             groups_to_recalculate.Add(group);
             last_group = group;
             last_sample = sample;
@@ -1097,7 +951,11 @@ public sealed class MainWindowViewModel : NotifyBase
     {
         var recalculated_groups = groups.Distinct().ToArray();
         foreach (var group in recalculated_groups)
+        {
             group.RecalculateSamples();
+            if (groups_pending_root_view_initialization.Remove(group))
+                ensure_group_root_view_defaults(group);
+        }
         return recalculated_groups;
     }
 
@@ -1106,7 +964,7 @@ public sealed class MainWindowViewModel : NotifyBase
         refresh_workspace_sample_metadata();
         refresh_project_tree();
         if (loaded_count > 0 && selected_group is not null)
-            reset_axes_from_group(selected_group);
+            apply_axes_from_group_root_view(selected_group);
         refresh_selection_sidebars();
         refresh_plot_gates();
         refresh_selected_statistics();
@@ -1155,7 +1013,10 @@ public sealed class MainWindowViewModel : NotifyBase
                 fallback_groups.Add(group);
             }
 
+            bool was_empty = group.Samples.Count == 0;
             group.AddSample(sample, recalculate: false);
+            if (was_empty)
+                groups_pending_root_view_initialization.Add(group);
             groups_to_recalculate.Add(group);
             last_group = group;
             last_sample = sample;
@@ -1222,6 +1083,7 @@ public sealed class MainWindowViewModel : NotifyBase
         foreach (var column in loaded.MetadataColumns)
             Workspace.MetadataColumns[column.Key] = column.Value;
         ensure_default_layout();
+        groups_pending_root_view_initialization.Clear();
 
         project_expansion_state.Clear();
         SelectedNode = null;
@@ -1235,7 +1097,7 @@ public sealed class MainWindowViewModel : NotifyBase
         SelectedPageElement = selected_page_layout?.Elements.LastOrDefault();
         next_gate_number = Math.Max(1, count_gates(Workspace.Groups.SelectMany(group => group.Gates)) + 1);
         if (selected_group is not null)
-            reset_axes_from_group(selected_group);
+            apply_axes_from_group_root_view(selected_group);
         refresh_workspace_sample_metadata();
         seed_loaded_workspace_expansion_state();
         refresh_project_tree();
@@ -1633,7 +1495,7 @@ public sealed class MainWindowViewModel : NotifyBase
         schedule_plot_transform_preparation();
     }
 
-    private FlowGroup add_sample_to_compatible_group(FlowSample sample, bool recalculate = true)
+    private (FlowGroup Group, bool WasEmpty) add_sample_to_compatible_group(FlowSample sample, bool recalculate = true)
     {
         var group = Workspace.Groups.FirstOrDefault(item => item.CanAccept(sample));
         if (group is null)
@@ -1642,14 +1504,17 @@ public sealed class MainWindowViewModel : NotifyBase
             Workspace.Groups.Add(group);
         }
 
+        bool was_empty = group.Samples.Count == 0;
         group.AddSample(sample, recalculate);
         if (recalculate)
         {
+            if (was_empty)
+                ensure_group_root_view_defaults(group);
             SelectedGroup = group;
             SelectedSample = sample;
         }
 
-        return group;
+        return (group, was_empty);
     }
 
     private void create_group()
@@ -1674,503 +1539,6 @@ public sealed class MainWindowViewModel : NotifyBase
         raise_command_states();
     }
 
-    private static PlatformKind platform_kind_from_parameter(object? parameter)
-    {
-        if (parameter is PlatformKind kind)
-            return kind;
-        if (parameter is string text && Enum.TryParse(text, ignoreCase: true, out PlatformKind parsed))
-            return parsed;
-        return PlatformKind.Integration;
-    }
-
-    private void create_platform(PlatformKind kind)
-    {
-        var job = PlatformFactory.Create(kind);
-        job.Name = next_platform_name(kind);
-        populate_integration_job_choices(job);
-        Workspace.IntegrationJobs.Add(job);
-        SelectedIntegrationJob = job;
-        IsPageEditorMode = false;
-        refresh_project_tree();
-        select_project_node(find_project_node($"workspace:integration-job:{job.Id}"));
-        StatusText = $"Created platform: {job.Name}";
-        raise_command_states();
-    }
-
-    private string next_platform_name(PlatformKind kind)
-    {
-        string prefix = kind switch
-        {
-            PlatformKind.CellCycle => "Cell cycle",
-            PlatformKind.Proliferation => "Proliferation",
-            PlatformKind.IntensityComparison => "Intensity comparison",
-            PlatformKind.Kinetics => "Kinetics",
-            _ => "Integration"
-        };
-        int index = Workspace.IntegrationJobs.Count + 1;
-        while (Workspace.IntegrationJobs.Any(job => job.Name == $"{prefix} {index}"))
-            index++;
-        return $"{prefix} {index}";
-    }
-
-    private void populate_integration_job_choices(Platform job)
-    {
-        job.Populations.Clear();
-        ensure_metadata_schema();
-        if (job is IntegrationPlatform integration)
-            integration.BatchColumnName = default_batch_column_name();
-        foreach (var group in Workspace.Groups)
-        foreach (var sample in group.Samples)
-        {
-            var sample_row_key = Guid.NewGuid();
-            job.Populations.Add(new IntegrationJobPopulationSelection
-            {
-                RowKey = sample_row_key,
-                GroupId = group.Id,
-                SampleId = sample.Id,
-                GroupName = group.Name,
-                SampleName = sample.Name,
-                PopulationName = sample.Name,
-                Depth = 0,
-                HasChildren = sample.Populations.Count > 0,
-            IsPopulation = false,
-            IsPlatformDropped = job.Kind == PlatformKind.Integration,
-            IsSelected = job.Kind == PlatformKind.Integration && (selected_group is null || ReferenceEquals(group, selected_group))
-        });
-
-            foreach (var population in sample.Populations)
-                append_integration_population_selection(job, group, sample, population, sample_row_key, 1);
-        }
-
-        update_population_selection_states(job);
-        refresh_integration_job_features(job);
-        refresh_batch_column_choices();
-    }
-
-    private void append_integration_population_selection(Platform job, FlowGroup group, FlowSample sample, PopulationResult population, Guid parent_key, int depth)
-    {
-        var row_key = Guid.NewGuid();
-        job.Populations.Add(new IntegrationJobPopulationSelection
-        {
-            RowKey = row_key,
-            ParentKey = parent_key,
-            GroupId = group.Id,
-            SampleId = sample.Id,
-            GateId = population.Gate.Id,
-            Region = population.Region,
-            GroupName = group.Name,
-            SampleName = sample.Name,
-            PopulationName = population.DisplayName,
-            Depth = depth,
-            HasChildren = population.Children.Count > 0,
-            IsPopulation = true,
-            IsPlatformDropped = job.Kind == PlatformKind.Integration,
-            IsSelected = job.Kind == PlatformKind.Integration && (selected_group is null || ReferenceEquals(group, selected_group))
-        });
-
-        foreach (var child in population.Children)
-            append_integration_population_selection(job, group, sample, child, row_key, depth + 1);
-    }
-
-    private void refresh_selected_integration_job_features()
-    {
-        if (selected_integration_job is null)
-            return;
-        update_population_selection_states(selected_integration_job);
-        refresh_integration_job_features(selected_integration_job);
-        selected_integration_job.InvalidateFromConfiguration();
-    }
-
-    private void refresh_integration_job_features(Platform job)
-    {
-        update_population_selection_states(job);
-        var selected_sample_ids = job.Populations
-            .Where(population => job.Kind == PlatformKind.Integration
-                ? population.IsSelected && population.IsEnabled
-                : population.IsPopulation && population.IsPlatformDropped)
-            .Select(population => population.SampleId)
-            .Distinct()
-            .ToArray();
-        var samples = Workspace.Groups.SelectMany(group => group.Samples)
-            .Where(sample => selected_sample_ids.Contains(sample.Id))
-            .ToArray();
-
-        var previous = job.Features.ToDictionary(feature => feature.ChannelName, feature => feature.IsSelected, StringComparer.Ordinal);
-        bool previous_root_selected = job.Features.FirstOrDefault(feature => !feature.IsChannel)?.IsSelected ?? true;
-        job.Features.Clear();
-        if (samples.Length == 0)
-            return;
-
-        var root_key = Guid.NewGuid();
-        job.Features.Add(new IntegrationJobFeatureSelection
-        {
-            RowKey = root_key,
-            GroupName = "Shared feature channels",
-            Depth = 0,
-            HasChildren = true,
-            IsChannel = false,
-            IsSelected = previous_root_selected
-        });
-
-        var shared = samples
-            .Select(sample => sample.Channels.Select(channel => channel.Name).ToHashSet(StringComparer.Ordinal))
-            .Aggregate((left, right) =>
-            {
-                left.IntersectWith(right);
-                return left;
-            });
-
-        foreach (string channel_name in shared.OrderBy(name => name, StringComparer.Ordinal))
-        {
-            var channel = samples[0].Channels.First(item => item.Name == channel_name);
-            job.Features.Add(new IntegrationJobFeatureSelection
-            {
-                ParentKey = root_key,
-                ChannelName = channel.Name,
-                Label = channel.Label,
-                Depth = 1,
-                IsChannel = true,
-                IsSelected = !previous.TryGetValue(channel.Name, out bool was_selected) || was_selected
-            });
-        }
-        update_feature_selection_states(job);
-        if (job.Kind != PlatformKind.Integration)
-        {
-            string? channel_name = job.SelectedFeatureNames.FirstOrDefault();
-            if (!string.IsNullOrWhiteSpace(channel_name))
-                job.Axis.Transform = Configuration.DefaultPlatformTransformationForChannel(channel_name);
-        }
-    }
-
-    public void UpdateIntegrationJobPopulationSelectionStates()
-    {
-        if (selected_integration_job is null)
-            return;
-        update_population_selection_states(selected_integration_job);
-        refresh_integration_job_features(selected_integration_job);
-        if (selected_integration_job.Kind != PlatformKind.Integration)
-        {
-            refresh_platform_editor_state();
-        }
-        else if (selected_integration_job.HasIntegrated)
-            selected_integration_job.InvalidateFromConfiguration();
-        refresh_platform_editor_state();
-        raise_command_states();
-    }
-
-    public void UpdateIntegrationJobFeatureSelectionStates()
-    {
-        if (selected_integration_job is null)
-            return;
-        update_feature_selection_states(selected_integration_job);
-        if (selected_integration_job.Kind != PlatformKind.Integration)
-        {
-            selected_integration_job.InvalidateFromConfiguration();
-            prepare_platform_preview(selected_integration_job);
-        }
-        else if (selected_integration_job.HasIntegrated)
-            selected_integration_job.InvalidateFromConfiguration();
-        refresh_platform_editor_state();
-        raise_command_states();
-    }
-
-    private void drop_platform_population(ProjectNode? node)
-    {
-        if (selected_integration_job is not { Kind: not PlatformKind.Integration } platform || node is null)
-            return;
-
-        if (node.Kind == ProjectNodeKind.Population && node.Sample is not null && node.Gate is not null && node.Population is not null)
-        {
-            select_platform_population(platform, node.Sample.Id, node.Gate.Id, node.Population.Region, is_population: true);
-        }
-        else if (node.Kind == ProjectNodeKind.Gate && node.Gate is not null)
-        {
-            foreach (var row in platform.Populations.Where(row => row.IsPopulation && row.GateId == node.Gate.Id))
-            {
-                row.IsPlatformDropped = true;
-                row.IsSelected = true;
-            }
-        }
-        else if (node.Kind == ProjectNodeKind.Sample && node.Sample is not null)
-        {
-            foreach (var row in platform.Populations.Where(row => row.IsPopulation && row.SampleId == node.Sample.Id))
-            {
-                row.IsPlatformDropped = true;
-                row.IsSelected = true;
-            }
-        }
-
-        update_modeling_population_selection_states(platform);
-        refresh_integration_job_features(platform);
-        reset_platform_x_axis_range(platform);
-        platform.InvalidateFromConfiguration();
-        prepare_platform_preview(platform);
-        refresh_platform_editor_state();
-        raise_command_states();
-    }
-
-    private void prepare_platform_preview(Platform platform, bool preserve_fit_state = false)
-    {
-        if (platform.Kind == PlatformKind.Integration)
-            return;
-        try
-        {
-            var previous_status = platform.Status;
-            string previous_warning = platform.WarningText;
-            int previous_step = platform.CurrentStep;
-            bool preserve = preserve_fit_state && (platform.ResultTables.Count > 0 || platform.FitCurves.Count > 0 || platform.PlatformStatistics.Count > 0);
-            _ = new IntegrationJobRunner(Workspace).Prepare(platform);
-            if (preserve)
-            {
-                platform.Status = previous_status;
-                platform.WarningText = previous_warning;
-                platform.CurrentStep = previous_step;
-            }
-        }
-        catch (Exception exception)
-        {
-            platform.WarningText = exception.Message;
-            platform.Status = IntegrationJobStatus.Warning;
-        }
-    }
-
-    private void reset_platform_x_axis_range(Platform platform)
-    {
-        string? channel_name = platform.SelectedFeatureNames.FirstOrDefault();
-        if (string.IsNullOrWhiteSpace(channel_name))
-            return;
-        var sample_ids = platform.Populations
-            .Where(row => row.IsPopulation && row.IsPlatformDropped)
-            .Select(row => row.SampleId)
-            .Distinct()
-            .ToHashSet();
-        var maximum = Workspace.Groups
-            .SelectMany(group => group.Samples)
-            .Where(sample => sample_ids.Count == 0 || sample_ids.Contains(sample.Id))
-            .Select(sample => sample.Channels.FirstOrDefault(channel => channel.Name == channel_name)?.Maximum)
-            .Where(value => value.HasValue && value.Value > 0)
-            .Select(value => (double)value!.Value)
-            .DefaultIfEmpty(new LogicleParameters().T)
-            .Max();
-        platform.Axis.Maximum = maximum;
-        platform.Axis.Minimum = platform.Axis.Transform == PlatformTransformationKind.Logicle
-            ? -0.01 * platform.Axis.Maximum
-            : -0.1 * platform.Axis.Maximum;
-        platform.Axis.Logicle = platform.Axis.Logicle with { T = platform.Axis.Maximum };
-    }
-
-    private static void select_platform_population(Platform platform, Guid sample_id, Guid gate_id, PopulationRegion region, bool is_population)
-    {
-        foreach (var row in platform.Populations)
-        {
-            if (row.SampleId != sample_id || row.IsPopulation != is_population)
-                continue;
-            if (is_population && (row.GateId != gate_id || row.Region != region))
-                continue;
-            row.IsPlatformDropped = true;
-            row.IsSelected = true;
-        }
-    }
-
-    private void refresh_platform_editor_state()
-    {
-        PlatformDisplayChoices.Clear();
-        PlatformParameterRows.Clear();
-        if (selected_integration_job is null)
-            return;
-
-        foreach (var item in selected_integration_job.Populations
-                     .Where(item => item.IsPopulation && item.IsPlatformDropped)
-                     .Select(item => $"{item.SampleName} - {item.PopulationName}")
-                     .Distinct(StringComparer.Ordinal))
-            PlatformDisplayChoices.Add(item);
-
-        if (!PlatformDisplayChoices.Contains(SelectedPlatformDisplayChoice))
-            SelectedPlatformDisplayChoice = PlatformDisplayChoices.FirstOrDefault() ?? "";
-        if (selected_integration_job is IntensityComparisonPlatform comparison &&
-            (string.IsNullOrWhiteSpace(comparison.ReferenceSample) ||
-             !PlatformDisplayChoices.Contains(comparison.ReferenceSample)))
-            comparison.ReferenceSample = PlatformDisplayChoices.FirstOrDefault() ?? "";
-
-        sync_platform_channel_choices(selected_integration_job);
-        if (selected_integration_job.Kind != PlatformKind.Integration && selected_integration_job.Features.Count > 0)
-        {
-            var selected_features = selected_integration_job.Features.Where(feature => feature.IsChannel && feature.IsSelected).ToArray();
-            if (selected_features.Length != 1)
-            {
-                string? preferred = selected_features.FirstOrDefault()?.ChannelName ??
-                                    selected_integration_job.Features.FirstOrDefault(feature => feature.IsChannel)?.ChannelName;
-                foreach (var feature in selected_integration_job.Features.Where(feature => feature.IsChannel))
-                    feature.IsSelected = feature.ChannelName == preferred;
-                update_modeling_feature_selection_states(selected_integration_job);
-            }
-            if (selected_integration_job.Axis.Maximum <= 0)
-                reset_platform_x_axis_range(selected_integration_job);
-        }
-
-        refresh_platform_results_only();
-    }
-
-    private void refresh_platform_results_only()
-    {
-        PlatformParameterRows.Clear();
-        if (selected_integration_job is null)
-            return;
-
-        foreach (var statistic in selected_integration_job.PlatformStatistics)
-            PlatformParameterRows.Add(new PlatformParameterRow(statistic.Name, statistic.Value));
-
-        foreach (var table in selected_integration_job.ResultTables)
-        foreach (var row in table.Rows)
-        {
-            if (row.Length >= 2)
-                PlatformParameterRows.Add(new PlatformParameterRow(row[0], row[1]));
-        }
-        OnPropertyChanged(nameof(SelectedPlatformChannelChoice));
-        OnPropertyChanged(nameof(SelectedIntegrationJob));
-    }
-
-    private void sync_platform_channel_choices(Platform job)
-    {
-        var desired = job.Features
-            .Where(feature => feature.IsChannel)
-            .Select(feature => (feature.ChannelName, feature.Label))
-            .ToArray();
-        if (PlatformChannelChoices.Count == desired.Length &&
-            PlatformChannelChoices.Zip(desired).All(pair => pair.First.Name == pair.Second.ChannelName && pair.First.Label == pair.Second.Label))
-            return;
-
-        PlatformChannelChoices.Clear();
-        foreach (var feature in desired)
-            PlatformChannelChoices.Add(new AxisChoice(feature.ChannelName, feature.Label));
-    }
-
-    private void subscribe_selected_integration_job()
-    {
-        subscribed_integration_job = selected_integration_job;
-        if (subscribed_integration_job is not null)
-            subscribed_integration_job.PropertyChanged += selected_integration_job_changed;
-    }
-
-    private void unsubscribe_selected_integration_job()
-    {
-        if (subscribed_integration_job is not null)
-            subscribed_integration_job.PropertyChanged -= selected_integration_job_changed;
-        subscribed_integration_job = null;
-    }
-
-    private void selected_integration_job_changed(object? sender, PropertyChangedEventArgs e)
-    {
-        if (!ReferenceEquals(sender, selected_integration_job))
-            return;
-        if (e.PropertyName is nameof(Platform.Name))
-            refresh_project_tree();
-        OnPropertyChanged(nameof(IsIntegrationJobIdle));
-        OnPropertyChanged(nameof(IsSelectedIntegrationJobConfigEditable));
-        OnPropertyChanged(nameof(IsSelectedIntegrationJobConfigReadOnly));
-        raise_command_states();
-    }
-
-    private static void update_population_selection_states(Platform job)
-    {
-        if (job.Kind != PlatformKind.Integration)
-        {
-            update_modeling_population_selection_states(job);
-            return;
-        }
-        var rows = job.Populations.ToArray();
-        apply_hierarchy_states(rows, row => row.RowKey, row => row.ParentKey, row => row.IsSelected, (row, value) => row.IsSelected = value,
-            (row, value) => row.IsEnabled = value, (row, value) => row.IsIndeterminate = value);
-    }
-
-    private static void update_modeling_population_selection_states(Platform job)
-    {
-        foreach (var row in job.Populations)
-        {
-            row.IsEnabled = true;
-            row.IsIndeterminate = false;
-            if (!row.IsPlatformDropped)
-                row.IsSelected = false;
-            if (!row.IsPopulation)
-                row.IsSelected = false;
-        }
-    }
-
-    private static void update_feature_selection_states(Platform job)
-    {
-        if (job.Kind != PlatformKind.Integration)
-        {
-            update_modeling_feature_selection_states(job);
-            return;
-        }
-        var rows = job.Features.ToArray();
-        apply_hierarchy_states(rows, row => row.RowKey, row => row.ParentKey, row => row.IsSelected, (row, value) => row.IsSelected = value,
-            (row, value) => row.IsEnabled = value, (row, value) => row.IsIndeterminate = value);
-    }
-
-    private static void update_modeling_feature_selection_states(Platform job)
-    {
-        bool any_selected = job.Features.Any(feature => feature.IsChannel && feature.IsSelected);
-        string? selected_name = job.Features.FirstOrDefault(feature => feature.IsChannel && feature.IsSelected)?.ChannelName ??
-                                job.Features.FirstOrDefault(feature => feature.IsChannel)?.ChannelName;
-        foreach (var feature in job.Features)
-        {
-            feature.IsEnabled = true;
-            feature.IsIndeterminate = false;
-            if (!feature.IsChannel)
-            {
-                feature.IsSelected = false;
-                continue;
-            }
-            feature.IsSelected = any_selected ? feature.ChannelName == selected_name : feature.ChannelName == selected_name;
-        }
-    }
-
-    private static void apply_hierarchy_states<T>(
-        T[] rows,
-        Func<T, Guid> key,
-        Func<T, Guid?> parent_key,
-        Func<T, bool> is_selected,
-        Action<T, bool> set_selected,
-        Action<T, bool> set_enabled,
-        Action<T, bool> set_indeterminate)
-    {
-        var children = rows.GroupBy(parent_key)
-            .Where(group => group.Key.HasValue)
-            .ToDictionary(group => group.Key!.Value, group => group.ToArray());
-
-        foreach (var row in rows)
-        {
-            set_enabled(row, true);
-            set_indeterminate(row, false);
-        }
-
-        foreach (var root in rows.Where(row => parent_key(row) is null))
-            apply_descendant_states(root, inherited_selected: false);
-
-        bool apply_descendant_states(T row, bool inherited_selected)
-        {
-            bool selected = is_selected(row);
-            if (inherited_selected)
-            {
-                set_enabled(row, false);
-                set_selected(row, true);
-                selected = true;
-            }
-
-            bool descendant_selected = false;
-            if (children.TryGetValue(key(row), out var child_rows))
-            {
-                foreach (var child in child_rows)
-                    descendant_selected |= apply_descendant_states(child, inherited_selected || selected);
-                if (!selected && descendant_selected)
-                    set_indeterminate(row, true);
-            }
-
-            return selected || descendant_selected;
-        }
-    }
-
     private void refresh_after_embedding_changes()
     {
         refresh_axis_choices();
@@ -2180,252 +1548,6 @@ public sealed class MainWindowViewModel : NotifyBase
         OnPropertyChanged(nameof(PlotPopulation));
         raise_command_states();
     }
-
-    private void refresh_workspace_sample_metadata()
-    {
-        rebuild_workspace_metadata_table();
-        refresh_batch_column_choices();
-    }
-
-    private void rebuild_workspace_metadata_table()
-    {
-        sync_identity_metadata();
-        workspace_metadata_table = build_metadata_table(workspace_sample_rows());
-        workspace_metadata_table.ColumnChanged += metadata_table_column_changed;
-        OnPropertyChanged(nameof(WorkspaceMetadataTable));
-        OnPropertyChanged(nameof(WorkspaceMetadataTableView));
-    }
-
-    private void metadata_table_column_changed(object sender, DataColumnChangeEventArgs e)
-    {
-        if (syncing_metadata || e.Column is null || e.Column.ColumnName.StartsWith("__", StringComparison.Ordinal) || e.Column.ColumnName is "Group" or "Sample")
-            return;
-        syncing_metadata = true;
-        try
-        {
-            commit_metadata_row(e.Row);
-            refresh_batch_column_choices();
-            invalidate_integration_jobs_from_metadata();
-        }
-        finally
-        {
-            syncing_metadata = false;
-        }
-    }
-
-    private IEnumerable<(FlowGroup Group, FlowSample Sample)> workspace_sample_rows()
-    {
-        foreach (var group in Workspace.Groups)
-        foreach (var sample in group.Samples)
-            yield return (group, sample);
-    }
-
-    private DataTable build_metadata_table(IEnumerable<(FlowGroup Group, FlowSample Sample)> rows)
-    {
-        ensure_metadata_schema();
-        var table = new DataTable();
-        table.Columns.Add("__GroupId", typeof(Guid));
-        table.Columns.Add("__SampleId", typeof(Guid));
-        table.Columns.Add("Group", typeof(string));
-        table.Columns.Add("Sample", typeof(string));
-        foreach (var column in Workspace.MetadataColumns
-                     .Where(item => item.Key is not ("Group" or "Sample"))
-                     .OrderBy(item => item.Key, StringComparer.Ordinal))
-            table.Columns.Add(column.Key, type_for_metadata_kind(column.Value));
-
-        foreach (var (group, sample) in rows)
-        {
-            var row = table.NewRow();
-            row["__GroupId"] = group.Id;
-            row["__SampleId"] = sample.Id;
-            row["Group"] = group.Name;
-            row["Sample"] = sample.Name;
-            foreach (var column in Workspace.MetadataColumns.Where(column => column.Key is not ("Group" or "Sample")))
-            {
-                if (!sample.Metadata.TryGetValue(column.Key, out string? value) || string.IsNullOrWhiteSpace(value))
-                    row[column.Key] = DBNull.Value;
-                else
-                    row[column.Key] = parse_metadata_value(value, column.Value) ?? DBNull.Value;
-            }
-            table.Rows.Add(row);
-        }
-
-        return table;
-    }
-
-    private void ensure_metadata_schema()
-    {
-        sync_identity_metadata();
-        Workspace.MetadataColumns["Group"] = MetadataColumnKind.String;
-        Workspace.MetadataColumns["Sample"] = MetadataColumnKind.String;
-        foreach (var key in Workspace.Groups
-                     .SelectMany(group => group.Samples)
-                     .SelectMany(sample => sample.Metadata.Keys)
-                     .Distinct(StringComparer.Ordinal)
-                     .OrderBy(key => key, StringComparer.Ordinal))
-        {
-            if (!Workspace.MetadataColumns.ContainsKey(key))
-                Workspace.MetadataColumns[key] = infer_metadata_kind(key);
-        }
-    }
-
-    private void sync_identity_metadata()
-    {
-        foreach (var group in Workspace.Groups)
-        foreach (var sample in group.Samples)
-        {
-            sample.Metadata["Group"] = group.Name;
-            sample.Metadata["Sample"] = sample.Name;
-        }
-    }
-
-    private void refresh_batch_column_choices()
-    {
-        ensure_metadata_schema();
-        var metadata_choices = Workspace.MetadataColumns.Keys
-            .OrderBy(name => name, StringComparer.Ordinal)
-            .ToArray();
-        var choices = Workspace.MetadataColumns
-            .Where(column => column.Value == MetadataColumnKind.String)
-            .Select(column => column.Key)
-            .OrderBy(name => name, StringComparer.Ordinal)
-            .ToArray();
-
-        MetadataColumnChoices.Clear();
-        foreach (string choice in metadata_choices)
-            MetadataColumnChoices.Add(choice);
-
-        BatchColumnChoices.Clear();
-        foreach (string choice in choices)
-            BatchColumnChoices.Add(choice);
-
-        if (selected_integration_job is IntegrationPlatform integration)
-        {
-            if (!string.IsNullOrWhiteSpace(integration.BatchColumnName) && !choices.Contains(integration.BatchColumnName, StringComparer.Ordinal))
-                integration.BatchColumnName = "";
-            if (string.IsNullOrWhiteSpace(integration.BatchColumnName))
-                integration.BatchColumnName = default_batch_column_name(choices);
-        }
-
-        OnPropertyChanged(nameof(SelectedIntegrationJobBatchColumnName));
-    }
-
-    private string default_batch_column_name(string[]? choices = null)
-    {
-        choices ??= Workspace.MetadataColumns
-            .Where(column => column.Value == MetadataColumnKind.String)
-            .Select(column => column.Key)
-            .OrderBy(name => name, StringComparer.Ordinal)
-            .ToArray();
-        return choices.FirstOrDefault(name => string.Equals(name, "Batch", StringComparison.Ordinal)) ??
-               choices.FirstOrDefault() ??
-               "";
-    }
-
-    public void CommitWorkspaceSampleMetadata()
-    {
-        commit_metadata_table(workspace_metadata_table);
-        StatusText = "Workspace sample metadata updated";
-        refresh_batch_column_choices();
-    }
-
-    private void commit_metadata_table(DataTable table)
-    {
-        if (syncing_metadata)
-            return;
-        syncing_metadata = true;
-        try
-        {
-            foreach (DataRow row in table.Rows)
-                commit_metadata_row(row);
-            refresh_batch_column_choices();
-            invalidate_integration_jobs_from_metadata();
-        }
-        finally
-        {
-            syncing_metadata = false;
-        }
-    }
-
-    private void commit_metadata_row(DataRow row)
-    {
-        if (row["__SampleId"] is not Guid sample_id)
-            return;
-        var sample = Workspace.Groups.SelectMany(group => group.Samples).FirstOrDefault(sample => sample.Id == sample_id);
-        if (sample is null)
-            return;
-
-        foreach (var column in Workspace.MetadataColumns.Where(column => column.Key is not ("Group" or "Sample")))
-        {
-            object value = row.Table.Columns.Contains(column.Key) ? row[column.Key] : DBNull.Value;
-            if (value == DBNull.Value || value is null || string.IsNullOrWhiteSpace(Convert.ToString(value)))
-                sample.Metadata.Remove(column.Key);
-            else
-                sample.Metadata[column.Key] = format_metadata_value(value, column.Value);
-        }
-        sync_identity_metadata();
-    }
-
-    private void invalidate_integration_jobs_from_metadata()
-    {
-        foreach (var job in Workspace.IntegrationJobs.Where(job => job.HasIntegrated))
-            job.InvalidateFromConfiguration();
-        raise_command_states();
-    }
-
-    private async Task add_metadata_column_async(MetadataColumnKind kind)
-    {
-        if (RequestTextInputAsync is null)
-            return;
-        string? name = await RequestTextInputAsync($"Add {kind.ToString().ToLowerInvariant()} metadata column", "");
-        if (string.IsNullOrWhiteSpace(name))
-            return;
-        name = name.Trim();
-        if (name is "Group" or "Sample" || Workspace.MetadataColumns.ContainsKey(name))
-            return;
-        Workspace.MetadataColumns[name] = kind;
-        rebuild_workspace_metadata_table();
-        refresh_batch_column_choices();
-    }
-
-    private MetadataColumnKind infer_metadata_kind(string key)
-    {
-        var values = Workspace.Groups.SelectMany(group => group.Samples)
-            .Select(sample => sample.Metadata.TryGetValue(key, out string? value) ? value : "")
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .ToArray();
-        if (values.Length == 0)
-            return MetadataColumnKind.String;
-        if (values.All(value => int.TryParse(value, out _)))
-            return MetadataColumnKind.Integer;
-        if (values.All(value => double.TryParse(value, out _)))
-            return MetadataColumnKind.Float;
-        return MetadataColumnKind.String;
-    }
-
-    private static Type type_for_metadata_kind(MetadataColumnKind kind) =>
-        kind switch
-        {
-            MetadataColumnKind.Integer => typeof(int),
-            MetadataColumnKind.Float => typeof(double),
-            _ => typeof(string)
-        };
-
-    private static object? parse_metadata_value(string value, MetadataColumnKind kind) =>
-        kind switch
-        {
-            MetadataColumnKind.Integer => int.TryParse(value, out int int_value) ? int_value : null,
-            MetadataColumnKind.Float => double.TryParse(value, out double double_value) ? double_value : null,
-            _ => value
-        };
-
-    private static string format_metadata_value(object value, MetadataColumnKind kind) =>
-        kind switch
-        {
-            MetadataColumnKind.Integer => Convert.ToInt32(value).ToString(),
-            MetadataColumnKind.Float => Convert.ToDouble(value).ToString("G17"),
-            _ => Convert.ToString(value) ?? ""
-        };
 
     private async Task rename_selected_group_async()
     {
@@ -2482,20 +1604,6 @@ public sealed class MainWindowViewModel : NotifyBase
             return;
 
         selected_page_layout.Name = name.Trim();
-        refresh_project_tree();
-    }
-
-    private async Task rename_selected_integration_job_async()
-    {
-        if (selected_integration_job is null || RequestTextInputAsync is null)
-            return;
-
-        string? name = await RequestTextInputAsync("Rename integration job", selected_integration_job.Name);
-        if (string.IsNullOrWhiteSpace(name))
-            return;
-
-        selected_integration_job.Name = name.Trim();
-        OnPropertyChanged(nameof(SelectedIntegrationJobName));
         refresh_project_tree();
     }
 
@@ -2707,42 +1815,13 @@ public sealed class MainWindowViewModel : NotifyBase
         return $"Layout {index}";
     }
 
-    private void concatenate_selected_group()
-    {
-        if (selected_group is null || selected_group.Samples.Count < 2)
-            return;
-
-        var samples = selected_group.Samples.ToArray();
-        int row_count = samples.Sum(sample => sample.EventCount);
-        int column_count = samples[0].ChannelCount;
-        var raw_events = new float[row_count, column_count];
-        int offset = 0;
-        foreach (var sample in samples)
-        {
-            for (int row = 0; row < sample.EventCount; row++)
-            for (int column = 0; column < column_count; column++)
-                raw_events[offset + row, column] = sample.RawEvents[row, column];
-            offset += sample.EventCount;
-        }
-
-        var concatenated = new FlowSample($"{selected_group.Name} concatenated", samples[0].Channels, raw_events);
-        selected_group.AddSample(concatenated);
-        selected_group.RecalculateSamples();
-        SelectedSample = concatenated;
-        SelectedPopulation = null;
-        refresh_workspace_sample_metadata();
-        refresh_project_tree();
-        refresh_selection_sidebars();
-        refresh_plot_gates();
-        refresh_selected_statistics();
-        StatusText = $"Concatenated {samples.Length} sample(s)";
-        raise_command_states();
-    }
-
     public void AddArtificialSample(FlowGroup group, FlowSample sample, string status_text)
     {
+        bool was_empty = group.Samples.Count == 0;
         group.AddSample(sample);
         group.RecalculateSamples();
+        if (was_empty)
+            ensure_group_root_view_defaults(group);
         SelectedGroup = group;
         SelectedSample = sample;
         SelectedPopulation = null;
@@ -2757,9 +1836,12 @@ public sealed class MainWindowViewModel : NotifyBase
 
     public void AddArtificialSamples(FlowGroup group, IReadOnlyList<FlowSample> samples, string status_text)
     {
+        bool was_empty = group.Samples.Count == 0;
         foreach (var sample in samples)
             group.AddSample(sample, recalculate: false);
         group.RecalculateSamples();
+        if (was_empty)
+            ensure_group_root_view_defaults(group);
         SelectedGroup = group;
         SelectedSample = samples.LastOrDefault();
         SelectedPopulation = null;
@@ -3682,15 +2764,9 @@ public sealed class MainWindowViewModel : NotifyBase
             case ProjectNodeKind.Group:
                 SelectedIntegrationJob = null;
                 IsWorkspaceMetadataMode = false;
-                if (node.Group is not null)
+                if (node.Group is not null && selected_group is null)
                     SelectedGroup = node.Group;
-                SelectedSample = node.Group?.Samples.FirstOrDefault();
-                SelectedPopulation = null;
-                SelectedGate = null;
                 SelectedCompensation = null;
-                apply_root_axis_context();
-                needs_plot_refresh = true;
-                needs_statistics_refresh = true;
                 break;
         }
 
@@ -3839,9 +2915,73 @@ public sealed class MainWindowViewModel : NotifyBase
         apply_channel_range_defaults(YAxis, group, sample: null, population: null);
     }
 
+    private static GateViewOptions create_default_root_view(FlowGroup group)
+    {
+        var first = get_default_x_channel(group);
+        if (first is null)
+            return new GateViewOptions();
+
+        var second = get_default_y_channel(group, first);
+        var x_axis = new AxisSettings { ChannelName = first.Name };
+        var y_axis = new AxisSettings { ChannelName = second.Name };
+        apply_channel_range_defaults(x_axis, group, sample: null, population: null);
+        apply_channel_range_defaults(y_axis, group, sample: null, population: null);
+        return new GateViewOptions
+        {
+            XChannel = x_axis.ChannelName,
+            XMinimum = x_axis.Minimum,
+            XMaximum = x_axis.Maximum,
+            XScale = x_axis.Scale.Clone(),
+            YChannel = y_axis.ChannelName,
+            YMinimum = y_axis.Minimum,
+            YMaximum = y_axis.Maximum,
+            YScale = y_axis.Scale.Clone()
+        };
+    }
+
+    private static void ensure_group_root_view_defaults(FlowGroup group)
+    {
+        if (group.RootViewOptions.HasView)
+            return;
+
+        var view = create_default_root_view(group);
+        if (!view.HasView)
+            return;
+
+        group.RootViewOptions = clone_gate_view_options(view);
+    }
+
+    private static GateViewOptions clone_gate_view_options(GateViewOptions view) =>
+        new()
+        {
+            XChannel = view.XChannel,
+            XMinimum = view.XMinimum,
+            XMaximum = view.XMaximum,
+            XScale = view.XScale.Clone(),
+            YChannel = view.YChannel,
+            YMinimum = view.YMinimum,
+            YMaximum = view.YMaximum,
+            YScale = view.YScale.Clone(),
+            PlotMode = view.PlotMode,
+            ShowOutlierPoints = view.ShowOutlierPoints,
+            DrawLargeDots = view.DrawLargeDots,
+            ShowGridlines = view.ShowGridlines,
+            ShowGateAnnotations = view.ShowGateAnnotations,
+            ShowGateAnnotationNames = view.ShowGateAnnotationNames,
+            ContourLevelCount = view.ContourLevelCount,
+            DensitySmoothing = view.DensitySmoothing
+        };
+
+    private static GateViewOptions root_view_for_current_selection(FlowGroup group, ProjectNodeKind? node_kind, FlowSample? sample) =>
+        node_kind switch
+        {
+            ProjectNodeKind.Sample when sample is not null => sample_root_view_or_default(group, sample.Name),
+            _ => group.RootViewOptions
+        };
+
     private void apply_axes_from_group_root_view(FlowGroup group)
     {
-        var root_view = root_view_for_current_context(group);
+        var root_view = root_view_for_current_selection(group, selected_node?.Kind, selected_sample);
         if (root_view.HasView && group.Channels.Any(channel => channel.Name == root_view.XChannel))
         {
             var view = root_view;
@@ -3874,25 +3014,22 @@ public sealed class MainWindowViewModel : NotifyBase
             return;
         }
 
-        reset_axes_from_group(group);
-        set_root_view_for_current_context(group, current_gate_view());
+        applying_gate_view_options = true;
+        try
+        {
+            reset_axes_from_group(group);
+        }
+        finally
+        {
+            applying_gate_view_options = false;
+        }
     }
 
     private GateViewOptions root_view_for_current_context(FlowGroup group) =>
-        selected_node?.Kind switch
-        {
-            ProjectNodeKind.Sample when selected_sample is not null => sample_root_view_or_default(group, selected_sample.Name),
-            ProjectNodeKind.GateFolder => group.GateRootViewOptions,
-            _ => group.RootViewOptions
-        };
+        root_view_for_current_selection(group, selected_node?.Kind, selected_sample);
 
     private static GateViewOptions root_view_for_node(FlowGroup group, ProjectNode node) =>
-        node.Kind switch
-        {
-            ProjectNodeKind.Sample when node.Sample is not null => sample_root_view_or_default(group, node.Sample.Name),
-            ProjectNodeKind.GateFolder => group.GateRootViewOptions,
-            _ => group.RootViewOptions
-        };
+        root_view_for_current_selection(group, node.Kind, node.Sample);
 
     private static GateViewOptions sample_root_view_or_default(FlowGroup group, string sample_name) =>
         group.SampleRootViewOptions.TryGetValue(sample_name, out var view)
@@ -3904,12 +3041,6 @@ public sealed class MainWindowViewModel : NotifyBase
         if (selected_node?.Kind == ProjectNodeKind.Sample && selected_sample is not null)
         {
             group.SampleRootViewOptions[selected_sample.Name] = view;
-            return;
-        }
-
-        if (selected_node?.Kind == ProjectNodeKind.GateFolder)
-        {
-            group.GateRootViewOptions = view;
             return;
         }
 
@@ -4079,7 +3210,7 @@ public sealed class MainWindowViewModel : NotifyBase
 
         if (selected_group is not null &&
             selected_population is null &&
-            selected_node?.Kind is null or ProjectNodeKind.Group or ProjectNodeKind.Sample or ProjectNodeKind.GateFolder)
+            selected_node?.Kind is null or ProjectNodeKind.Sample or ProjectNodeKind.GateFolder)
             set_root_view_for_current_context(selected_group, current_gate_view());
     }
 
@@ -4747,8 +3878,6 @@ public sealed class MainWindowViewModel : NotifyBase
             DeleteSelectedCommand,
             CreateIntegrationJobCommand,
             RenameIntegrationJobCommand,
-            RefreshIntegrationJobFeaturesCommand,
-            DropPlatformPopulationCommand,
             ApplyWorkspaceMetadataCommand,
             SelectPreviousEquivalentSampleCommand,
             SelectNextEquivalentSampleCommand,
@@ -5328,24 +4457,21 @@ public sealed class MainWindowViewModel : NotifyBase
         if (string.IsNullOrWhiteSpace(channel_name))
             return null;
 
-        double minimum = double.PositiveInfinity;
-        double maximum = double.NegativeInfinity;
+        var range = new ChannelRangeAccumulator();
         if (sample is not null)
         {
-            accumulate_channel_range(sample, population?.EventIndices, channel_name, ref minimum, ref maximum);
+            accumulate_channel_range(sample, population?.EventIndices, channel_name, range);
         }
         else if (group is not null)
         {
             foreach (var group_sample in group.Samples)
-                accumulate_channel_range(group_sample, event_indices: null, channel_name, ref minimum, ref maximum);
+                accumulate_channel_range(group_sample, event_indices: null, channel_name, range);
         }
 
-        return double.IsPositiveInfinity(minimum) || double.IsNegativeInfinity(maximum)
-            ? null
-            : (minimum, maximum);
+        return range.TryGetRange(out var minimum, out var maximum) ? (minimum, maximum) : null;
     }
 
-    private static void accumulate_channel_range(FlowSample sample, int[]? event_indices, string channel_name, ref double minimum, ref double maximum)
+    private static void accumulate_channel_range(FlowSample sample, int[]? event_indices, string channel_name, ChannelRangeAccumulator range)
     {
         var values = sample.GetChannelValues(channel_name, event_indices);
         foreach (float value in values)
@@ -5353,10 +4479,38 @@ public sealed class MainWindowViewModel : NotifyBase
             if (float.IsNaN(value) || float.IsInfinity(value))
                 continue;
 
+            range.Add(value);
+        }
+    }
+
+    private sealed class ChannelRangeAccumulator
+    {
+        private const int high_outlier_count = 50;
+        private readonly PriorityQueue<double, double> largest_values = new();
+        private double minimum = double.PositiveInfinity;
+        private double raw_maximum = double.NegativeInfinity;
+        private int valid_count;
+
+        public void Add(double value)
+        {
+            valid_count++;
             if (value < minimum)
                 minimum = value;
-            if (value > maximum)
-                maximum = value;
+            if (value > raw_maximum)
+                raw_maximum = value;
+
+            largest_values.Enqueue(value, value);
+            if (largest_values.Count > high_outlier_count + 1)
+                largest_values.Dequeue();
+        }
+
+        public bool TryGetRange(out double range_minimum, out double range_maximum)
+        {
+            range_minimum = minimum;
+            range_maximum = valid_count > high_outlier_count && largest_values.Count > high_outlier_count
+                ? largest_values.UnorderedItems.Min(item => item.Element)
+                : raw_maximum;
+            return valid_count > 0;
         }
     }
 

@@ -86,9 +86,9 @@ public sealed class IntegrationJobFeatureListView : Control
         {
             bool next = !row.IsSelected;
             row.IsSelected = next;
-            set_descendants(row.RowKey, next);
             if (!next)
-                clear_ancestors(row.ParentKey);
+                clear_descendants(row.RowKey);
+            apply_hierarchy_states();
             if (SelectionChangedCommand?.CanExecute(null) == true)
                 SelectionChangedCommand.Execute(null);
         }
@@ -214,24 +214,53 @@ public sealed class IntegrationJobFeatureListView : Control
         }).ToArray();
     }
 
-    private void set_descendants(System.Guid row_key, bool selected)
+    private void apply_hierarchy_states()
     {
-        foreach (var child in rows().Where(row => row.ParentKey == row_key))
+        var all = rows();
+        var children = all.GroupBy(row => row.ParentKey)
+            .Where(group => group.Key.HasValue)
+            .ToDictionary(group => group.Key!.Value, group => group.ToArray());
+
+        foreach (var row in all)
         {
-            child.IsSelected = selected;
-            set_descendants(child.RowKey, selected);
+            row.IsEnabled = true;
+            row.IsIndeterminate = false;
+        }
+
+        foreach (var root in all.Where(row => row.ParentKey is null))
+            apply_descendant_states(root, inherited_selected: false);
+
+        bool apply_descendant_states(IntegrationJobFeatureSelection row, bool inherited_selected)
+        {
+            bool selected = row.IsSelected;
+            if (inherited_selected)
+            {
+                row.IsEnabled = false;
+                row.IsSelected = true;
+                selected = true;
+            }
+
+            bool descendant_selected = false;
+            if (children.TryGetValue(row.RowKey, out var child_rows))
+            {
+                foreach (var child in child_rows)
+                    descendant_selected |= apply_descendant_states(child, inherited_selected || selected);
+                if (!selected && descendant_selected)
+                    row.IsIndeterminate = true;
+            }
+
+            return selected || descendant_selected;
         }
     }
 
-    private void clear_ancestors(System.Guid? parent_key)
+    private void clear_descendants(System.Guid row_key)
     {
-        if (!parent_key.HasValue)
-            return;
-        var parent = rows().FirstOrDefault(row => row.RowKey == parent_key.Value);
-        if (parent is null)
-            return;
-        parent.IsSelected = false;
-        clear_ancestors(parent.ParentKey);
+        foreach (var child in rows().Where(row => row.ParentKey == row_key))
+        {
+            child.IsSelected = false;
+            child.IsIndeterminate = false;
+            clear_descendants(child.RowKey);
+        }
     }
 
     private void resubscribe()

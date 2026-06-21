@@ -43,7 +43,7 @@
       </Expander>
       <ProgressBar Height="5" Minimum="0" Maximum="1" Value="{Binding Platform.ProgressFraction}" IsVisible="{Binding Platform.IsRunning}" />
       <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="{Binding Platform.ProgressText}" IsVisible="{Binding Platform.IsRunning}" />
-      <DockPanel Margin="0 4 0 18"><Button Classes="Small" Command="{Binding RunCommand}"><StackPanel Orientation="Horizontal" Spacing="6"><Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/run.svg}" /><TextBlock Text="{Binding RunCaption}" /></StackPanel></Button><Button DockPanel.Dock="Right" Classes="Small Danger" Command="{Binding CancelCommand}"><StackPanel Orientation="Horizontal" Spacing="6"><Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/stop.svg}" /><TextBlock Text="Stop" /></StackPanel></Button></DockPanel>
+      <Grid Margin="0 4 0 18" ColumnDefinitions="Auto,*,Auto"><Button Classes="Small" Command="{Binding RunCommand}"><StackPanel Orientation="Horizontal" Spacing="6"><Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/run.svg}" /><TextBlock Text="{Binding RunCaption}" /></StackPanel></Button><Button Grid.Column="2" Classes="Small Danger" Command="{Binding CancelCommand}"><StackPanel Orientation="Horizontal" Spacing="6"><Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/stop.svg}" /><TextBlock Text="Stop" /></StackPanel></Button></Grid>
     </StackPanel>
   </ScrollViewer>
 </UserControl>

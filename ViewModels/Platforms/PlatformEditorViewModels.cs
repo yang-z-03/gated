@@ -16,6 +16,7 @@ public abstract class PlatformEditorViewModel : NotifyBase
 {
     private bool handling_change;
     private AxisChoice? selected_channel;
+    private string retained_batch_column_name = "";
 
     protected PlatformEditorViewModel(FlowWorkspace workspace, Platform platform)
     {
@@ -25,8 +26,10 @@ public abstract class PlatformEditorViewModel : NotifyBase
         SelectionChangedCommand = new RelayCommand(_ => population_selection_changed());
         FeatureSelectionChangedCommand = new RelayCommand(_ => feature_selection_changed());
         DropPopulationCommand = new RelayCommand(parameter => drop_population(parameter as ProjectNode), _ => IsEditable);
-        RunCommand = new RelayCommand(_ => _ = run_async(), _ => Platform.IsIdle);
-        CancelCommand = new RelayCommand(_ => cancel(), _ => Platform is not null);
+        RunCommand = new RelayCommand(_ => _ = run_async(), _ => can_run());
+        RunLeidenCommand = new RelayCommand(_ => _ = run_integration_script_async("avares://gated/Python/leiden.py", "Leiden"), _ => can_run_integration_script());
+        RunUmapCommand = new RelayCommand(_ => _ = run_integration_script_async("avares://gated/Python/umap.py", "UMAP"), _ => can_run_integration_script());
+        CancelCommand = new RelayCommand(_ => cancel(), _ => Platform.IsRunning);
         refresh_choices();
         prepare_preview(preserve_fit_state: true);
     }
@@ -44,6 +47,8 @@ public abstract class PlatformEditorViewModel : NotifyBase
     public ICommand FeatureSelectionChangedCommand { get; }
     public ICommand DropPopulationCommand { get; }
     public ICommand RunCommand { get; }
+    public ICommand RunLeidenCommand { get; }
+    public ICommand RunUmapCommand { get; }
     public ICommand CancelCommand { get; }
     public virtual bool UsesPopulationDrop => Platform.Kind != PlatformKind.Integration;
     public virtual bool EnablesDataSmoothing => Platform.Kind != PlatformKind.Kinetics;
@@ -90,7 +95,15 @@ public abstract class PlatformEditorViewModel : NotifyBase
         get => Platform is IntegrationPlatform integration ? integration.BatchColumnName : "";
         set
         {
-            if (Platform is not IntegrationPlatform integration || string.IsNullOrWhiteSpace(value) || integration.BatchColumnName == value)
+            if (Platform is not IntegrationPlatform integration)
+                return;
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                OnPropertyChanged();
+                return;
+            }
+            retained_batch_column_name = value;
+            if (integration.BatchColumnName == value)
                 return;
             integration.BatchColumnName = value;
             Platform.InvalidateFromConfiguration();
@@ -411,20 +424,32 @@ public abstract class PlatformEditorViewModel : NotifyBase
     private void refresh_batch_choices()
     {
         ensure_identity_metadata_schema();
-        string selected = SelectedBatchColumnName;
-        BatchColumnChoices.Clear();
-        foreach (var choice in Workspace.MetadataColumns
+        if (Platform is IntegrationPlatform current_integration && !string.IsNullOrWhiteSpace(current_integration.BatchColumnName))
+            retained_batch_column_name = current_integration.BatchColumnName;
+        string selected = !string.IsNullOrWhiteSpace(retained_batch_column_name)
+            ? retained_batch_column_name
+            : SelectedBatchColumnName;
+        var choices = Workspace.MetadataColumns
                      .Where(column => column.Value == MetadataColumnKind.String)
                      .Select(column => column.Key)
-                     .OrderBy(name => name, StringComparer.Ordinal))
-            BatchColumnChoices.Add(choice);
+                     .OrderBy(name => name, StringComparer.Ordinal)
+            .ToList();
         if (Platform is IntegrationPlatform integration)
         {
-            if (!string.IsNullOrWhiteSpace(selected) && BatchColumnChoices.Contains(selected))
+            if (!string.IsNullOrWhiteSpace(selected) && !choices.Contains(selected, StringComparer.Ordinal))
+                choices.Add(selected);
+            if (!string.IsNullOrWhiteSpace(selected))
+            {
                 integration.BatchColumnName = selected;
-            if (string.IsNullOrWhiteSpace(integration.BatchColumnName) || !BatchColumnChoices.Contains(integration.BatchColumnName))
-                integration.BatchColumnName = BatchColumnChoices.FirstOrDefault() ?? "";
+                retained_batch_column_name = selected;
+            }
+            if (string.IsNullOrWhiteSpace(integration.BatchColumnName))
+            {
+                integration.BatchColumnName = choices.FirstOrDefault() ?? "";
+                retained_batch_column_name = integration.BatchColumnName;
+            }
         }
+        replace_collection(BatchColumnChoices, choices);
         OnPropertyChanged(nameof(SelectedBatchColumnName));
     }
 
@@ -451,6 +476,13 @@ public abstract class PlatformEditorViewModel : NotifyBase
             ChannelChoices.Add(new AxisChoice(feature.ChannelName, feature.Label));
 
         var selected_name = Platform.SelectedFeatureNames.FirstOrDefault() ?? ChannelChoices.FirstOrDefault()?.Name;
+        if (Platform.Kind == PlatformKind.Integration)
+        {
+            selected_channel = ChannelChoices.FirstOrDefault(choice => choice.Name == selected_name);
+            OnPropertyChanged(nameof(SelectedChannel));
+            return;
+        }
+
         if (!string.IsNullOrWhiteSpace(selected_name))
         {
             foreach (var feature in Platform.Features.Where(feature => feature.IsChannel))
@@ -533,7 +565,7 @@ public abstract class PlatformEditorViewModel : NotifyBase
     {
         var selected_sample_ids = Platform.Populations
             .Where(row => Platform.Kind == PlatformKind.Integration
-                ? row.IsSelected && row.IsEnabled
+                ? row.IsSelected && row.IsEnabled && !row.IsIndeterminate
                 : row.IsPopulation && row.IsPlatformDropped)
             .Select(row => row.SampleId)
             .Distinct()
@@ -541,7 +573,13 @@ public abstract class PlatformEditorViewModel : NotifyBase
         var samples = Workspace.Groups.SelectMany(group => group.Samples)
             .Where(sample => selected_sample_ids.Contains(sample.Id))
             .ToArray();
-        var previous = Platform.Features.ToDictionary(feature => feature.ChannelName, feature => feature.IsSelected, StringComparer.Ordinal);
+        var previous = Platform.Features
+            .Where(feature => feature.IsChannel)
+            .ToDictionary(feature => feature.ChannelName, feature => feature.IsSelected, StringComparer.Ordinal);
+        var previous_expanded = Platform.Features.ToDictionary(feature => feature.ChannelName, feature => feature.IsExpanded, StringComparer.Ordinal);
+        var previous_root = Platform.Features.FirstOrDefault(feature => !feature.IsChannel);
+        bool previous_root_selected = previous_root?.IsSelected ?? true;
+        bool previous_root_expanded = previous_root?.IsExpanded ?? true;
         Platform.Features.Clear();
         if (samples.Length == 0)
             return;
@@ -554,7 +592,8 @@ public abstract class PlatformEditorViewModel : NotifyBase
             Depth = 0,
             HasChildren = true,
             IsChannel = false,
-            IsSelected = true
+            IsSelected = previous_root_selected,
+            IsExpanded = previous_root_expanded
         });
 
         var shared = samples
@@ -574,7 +613,8 @@ public abstract class PlatformEditorViewModel : NotifyBase
                 Label = channel.Label,
                 Depth = 1,
                 IsChannel = true,
-                IsSelected = !previous.TryGetValue(channel.Name, out bool was_selected) || was_selected
+                IsSelected = !previous.TryGetValue(channel.Name, out bool was_selected) || was_selected,
+                IsExpanded = !previous_expanded.TryGetValue(channel.Name, out bool was_expanded) || was_expanded
             });
         }
         update_feature_selection_states();
@@ -583,11 +623,15 @@ public abstract class PlatformEditorViewModel : NotifyBase
 
     private void update_integration_population_states()
     {
-        foreach (var row in Platform.Populations)
-        {
-            row.IsEnabled = true;
-            row.IsIndeterminate = false;
-        }
+        var rows = Platform.Populations.ToArray();
+        apply_hierarchy_states(
+            rows,
+            row => row.RowKey,
+            row => row.ParentKey,
+            row => row.IsSelected,
+            (row, value) => row.IsSelected = value,
+            (row, value) => row.IsEnabled = value,
+            (row, value) => row.IsIndeterminate = value);
     }
 
     private void update_modeling_population_states()
@@ -707,6 +751,41 @@ public abstract class PlatformEditorViewModel : NotifyBase
             Platform.Status = IntegrationJobStatus.Complete;
             Platform.ProgressFraction = 1;
             Platform.ProgressText = "Complete";
+            Platform.NotifyIntegrationDataChanged();
+        }
+        catch (Exception exception)
+        {
+            Platform.WarningText = exception.Message;
+            Platform.Status = IntegrationJobStatus.Failed;
+        }
+        finally
+        {
+            Platform.IsRunning = false;
+            Platform.CancellationRequested = false;
+            invalidate_commands();
+        }
+    }
+
+    private async Task run_integration_script_async(string resource_path, string label)
+    {
+        if (Platform.Kind != PlatformKind.Integration || !Platform.HasIntegrated)
+            return;
+        try
+        {
+            Platform.CancellationRequested = false;
+            Platform.IsRunning = true;
+            Platform.ProgressFraction = 0;
+            Platform.ProgressText = $"Running {label}";
+            Platform.Status = IntegrationJobStatus.Running;
+            invalidate_commands();
+
+            await Task.Run(() => gated.Python.PythonExtensionRuntime.ExecutePlatformScript(resource_path, Workspace, Platform));
+
+            Platform.WarningText = "";
+            Platform.Status = IntegrationJobStatus.Complete;
+            Platform.ProgressFraction = 1;
+            Platform.ProgressText = $"{label} complete";
+            Platform.NotifyIntegrationDataChanged();
         }
         catch (Exception exception)
         {
@@ -764,9 +843,24 @@ public abstract class PlatformEditorViewModel : NotifyBase
         OnPropertyChanged(nameof(IsSelectionReadOnly));
         if (RunCommand is RelayCommand run)
             run.RaiseCanExecuteChanged();
+        if (RunLeidenCommand is RelayCommand leiden)
+            leiden.RaiseCanExecuteChanged();
+        if (RunUmapCommand is RelayCommand umap)
+            umap.RaiseCanExecuteChanged();
         if (DropPopulationCommand is RelayCommand drop)
             drop.RaiseCanExecuteChanged();
+        if (CancelCommand is RelayCommand cancel)
+            cancel.RaiseCanExecuteChanged();
     }
+
+    private bool can_run() =>
+        Platform.IsIdle &&
+        (Platform.Kind != PlatformKind.Integration || !Platform.IsConfigurationLocked);
+
+    private bool can_run_integration_script() =>
+        Platform.Kind == PlatformKind.Integration &&
+        Platform.IsIdle &&
+        Platform.HasIntegrated;
 
     private PlatformSmoothingOptions? platform_smoothing() =>
         Platform switch
@@ -826,32 +920,49 @@ public abstract class PlatformEditorViewModel : NotifyBase
         Action<T, bool> set_enabled,
         Action<T, bool> set_indeterminate)
     {
-        var selected = rows.ToDictionary(key, is_selected);
-        var indeterminate = rows.ToDictionary(key, _ => false);
+        var children = rows.GroupBy(parent_key)
+            .Where(group => group.Key.HasValue)
+            .ToDictionary(group => group.Key!.Value, group => group.ToArray());
+
         foreach (var row in rows)
         {
             set_enabled(row, true);
             set_indeterminate(row, false);
         }
 
-        foreach (var row in rows.OrderByDescending(item => child_depth(rows, item, key, parent_key)))
+        foreach (var root in rows.Where(row => parent_key(row) is null))
+            apply_descendant_states(root, inherited_selected: false);
+
+        bool apply_descendant_states(T row, bool inherited_selected)
         {
-            var children = rows.Where(candidate => parent_key(candidate) == key(row)).ToArray();
-            if (children.Length == 0)
-                continue;
-            bool any_selected = children.Any(child => selected[key(child)] || indeterminate[key(child)]);
-            bool all_selected = children.All(child => selected[key(child)] && !indeterminate[key(child)]);
-            selected[key(row)] = all_selected;
-            indeterminate[key(row)] = any_selected && !all_selected;
-            set_selected(row, all_selected);
-            set_indeterminate(row, any_selected && !all_selected);
+            bool selected = is_selected(row);
+            if (inherited_selected)
+            {
+                set_enabled(row, false);
+                set_selected(row, true);
+                selected = true;
+            }
+
+            bool descendant_selected = false;
+            if (children.TryGetValue(key(row), out var child_rows))
+            {
+                foreach (var child in child_rows)
+                    descendant_selected |= apply_descendant_states(child, inherited_selected || selected);
+                if (!selected && descendant_selected)
+                    set_indeterminate(row, true);
+            }
+
+            return selected || descendant_selected;
         }
     }
 
-    private static int child_depth<T>(IReadOnlyList<T> rows, T row, Func<T, Guid> key, Func<T, Guid?> parent_key)
+    private static void replace_collection<T>(ObservableCollection<T> collection, IReadOnlyList<T> values)
     {
-        var children = rows.Where(candidate => parent_key(candidate) == key(row)).ToArray();
-        return children.Length == 0 ? 0 : 1 + children.Max(child => child_depth(rows, child, key, parent_key));
+        if (collection.SequenceEqual(values))
+            return;
+        collection.Clear();
+        foreach (var value in values)
+            collection.Add(value);
     }
 
     private void integration_option_changed(string property_name)

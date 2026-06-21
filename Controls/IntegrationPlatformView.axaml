@@ -7,7 +7,7 @@
   <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
     <StackPanel Margin="24" Spacing="14" MaxWidth="650" Width="650" HorizontalAlignment="Center">
       <TextBlock Foreground="{DynamicResource SemiColorText1}" Text="{Binding KindName}" />
-      <TextBox FontSize="20" Padding="6" FontWeight="Light" Text="{Binding Platform.Name}" />
+      <TextBox FontSize="20" Padding="6" FontWeight="Light" Text="{Binding Platform.Name}" IsEnabled="{Binding IsEditable}" />
       <Border IsVisible="{Binding HasWarning}" BorderBrush="#B7791F" BorderThickness="1" CornerRadius="6" Padding="10" Background="#2A2112">
         <TextBlock Foreground="#F6C56B" TextWrapping="Wrap" Text="{Binding Platform.WarningText}" />
       </Border>
@@ -32,7 +32,7 @@
         <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Batch metadata column" />
         <ComboBox Classes="Small" Width="260" IsEnabled="{Binding IsEditable}" ItemsSource="{Binding BatchColumnChoices}" SelectedItem="{Binding SelectedBatchColumnName}" />
       </StackPanel>
-      <Expander Header="Normalization and integration options" IsExpanded="False">
+      <Expander Header="Normalization and integration options" IsExpanded="True" IsEnabled="{Binding IsEditable}">
         <StackPanel Margin="0,8,0,12" Spacing="8">
           <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="8">
             <StackPanel><TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Logicle T" Margin="0 0 0 8"/><TextBox Text="{Binding LogicleT, UpdateSourceTrigger=PropertyChanged}" /></StackPanel>
@@ -49,10 +49,14 @@
       </Expander>
       <ProgressBar Height="5" Minimum="0" Maximum="1" Value="{Binding Platform.ProgressFraction}" IsVisible="{Binding Platform.IsRunning}" />
       <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="{Binding Platform.ProgressText}" IsVisible="{Binding Platform.IsRunning}" />
-      <DockPanel Margin="0 4 0 24">
-        <Button Classes="Small" Command="{Binding RunCommand}"><StackPanel Orientation="Horizontal" Spacing="6"><Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/run.svg}" /><TextBlock Text="{Binding RunCaption}" /></StackPanel></Button>
-        <Button DockPanel.Dock="Right" Classes="Small Danger" Command="{Binding CancelCommand}"><StackPanel Orientation="Horizontal" Spacing="6"><Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/stop.svg}" /><TextBlock Text="Stop" /></StackPanel></Button>
-      </DockPanel>
+      <Grid Margin="0 4 0 24" ColumnDefinitions="Auto,*,Auto">
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <Button Classes="Small" Command="{Binding RunCommand}"><StackPanel Orientation="Horizontal" Spacing="6"><Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/run.svg}" /><TextBlock Text="{Binding RunCaption}" /></StackPanel></Button>
+          <Button Classes="Small" Command="{Binding RunLeidenCommand}"><StackPanel Orientation="Horizontal" Spacing="6"><Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/run.svg}" /><TextBlock Text="Leiden" /></StackPanel></Button>
+          <Button Classes="Small" Command="{Binding RunUmapCommand}"><StackPanel Orientation="Horizontal" Spacing="6"><Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/run.svg}" /><TextBlock Text="UMAP" /></StackPanel></Button>
+        </StackPanel>
+        <Button Grid.Column="2" Classes="Small Danger" Command="{Binding CancelCommand}"><StackPanel Orientation="Horizontal" Spacing="6"><Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/stop.svg}" /><TextBlock Text="Stop" /></StackPanel></Button>
+      </Grid>
     </StackPanel>
   </ScrollViewer>
 </UserControl>
