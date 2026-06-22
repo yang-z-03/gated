@@ -3,7 +3,7 @@
         xmlns:controls="clr-namespace:gated.Controls"
         x:Class="gated.ConcatenateSamplesWindow"
         x:CompileBindings="False"
-        Width="720"
+        Width="620"
         Height="620"
         MinWidth="620"
         MinHeight="520"
@@ -14,7 +14,7 @@
     <Grid Margin="18" RowDefinitions="Auto,Auto,*,Auto" RowSpacing="12">
         <StackPanel Spacing="5">
             <TextBlock Foreground="{DynamicResource SemiColorText0}" FontWeight="SemiBold" Text="Concatenate events into a new sample" />
-            <TextBlock Foreground="{DynamicResource SemiColorText2}" TextWrapping="Wrap"
+            <TextBlock Foreground="{DynamicResource SemiColorText2}" TextWrapping="Wrap" LineHeight="18"
                        Text="Select sample roots for all events, or select populations to include only those gated events. The new sample is added to the same grouping." />
         </StackPanel>
 

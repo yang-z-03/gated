@@ -3,6 +3,8 @@
         x:Class="gated.CompensationEditorWindow"
         x:CompileBindings="False"
 		SizeToContent="WidthAndHeight"
+		MaxWidth="1000"
+		MaxHeight="800"
         CanResize="False"
         WindowStartupLocation="CenterOwner"
         Title="Compensation table editor"

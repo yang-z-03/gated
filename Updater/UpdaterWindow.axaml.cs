@@ -846,11 +846,14 @@ public sealed partial class UpdaterWindow : Window
             Arguments = arguments,
             WorkingDirectory = Path.GetDirectoryName(file),
             UseShellExecute = false,
+            RedirectStandardInput = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             CreateNoWindow = true
         }) ?? throw new InvalidOperationException($"Failed to start {file}.");
 
+        // required for macOS
+        process.StandardInput.Close();
         string output = process.StandardOutput.ReadToEnd();
         string error = process.StandardError.ReadToEnd();
         process.WaitForExit();

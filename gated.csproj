@@ -154,6 +154,9 @@
         
       <None Remove="gated.ico" />
       <AvaloniaResource Include="gated.ico" />
+
+	  <None Include=".github/versions" />
+	  <None Include=".github/updater" />
     </ItemGroup>
 
 </Project>
