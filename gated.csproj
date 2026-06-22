@@ -2,7 +2,7 @@
     <PropertyGroup>
         <OutputType>WinExe</OutputType>
         <TargetFramework>net10.0</TargetFramework>
-        <Version>0.29.0</Version>
+        <Version>0.29.7</Version>
         <Nullable>enable</Nullable>
         <RuntimeIdentifiers>win-x64;osx-x64;osx-arm64;linux-x64</RuntimeIdentifiers>
         <ApplicationManifest>app.manifest</ApplicationManifest>
