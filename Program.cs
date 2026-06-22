@@ -1,7 +1,21 @@
 ﻿using Avalonia;
 using System;
+using System.Runtime.InteropServices;
 
 namespace gated;
+
+
+internal static class NativeEnvironment
+{
+    [DllImport("libc", SetLastError = true)]
+    private static extern int setenv(string name, string value, int overwrite);
+
+    public static void Set(string name, string value)
+    {
+        if (setenv(name, value, 1) != 0)
+            throw new InvalidOperationException("setenv failed");
+    }
+}
 
 class Program
 {
@@ -22,6 +36,15 @@ class Program
             AppContext.BaseDirectory + Shared.PlatformSupport.EnvironmentPathSeparator +
             Shared.PlatformSupport.EmbeddedPythonHome(AppContext.BaseDirectory) + (syspath ?? ""),
             EnvironmentVariableTarget.Process);
+
+        if (Shared.PlatformSupport.CurrentPlatform != "windows")
+        {
+            NativeEnvironment.Set("PYTHONHOME", Shared.PlatformSupport.EmbeddedPythonHome(AppContext.BaseDirectory));
+            NativeEnvironment.Set("PATH",
+                AppContext.BaseDirectory + Shared.PlatformSupport.EnvironmentPathSeparator +
+                Shared.PlatformSupport.EmbeddedPythonHome(AppContext.BaseDirectory) + (syspath ?? "")
+            );
+        }
 
         Console.WriteLine($"Initialized PYTHONHOME = {Environment.GetEnvironmentVariable("PYTHONHOME")}");
         Console.WriteLine($"Initialized PATH = {Environment.GetEnvironmentVariable("PATH")}");
