@@ -20,12 +20,12 @@
   </version>
 
   <version major="3" minor="1" patch="0" platform="windows" minimal="7" arch="x64">
-    <archive href="https://github.com/yang-z-03/gated/releases/download/0-29/updater-3-1-0-win-x64.zip" extract="."/>
+    <archive href="https://github.com/yang-z-03/gated/releases/download/0-29-7/updater-3-1-0-win-x64.zip" extract="."/>
   </version>
   <version major="3" minor="1" patch="0" platform="osx" minimal="-" arch="x64">
-    <archive href="https://github.com/yang-z-03/gated/releases/download/0-29/updater-3-1-0-osx-x64.zip" extract="."/>
+    <archive href="https://github.com/yang-z-03/gated/releases/download/0-29-7/updater-3-1-0-osx-x64.zip" extract="."/>
   </version>
   <version major="3" minor="1" patch="0" platform="posix" minimal="-" arch="x64">
-    <archive href="https://github.com/yang-z-03/gated/releases/download/0-29/updater-3-1-0-posix-x64.zip" extract="."/>
+    <archive href="https://github.com/yang-z-03/gated/releases/download/0-29-7/updater-3-1-0-posix-x64.zip" extract="."/>
   </version>
 </repository>
