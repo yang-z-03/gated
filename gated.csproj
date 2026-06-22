@@ -156,28 +156,4 @@
       <AvaloniaResource Include="gated.ico" />
     </ItemGroup>
 
-    <PropertyGroup>
-      <ReleaseArtifactsDir>$(MSBuildProjectDirectory)\artifacts\release\</ReleaseArtifactsDir>
-      <GatedReleaseVersionFile>0-29-0</GatedReleaseVersionFile>
-      <UpdaterReleaseVersionFile>3-0-0</UpdaterReleaseVersionFile>
-    </PropertyGroup>
-
-    <ItemGroup>
-      <ReleaseRuntime Include="win-x64">
-        <DotNetRuntime>win-x64</DotNetRuntime>
-        <RuntimeAsset>win-x64</RuntimeAsset>
-      </ReleaseRuntime>
-      <ReleaseRuntime Include="osx-x64">
-        <DotNetRuntime>osx-x64</DotNetRuntime>
-        <RuntimeAsset>osx-x64</RuntimeAsset>
-      </ReleaseRuntime>
-      <ReleaseRuntime Include="osx-arm64">
-        <DotNetRuntime>osx-arm64</DotNetRuntime>
-        <RuntimeAsset>osx-arm64</RuntimeAsset>
-      </ReleaseRuntime>
-      <ReleaseRuntime Include="posix-x64">
-        <DotNetRuntime>linux-x64</DotNetRuntime>
-        <RuntimeAsset>linux-x64</RuntimeAsset>
-      </ReleaseRuntime>
-    </ItemGroup>
 </Project>

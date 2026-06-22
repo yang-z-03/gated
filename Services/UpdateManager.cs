@@ -317,6 +317,9 @@ public sealed class UpdateManager
         if (!File.Exists(updater_path))
             return new AppVersion(0, 0, 0);
 
+        if (try_get_updater_reported_version(updater_path, out var reported_version))
+            return reported_version;
+
         var version_info = FileVersionInfo.GetVersionInfo(updater_path);
         if (AppVersion.TryParse(version_info.ProductVersion, out var product_version))
             return product_version;
@@ -324,6 +327,47 @@ public sealed class UpdateManager
             return file_version;
 
         return new AppVersion(0, 0, 0);
+    }
+
+    private static bool try_get_updater_reported_version(string updater_path, out AppVersion version)
+    {
+        version = default;
+        try
+        {
+            using var process = Process.Start(new ProcessStartInfo
+            {
+                FileName = updater_path,
+                Arguments = "--version",
+                WorkingDirectory = Path.GetDirectoryName(updater_path),
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            });
+            if (process is null)
+                return false;
+
+            string output = process.StandardOutput.ReadToEnd().Trim();
+            process.WaitForExit(5000);
+            if (!process.HasExited)
+            {
+                try
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+                catch
+                {
+                }
+
+                return false;
+            }
+
+            return process.ExitCode == 0 && AppVersion.TryParse(output, out version);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static async Task ensure_connection_async(Uri uri, CancellationToken cancellation_token)
