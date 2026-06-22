@@ -191,6 +191,6 @@
       </require>
       <macros extract="./macros" compat="1"/>
       <statistics extract="./statistics" compat="1"/>
-      <info href="https://raw.githubusercontent.com/yang-z-03/gated/refs/heads/master/.github/logs/0-29-0.changes" />
+      <info href="https://raw.githubusercontent.com/yang-z-03/gated/refs/heads/master/.github/logs/0-29-7.changes" />
   </version>
 </repository>
