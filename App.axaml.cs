@@ -21,7 +21,11 @@ public partial class App : Application
         {
             desktop.Exit += (_, _) => PythonExtensionRuntime.Shutdown();
             BindingPlugins.PropertyAccessors.Add(new DataRowViewPropertyAccessorPlugin());
-            Environment.SetEnvironmentVariable("PYTHONHOME", PlatformSupport.EmbeddedPythonHome(AppContext.BaseDirectory));
+            Environment.SetEnvironmentVariable("PYTHONHOME", 
+                PlatformSupport.EmbeddedPythonHome(AppContext.BaseDirectory));
+            Environment.SetEnvironmentVariable("PATH",
+                AppContext.BaseDirectory + PlatformSupport.EnvironmentPathSeparator +
+                PlatformSupport.EmbeddedPythonHome(AppContext.BaseDirectory));
             var window = new MainWindow();
             desktop.MainWindow = window;
             var args = desktop.Args ?? [];

@@ -12,6 +12,9 @@ public static class PlatformSupport
         OperatingSystem.IsLinux() ? "linux" :
         "unknown";
 
+    public static string EnvironmentPathSeparator =>
+        CurrentPlatform == "windows" ? ";" : ":";
+
     public static string CurrentArchitecture => NormalizeArchitecture(RuntimeInformation.ProcessArchitecture.ToString());
 
     public static string UpdaterFileName => OperatingSystem.IsWindows() ? "update.exe" : "update";
