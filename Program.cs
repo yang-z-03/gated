@@ -12,11 +12,19 @@ class Program
     [STAThread]
     public static void Main(string[] args) {
         
-        System.Environment.SetEnvironmentVariable("PYTHONHOME", 
-            gated.Shared.PlatformSupport.EmbeddedPythonHome(AppContext.BaseDirectory));
-        System.Environment.SetEnvironmentVariable("PATH",
-            AppContext.BaseDirectory + gated.Shared.PlatformSupport.EnvironmentPathSeparator +
-            gated.Shared.PlatformSupport.EmbeddedPythonHome(AppContext.BaseDirectory));
+        Environment.SetEnvironmentVariable("PYTHONHOME", 
+            Shared.PlatformSupport.EmbeddedPythonHome(AppContext.BaseDirectory), 
+            EnvironmentVariableTarget.Process);
+        
+        var syspath = Environment.GetEnvironmentVariable("PATH");
+        if (syspath != null) syspath = Shared.PlatformSupport.EnvironmentPathSeparator + syspath;
+        Environment.SetEnvironmentVariable("PATH",
+            AppContext.BaseDirectory + Shared.PlatformSupport.EnvironmentPathSeparator +
+            Shared.PlatformSupport.EmbeddedPythonHome(AppContext.BaseDirectory) + (syspath ?? ""),
+            EnvironmentVariableTarget.Process);
+
+        Console.WriteLine($"Initialized PYTHONHOME = {Environment.GetEnvironmentVariable("PYTHONHOME")}");
+        Console.WriteLine($"Initialized PATH = {Environment.GetEnvironmentVariable("PATH")}");
 
         BuildAvaloniaApp()
             .StartWithClassicDesktopLifetime(args);

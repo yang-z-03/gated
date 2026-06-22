@@ -104,6 +104,7 @@ public sealed class UpdateManager
             copy_directory(extract_root, Path.GetDirectoryName(updater_path)!);
             if (!File.Exists(updater_path))
                 throw new FileNotFoundException($"Updater package did not contain {PlatformSupport.UpdaterFileName}.", updater_path);
+            ensure_executable_bit(updater_path);
         }
         finally
         {
@@ -124,6 +125,7 @@ public sealed class UpdateManager
         string? local_versions_path = get_local_versions_path();
         if (!File.Exists(updater_path))
             throw new FileNotFoundException("The updater executable was not found.", updater_path);
+        ensure_executable_bit(updater_path);
 
         var arguments = new List<string>
         {
@@ -153,6 +155,7 @@ public sealed class UpdateManager
         string? local_versions_path = get_local_versions_path();
         if (!File.Exists(updater_path))
             throw new FileNotFoundException("The updater executable was not found.", updater_path);
+        ensure_executable_bit(updater_path);
 
         var arguments = new List<string>
         {
@@ -317,6 +320,7 @@ public sealed class UpdateManager
         if (!File.Exists(updater_path))
             return new AppVersion(0, 0, 0);
 
+        ensure_executable_bit(updater_path);
         if (try_get_updater_reported_version(updater_path, out var reported_version))
             return reported_version;
 
@@ -367,6 +371,22 @@ public sealed class UpdateManager
         catch
         {
             return false;
+        }
+    }
+
+    private static void ensure_executable_bit(string path)
+    {
+        if (OperatingSystem.IsWindows() || !File.Exists(path))
+            return;
+
+        try
+        {
+            var mode = File.GetUnixFileMode(path);
+            mode |= UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute;
+            File.SetUnixFileMode(path, mode);
+        }
+        catch
+        {
         }
     }
 

@@ -25,7 +25,7 @@
 
         <DockPanel Grid.Row="3">
             <TextBlock DockPanel.Dock="Left" Foreground="{DynamicResource SemiColorText2}" VerticalAlignment="Center"
-                       Text="Values are spillover percentages. Diagonal entries are fixed at 100." />
+                       Text="Values are spillover percentages" Margin="0 0 20 0"/>
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
                 <Button x:Name="cancelButton" Classes="Small" Content="Cancel" MinWidth="84" />
                 <Button x:Name="okButton" Classes="Small" Content="OK" MinWidth="84" />

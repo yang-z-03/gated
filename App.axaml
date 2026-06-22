@@ -4,9 +4,17 @@
              xmlns:local="using:gated"
              RequestedThemeVariant="Dark"
              Name="Gated">
+
     <Application.Styles>
         <FluentTheme />
         <local:Theme Locale="en-us" />
         <StyleInclude Source="avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml" />
     </Application.Styles>
+
+    <NativeMenu.Menu>
+        <NativeMenu>
+            <NativeMenuItem Header="About Gated ..." />
+            <NativeMenuItem Header="Preferences ..." />
+        </NativeMenu>
+    </NativeMenu.Menu>
 </Application>

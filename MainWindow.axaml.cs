@@ -122,19 +122,11 @@ public partial class MainWindow : Window
         SystemDecorations = SystemDecorations.Full;
         ExtendClientAreaTitleBarHeightHint = 0;
 
-        if (OperatingSystem.IsLinux())
+        if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
         {
             ExtendClientAreaToDecorationsHint = false;
             titleBar.IsVisible = false;
             return;
-        }
-
-        ExtendClientAreaToDecorationsHint = true;
-
-        if (OperatingSystem.IsMacOS())
-        {
-            pageModeSwitch.Margin = new Thickness(5, 6, 5, 6);
-            minimizeButton.IsVisible = false;
         }
     }
 

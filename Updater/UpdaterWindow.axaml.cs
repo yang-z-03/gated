@@ -290,6 +290,7 @@ public sealed partial class UpdaterWindow : Window
                     if (Directory.Exists(python_root))
                         delete_directory_with_retries(python_root, progress);
                     copy_directory(extract_root, options.InstallRoot, options.UpdaterPath, progress, 35, 25);
+                    restore_executable_bits(options);
                 }
             }
             else
@@ -303,6 +304,7 @@ public sealed partial class UpdaterWindow : Window
                 progress("Copying base package.", 42);
                 copy_directory(extract_root, options.InstallRoot, options.UpdaterPath, progress, 42, 25);
                 restore_compatible_items(preserve_root, options.InstallRoot, plan.ProtectedItems, progress);
+                restore_executable_bits(options);
             }
 
             var python_exe = find_python(options.InstallRoot);
@@ -825,6 +827,29 @@ public sealed partial class UpdaterWindow : Window
         if (!File.Exists(python))
             throw new FileNotFoundException("Embedded Python was not found after installation.", PlatformSupport.EmbeddedPythonExecutablePath(install_root));
         return python;
+    }
+
+    private static void restore_executable_bits(UpdateOptions options)
+    {
+        ensure_executable_bit(options.AppPath);
+        ensure_executable_bit(options.UpdaterPath);
+        ensure_executable_bit(PlatformSupport.EmbeddedPythonExecutablePath(options.InstallRoot));
+    }
+
+    private static void ensure_executable_bit(string path)
+    {
+        if (OperatingSystem.IsWindows() || !File.Exists(path))
+            return;
+
+        try
+        {
+            var mode = File.GetUnixFileMode(path);
+            mode |= UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute;
+            File.SetUnixFileMode(path, mode);
+        }
+        catch
+        {
+        }
     }
 
     private static PythonPackageState[] read_python_packages(string python_exe, Action<string, double?> progress)
