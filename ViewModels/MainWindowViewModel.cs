@@ -48,8 +48,13 @@ public sealed partial class MainWindowViewModel : NotifyBase
     private string python_script_text = "";
     private string python_script_output = "";
     private string python_script_name = "";
-    private string python_script_log = "";
     private PythonScriptDefinition? editing_python_script;
+    private readonly Dictionary<string, PythonLogTask> python_log_tasks_by_key = new(StringComparer.Ordinal);
+    private PythonLogTask? selected_python_log_task;
+    private bool show_python_info_logs = true;
+    private bool show_python_warning_logs = true;
+    private bool show_python_error_logs = true;
+    private bool show_python_fatal_logs = true;
     private PythonScriptDefinition? selected_integration_macro;
     private Platform? subscribed_integration_job;
     private bool is_python_script_dirty;
@@ -124,6 +129,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
     public ICommand ExpandProjectTreeCommand { get; }
     public ICommand CollapseProjectTreeCommand { get; }
     public ICommand DeleteSelectedCommand { get; }
+    public ICommand CloseWorkspaceCommand { get; }
     public ICommand AddPolygonGateCommand { get; }
     public ICommand AddRectangleGateCommand { get; }
     public ICommand AddOffsetQuadrantGateCommand { get; }
@@ -165,6 +171,8 @@ public sealed partial class MainWindowViewModel : NotifyBase
     public MainWindowViewModel()
     {
         Python.PythonExtensionRuntime.StatusChanged += UpdatePythonExecutionStatus;
+        Python.PythonExtensionRuntime.LogRunStarted += BeginPythonLogRun;
+        Python.PythonExtensionRuntime.LogReceived += AppendPythonLog;
         foreach (string path in RecentFileStore.Load())
             Workspace.RecentFilePaths.Add(path);
         ReloadScriptRepositories();
@@ -190,6 +198,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         ExpandProjectTreeCommand = new RelayCommand(_ => set_project_tree_expanded(true));
         CollapseProjectTreeCommand = new RelayCommand(_ => set_project_tree_expanded(false));
         DeleteSelectedCommand = new RelayCommand(_ => delete_selected(), _ => can_delete_selected_node());
+        CloseWorkspaceCommand = new RelayCommand(_ => CloseWorkspace());
         AddPolygonGateCommand = new RelayCommand(_ => _ = add_gate_async(GateKind.Polygon), _ => can_create_gate_kind(GateKind.Polygon));
         AddRectangleGateCommand = new RelayCommand(_ => _ = add_gate_async(GateKind.Rectangle), _ => can_create_gate_kind(GateKind.Rectangle));
         AddOffsetQuadrantGateCommand = new RelayCommand(_ => _ = add_gate_async(GateKind.OffsetQuadrant), _ => can_create_gate_kind(GateKind.OffsetQuadrant));
@@ -756,10 +765,36 @@ public sealed partial class MainWindowViewModel : NotifyBase
 
     public bool HasEditingPythonScript => editing_python_script is not null;
 
-    public string PythonScriptLog
+    public ObservableCollection<PythonLogTask> PythonLogTasks { get; } = new();
+
+    public PythonLogTask? SelectedPythonLogTask
     {
-        get => python_script_log;
-        private set => SetField(ref python_script_log, value, nameof(PythonScriptLog));
+        get => selected_python_log_task;
+        set => SetField(ref selected_python_log_task, value);
+    }
+
+    public bool ShowPythonInfoLogs
+    {
+        get => show_python_info_logs;
+        set => SetField(ref show_python_info_logs, value);
+    }
+
+    public bool ShowPythonWarningLogs
+    {
+        get => show_python_warning_logs;
+        set => SetField(ref show_python_warning_logs, value);
+    }
+
+    public bool ShowPythonErrorLogs
+    {
+        get => show_python_error_logs;
+        set => SetField(ref show_python_error_logs, value);
+    }
+
+    public bool ShowPythonFatalLogs
+    {
+        get => show_python_fatal_logs;
+        set => SetField(ref show_python_fatal_logs, value);
     }
 
     public bool IsPythonScriptDirty
@@ -1069,6 +1104,8 @@ public sealed partial class MainWindowViewModel : NotifyBase
 
     public void LoadWorkspace(FlowWorkspace loaded, string file_path)
     {
+        Python.PythonExtensionRuntime.DisposeWorkspaceStorage(Workspace);
+        ClearPythonLogs();
         Workspace.Name = loaded.Name;
         Workspace.Groups.Clear();
         Workspace.PageLayouts.Clear();
@@ -1107,6 +1144,46 @@ public sealed partial class MainWindowViewModel : NotifyBase
         StatusText = $"Loaded workspace: {System.IO.Path.GetFileName(file_path)}";
         raise_command_states();
         schedule_loaded_workspace_recalculation(Workspace.Groups.ToArray(), System.IO.Path.GetFileName(file_path));
+    }
+
+    public void CloseWorkspace()
+    {
+        Python.PythonExtensionRuntime.DisposeWorkspaceStorage(Workspace);
+        ClearPythonLogs();
+        Workspace.Name = "Untitled Workspace";
+        Workspace.Groups.Clear();
+        Workspace.PageLayouts.Clear();
+        Workspace.IntegrationJobs.Clear();
+        Workspace.MetadataColumns.Clear();
+        ensure_default_layout();
+        groups_pending_root_view_initialization.Clear();
+        project_expansion_state.Clear();
+        SelectedNode = null;
+        SelectedGroup = null;
+        SelectedSample = null;
+        SelectedGate = null;
+        SelectedPopulation = null;
+        SelectedCompensation = null;
+        SelectedIntegrationJob = null;
+        SelectedPageLayout = Workspace.PageLayouts.FirstOrDefault();
+        SelectedPageElement = null;
+        next_gate_number = 1;
+        refresh_workspace_sample_metadata();
+        refresh_project_tree();
+        refresh_axis_choices();
+        refresh_selected_page_axis_choices();
+        refresh_selection_sidebars();
+        refresh_plot_gates();
+        refresh_selected_statistics();
+        StatusText = "Closed workspace";
+        raise_command_states();
+    }
+
+    private void ClearPythonLogs()
+    {
+        python_log_tasks_by_key.Clear();
+        PythonLogTasks.Clear();
+        SelectedPythonLogTask = null;
     }
 
     public void RecalculateSelectedGroup()
@@ -1219,51 +1296,36 @@ public sealed partial class MainWindowViewModel : NotifyBase
             SelectedPopulation = refreshed;
     }
 
-    public void RunPythonExtension(string code)
+    public void RunPythonExtension(string code, string task_key = "macro:interactive", string task_name = "Interactive macro")
     {
-        void capture_log(string text) => 
-            append_python_log(text);
-        Python.PythonExtensionRuntime.LogReceived += capture_log;
-        try
+        var metadata_snapshot = snapshot_workspace_metadata();
+        var context = new PythonWorkspaceContext(Workspace);
+        context.execute(code, task_key, task_name);
+        void refresh()
         {
-            var metadata_snapshot = snapshot_workspace_metadata();
-            var context = new PythonWorkspaceContext(Workspace);
-            context.execute(code);
-            void refresh()
-            {
-                foreach (var group in Workspace.Groups)
-                    group.RecalculateSamples();
-                refresh_selected_population_reference();
-                bool metadata_changed = !metadata_snapshot.SequenceEqual(snapshot_workspace_metadata());
-                SelectedGroup ??= Workspace.Groups.FirstOrDefault();
-                SelectedSample ??= selected_group?.Samples.FirstOrDefault();
-                refresh_project_tree();
-                refresh_selection_sidebars();
-                refresh_workspace_sample_metadata();
-                if (metadata_changed)
-                    invalidate_integration_jobs_from_metadata();
-                OnPropertyChanged(nameof(PlotGate));
-                OnPropertyChanged(nameof(PlotPopulation));
-                refresh_plot_gates();
-                refresh_selected_statistics();
-                StatusText = "Python extension completed";
-                raise_command_states();
-            }
+            foreach (var group in Workspace.Groups)
+                group.RecalculateSamples();
+            refresh_selected_population_reference();
+            bool metadata_changed = !metadata_snapshot.SequenceEqual(snapshot_workspace_metadata());
+            SelectedGroup ??= Workspace.Groups.FirstOrDefault();
+            SelectedSample ??= selected_group?.Samples.FirstOrDefault();
+            refresh_project_tree();
+            refresh_selection_sidebars();
+            refresh_workspace_sample_metadata();
+            if (metadata_changed)
+                invalidate_integration_jobs_from_metadata();
+            OnPropertyChanged(nameof(PlotGate));
+            OnPropertyChanged(nameof(PlotPopulation));
+            refresh_plot_gates();
+            refresh_selected_statistics();
+            StatusText = "Python extension completed";
+            raise_command_states();
+        }
 
-            if (Dispatcher.UIThread.CheckAccess())
-                refresh();
-            else
-                Dispatcher.UIThread.InvokeAsync(refresh).GetAwaiter().GetResult();
-        }
-        catch (Exception exception)
-        {
-            append_python_log(exception.ToString());
-            throw;
-        }
-        finally
-        {
-            Python.PythonExtensionRuntime.LogReceived -= capture_log;
-        }
+        if (Dispatcher.UIThread.CheckAccess())
+            refresh();
+        else
+            Dispatcher.UIThread.InvokeAsync(refresh).GetAwaiter().GetResult();
     }
 
     private string[] snapshot_workspace_metadata() =>
@@ -1332,7 +1394,6 @@ public sealed partial class MainWindowViewModel : NotifyBase
     public void OpenPythonScriptEditor(PythonScriptDefinition? script = null, bool dirty = false)
     {
         editing_python_script = script;
-        PythonScriptLog = "";
         syncing_python_script = true;
         if (script is not null)
         {
@@ -1344,7 +1405,10 @@ public sealed partial class MainWindowViewModel : NotifyBase
             OnPropertyChanged(nameof(HasEditingPythonScript));
             OnPropertyChanged(nameof(CanSavePythonScript));
             PythonScriptOutput = $"{script.Kind}: {script.Name}";
+            SelectedPythonLogTask = python_log_task_for_script(script);
         }
+        else
+            SelectedPythonLogTask ??= python_log_task("macro:interactive", "Interactive macro");
         syncing_python_script = false;
         IsPythonScriptDirty = dirty;
         IsPythonScriptEditorMode = true;
@@ -1360,7 +1424,6 @@ public sealed partial class MainWindowViewModel : NotifyBase
         OnPropertyChanged(nameof(CanSavePythonScript));
         OnPropertyChanged(nameof(PythonScriptFileName));
         IsPythonScriptDirty = false;
-        PythonScriptLog = "";
         StatusText = "Analysis view";
     }
 
@@ -1374,7 +1437,6 @@ public sealed partial class MainWindowViewModel : NotifyBase
         string? validation_error = PythonScriptRepository.ValidateForSave(editing_python_script);
         if (!string.IsNullOrWhiteSpace(validation_error))
         {
-            append_python_log(validation_error);
             StatusText = validation_error;
             return false;
         }
@@ -1391,8 +1453,8 @@ public sealed partial class MainWindowViewModel : NotifyBase
     {
         if (macro.Kind != PythonScriptRepositoryKind.Macro)
             return;
-        PythonScriptLog = "";
-        await Task.Run(() => RunPythonExtension(macro.Source));
+        SelectedPythonLogTask = python_log_task_for_script(macro);
+        await Task.Run(() => RunPythonExtension(macro.Source, python_log_task_key(macro), macro.Name));
         StatusText = $"Ran macro: {macro.Name}";
     }
 
@@ -1420,10 +1482,16 @@ public sealed partial class MainWindowViewModel : NotifyBase
 
         IsPythonScriptRunning = true;
         PythonScriptOutput = "Running ...";
-        PythonScriptLog = "";
+        string task_key = editing_python_script is null
+            ? "macro:interactive"
+            : python_log_task_key(editing_python_script);
+        string task_name = editing_python_script is null
+            ? string.IsNullOrWhiteSpace(PythonScriptName) ? "Interactive macro" : PythonScriptName.Trim()
+            : PythonScriptName.Trim();
+        SelectedPythonLogTask = python_log_task(task_key, task_name);
         try
         {
-            await Task.Run(() => RunPythonExtension(PythonScriptText));
+            await Task.Run(() => RunPythonExtension(PythonScriptText, task_key, task_name));
             PythonScriptOutput = "Completed.";
         }
         catch (Exception exception)
@@ -1453,17 +1521,54 @@ public sealed partial class MainWindowViewModel : NotifyBase
         return SavePythonScript();
     }
 
-    private void append_python_log(string text)
+    public void BeginPythonLogRun(Python.PythonLogRunStarted run)
     {
         if (!Dispatcher.UIThread.CheckAccess())
         {
-            Dispatcher.UIThread.Post(() => append_python_log(text));
+            Dispatcher.UIThread.Post(() => BeginPythonLogRun(run));
             return;
         }
 
-        PythonScriptLog = string.IsNullOrEmpty(PythonScriptLog)
-            ? text
-            : PythonScriptLog + Environment.NewLine + text;
+        var task = python_log_task(run.TaskKey, run.TaskName);
+        task.AddRun(run.RunId, run.StartedAt);
+        OnPropertyChanged(nameof(SelectedPythonLogTask));
+    }
+
+    public void AppendPythonLog(Python.PythonLogMessage message)
+    {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(() => AppendPythonLog(message));
+            return;
+        }
+
+        var task = python_log_task(message.TaskKey, message.TaskKey);
+        task.AddMessage(message);
+        OnPropertyChanged(nameof(SelectedPythonLogTask));
+    }
+
+    private PythonLogTask python_log_task_for_script(PythonScriptDefinition script) =>
+        python_log_task(python_log_task_key(script), script.Name);
+
+    private static string python_log_task_key(PythonScriptDefinition script)
+    {
+        if (!string.IsNullOrWhiteSpace(script.FilePath))
+            return $"{script.Kind}:{script.FilePath}";
+        return $"{script.Kind}:{script.Name}";
+    }
+
+    private PythonLogTask python_log_task(string key, string display_name)
+    {
+        if (python_log_tasks_by_key.TryGetValue(key, out var task))
+        {
+            task.DisplayName = string.IsNullOrWhiteSpace(display_name) ? task.DisplayName : display_name;
+            return task;
+        }
+
+        task = new PythonLogTask(key, string.IsNullOrWhiteSpace(display_name) ? "Python task" : display_name);
+        python_log_tasks_by_key[key] = task;
+        PythonLogTasks.Add(task);
+        return task;
     }
 
     public void UpdatePythonExecutionStatus(Python.PythonExecutionStatus status)
@@ -1856,6 +1961,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
 
     private void delete_selected()
     {
+        var replacement_key = selected_node is null ? null : replacement_key_after_deleted_node(selected_node);
         var group_to_recalculate = selected_group;
         if (selected_node?.Kind == ProjectNodeKind.Sample && selected_group is not null && selected_sample is not null)
         {
@@ -1899,8 +2005,8 @@ public sealed partial class MainWindowViewModel : NotifyBase
             string embedding_name = selected_node.EmbeddingName;
             selected_sample.Embeddings.Remove(embedding_name);
             clear_removed_embedding_references(selected_sample, embedding_name);
-            SelectedNode = null;
             refresh_after_embedding_changes();
+            select_replacement_node(replacement_key);
             StatusText = $"Deleted embedding: {embedding_name}";
             return;
         }
@@ -1919,12 +2025,9 @@ public sealed partial class MainWindowViewModel : NotifyBase
         }
 
         group_to_recalculate?.RecalculateSamples();
-        selected_group = Workspace.Groups.FirstOrDefault();
-        selected_sample = selected_group?.Samples.FirstOrDefault();
-        selected_gate = selected_group?.Gates.FirstOrDefault();
-        selected_population = null;
-        selected_integration_job = null;
+        SelectedNode = null;
         refresh_project_tree();
+        select_replacement_node(replacement_key);
         refresh_axis_choices();
         refresh_selected_page_axis_choices();
         refresh_selection_sidebars();
@@ -2572,7 +2675,20 @@ public sealed partial class MainWindowViewModel : NotifyBase
     private void apply_node_selection(ProjectNode? node)
     {
         if (node is null)
+        {
+            SelectedIntegrationJob = null;
+            IsWorkspaceMetadataMode = false;
+            SelectedGroup = null;
+            SelectedSample = null;
+            SelectedPopulation = null;
+            SelectedGate = null;
+            SelectedCompensation = null;
+            refresh_selection_sidebars();
+            refresh_plot_gates();
+            refresh_selected_statistics();
+            raise_command_states();
             return;
+        }
 
         IsPythonScriptEditorMode = false;
         var previous_group = selected_group;
@@ -3926,6 +4042,59 @@ public sealed partial class MainWindowViewModel : NotifyBase
         return null;
     }
 
+    private string? replacement_key_after_deleted_node(ProjectNode node)
+    {
+        if (!try_find_project_node_family(node, out var parent, out var siblings) || parent is null)
+            return null;
+
+        int index = siblings.IndexOf(node);
+        if (index < 0)
+            return parent.Key;
+        if (index + 1 < siblings.Count)
+            return siblings[index + 1].Key;
+        if (index > 0)
+            return siblings[index - 1].Key;
+        return parent.Key;
+    }
+
+    private bool try_find_project_node_family(ProjectNode node, out ProjectNode? parent, out IList<ProjectNode> siblings)
+    {
+        parent = null;
+        siblings = project_roots;
+        if (project_roots.Contains(node))
+            return true;
+
+        foreach (var root in project_roots)
+            if (try_find_project_node_family(root, node, out parent, out siblings))
+                return true;
+
+        siblings = Array.Empty<ProjectNode>();
+        return false;
+    }
+
+    private static bool try_find_project_node_family(ProjectNode parent_node, ProjectNode node, out ProjectNode? parent, out IList<ProjectNode> siblings)
+    {
+        if (parent_node.Children.Contains(node))
+        {
+            parent = parent_node;
+            siblings = parent_node.Children;
+            return true;
+        }
+
+        foreach (var child in parent_node.Children)
+            if (try_find_project_node_family(child, node, out parent, out siblings))
+                return true;
+
+        parent = null;
+        siblings = Array.Empty<ProjectNode>();
+        return false;
+    }
+
+    private void select_replacement_node(string? key)
+    {
+        SelectedNode = string.IsNullOrWhiteSpace(key) ? null : find_project_node(key);
+    }
+
     private void seed_gate_expansion_state(GateDefinition gate, string key)
     {
         project_expansion_state[key] = gate.IsTreeExpanded;
@@ -3965,6 +4134,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
             CopyHierarchyViewOptionsToGroupCommand,
             RefreshSelectedLayoutCommand,
             DeleteSelectedCommand,
+            CloseWorkspaceCommand,
             CreateIntegrationJobCommand,
             RenameIntegrationJobCommand,
             ApplyWorkspaceMetadataCommand,
@@ -4703,6 +4873,64 @@ public sealed partial class MainWindowViewModel : NotifyBase
 }
 
 public sealed record PageDropRequest(ProjectNode Node, Point PagePoint);
+
+public sealed class PythonLogTask : NotifyBase
+{
+    private string display_name;
+
+    public PythonLogTask(string key, string display_name)
+    {
+        Key = key;
+        this.display_name = display_name;
+    }
+
+    public string Key { get; }
+
+    public string DisplayName
+    {
+        get => display_name;
+        set => SetField(ref display_name, value ?? "");
+    }
+
+    public ObservableCollection<PythonLogRun> Runs { get; } = new();
+
+    public PythonLogRun AddRun(Guid run_id, DateTimeOffset started_at)
+    {
+        var existing = Runs.FirstOrDefault(run => run.Id == run_id);
+        if (existing is not null)
+            return existing;
+
+        var run = new PythonLogRun(run_id, Runs.Count + 1, started_at);
+        Runs.Add(run);
+        return run;
+    }
+
+    public void AddMessage(Python.PythonLogMessage message)
+    {
+        var run = Runs.FirstOrDefault(item => item.Id == message.RunId)
+            ?? AddRun(message.RunId, message.Timestamp);
+        run.Messages.Add(new PythonLogEntry(message.Timestamp, message.Level, message.Text));
+    }
+
+    public override string ToString() => DisplayName;
+}
+
+public sealed class PythonLogRun
+{
+    public PythonLogRun(Guid id, int index, DateTimeOffset started_at)
+    {
+        Id = id;
+        Index = index;
+        StartedAt = started_at;
+    }
+
+    public Guid Id { get; }
+    public int Index { get; }
+    public DateTimeOffset StartedAt { get; }
+    public ObservableCollection<PythonLogEntry> Messages { get; } = new();
+}
+
+public sealed record PythonLogEntry(DateTimeOffset Timestamp, Python.PythonLogLevel Level, string Text);
 
 public enum ScriptSaveChoice
 {

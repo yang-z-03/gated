@@ -13,5 +13,6 @@ public sealed class PythonWorkspaceContext
 
     public Workspace workspace => workspace_wrapper;
 
-    public void execute(string code) => PythonExtensionRuntime.Execute(code, workspace_wrapper);
+    public void execute(string code, string task_key = "macro:interactive", string task_name = "Interactive macro") =>
+        PythonExtensionRuntime.Execute(code, workspace_wrapper, task_key, task_name);
 }

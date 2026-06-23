@@ -207,6 +207,7 @@
                 <MenuItem Header="Open FCS ..." InputGesture="Ctrl + O" Click="open_fcs_menu_item_click" />
                 <MenuItem Header="Save workspace ..." InputGesture="Ctrl + S" Click="save_workspace_menu_item_click" />
                 <MenuItem Header="Rename workspace" Command="{Binding RenameWorkspaceCommand}" InputGesture="F2" />
+                <MenuItem Header="Close workspace" Click="close_workspace_menu_item_click" />
                 <Separator />
                 <MenuItem x:Name="recent_items_menu" Header="Recent items" />
             </MenuItem>

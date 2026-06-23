@@ -388,11 +388,16 @@ class Workspace:
 
     platforms: readonly dict[str, Platform]
         Prepared platforms keyed by platform name.
+
+    storage: dict
+        Workspace-scoped Python dictionary shared by all script runs. It is kept in memory only
+        and cleared when the workspace is closed or replaced.
     '''
 
     metadata: pd.DataFrame
     groupings: list[Grouping]
     platforms: dict[str, Platform]
+    storage: dict
     def add_grouping(self, name: str) -> Grouping: ...
     def apply_metadata(self, dataframe: pd.DataFrame): 
         '''
@@ -417,11 +422,23 @@ class Application:
 
     def log(self, content):
         '''
-        Writes content to the script log pane for debugging.
+        Writes an info-level message to the current task log.
         '''
         ...
 
-    def msgbox(self, title: str, content: str, buttons: Literal["ok", "ok-cancel", "yes-no-cancel"] = "ok") -> str:
+    def warning(self, content):
+        '''
+        Writes a warning-level message, asks whether to proceed, and cancels the run if rejected.
+        '''
+        ...
+
+    def error(self, content):
+        '''
+        Writes an error-level message and interrupts the current run.
+        '''
+        ...
+
+    def msgbox(self, title: str, content: str, buttons: Literal["ok", "ok-cancel", "proceed-cancel", "yes-no-cancel"] = "ok") -> str:
         '''
         Shows a modal message box and returns the selected button value.
 

@@ -30,11 +30,9 @@ class Program
             Shared.PlatformSupport.EmbeddedPythonHome(AppContext.BaseDirectory), 
             EnvironmentVariableTarget.Process);
         
-        var syspath = Environment.GetEnvironmentVariable("PATH");
-        if (syspath != null) syspath = Shared.PlatformSupport.EnvironmentPathSeparator + syspath;
         Environment.SetEnvironmentVariable("PATH",
             AppContext.BaseDirectory + Shared.PlatformSupport.EnvironmentPathSeparator +
-            Shared.PlatformSupport.EmbeddedPythonHome(AppContext.BaseDirectory) + (syspath ?? ""),
+            Shared.PlatformSupport.EmbeddedPythonHome(AppContext.BaseDirectory),
             EnvironmentVariableTarget.Process);
 
         if (Shared.PlatformSupport.CurrentPlatform != "windows")
@@ -42,7 +40,7 @@ class Program
             NativeEnvironment.Set("PYTHONHOME", Shared.PlatformSupport.EmbeddedPythonHome(AppContext.BaseDirectory));
             NativeEnvironment.Set("PATH",
                 AppContext.BaseDirectory + Shared.PlatformSupport.EnvironmentPathSeparator +
-                Shared.PlatformSupport.EmbeddedPythonHome(AppContext.BaseDirectory) + (syspath ?? "")
+                Shared.PlatformSupport.EmbeddedPythonHome(AppContext.BaseDirectory)
             );
         }
 

@@ -34,9 +34,14 @@ public sealed class PythonScriptEditorView : UserControl
     private readonly TextEditor editor;
     private readonly TextBlock output;
     private readonly TextBox name_box;
+    private readonly ComboBox log_task_combo;
     private readonly TextBlock file_name_preview;
-    private readonly TextBlock log_text;
+    private readonly StackPanel log_content;
     private readonly ScrollViewer log_scroll;
+    private readonly ToggleButton info_toggle;
+    private readonly ToggleButton warning_toggle;
+    private readonly ToggleButton error_toggle;
+    private readonly ToggleButton fatal_toggle;
     private readonly Button run_button;
     private readonly Button save_button;
     private readonly Button close_button;
@@ -90,27 +95,33 @@ public sealed class PythonScriptEditorView : UserControl
             Width = 260,
             Watermark = "Script name"
         };
+        log_task_combo = new ComboBox
+        {
+            MinWidth = 180,
+            Width = 240
+        };
         file_name_preview = new TextBlock
         {
             Foreground = new SolidColorBrush(Color.FromRgb(164, 168, 178)),
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
             TextTrimming = TextTrimming.CharacterEllipsis
         };
-        log_text = new TextBlock
+        log_content = new StackPanel
         {
-            FontFamily = FontFamily.Parse("IBM Plex Mono, Jetbrains Mono, Consolas"),
-            FontSize = 12,
-            Foreground = new SolidColorBrush(Color.FromRgb(218, 221, 228)),
-            TextWrapping = TextWrapping.Wrap,
-            Padding = new Thickness(8)
+            Spacing = 6,
+            Margin = new Thickness(8)
         };
         log_scroll = new ScrollViewer
         {
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             Margin = new Thickness(4),
-            Content = log_text
+            Content = log_content
         };
+        info_toggle = log_level_toggle("Info");
+        warning_toggle = log_level_toggle("Warning");
+        error_toggle = log_level_toggle("Error");
+        fatal_toggle = log_level_toggle("Fatal");
 
         Image run_icon = new Avalonia.Controls.Image
         {
@@ -251,6 +262,11 @@ public sealed class PythonScriptEditorView : UserControl
                 await view_model.ClosePythonScriptEditorAsync();
         };
         name_box.TextChanged += name_box_text_changed;
+        log_task_combo.SelectionChanged += log_task_combo_selection_changed;
+        info_toggle.IsCheckedChanged += (_, _) => update_log_filter(toggle => view_model!.ShowPythonInfoLogs = toggle, info_toggle);
+        warning_toggle.IsCheckedChanged += (_, _) => update_log_filter(toggle => view_model!.ShowPythonWarningLogs = toggle, warning_toggle);
+        error_toggle.IsCheckedChanged += (_, _) => update_log_filter(toggle => view_model!.ShowPythonErrorLogs = toggle, error_toggle);
+        fatal_toggle.IsCheckedChanged += (_, _) => update_log_filter(toggle => view_model!.ShowPythonFatalLogs = toggle, fatal_toggle);
         DataContextChanged += (_, _) => bind_view_model(DataContext as MainWindowViewModel);
         AttachedToVisualTree += (_, _) =>
         {
@@ -263,6 +279,19 @@ public sealed class PythonScriptEditorView : UserControl
             close_completion_popup();
             close_hover_popup();
         };
+    }
+
+    private static ToggleButton log_level_toggle(string text)
+    {
+        var toggle = new ToggleButton
+        {
+            Content = text,
+            IsChecked = true,
+            Padding = new Thickness(8, 2),
+            MinWidth = 0
+        };
+        toggle.Classes.Add("Small");
+        return toggle;
     }
 
     protected override void OnUnloaded(Avalonia.Interactivity.RoutedEventArgs e)
@@ -292,6 +321,7 @@ public sealed class PythonScriptEditorView : UserControl
             Children =
             {
                 name_box,
+                log_task_combo,
                 file_name_preview
             }
         };
@@ -301,7 +331,7 @@ public sealed class PythonScriptEditorView : UserControl
             Orientation = Avalonia.Layout.Orientation.Horizontal,
             HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
             Spacing = 5,
-            Children = { run_button, save_button, close_button }
+            Children = { info_toggle, warning_toggle, error_toggle, fatal_toggle, run_button, save_button, close_button }
         };
         Grid.SetColumn(command_panel, 2);
         header.Children.Add(command_panel);
@@ -434,9 +464,15 @@ public sealed class PythonScriptEditorView : UserControl
         if (view_model is null)
             return;
 
-        if (e.PropertyName == nameof(MainWindowViewModel.PythonScriptLog))
+        if (e.PropertyName is nameof(MainWindowViewModel.SelectedPythonLogTask)
+            or nameof(MainWindowViewModel.PythonLogTasks)
+            or nameof(MainWindowViewModel.ShowPythonInfoLogs)
+            or nameof(MainWindowViewModel.ShowPythonWarningLogs)
+            or nameof(MainWindowViewModel.ShowPythonErrorLogs)
+            or nameof(MainWindowViewModel.ShowPythonFatalLogs))
         {
-            update_log_text(view_model.PythonScriptLog);
+            sync_log_controls(view_model);
+            update_log_view(view_model);
             return;
         }
 
@@ -446,7 +482,8 @@ public sealed class PythonScriptEditorView : UserControl
             or nameof(MainWindowViewModel.PythonScriptName)
             or nameof(MainWindowViewModel.PythonScriptFileName)
             or nameof(MainWindowViewModel.IsPythonScriptDirty)
-            or nameof(MainWindowViewModel.CanSavePythonScript))
+            or nameof(MainWindowViewModel.CanSavePythonScript)
+            or nameof(MainWindowViewModel.SelectedPythonLogTask))
             sync_from_view_model(view_model);
     }
 
@@ -468,7 +505,8 @@ public sealed class PythonScriptEditorView : UserControl
         }
         file_name_preview.Text = model.PythonScriptFileName;
         file_name_preview.IsVisible = model.HasEditingPythonScript;
-        update_log_text(model.PythonScriptLog);
+        sync_log_controls(model);
+        update_log_view(model);
         output.Text = model.PythonScriptOutput;
         output.Foreground = model.PythonScriptOutput.StartsWith("Completed", StringComparison.OrdinalIgnoreCase)
             ? new SolidColorBrush(Color.FromRgb(99, 214, 141))
@@ -479,18 +517,120 @@ public sealed class PythonScriptEditorView : UserControl
         save_button.IsEnabled = model.CanSavePythonScript;
     }
 
-    private void update_log_text(string text)
+    private void sync_log_controls(MainWindowViewModel model)
+    {
+        syncing_text = true;
+        try
+        {
+            log_task_combo.ItemsSource = model.PythonLogTasks;
+            if (!ReferenceEquals(log_task_combo.SelectedItem, model.SelectedPythonLogTask))
+                log_task_combo.SelectedItem = model.SelectedPythonLogTask;
+            info_toggle.IsChecked = model.ShowPythonInfoLogs;
+            warning_toggle.IsChecked = model.ShowPythonWarningLogs;
+            error_toggle.IsChecked = model.ShowPythonErrorLogs;
+            fatal_toggle.IsChecked = model.ShowPythonFatalLogs;
+        }
+        finally
+        {
+            syncing_text = false;
+        }
+    }
+
+    private void update_log_view(MainWindowViewModel model)
     {
         if (!Dispatcher.UIThread.CheckAccess())
         {
-            Dispatcher.UIThread.Post(() => update_log_text(text));
+            Dispatcher.UIThread.Post(() => update_log_view(model));
             return;
         }
 
-        log_text.Text = string.IsNullOrWhiteSpace(text) ? "" : text;
-        log_text.InvalidateVisual();
+        log_content.Children.Clear();
+        var task = model.SelectedPythonLogTask;
+        if (task is not null)
+        {
+            foreach (var run in task.Runs)
+            {
+                log_content.Children.Add(run_separator(run));
+                foreach (var message in run.Messages.Where(message => log_level_visible(model, message.Level)))
+                    log_content.Children.Add(log_message_view(message));
+            }
+        }
+        log_content.InvalidateVisual();
         log_scroll.InvalidateVisual();
         log_scroll.ScrollToEnd();
+    }
+
+    private static bool log_level_visible(MainWindowViewModel model, PythonLogLevel level) =>
+        level switch
+        {
+            PythonLogLevel.Info => model.ShowPythonInfoLogs,
+            PythonLogLevel.Warning => model.ShowPythonWarningLogs,
+            PythonLogLevel.Error => model.ShowPythonErrorLogs,
+            PythonLogLevel.Fatal => model.ShowPythonFatalLogs,
+            _ => true
+        };
+
+    private static Control run_separator(PythonLogRun run)
+    {
+        var grid = new Grid
+        {
+            ColumnDefinitions =
+            {
+                new ColumnDefinition(new GridLength(1, GridUnitType.Star)),
+                new ColumnDefinition(GridLength.Auto),
+                new ColumnDefinition(new GridLength(1, GridUnitType.Star))
+            },
+            ColumnSpacing = 10,
+            Margin = new Thickness(0, 6, 0, 2)
+        };
+        grid.Children.Add(new Border
+        {
+            Height = 1,
+            Background = new SolidColorBrush(Color.FromRgb(70, 73, 84)),
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
+        });
+        var title = new TextBlock
+        {
+            Text = $"Run {run.Index}  {run.StartedAt:HH:mm:ss}",
+            FontSize = 11,
+            Foreground = new SolidColorBrush(Color.FromRgb(164, 168, 178))
+        };
+        Grid.SetColumn(title, 1);
+        grid.Children.Add(title);
+        var right = new Border
+        {
+            Height = 1,
+            Background = new SolidColorBrush(Color.FromRgb(70, 73, 84)),
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
+        };
+        Grid.SetColumn(right, 2);
+        grid.Children.Add(right);
+        return grid;
+    }
+
+    private static Control log_message_view(PythonLogEntry message)
+    {
+        var color = message.Level switch
+        {
+            PythonLogLevel.Warning => Color.FromRgb(232, 184, 91),
+            PythonLogLevel.Error => Color.FromRgb(244, 126, 126),
+            PythonLogLevel.Fatal => Color.FromRgb(255, 86, 86),
+            _ => Color.FromRgb(218, 221, 228)
+        };
+        var level = message.Level.ToString().ToLowerInvariant();
+        var text = new TextBlock
+        {
+            FontFamily = FontFamily.Parse("IBM Plex Mono, Jetbrains Mono, Consolas"),
+            FontSize = 12,
+            Foreground = new SolidColorBrush(color),
+            TextWrapping = TextWrapping.Wrap
+        };
+        text.Inlines?.Add(new Run($"[{message.Timestamp:HH:mm:ss}] {level}: ")
+        {
+            FontWeight = FontWeight.SemiBold
+        });
+        text.Inlines?.Add(new Run(message.Text));
+        return text;
     }
 
     private void editor_text_changed(object? sender, EventArgs e)
@@ -505,6 +645,22 @@ public sealed class PythonScriptEditorView : UserControl
         if (syncing_text || view_model is null)
             return;
         view_model.PythonScriptName = name_box.Text ?? "";
+    }
+
+    private void log_task_combo_selection_changed(object? sender, SelectionChangedEventArgs e)
+    {
+        if (syncing_text || view_model is null)
+            return;
+        view_model.SelectedPythonLogTask = log_task_combo.SelectedItem as PythonLogTask;
+        update_log_view(view_model);
+    }
+
+    private void update_log_filter(Action<bool> setter, ToggleButton toggle)
+    {
+        if (syncing_text || view_model is null)
+            return;
+        setter(toggle.IsChecked == true);
+        update_log_view(view_model);
     }
 
     private void editor_key_down(object? sender, KeyEventArgs e)

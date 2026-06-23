@@ -543,6 +543,28 @@ public partial class MainWindow : Window
     private async void save_workspace_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
         await save_workspace_async();
 
+    private async void close_workspace_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
+        await close_workspace_async();
+
+    private async Task close_workspace_async()
+    {
+        if (view_model.IsPythonScriptEditorMode && view_model.IsPythonScriptDirty)
+        {
+            await view_model.ClosePythonScriptEditorAsync();
+            if (view_model.IsPythonScriptEditorMode)
+                return;
+        }
+
+        var choice = await show_workspace_exit_dialog();
+        if (choice == ScriptSaveChoice.Cancel)
+            return;
+        if (choice == ScriptSaveChoice.Save && !await save_workspace_async())
+            return;
+
+        view_model.CloseWorkspace();
+        current_workspace_path = null;
+    }
+
     private async Task<bool> save_workspace_async()
     {
         string? path = current_workspace_path;

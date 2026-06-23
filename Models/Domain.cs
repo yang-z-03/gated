@@ -1415,6 +1415,7 @@ internal readonly record struct NormalizedChannelCacheKey(
 public sealed class FlowWorkspace : NotifyBase
 {
     private string name = "Untitled Workspace";
+    private PyObject? python_storage;
 
     public string Name
     {
@@ -1427,6 +1428,21 @@ public sealed class FlowWorkspace : NotifyBase
     public ObservableCollection<Platform> IntegrationJobs { get; } = new();
     public ObservableCollection<string> RecentFilePaths { get; } = new();
     public Dictionary<string, MetadataColumnKind> MetadataColumns { get; } = new(StringComparer.Ordinal);
+
+    internal bool HasPythonStorage => python_storage is not null;
+
+    internal PyObject GetPythonStorage()
+    {
+        python_storage ??= new PyDict();
+        return python_storage;
+    }
+
+    internal PyObject? DetachPythonStorage()
+    {
+        var storage = python_storage;
+        python_storage = null;
+        return storage;
+    }
 }
 
 public abstract class NotifyBase : INotifyPropertyChanged

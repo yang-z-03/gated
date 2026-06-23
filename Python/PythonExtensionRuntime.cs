@@ -32,7 +32,9 @@ public static class PythonExtensionRuntime
     private static PyObject? numpy_module;
     private static PyObject? pandas_module;
     private static Task? startup_task;
-    public static event Action<string>? LogReceived;
+    private static PythonLogExecutionContext? current_log_context;
+    public static event Action<PythonLogRunStarted>? LogRunStarted;
+    public static event Action<PythonLogMessage>? LogReceived;
     public static event Action<PythonExecutionStatus>? StatusChanged;
     public static Func<string, IReadOnlyList<PythonStatisticRequirement>, string?>? InputRequested;
 
@@ -129,7 +131,18 @@ public static class PythonExtensionRuntime
         }
     }
 
-    public static void Execute(string code, Workspace workspace)
+    public static void DisposeWorkspaceStorage(FlowWorkspace workspace)
+    {
+        if (!workspace.HasPythonStorage)
+            return;
+
+        caller_thread.InvokeWithGil(() =>
+        {
+            workspace.DetachPythonStorage()?.Dispose();
+        });
+    }
+
+    public static void Execute(string code, Workspace workspace, string task_key = "macro:interactive", string task_name = "Interactive macro")
     {
         if (string.IsNullOrWhiteSpace(code))
             return;
@@ -139,6 +152,7 @@ public static class PythonExtensionRuntime
         {
             caller_thread.InvokeWithGil(() =>
             {
+                using var log_context = begin_log_run(task_key, task_name);
                 using var globals = new PyDict();
                 globals.SetItem("__builtins__", Py.Import("builtins"));
                 globals.SetItem("workspace", workspace.ToPython());
@@ -162,6 +176,9 @@ public static class PythonExtensionRuntime
         } 
         catch (PythonException pex)
         {
+            if (current_log_context?.ConsumeSuppressedException() is { } suppressed_exception)
+                throw suppressed_exception;
+
             string error_loc = "<Unk>";
             try
             {
@@ -170,22 +187,55 @@ public static class PythonExtensionRuntime
                 error_loc = line;
             } catch { error_loc = "<Unk>"; }
 
-            if (error_loc == "<Unk>") Log("Python interpreter error: " + pex.Message);
-            else Log("Python interpreter error: " + pex.Message + "\n  " + $"at line {error_loc}: ...");
-        } catch (Exception ex)
+            if (error_loc == "<Unk>")
+                Fatal("Python interpreter error: " + pex.Message);
+            else
+                Fatal("Python interpreter error: " + pex.Message + "\n  " + $"at line {error_loc}: ...");
+            throw new PythonExecutionFailedException(pex.Message, pex);
+        }
+        catch (PythonApplicationErrorException)
         {
-            Log(ex.Message);
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Fatal(ex.Message);
+            throw;
         }
     }
 
+    private static PythonLogExecutionContext begin_log_run(string task_key, string task_name)
+    {
+        var context = new PythonLogExecutionContext(
+            string.IsNullOrWhiteSpace(task_key) ? "task:unknown" : task_key,
+            string.IsNullOrWhiteSpace(task_name) ? "Python task" : task_name,
+            Guid.NewGuid(),
+            DateTimeOffset.Now);
+        current_log_context = context;
+        LogRunStarted?.Invoke(new PythonLogRunStarted(context.TaskKey, context.TaskName, context.RunId, context.StartedAt));
+        return context;
+    }
+
     // Internal calls only. Not exposed to user script.
-    public static void ExecutePlatformScript(string resource_path, FlowWorkspace workspace, gated.Models.Platform platform)
+    public static void ExecutePlatformScript(
+        string resource_path,
+        FlowWorkspace workspace,
+        gated.Models.Platform platform,
+        string? task_key = null,
+        string? task_name = null)
     {
         report_status("Platform script running ...", null, true, true);
         try
         {
             caller_thread.InvokeWithGil(() =>
             {
+                using var log_context = begin_log_run(
+                    task_key ?? $"platform:{platform.Id}",
+                    task_name ?? platform.Name);
                 using var globals = new PyDict();
                 globals.SetItem("__builtins__", Py.Import("builtins"));
                 globals.SetItem("workspace", new Workspace(workspace).ToPython());
@@ -403,6 +453,10 @@ public static class PythonExtensionRuntime
                     add_button("Cancel", "cancel");
                     add_button("OK", "ok");
                     break;
+                case "proceed-cancel":
+                    add_button("Cancel", "cancel");
+                    add_button("Proceed", "proceed");
+                    break;
                 case "yes-no-cancel":
                     add_button("Cancel", "cancel");
                     add_button("No", "no");
@@ -446,8 +500,39 @@ public static class PythonExtensionRuntime
 
     public static void Log(object? content)
     {
+        log(PythonLogLevel.Info, content);
+    }
+
+    public static void Warning(object? content)
+    {
+        log(PythonLogLevel.Warning, content);
+    }
+
+    public static void Error(object? content)
+    {
+        log(PythonLogLevel.Error, content);
+        var exception = new PythonApplicationErrorException(content?.ToString() ?? "Python application error.");
+        current_log_context?.SuppressNextPythonException(exception);
+        throw exception;
+    }
+
+    public static void CancelFromWarning()
+    {
+        var exception = new OperationCanceledException("Python run cancelled by warning prompt.");
+        current_log_context?.SuppressNextPythonException(exception);
+        throw exception;
+    }
+
+    private static void Fatal(object? content)
+    {
+        log(PythonLogLevel.Fatal, content);
+    }
+
+    private static void log(PythonLogLevel level, object? content)
+    {
         string text = content?.ToString() ?? "";
-        LogReceived?.Invoke(text);
+        if (current_log_context is { } context)
+            LogReceived?.Invoke(new PythonLogMessage(context.TaskKey, context.RunId, DateTimeOffset.Now, level, text));
         Console.WriteLine(text);
     }
 
@@ -792,6 +877,41 @@ public static class PythonExtensionRuntime
         }
     }
 
+    private sealed class PythonLogExecutionContext : IDisposable
+    {
+        public PythonLogExecutionContext(string task_key, string task_name, Guid run_id, DateTimeOffset started_at)
+        {
+            TaskKey = task_key;
+            TaskName = task_name;
+            RunId = run_id;
+            StartedAt = started_at;
+        }
+
+        public string TaskKey { get; }
+        public string TaskName { get; }
+        public Guid RunId { get; }
+        public DateTimeOffset StartedAt { get; }
+        private Exception? suppressed_exception;
+
+        public void SuppressNextPythonException(Exception exception)
+        {
+            suppressed_exception = exception;
+        }
+
+        public Exception? ConsumeSuppressedException()
+        {
+            var exception = suppressed_exception;
+            suppressed_exception = null;
+            return exception;
+        }
+
+        public void Dispose()
+        {
+            if (ReferenceEquals(current_log_context, this))
+                current_log_context = null;
+        }
+    }
+
     private static string python_analysis_prelude() => new StreamReader(AssetLoader.Open(new Uri("avares://gated/Python/stub.py"))).ReadToEnd();
 
 }
@@ -800,9 +920,47 @@ public sealed record PythonStatisticEvaluation(PyObject? Value, string DisplayVa
 
 public sealed record PythonExecutionStatus(string Description, double? Progress, bool IsIndeterminate, bool IsVisible);
 
+public enum PythonLogLevel
+{
+    Info,
+    Warning,
+    Error,
+    Fatal
+}
+
+public sealed record PythonLogRunStarted(string TaskKey, string TaskName, Guid RunId, DateTimeOffset StartedAt);
+
+public sealed record PythonLogMessage(string TaskKey, Guid RunId, DateTimeOffset Timestamp, PythonLogLevel Level, string Text);
+
+public sealed class PythonExecutionFailedException : Exception
+{
+    public PythonExecutionFailedException(string message, Exception inner_exception)
+        : base(message, inner_exception)
+    {
+    }
+}
+
+public sealed class PythonApplicationErrorException : Exception
+{
+    public PythonApplicationErrorException(string message)
+        : base(message)
+    {
+    }
+}
+
 public sealed class PythonApplication
 {
     public void log(object? content) => PythonExtensionRuntime.Log(content);
+
+    public void warning(object? content)
+    {
+        PythonExtensionRuntime.Warning(content);
+        string choice = PythonExtensionRuntime.MsgBox("Python warning", content?.ToString() ?? "", "proceed-cancel");
+        if (!string.Equals(choice, "proceed", StringComparison.OrdinalIgnoreCase))
+            PythonExtensionRuntime.CancelFromWarning();
+    }
+
+    public void error(object? content) => PythonExtensionRuntime.Error(content);
 
     public string msgbox(string title, string content, string buttons = "ok") =>
         PythonExtensionRuntime.MsgBox(title, content, buttons);

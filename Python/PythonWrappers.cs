@@ -56,6 +56,7 @@ public sealed class Workspace
 
     public PyObject groupings => PythonObjects.List(Model.Groups.Select(group => new Grouping(Model, group)));
     public PyObject platforms => PythonObjects.Dict(Model.IntegrationJobs.Select(job => KeyValuePair.Create(job.Name, Platform.Wrap(Model, job))));
+    public PyObject storage => PythonExtensionRuntime.WithGil(Model.GetPythonStorage);
 
     public Grouping add_grouping(string name)
     {

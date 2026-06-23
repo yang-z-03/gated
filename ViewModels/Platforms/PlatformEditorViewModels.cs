@@ -744,7 +744,12 @@ public abstract class PlatformEditorViewModel : NotifyBase
                 if (!prepared || string.IsNullOrWhiteSpace(Platform.ResourcePath))
                     return;
                 Platform.ProgressText = "Running platform script";
-                await Task.Run(() => gated.Python.PythonExtensionRuntime.ExecutePlatformScript(Platform.ResourcePath, Workspace, Platform));
+                await Task.Run(() => gated.Python.PythonExtensionRuntime.ExecutePlatformScript(
+                    Platform.ResourcePath,
+                    Workspace,
+                    Platform,
+                    $"platform:{Platform.Id}",
+                    Platform.Name));
             }
 
             Platform.WarningText = "";
@@ -779,7 +784,12 @@ public abstract class PlatformEditorViewModel : NotifyBase
             Platform.Status = IntegrationJobStatus.Running;
             invalidate_commands();
 
-            await Task.Run(() => gated.Python.PythonExtensionRuntime.ExecutePlatformScript(resource_path, Workspace, Platform));
+            await Task.Run(() => gated.Python.PythonExtensionRuntime.ExecutePlatformScript(
+                resource_path,
+                Workspace,
+                Platform,
+                $"platform:{Platform.Id}",
+                Platform.Name));
 
             Platform.WarningText = "";
             Platform.Status = IntegrationJobStatus.Complete;
