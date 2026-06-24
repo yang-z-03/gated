@@ -142,7 +142,7 @@ public static class PythonExtensionRuntime
         });
     }
 
-    public static void Execute(string code, Workspace workspace, string task_key = "macro:interactive", string task_name = "Interactive macro")
+    public static void Execute(string code, Workspace workspace, string task_key = "code:interactive", string task_name = "Interactive code")
     {
         if (string.IsNullOrWhiteSpace(code))
             return;
@@ -518,6 +518,7 @@ public static class PythonExtensionRuntime
 
     public static void CancelFromWarning()
     {
+        log(PythonLogLevel.Error, "User cancelled the task due to the warning");
         var exception = new OperationCanceledException("Python run cancelled by warning prompt.");
         current_log_context?.SuppressNextPythonException(exception);
         throw exception;

@@ -93,14 +93,42 @@ public partial class MainWindow : Window
         restore_panel_layout(WindowPlacementStore.Load());
         configure_platform_window_chrome();
         update_window_margin_for_state();
+        update_main_mode_switch();
     }
 
-    private void page_mode_switch_click(object? sender, RoutedEventArgs e)
+    private async void analysis_mode_tab_pressed(object? sender, PointerPressedEventArgs e)
     {
-        if (sender is not ToggleButton toggle)
-            return;
+        e.Handled = true;
+        await view_model.ShowAnalysisModeAsync();
+    }
 
-        view_model.IsPageEditorMode = toggle.IsChecked == true;
+    private async void layout_mode_tab_pressed(object? sender, PointerPressedEventArgs e)
+    {
+        e.Handled = true;
+        await view_model.ShowLayoutModeAsync();
+    }
+
+    private void code_mode_tab_pressed(object? sender, PointerPressedEventArgs e)
+    {
+        e.Handled = true;
+        view_model.OpenPythonScriptEditor();
+    }
+
+    private void update_main_mode_switch()
+    {
+        mainModeSwitchThumb.Margin = view_model.ViewState == MainWindowViewState.Code
+            ? new Thickness(163, 3, 0, 3)
+            : view_model.ViewState == MainWindowViewState.Layout
+                ? new Thickness(83, 3, 0, 3)
+                : new Thickness(3, 3, 0, 3);
+
+        var active = new SolidColorBrush(Color.FromRgb(32, 35, 44));
+        var inactive = new SolidColorBrush(Color.FromRgb(185, 189, 202));
+        mainModeAnalysisText.Foreground = view_model.ViewState is MainWindowViewState.Analysis
+            or MainWindowViewState.Metadata
+            or MainWindowViewState.Platform ? active : inactive;
+        mainModeLayoutText.Foreground = view_model.ViewState == MainWindowViewState.Layout ? active : inactive;
+        mainModeCodeText.Foreground = view_model.ViewState == MainWindowViewState.Code ? active : inactive;
     }
 
     private void update_window_margin_for_state()
@@ -176,7 +204,9 @@ public partial class MainWindow : Window
 
     private void view_model_property_changed(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(MainWindowViewModel.IsDefaultAnalysisMode) && view_model.IsPageEditorMode)
+        if (e.PropertyName == nameof(MainWindowViewModel.ViewState))
+            update_main_mode_switch();
+        if (e.PropertyName == nameof(MainWindowViewModel.ViewState) && view_model.IsPageEditorMode)
             page_editor.RefreshRenderCachesSequentially(view_model.PageElements);
         if (e.PropertyName == nameof(MainWindowViewModel.StatisticTable))
             update_statistics_columns();
@@ -1256,6 +1286,9 @@ public partial class MainWindow : Window
 
     private async Task load_workspace_with_progress(string path)
     {
+        if (!await view_model.TryLeavePythonScriptEditorAsync())
+            return;
+
         try
         {
             await run_with_progress_dialog("Loading workspace ...", path, async () =>

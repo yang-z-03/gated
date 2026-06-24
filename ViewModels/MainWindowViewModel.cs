@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Data;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -16,6 +17,15 @@ using PythonWorkspaceContext = gated.Python.PythonWorkspaceContext;
 
 namespace gated.ViewModels;
 
+public enum MainWindowViewState
+{
+    Analysis,
+    Layout,
+    Code,
+    Metadata,
+    Platform
+}
+
 public sealed partial class MainWindowViewModel : NotifyBase
 {
     private readonly ObservableCollection<ProjectNode> project_roots = new();
@@ -28,7 +38,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
     private CompensationMatrix? selected_compensation;
     private PageLayout? selected_page_layout;
     private Platform? selected_integration_job;
-    private bool is_workspace_metadata_mode;
+    private MainWindowViewState view_state = MainWindowViewState.Analysis;
     private bool syncing_metadata;
     private int layout_refresh_revision;
     private PlotMode selected_plot_mode = PlotMode.Density;
@@ -59,14 +69,12 @@ public sealed partial class MainWindowViewModel : NotifyBase
     private Platform? subscribed_integration_job;
     private bool is_python_script_dirty;
     private bool syncing_python_script;
-    private bool is_python_script_editor_mode;
     private bool is_python_script_running;
     private AxisSettings x_axis = new();
     private AxisSettings y_axis = new();
     private DotColorSettings dot_color = new();
     private readonly HashSet<FlowGroup> groups_pending_root_view_initialization = new();
     private int next_gate_number = 1;
-    private bool is_page_editor_mode;
     private PagePlotElement? selected_page_element;
     private PagePlotElement? subscribed_page_menu_element;
     private double export_bitmap_dpi = 300;
@@ -177,8 +185,8 @@ public sealed partial class MainWindowViewModel : NotifyBase
             Workspace.RecentFilePaths.Add(path);
         ReloadScriptRepositories();
         CreateGroupCommand = new RelayCommand(_ => create_group());
-        CreateLayoutCommand = new RelayCommand(_ => create_layout());
-        CreateIntegrationJobCommand = new RelayCommand(parameter => create_platform(PlatformJobInitializer.KindFromParameter(parameter)), _ => Workspace.Groups.Any(group => group.Samples.Count > 0));
+        CreateLayoutCommand = new RelayCommand(_ => _ = create_layout_async());
+        CreateIntegrationJobCommand = new RelayCommand(parameter => _ = create_platform_async(PlatformJobInitializer.KindFromParameter(parameter)), _ => Workspace.Groups.Any(group => group.Samples.Count > 0));
         RenameWorkspaceCommand = new RelayCommand(_ => _ = rename_workspace_async());
         RenameIntegrationJobCommand = new RelayCommand(_ => _ = rename_selected_integration_job_async(), _ => selected_integration_job is not null);
         RenameGroupCommand = new RelayCommand(_ => _ = rename_selected_group_async(), _ => selected_group is not null);
@@ -218,7 +226,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         AddCanvasGateCommand = new RelayCommand(parameter => _ = add_canvas_gate_async(parameter as GateDefinition));
         GateEditedCommand = new RelayCommand(parameter => ScheduleEditedGateRecalculation(parameter as GateDefinition));
         ToggleProjectNodeCommand = new RelayCommand(parameter => toggle_project_node(parameter as ProjectNode));
-        SelectProjectNodeCommand = new RelayCommand(parameter => select_project_node(parameter as ProjectNode));
+        SelectProjectNodeCommand = new RelayCommand(parameter => _ = select_project_node_async(parameter as ProjectNode));
         AddPageElementCommand = new RelayCommand(parameter => add_page_element(parameter as PageDropRequest));
         DeletePageElementCommand = new RelayCommand(_ => delete_selected_page_element(), _ => selected_page_element is not null);
         ApplyWorkspaceMetadataCommand = new RelayCommand(_ => CommitWorkspaceSampleMetadata(), _ => IsWorkspaceMetadataMode);
@@ -673,59 +681,99 @@ public sealed partial class MainWindowViewModel : NotifyBase
         private set => SetField(ref python_engine_progress, value);
     }
 
+    public MainWindowViewState ViewState
+    {
+        get => view_state;
+        private set => set_view_state(value);
+    }
+
     public bool IsPageEditorMode
     {
-        get => is_page_editor_mode;
+        get => ViewState == MainWindowViewState.Layout;
         set
         {
-            if (!SetField(ref is_page_editor_mode, value))
-                return;
             if (value)
             {
                 SelectedIntegrationJob = null;
-                IsWorkspaceMetadataMode = false;
-                IsPythonScriptEditorMode = false;
+                set_view_state(MainWindowViewState.Layout, "Page editor: drag gate definitions or sample populations onto the canvas");
             }
-            OnPropertyChanged(nameof(IsDefaultAnalysisMode));
-            StatusText = value
-                ? "Page editor: drag gate definitions or sample populations onto the canvas"
-                : "Analysis view";
+            else if (IsPageEditorMode)
+                set_view_state(MainWindowViewState.Analysis, "Analysis view");
         }
     }
 
-    public bool IsIntegrationJobMode => SelectedIntegrationJob is not null;
+    public bool IsIntegrationJobMode => ViewState == MainWindowViewState.Platform;
     public bool IsWorkspaceMetadataMode
     {
-        get => is_workspace_metadata_mode;
+        get => ViewState == MainWindowViewState.Metadata;
         private set
         {
-            if (!SetField(ref is_workspace_metadata_mode, value))
-                return;
-            if (value)
-                IsPythonScriptEditorMode = false;
-            OnPropertyChanged(nameof(IsDefaultAnalysisMode));
-        }
-    }
-    public bool IsPythonScriptEditorMode
-    {
-        get => is_python_script_editor_mode;
-        private set
-        {
-            if (!SetField(ref is_python_script_editor_mode, value))
-                return;
             if (value)
             {
-                is_page_editor_mode = false;
-                OnPropertyChanged(nameof(IsPageEditorMode));
                 SelectedIntegrationJob = null;
-                IsWorkspaceMetadataMode = false;
-                StatusText = "Python script editor";
+                set_view_state(MainWindowViewState.Metadata, "Workspace sample metadata");
             }
-            OnPropertyChanged(nameof(IsDefaultAnalysisMode));
+            else if (IsWorkspaceMetadataMode)
+                set_view_state(MainWindowViewState.Analysis, "Analysis view");
         }
     }
 
-    public bool IsDefaultAnalysisMode => !IsPageEditorMode && !IsIntegrationJobMode && !IsWorkspaceMetadataMode && !IsPythonScriptEditorMode;
+    public bool IsPythonScriptEditorMode
+    {
+        get => ViewState == MainWindowViewState.Code;
+        private set
+        {
+            if (value)
+            {
+                SelectedIntegrationJob = null;
+                set_view_state(MainWindowViewState.Code, "Python script editor");
+            }
+            else if (IsPythonScriptEditorMode)
+                set_view_state(MainWindowViewState.Analysis, "Analysis view");
+        }
+    }
+
+    public bool IsDefaultAnalysisMode => ViewState == MainWindowViewState.Analysis;
+
+    private bool set_view_state(MainWindowViewState value, string? status_text = null)
+    {
+        if (view_state == value)
+        {
+            if (!string.IsNullOrWhiteSpace(status_text))
+                StatusText = status_text;
+            return false;
+        }
+
+        view_state = value;
+        OnPropertyChanged(nameof(ViewState));
+        OnPropertyChanged(nameof(IsDefaultAnalysisMode));
+        OnPropertyChanged(nameof(IsPageEditorMode));
+        OnPropertyChanged(nameof(IsPythonScriptEditorMode));
+        OnPropertyChanged(nameof(IsWorkspaceMetadataMode));
+        OnPropertyChanged(nameof(IsIntegrationJobMode));
+        if (!string.IsNullOrWhiteSpace(status_text))
+            StatusText = status_text;
+        raise_command_states();
+        return true;
+    }
+
+    public async Task ShowAnalysisModeAsync()
+    {
+        if (!await TryLeavePythonScriptEditorAsync())
+            return;
+
+        SelectedIntegrationJob = null;
+        set_view_state(MainWindowViewState.Analysis, "Analysis view");
+    }
+
+    public async Task ShowLayoutModeAsync()
+    {
+        if (!await TryLeavePythonScriptEditorAsync())
+            return;
+
+        SelectedIntegrationJob = null;
+        set_view_state(MainWindowViewState.Layout, "Page editor: drag gate definitions or sample populations onto the canvas");
+    }
     public int LayoutRefreshRevision
     {
         get => layout_refresh_revision;
@@ -1296,7 +1344,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
             SelectedPopulation = refreshed;
     }
 
-    public void RunPythonExtension(string code, string task_key = "macro:interactive", string task_name = "Interactive macro")
+    public void RunPythonExtension(string code, string task_key = "code:interactive", string task_name = "Interactive code")
     {
         var metadata_snapshot = snapshot_workspace_metadata();
         var context = new PythonWorkspaceContext(Workspace);
@@ -1356,8 +1404,6 @@ public sealed partial class MainWindowViewModel : NotifyBase
 
     public async Task CreateMacroAsync()
     {
-        if (!await confirm_python_script_transition_async())
-            return;
         string? name = RequestTextInputAsync is null
             ? $"Macro {MacroScripts.Count + 1}"
             : await RequestTextInputAsync("Create macro", "Macro name");
@@ -1371,8 +1417,6 @@ public sealed partial class MainWindowViewModel : NotifyBase
 
     public async Task CreateStatisticScriptAsync()
     {
-        if (!await confirm_python_script_transition_async())
-            return;
         string? name = RequestTextInputAsync is null
             ? $"Python statistic {StatisticScripts.Count + 1}"
             : await RequestTextInputAsync("Create Python statistic", "Statistic name");
@@ -1384,11 +1428,10 @@ public sealed partial class MainWindowViewModel : NotifyBase
         StatusText = $"Created Python statistic script: {statistic.Name}";
     }
 
-    public async Task OpenPythonScriptEditorAsync(PythonScriptDefinition? script = null)
+    public Task OpenPythonScriptEditorAsync(PythonScriptDefinition? script = null)
     {
-        if (!await confirm_python_script_transition_async())
-            return;
         OpenPythonScriptEditor(script);
+        return Task.CompletedTask;
     }
 
     public void OpenPythonScriptEditor(PythonScriptDefinition? script = null, bool dirty = false)
@@ -1408,7 +1451,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
             SelectedPythonLogTask = python_log_task_for_script(script);
         }
         else
-            SelectedPythonLogTask ??= python_log_task("macro:interactive", "Interactive macro");
+            SelectedPythonLogTask ??= python_log_task("code:interactive", "Interactive code");
         syncing_python_script = false;
         IsPythonScriptDirty = dirty;
         IsPythonScriptEditorMode = true;
@@ -1416,7 +1459,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
 
     public async Task ClosePythonScriptEditorAsync()
     {
-        if (!await confirm_python_script_transition_async())
+        if (!await TryLeavePythonScriptEditorAsync())
             return;
         IsPythonScriptEditorMode = false;
         editing_python_script = null;
@@ -1454,7 +1497,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         if (macro.Kind != PythonScriptRepositoryKind.Macro)
             return;
         SelectedPythonLogTask = python_log_task_for_script(macro);
-        await Task.Run(() => RunPythonExtension(macro.Source, python_log_task_key(macro), macro.Name));
+        await Task.Run(() => RunPythonExtension(macro.Source, python_log_task_key(macro), python_log_task_display_name(macro)));
         StatusText = $"Ran macro: {macro.Name}";
     }
 
@@ -1482,12 +1525,9 @@ public sealed partial class MainWindowViewModel : NotifyBase
 
         IsPythonScriptRunning = true;
         PythonScriptOutput = "Running ...";
-        string task_key = editing_python_script is null
-            ? "macro:interactive"
-            : python_log_task_key(editing_python_script);
-        string task_name = editing_python_script is null
-            ? string.IsNullOrWhiteSpace(PythonScriptName) ? "Interactive macro" : PythonScriptName.Trim()
-            : PythonScriptName.Trim();
+        var log_task = current_editor_python_log_task();
+        string task_key = log_task.Key;
+        string task_name = log_task.DisplayName;
         SelectedPythonLogTask = python_log_task(task_key, task_name);
         try
         {
@@ -1505,8 +1545,10 @@ public sealed partial class MainWindowViewModel : NotifyBase
         }
     }
 
-    private async Task<bool> confirm_python_script_transition_async()
+    public async Task<bool> TryLeavePythonScriptEditorAsync()
     {
+        if (!IsPythonScriptEditorMode)
+            return true;
         if (!IsPythonScriptDirty || editing_python_script is null)
             return true;
 
@@ -1548,13 +1590,37 @@ public sealed partial class MainWindowViewModel : NotifyBase
     }
 
     private PythonLogTask python_log_task_for_script(PythonScriptDefinition script) =>
-        python_log_task(python_log_task_key(script), script.Name);
+        python_log_task(python_log_task_key(script), python_log_task_display_name(script));
 
     private static string python_log_task_key(PythonScriptDefinition script)
     {
-        if (!string.IsNullOrWhiteSpace(script.FilePath))
-            return $"{script.Kind}:{script.FilePath}";
-        return $"{script.Kind}:{script.Name}";
+        return $"{script.Kind}: {script.Name}";
+    }
+
+    private static string python_log_task_display_name(PythonScriptDefinition script)
+    {
+        string name = string.IsNullOrWhiteSpace(script.Name) ? "Untitled" : script.Name.Trim();
+        return python_log_task_display_name(script.Kind, name);
+    }
+
+    private static string python_log_task_display_name(PythonScriptRepositoryKind kind, string name)
+    {
+        name = string.IsNullOrWhiteSpace(name) ? "Untitled" : name.Trim();
+        return kind == PythonScriptRepositoryKind.Macro
+            ? $"Macro: {name}"
+            : $"Statistic: {name}";
+    }
+
+    private (string Key, string DisplayName) current_editor_python_log_task()
+    {
+        if (editing_python_script is null)
+            return ("code:interactive", "Interactive code");
+
+        string name = string.IsNullOrWhiteSpace(PythonScriptName)
+            ? Path.GetFileNameWithoutExtension(PythonScriptRepository.PreviewFileName(editing_python_script.Kind, "Untitled"))
+            : PythonScriptName.Trim();
+        string key = $"{editing_python_script.Kind}: {name}";
+        return (key, python_log_task_display_name(editing_python_script.Kind, name));
     }
 
     private PythonLogTask python_log_task(string key, string display_name)
@@ -1634,8 +1700,11 @@ public sealed partial class MainWindowViewModel : NotifyBase
         raise_command_states();
     }
 
-    private void create_layout()
+    private async Task create_layout_async()
     {
+        if (!await TryLeavePythonScriptEditorAsync())
+            return;
+
         var layout = new PageLayout { Name = next_layout_name() };
         Workspace.PageLayouts.Add(layout);
         SelectedPageLayout = layout;
@@ -4102,7 +4171,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
             seed_gate_expansion_state(child, $"{key}:gate:{child.Id}");
     }
 
-    private void select_project_node(ProjectNode? node)
+    private async Task select_project_node_async(ProjectNode? node)
     {
         if (node?.Kind == ProjectNodeKind.Metadata && ReferenceEquals(selected_node, node))
         {
@@ -4110,6 +4179,9 @@ public sealed partial class MainWindowViewModel : NotifyBase
             StatusText = "Workspace sample metadata";
             return;
         }
+
+        if (!await TryLeavePythonScriptEditorAsync())
+            return;
 
         SelectedNode = node;
     }

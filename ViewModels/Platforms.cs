@@ -20,24 +20,24 @@ public sealed partial class MainWindowViewModel
             }
             subscribe_selected_integration_job();
             if (value is not null)
-            {
-                IsPythonScriptEditorMode = false;
-                IsWorkspaceMetadataMode = false;
-            }
+                set_view_state(MainWindowViewState.Platform, value.StatusText);
+            else if (IsIntegrationJobMode)
+                set_view_state(MainWindowViewState.Analysis, "Analysis view");
             OnPropertyChanged(nameof(IsIntegrationJobMode));
-            OnPropertyChanged(nameof(IsDefaultAnalysisMode));
             raise_command_states();
         }
     }
 
-    private void create_platform(PlatformKind kind)
+    private async Task create_platform_async(PlatformKind kind)
     {
+        if (!await TryLeavePythonScriptEditorAsync())
+            return;
+
         var job = PlatformJobInitializer.Create(Workspace, kind, selected_group);
         Workspace.IntegrationJobs.Add(job);
         SelectedIntegrationJob = job;
-        IsPageEditorMode = false;
         refresh_project_tree();
-        select_project_node(find_project_node($"workspace:integration-job:{job.Id}"));
+        SelectedNode = find_project_node($"workspace:integration-job:{job.Id}");
         StatusText = $"Created platform: {job.Name}";
         raise_command_states();
     }

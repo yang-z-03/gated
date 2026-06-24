@@ -33,9 +33,7 @@ public sealed class PythonScriptEditorView : UserControl
     private const double TooltipApproachTolerance = 60;
     private readonly TextEditor editor;
     private readonly TextBlock output;
-    private readonly TextBox name_box;
     private readonly ComboBox log_task_combo;
-    private readonly TextBlock file_name_preview;
     private readonly StackPanel log_content;
     private readonly ScrollViewer log_scroll;
     private readonly ToggleButton info_toggle;
@@ -89,23 +87,12 @@ public sealed class PythonScriptEditorView : UserControl
             Foreground = new SolidColorBrush(Color.FromRgb(164, 168, 178)),
             MinHeight = 20
         };
-        name_box = new TextBox
-        {
-            MinWidth = 180,
-            Width = 260,
-            Watermark = "Script name"
-        };
         log_task_combo = new ComboBox
         {
             MinWidth = 180,
             Width = 240
         };
-        file_name_preview = new TextBlock
-        {
-            Foreground = new SolidColorBrush(Color.FromRgb(164, 168, 178)),
-            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
-            TextTrimming = TextTrimming.CharacterEllipsis
-        };
+        log_task_combo.Classes.Add("Small");
         log_content = new StackPanel
         {
             Spacing = 6,
@@ -118,10 +105,10 @@ public sealed class PythonScriptEditorView : UserControl
             Margin = new Thickness(4),
             Content = log_content
         };
-        info_toggle = log_level_toggle("Info");
-        warning_toggle = log_level_toggle("Warning");
-        error_toggle = log_level_toggle("Error");
-        fatal_toggle = log_level_toggle("Fatal");
+        info_toggle = log_level_toggle("Info logs", "avares://gated/Resources/info.svg");
+        warning_toggle = log_level_toggle("Warning logs", "avares://gated/Resources/warning.svg");
+        error_toggle = log_level_toggle("Error logs", "avares://gated/Resources/error.svg");
+        fatal_toggle = log_level_toggle("Fatal logs", "avares://gated/Resources/fail.svg");
 
         Image run_icon = new Avalonia.Controls.Image
         {
@@ -261,7 +248,6 @@ public sealed class PythonScriptEditorView : UserControl
             if (view_model is not null)
                 await view_model.ClosePythonScriptEditorAsync();
         };
-        name_box.TextChanged += name_box_text_changed;
         log_task_combo.SelectionChanged += log_task_combo_selection_changed;
         info_toggle.IsCheckedChanged += (_, _) => update_log_filter(toggle => view_model!.ShowPythonInfoLogs = toggle, info_toggle);
         warning_toggle.IsCheckedChanged += (_, _) => update_log_filter(toggle => view_model!.ShowPythonWarningLogs = toggle, warning_toggle);
@@ -281,16 +267,26 @@ public sealed class PythonScriptEditorView : UserControl
         };
     }
 
-    private static ToggleButton log_level_toggle(string text)
+    private static ToggleButton log_level_toggle(string tooltip, string icon_uri)
     {
+        var icon = new Avalonia.Controls.Image
+        {
+            Source = new SvgImage { Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri(icon_uri))) },
+            Width = 14,
+            Height = 14
+        };
         var toggle = new ToggleButton
         {
-            Content = text,
+            Content = icon,
             IsChecked = true,
-            Padding = new Thickness(8, 2),
+            Padding = new Thickness(0),
+            Width = 28,
+            Height = 24,
             MinWidth = 0
         };
         toggle.Classes.Add("Small");
+        toggle.Classes.Add("LogLevelToggle");
+        ToolTip.SetTip(toggle, tooltip);
         return toggle;
     }
 
@@ -320,9 +316,7 @@ public sealed class PythonScriptEditorView : UserControl
             Spacing = 8,
             Children =
             {
-                name_box,
-                log_task_combo,
-                file_name_preview
+                log_task_combo
             }
         };
         header.Children.Add(name_panel);
@@ -497,14 +491,6 @@ public sealed class PythonScriptEditorView : UserControl
             syncing_text = false;
         }
 
-        if (name_box.Text != model.PythonScriptName)
-        {
-            syncing_text = true;
-            name_box.Text = model.PythonScriptName;
-            syncing_text = false;
-        }
-        file_name_preview.Text = model.PythonScriptFileName;
-        file_name_preview.IsVisible = model.HasEditingPythonScript;
         sync_log_controls(model);
         update_log_view(model);
         output.Text = model.PythonScriptOutput;
@@ -617,7 +603,6 @@ public sealed class PythonScriptEditorView : UserControl
             PythonLogLevel.Fatal => Color.FromRgb(255, 86, 86),
             _ => Color.FromRgb(218, 221, 228)
         };
-        var level = message.Level.ToString().ToLowerInvariant();
         var text = new TextBlock
         {
             FontFamily = FontFamily.Parse("IBM Plex Mono, Jetbrains Mono, Consolas"),
@@ -625,11 +610,7 @@ public sealed class PythonScriptEditorView : UserControl
             Foreground = new SolidColorBrush(color),
             TextWrapping = TextWrapping.Wrap
         };
-        text.Inlines?.Add(new Run($"[{message.Timestamp:HH:mm:ss}] {level}: ")
-        {
-            FontWeight = FontWeight.SemiBold
-        });
-        text.Inlines?.Add(new Run(message.Text));
+        text.Text = message.Text;
         return text;
     }
 
@@ -638,13 +619,6 @@ public sealed class PythonScriptEditorView : UserControl
         if (syncing_text || view_model is null)
             return;
         view_model.PythonScriptText = editor.Text ?? "";
-    }
-
-    private void name_box_text_changed(object? sender, EventArgs e)
-    {
-        if (syncing_text || view_model is null)
-            return;
-        view_model.PythonScriptName = name_box.Text ?? "";
     }
 
     private void log_task_combo_selection_changed(object? sender, SelectionChangedEventArgs e)

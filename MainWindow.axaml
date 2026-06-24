@@ -166,6 +166,68 @@
         <Style Selector="ComboBox.SampleSwitcher:pointerover">
             <Setter Property="Background" Value="{DynamicResource SemiColorBackground2}" />
         </Style>
+        <Style Selector="Border.PageModeSwitchHit">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="VerticalAlignment" Value="Stretch" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style Selector="Border.PageModeSwitchHitVisual">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Margin" Value="3" />
+            <Setter Property="CornerRadius" Value="5" />
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="Background" Duration="0:0:0.16" />
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="Border.PageModeSwitchHit:pointerover Border.PageModeSwitchHitVisual">
+            <Setter Property="Background" Value="#1AFFFFFF" />
+        </Style>
+        <Style Selector="Border.PageModeSwitchHit:pressed Border.PageModeSwitchHitVisual">
+            <Setter Property="Background" Value="#2AFFFFFF" />
+        </Style>
+        <Style Selector="Border#mainModeSwitch:pointerover">
+            <Setter Property="Background" Value="#20222B" />
+            <Setter Property="BorderBrush" Value="#656A78" />
+        </Style>
+        <Style Selector="Border#mainModeSwitch:pointerover Border#mainModeSwitchThumb">
+            <Setter Property="Background" Value="#FFFFFF" />
+        </Style>
+        <Style Selector="ToggleButton.LogLevelToggle /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#242833" />
+            <Setter Property="BorderBrush" Value="#4A4F60" />
+        </Style>
+        <Style Selector="ToggleButton.LogLevelToggle">
+            <Setter Property="Opacity" Value="0.62" />
+        </Style>
+        <Style Selector="ToggleButton.LogLevelToggle:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#2E3545" />
+            <Setter Property="BorderBrush" Value="#626A80" />
+        </Style>
+        <Style Selector="ToggleButton.LogLevelToggle:focus /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#242833" />
+            <Setter Property="BorderBrush" Value="#4A4F60" />
+        </Style>
+        <Style Selector="ToggleButton.LogLevelToggle:pointerover">
+            <Setter Property="Opacity" Value="0.84" />
+        </Style>
+        <Style Selector="ToggleButton.LogLevelToggle:checked /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#263E66" />
+            <Setter Property="BorderBrush" Value="#41669D" />
+        </Style>
+        <Style Selector="ToggleButton.LogLevelToggle:checked:focus /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#263E66" />
+            <Setter Property="BorderBrush" Value="#41669D" />
+        </Style>
+        <Style Selector="ToggleButton.LogLevelToggle:checked">
+            <Setter Property="Opacity" Value="1" />
+        </Style>
+        <Style Selector="ToggleButton.LogLevelToggle:checked:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#2B4774" />
+            <Setter Property="BorderBrush" Value="#5079B6" />
+        </Style>
     </Window.Styles>
 
     <DockPanel x:Name="window">
@@ -175,10 +237,94 @@
             <DockPanel>
               <Border BorderBrush="#252530" BorderThickness="0 0 0 0"/>
               <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                <ToggleButton Margin="5 6 8 6" x:Name="pageModeSwitch"
-                              Classes="PageModeSwitch"
-                              IsChecked="{Binding IsPageEditorMode, Mode=OneWay}"
-                              Click="page_mode_switch_click" />
+                <Border x:Name="mainModeSwitch"
+                        Margin="5 6 8 6"
+                        Width="246"
+                        Height="28"
+                        CornerRadius="7"
+                        Background="#1A1B22"
+                        BorderBrush="#4A4D58"
+                        BorderThickness="1"
+                        ClipToBounds="True">
+                  <Border.Transitions>
+                    <Transitions>
+                      <BrushTransition Property="Background" Duration="0:0:0.16" />
+                      <BrushTransition Property="BorderBrush" Duration="0:0:0.16" />
+                    </Transitions>
+                  </Border.Transitions>
+                  <Grid ColumnDefinitions="*,*,*">
+                    <Border x:Name="mainModeSwitchThumb"
+                            Grid.ColumnSpan="3"
+                            Width="76"
+                            Height="20"
+                            Margin="3,3,0,3"
+                            HorizontalAlignment="Left"
+                            CornerRadius="5"
+                            Background="#ECEEF5"
+                            BoxShadow="0 1 5 0 #80000000">
+                        <Border.Transitions>
+                            <Transitions>
+                                <ThicknessTransition Property="Margin" Duration="0:0:0.20" />
+                                <BrushTransition Property="Background" Duration="0:0:0.16" />
+                            </Transitions>
+                        </Border.Transitions>
+                    </Border>
+                    <TextBlock x:Name="mainModeAnalysisText"
+                               Grid.Column="0"
+                               Text="Analysis"
+                               FontSize="12"
+                               FontWeight="SemiBold"
+                               Foreground="#20232C"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               IsHitTestVisible="False">
+                        <TextBlock.Transitions>
+                            <Transitions>
+                                <BrushTransition Property="Foreground" Duration="0:0:0.16" />
+                            </Transitions>
+                        </TextBlock.Transitions>
+                    </TextBlock>
+                    <TextBlock x:Name="mainModeLayoutText"
+                               Grid.Column="1"
+                               Text="Layout"
+                               FontSize="12"
+                               FontWeight="SemiBold"
+                               Foreground="#B9BDCA"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               IsHitTestVisible="False">
+                        <TextBlock.Transitions>
+                            <Transitions>
+                                <BrushTransition Property="Foreground" Duration="0:0:0.16" />
+                            </Transitions>
+                        </TextBlock.Transitions>
+                    </TextBlock>
+                    <TextBlock x:Name="mainModeCodeText"
+                               Grid.Column="2"
+                               Text="Code"
+                               FontSize="12"
+                               FontWeight="SemiBold"
+                               Foreground="#B9BDCA"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               IsHitTestVisible="False">
+                        <TextBlock.Transitions>
+                            <Transitions>
+                                <BrushTransition Property="Foreground" Duration="0:0:0.16" />
+                            </Transitions>
+                        </TextBlock.Transitions>
+                    </TextBlock>
+                    <Border Grid.Column="0" ZIndex="1" Classes="PageModeSwitchHit" PointerPressed="analysis_mode_tab_pressed">
+                        <Border Classes="PageModeSwitchHitVisual" />
+                    </Border>
+                    <Border Grid.Column="1" ZIndex="1" Classes="PageModeSwitchHit" PointerPressed="layout_mode_tab_pressed">
+                        <Border Classes="PageModeSwitchHitVisual" />
+                    </Border>
+                    <Border Grid.Column="2" ZIndex="1" Classes="PageModeSwitchHit" PointerPressed="code_mode_tab_pressed">
+                        <Border Classes="PageModeSwitchHitVisual" />
+                    </Border>
+                  </Grid>
+                </Border>
                 <Button x:Name="minimizeButton" Width="30" Height="30" Margin="5 5 0 5" Click="window_minimize" Classes="Title">
                   <TextBlock IsHitTestVisible="False" FontFamily="{DynamicResource SemiFontFamilyIcon}" Text="&#xe1d8;" 
                              HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="14"/>
@@ -191,7 +337,7 @@
               <Grid>
                 <StackPanel IsHitTestVisible="False" Margin="2 5 2 2" Orientation="Horizontal" 
                             HorizontalAlignment="Center" VerticalAlignment="Stretch">
-                  <Image Width="16" Height="16" Source="avares://gated/Resources/gated16.png"/>
+                  <Image Width="16" Height="16" Source="avares://gated/gated-32.png"/>
                   <Grid Width="10"/>
                   <TextBlock Text="Gated · Flow Cytometry Analyser" VerticalAlignment="Center"
                              FontWeight="Bold" Foreground="White" FontSize="13"/>
