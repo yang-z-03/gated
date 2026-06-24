@@ -1344,15 +1344,19 @@ public sealed partial class MainWindowViewModel : NotifyBase
             SelectedPopulation = refreshed;
     }
 
-    public void RunPythonExtension(string code, string task_key = "code:interactive", string task_name = "Interactive code")
+    public void RunPythonExtension(string code, string task_key = "Interactive code", string task_name = "Interactive code")
     {
         var metadata_snapshot = snapshot_workspace_metadata();
         var context = new PythonWorkspaceContext(Workspace);
         context.execute(code, task_key, task_name);
         void refresh()
         {
-            foreach (var group in Workspace.Groups)
-                group.RecalculateSamples();
+            // The refresh calculation should happen during script execution.
+            // no need to recalculate everything again.
+            // This code is kept here for debugging purposes.
+            // foreach (var group in Workspace.Groups)
+            //     group.RecalculateSamples();
+
             refresh_selected_population_reference();
             bool metadata_changed = !metadata_snapshot.SequenceEqual(snapshot_workspace_metadata());
             SelectedGroup ??= Workspace.Groups.FirstOrDefault();

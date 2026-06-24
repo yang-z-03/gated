@@ -66,7 +66,7 @@ public sealed class PythonScriptEditorView : UserControl
         {
             ShowLineNumbers = true,
             WordWrap = false,
-            FontFamily = FontFamily.Parse("IBM Plex Mono, Jetbrains Mono, Consolas"),
+            FontFamily = FontFamily.Parse("avares://gated/Fonts#IBM Plex Mono"),
             BorderBrush = Brushes.Transparent,
             Margin = new Thickness(16, 8, 8, 8),
             FontSize = 13,
@@ -605,7 +605,7 @@ public sealed class PythonScriptEditorView : UserControl
         };
         var text = new TextBlock
         {
-            FontFamily = FontFamily.Parse("IBM Plex Mono, Jetbrains Mono, Consolas"),
+            FontFamily = FontFamily.Parse("avares://gated/Fonts#IBM Plex Mono"),
             FontSize = 12,
             Foreground = new SolidColorBrush(color),
             TextWrapping = TextWrapping.Wrap
@@ -1301,7 +1301,7 @@ public sealed class PythonScriptEditorView : UserControl
                 LineHeight = 18,
                 FontFamily = string.IsNullOrWhiteSpace(item.Signature) ? 
                     current_typeface(parent).FontFamily : 
-                    FontFamily.Parse("IBM Plex Mono, Jetbrains Mono, Consolas"),
+                    FontFamily.Parse("avares://gated/Fonts#IBM Plex Mono"),
                 FontWeight = FontWeight.SemiBold,
                 Foreground = Brushes.White,
                 TextWrapping = TextWrapping.Wrap
@@ -1325,7 +1325,7 @@ public sealed class PythonScriptEditorView : UserControl
         panel.Children.Add(new TextBlock
         {
             Text = item.DisplayTitle,
-            FontFamily = FontFamily.Parse("IBM Plex Mono, Jetbrains Mono, Consolas"),
+            FontFamily = FontFamily.Parse("avares://gated/Fonts#IBM Plex Mono"),
             FontWeight = FontWeight.SemiBold,
             Foreground = Brushes.White,
             TextWrapping = TextWrapping.Wrap,
@@ -1351,7 +1351,7 @@ public sealed class PythonScriptEditorView : UserControl
         Text = string.IsNullOrWhiteSpace(item.Title) ? item.Type : item.Title,
         FontFamily = string.IsNullOrWhiteSpace(item.Signature) 
             ? current_typeface(parent).FontFamily 
-            : FontFamily.Parse("IBM Plex Mono, Jetbrains Mono, Consolas"),
+            : FontFamily.Parse("avares://gated/Fonts#IBM Plex Mono"),
         FontWeight = FontWeight.SemiBold,
         Foreground = Brushes.White,
         TextWrapping = TextWrapping.Wrap
@@ -1766,7 +1766,7 @@ public sealed class PythonScriptEditorView : UserControl
         var block = new TextBlock
         {
             Text = text,
-            FontFamily = FontFamily.Parse("IBM Plex Mono, Jetbrains Mono, Consolas"),
+            FontFamily = FontFamily.Parse("avares://gated/Fonts#IBM Plex Mono"),
             LineHeight = 17,
             FontSize = 12,
             Foreground = new SolidColorBrush(Color.FromRgb(221, 231, 255)),
@@ -1846,7 +1846,7 @@ public sealed class PythonScriptEditorView : UserControl
             item_panel.Children.Add(new TextBlock
             {
                 Text = term,
-                FontFamily = FontFamily.Parse("IBM Plex Mono, Jetbrains Mono, Consolas"),
+                FontFamily = FontFamily.Parse("avares://gated/Fonts#IBM Plex Mono"),
                 FontSize = 12,
                 Foreground = new SolidColorBrush(Color.FromRgb(221, 231, 255)),
                 TextWrapping = TextWrapping.Wrap
@@ -2056,7 +2056,7 @@ internal static class PythonScriptEditorGridExtensions
             return false;
         block.Inlines?.Add(new Run(text[content_start..end])
         {
-            FontFamily = FontFamily.Parse("IBM Plex Mono, Jetbrains Mono, Consolas"),
+            FontFamily = FontFamily.Parse("avares://gated/Fonts#IBM Plex Mono"),
             Foreground = new SolidColorBrush(Color.FromRgb(221, 231, 255))
         });
         consumed = end - start + delimiter.Length;
@@ -2077,7 +2077,7 @@ internal static class PythonScriptEditorGridExtensions
             return false;
         block.Inlines?.Add(new Run(text[content_start..content_end])
         {
-            FontFamily = FontFamily.Parse("IBM Plex Mono, Jetbrains Mono, Consolas"),
+            FontFamily = FontFamily.Parse("avares://gated/Fonts#IBM Plex Mono"),
             Foreground = new SolidColorBrush(Color.FromRgb(221, 231, 255))
         });
         consumed = content_end - start + 1;

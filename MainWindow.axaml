@@ -478,6 +478,8 @@
                 <MenuItem Header="Number of events" Command="{Binding AddCountStatisticCommand}" />
                 <MenuItem Header="Delete selected statistic" Command="{Binding DeleteSelectedCommand}" InputGesture="Delete" />
                 <Separator />
+                <MenuItem Header="Manage extension packages ..." Click="manage_extension_packages_menu_item_click" />
+                <Separator />
                 <MenuItem Header="Create macro" InputGesture="Ctrl + Shift + P" Click="create_macro_menu_item_click" />
                 <MenuItem x:Name="run_macros_menu" Header="Run macros" />
                 <MenuItem x:Name="edit_macros_menu" Header="Edit macros" />

@@ -1,0 +1,214 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="gated.PythonPackageManagerWindow"
+        x:CompileBindings="False"
+        Width="700"
+        Height="550"
+        MinWidth="500"
+        MinHeight="520"
+        CanResize="True"
+        WindowStartupLocation="CenterOwner"
+        Title="Extension Packages"
+        Background="#252525">
+
+    <Window.Styles>
+        <Style Selector="Window">
+            <Setter Property="FontSize" Value="13" />
+        </Style>
+        <Style Selector="Button.PackageIconButton">
+            <Setter Property="Width" Value="26" />
+            <Setter Property="Height" Value="23" />
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="Padding" Value="4" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+        <Style Selector="Border.PackageRow">
+            <Setter Property="Height" Value="25" />
+            <Setter Property="Padding" Value="7,2" />
+        </Style>
+        <Style Selector="ListBox#packageList">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="ListBox#packageList ListBoxItem">
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="4,0" />
+            <Setter Property="CornerRadius" Value="5" />
+            <Setter Property="MinHeight" Value="25" />
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="ListBox#packageList ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="ListBox#packageList ListBoxItem:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#343A46" />
+        </Style>
+        <Style Selector="ListBox#packageList ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#343A46" />
+        </Style>
+        <Style Selector="ListBox#packageList ListBoxItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#343A46" />
+        </Style>
+    </Window.Styles>
+
+    <Grid Margin="18" RowDefinitions="Auto,*,Auto,Auto" RowSpacing="12">
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+            <StackPanel>
+                <TextBlock Foreground="{DynamicResource SemiColorText0}"
+                           FontSize="13"
+                           FontWeight="Bold"
+                           Margin="0 0 0 8"
+                           Text="Embedded Python packages" />
+                <TextBlock FontSize="13"
+                           Foreground="{DynamicResource SemiColorText2}"
+                           TextWrapping="Wrap"
+                           LineHeight="18"
+                           Text="View and modify Python packages installed in the managed environment platform. You are able to use these packages when writing macros, scripts and statittic definitions by importing. This is a separate environment owned by Gated, not related to the system installation of Python."/>
+            </StackPanel>
+            <Button x:Name="refreshButton" Classes="Small" Grid.Column="1">
+                <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/refresh.svg}" />
+            </Button>
+        </Grid>
+
+        <Border Grid.Row="1"
+                BorderBrush="#505050"
+                BorderThickness="1"
+                CornerRadius="6"
+                Background="#1e1e1e"
+                ClipToBounds="True">
+            <Grid RowDefinitions="29,*">
+                <Border Background="#1e1e1e"
+                        CornerRadius="6 6 0 0"
+                        Padding="10,0">
+                    <Grid ColumnDefinitions="*,150,128"
+                          Margin="8 0 8 0"
+                          ColumnSpacing="12">
+                        <TextBlock Text="Package"
+                                   FontSize="13"
+                                   Foreground="{DynamicResource SemiColorText1}"
+                                   VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="1"
+                                   Text="Version"
+                                   FontSize="13"
+                                   Foreground="{DynamicResource SemiColorText1}"
+                                   VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="2"
+                                   Text="Actions"
+                                   FontSize="13"
+                                   Foreground="{DynamicResource SemiColorText1}"
+                                   VerticalAlignment="Center" />
+                    </Grid>
+                </Border>
+
+                <ListBox x:Name="packageList"
+                         Grid.Row="1"
+                         SelectionMode="Single"
+                         Margin="8 0 8 8"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Border Classes="PackageRow">
+                                    <Grid ColumnDefinitions="*,150,128"
+                                          ColumnSpacing="12">
+                                        <TextBlock Text="{Binding Name}"
+                                                   FontSize="13"
+                                                   FontWeight="{Binding NameWeight}"
+                                                   Foreground="{Binding NameBrush}"
+                                                   VerticalAlignment="Center"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Grid.Column="1"
+                                                   Text="{Binding VersionText}"
+                                                   FontSize="13"
+                                                   Foreground="{DynamicResource SemiColorText1}"
+                                                   VerticalAlignment="Center"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <StackPanel Grid.Column="2"
+                                                    Orientation="Horizontal"
+                                                    Spacing="0"
+                                                    VerticalAlignment="Center">
+                                            <Button Classes="Quiet PackageIconButton"
+                                                    ToolTip.Tip="{Binding InstallOrUninstallTip}"
+                                                    Click="install_or_uninstall_package_click">
+                                                <Image Width="15"
+                                                       Height="15"
+                                                       Source="{Binding InstallOrUninstallIcon}" />
+                                            </Button>
+                                            <Button Classes="Quiet PackageIconButton"
+                                                    ToolTip.Tip="Show dependencies"
+                                                    IsEnabled="{Binding IsInstalled}"
+                                                    Click="depends_package_click">
+                                                <Image Width="15"
+                                                       Height="15"
+                                                       Source="{SvgImage avares://gated/Resources/depends.svg}" />
+                                            </Button>
+                                            <Button Classes="Quiet PackageIconButton"
+                                                    ToolTip.Tip="Show required-by"
+                                                    IsEnabled="{Binding IsInstalled}"
+                                                    Click="required_by_package_click">
+                                                <Image Width="15"
+                                                       Height="15"
+                                                       Source="{SvgImage avares://gated/Resources/required-by.svg}" />
+                                            </Button>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                </ListBox>
+            </Grid>
+        </Border>
+
+        <Expander Grid.Row="2"
+                  Header="Pip output"
+                  IsExpanded="False">
+            <Border Height="150"
+                    BorderBrush="#505050"
+                    BorderThickness="1"
+                    CornerRadius="6"
+                    Background="#1E1E1E"
+                    Padding="8 8 8 8"
+                    Margin="-8 0 0 0">
+                <ScrollViewer x:Name="pipOutputScroll"
+                              HorizontalScrollBarVisibility="Auto"
+                              VerticalScrollBarVisibility="Auto">
+                    <TextBlock x:Name="pipOutputText"
+                               FontFamily="{DynamicResource SemiFontFamilyFixed}"
+                               FontSize="13"
+                               TextWrapping="Wrap"
+                               Foreground="{DynamicResource SemiColorText1}" />
+                </ScrollViewer>
+            </Border>
+        </Expander>
+
+        <Grid Grid.Row="3"
+              ColumnDefinitions="*,120,150,Auto,Auto"
+              ColumnSpacing="8">
+            <TextBox x:Name="packageNameBox"
+                     Watermark="Package name"
+                     Classes="Small"
+                     FontFamily="{DynamicResource SemiFontFamilyFixed}"
+                     FontSize="13" />
+            <TextBox x:Name="versionConditionBox"
+                     Grid.Column="1"
+                     Watermark="Version, e.g. &gt;=1.0"
+                     Classes="Small"
+                     FontFamily="{DynamicResource SemiFontFamilyFixed}"
+                     FontSize="13" />
+            <TextBox x:Name="indexUrlBox"
+                     Grid.Column="2"
+                     Watermark="Index URL"
+                     Classes="Small"
+                     FontSize="13" />
+            <Button x:Name="installCustomButton"
+                    Grid.Column="3"
+                    Classes="Small"
+                    MinWidth="92"
+                    Content="Install" />
+            <Button x:Name="closeButton"
+                    Grid.Column="4"
+                    Classes="Small"
+                    MinWidth="82"
+                    Content="Close" />
+        </Grid>
+    </Grid>
+</Window>

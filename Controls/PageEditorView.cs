@@ -1946,7 +1946,7 @@ public sealed class PageEditorView : Control
 
     private void draw_a4_grid(DrawingContext context, Size extent)
     {
-        var pen = new Pen(new SolidColorBrush(Color.FromArgb(95, 92, 128, 172)), 0.8, DashStyle.Dash);
+        var pen = new Pen(new SolidColorBrush(Color.FromArgb(130, 92, 128, 172)), 0.8, DashStyle.Dash);
         var text_brush = new SolidColorBrush(Color.FromArgb(130, 70, 91, 122));
         for (double x = a4_width; x < extent.Width; x += a4_width)
             context.DrawLine(pen, new Point(x, 0), new Point(x, extent.Height));

@@ -80,49 +80,49 @@ public sealed class Workspace
         PythonExtensionRuntime.WithGil(() => {
             using (Py.GIL())
             {
-            dynamic pandas = Py.Import("pandas");
-            using PyObject frame = pandas.DataFrame(dataframe);
-            var metadata_columns = new PyList(frame.GetAttr("columns").InvokeMethod("tolist"))
-                .Select(column => column.As<string>() ?? "")
-                .Where(column => column.Length > 0 && column is not ("Group" or "Sample"))
-                .ToArray();
-            Model.MetadataColumns.Clear();
-            Model.MetadataColumns["Group"] = MetadataColumnKind.String;
-            Model.MetadataColumns["Sample"] = MetadataColumnKind.String;
-            foreach (string column in metadata_columns)
-                Model.MetadataColumns[column] = infer_metadata_kind_from_frame(frame, pandas, column);
-            using PyObject records = frame.InvokeMethod("to_dict", "records".ToPython());
-            var rows = new PyList(records);
-            foreach (PyObject rawdict in rows)
-            {
-                var pdict = new PyDict(rawdict);
-                Dictionary<string, PyObject> row = new Dictionary<string, PyObject>();
-                foreach (PyObject key in pdict.Keys())
-                {
-                    string key_str = key.As<string>() ?? "";
-                    row[key_str] = pdict[key];
-                }
-
-                if (!row.TryGetValue("Group", out var group_value) || !row.TryGetValue("Sample", out var sample_value))
-                    continue;
-                string group_name = group_value.As<string>() ?? "";
-                string sample_name = sample_value.As<string>() ?? "";
-                var sample = Model.Groups.FirstOrDefault(group => group.Name == group_name)?.Samples.FirstOrDefault(sample => sample.Name == sample_name);
-                if (sample is null)
-                    continue;
-
-                foreach (string existing_key in sample.Metadata.Keys
-                             .Where(key => key is not ("Group" or "Sample"))
-                             .Except(metadata_columns, StringComparer.Ordinal)
-                             .ToArray())
-                    sample.Metadata.Remove(existing_key);
+                dynamic pandas = Py.Import("pandas");
+                using PyObject frame = pandas.DataFrame(dataframe);
+                var metadata_columns = new PyList(frame.GetAttr("columns").InvokeMethod("tolist"))
+                    .Select(column => column.As<string>() ?? "")
+                    .Where(column => column.Length > 0 && column is not ("Group" or "Sample"))
+                    .ToArray();
+                Model.MetadataColumns.Clear();
+                Model.MetadataColumns["Group"] = MetadataColumnKind.String;
+                Model.MetadataColumns["Sample"] = MetadataColumnKind.String;
                 foreach (string column in metadata_columns)
+                    Model.MetadataColumns[column] = infer_metadata_kind_from_frame(frame, pandas, column);
+                using PyObject records = frame.InvokeMethod("to_dict", "records".ToPython());
+                var rows = new PyList(records);
+                foreach (PyObject rawdict in rows)
                 {
-                    if (!row.TryGetValue(column, out var value) || pandas.isna(value).As<bool>())
+                    var pdict = new PyDict(rawdict);
+                    Dictionary<string, PyObject> row = new Dictionary<string, PyObject>();
+                    foreach (PyObject key in pdict.Keys())
+                    {
+                        string key_str = key.As<string>() ?? "";
+                        row[key_str] = pdict[key];
+                    }
+                
+                    if (!row.TryGetValue("Group", out var group_value) || !row.TryGetValue("Sample", out var sample_value))
                         continue;
-                    sample.Metadata[column] = python_metadata_value_to_string(value!, Model.MetadataColumns[column]);
+                    string group_name = group_value.As<string>() ?? "";
+                    string sample_name = sample_value.As<string>() ?? "";
+                    var sample = Model.Groups.FirstOrDefault(group => group.Name == group_name)?.Samples.FirstOrDefault(sample => sample.Name == sample_name);
+                    if (sample is null)
+                        continue;
+                
+                    foreach (string existing_key in sample.Metadata.Keys
+                                 .Where(key => key is not ("Group" or "Sample"))
+                                 .Except(metadata_columns, StringComparer.Ordinal)
+                                 .ToArray())
+                        sample.Metadata.Remove(existing_key);
+                    foreach (string column in metadata_columns)
+                    {
+                        if (!row.TryGetValue(column, out var value) || pandas.isna(value).As<bool>())
+                            continue;
+                        sample.Metadata[column] = python_metadata_value_to_string(value!, Model.MetadataColumns[column]);
+                    }
                 }
-            }
             }
         });
     }
@@ -242,6 +242,7 @@ public class Platform
         };
 
     public string name => Model.Name;
+    public string guid => Model.Id.ToString();
     public string transform => transform_name(Model.Axis.Transform);
     public PyObject transformations => PythonObjects.Dict(build_transformations());
     public PyObject parameters => PythonObjects.Dict(Model.Parameters);
@@ -1113,50 +1114,50 @@ public sealed class Population
     {
         using (Py.GIL())
         {
-        if (string.IsNullOrWhiteSpace(name))
-            throw new ArgumentException("Embedding name cannot be empty.", nameof(name));
-        if (string.Equals(name, "Populations", StringComparison.Ordinal))
-            throw new ArgumentException("Embedding 'Populations' is generated from gates and cannot be overwritten.", nameof(name));
-
-        var selected_indices = indices();
-        var input = PythonArrayConverter.ToEmbeddingArray(value);
-        if (input.Values.Length != selected_indices.Length && input.Values.Length != sample.EventCount)
-            throw new ArgumentException($"Embedding '{name}' expects either {selected_indices.Length} selected values or {sample.EventCount} sample-wide values.");
-
-        var existing_matches = sample.Embeddings.TryGetValue(name, out var existing) &&
-            existing.Values.Length == sample.EventCount &&
-            existing.Kind == input.Kind;
-        var values = existing_matches
-            ? existing!.Values.ToArray()
-            : Enumerable.Repeat(float.NaN, sample.EventCount).ToArray();
-        var categories = existing_matches && existing is not null
-            ? new Dictionary<int, string>(existing.Categories)
-            : new Dictionary<int, string>();
-        var input_values = input.Values;
-        if (input.Kind == EmbeddingValueKind.Integer)
-            input_values = remap_category_values(input.Values, input.Categories, categories);
-
-        if (input_values.Length == sample.EventCount)
-        {
-            foreach (int event_index in selected_indices)
-                if (event_index >= 0 && event_index < values.Length)
-                    values[event_index] = input_values[event_index];
-        }
-        else
-        {
-            for (int index = 0; index < selected_indices.Length; index++)
+            if (string.IsNullOrWhiteSpace(name))
+                throw new ArgumentException("Embedding name cannot be empty.", nameof(name));
+            if (string.Equals(name, "Populations", StringComparison.Ordinal))
+                throw new ArgumentException("Embedding 'Populations' is generated from gates and cannot be overwritten.", nameof(name));
+            
+            var selected_indices = indices();
+            var input = PythonArrayConverter.ToEmbeddingArray(value);
+            if (input.Values.Length != selected_indices.Length && input.Values.Length != sample.EventCount)
+                throw new ArgumentException($"Embedding '{name}' expects either {selected_indices.Length} selected values or {sample.EventCount} sample-wide values.");
+            
+            var existing_matches = sample.Embeddings.TryGetValue(name, out var existing) &&
+                existing.Values.Length == sample.EventCount &&
+                existing.Kind == input.Kind;
+            var values = existing_matches
+                ? existing!.Values.ToArray()
+                : Enumerable.Repeat(float.NaN, sample.EventCount).ToArray();
+            var categories = existing_matches && existing is not null
+                ? new Dictionary<int, string>(existing.Categories)
+                : new Dictionary<int, string>();
+            var input_values = input.Values;
+            if (input.Kind == EmbeddingValueKind.Integer)
+                input_values = remap_category_values(input.Values, input.Categories, categories);
+            
+            if (input_values.Length == sample.EventCount)
             {
-                int event_index = selected_indices[index];
-                if (event_index >= 0 && event_index < values.Length)
-                    values[event_index] = input_values[index];
+                foreach (int event_index in selected_indices)
+                    if (event_index >= 0 && event_index < values.Length)
+                        values[event_index] = input_values[event_index];
             }
-        }
-
-        var embedding = new EmbeddingData { Kind = input.Kind, Values = values };
-        foreach (var category in categories)
-            embedding.Categories[category.Key] = category.Value;
-        sample.Embeddings[name] = embedding;
-        sample.InvalidateNormalizedChannelCache();
+            else
+            {
+                for (int index = 0; index < selected_indices.Length; index++)
+                {
+                    int event_index = selected_indices[index];
+                    if (event_index >= 0 && event_index < values.Length)
+                        values[event_index] = input_values[index];
+                }
+            }
+            
+            var embedding = new EmbeddingData { Kind = input.Kind, Values = values };
+            foreach (var category in categories)
+                embedding.Categories[category.Key] = category.Value;
+            sample.Embeddings[name] = embedding;
+            sample.InvalidateNormalizedChannelCache();
         }
     }
 

@@ -788,8 +788,8 @@ public abstract class PlatformEditorViewModel : NotifyBase
                 resource_path,
                 Workspace,
                 Platform,
-                $"platform:{Platform.Id}",
-                Platform.Name));
+                $"Platform: {Platform.Name}",
+                $"Platform: {Platform.Name}"));
 
             Platform.WarningText = "";
             Platform.Status = IntegrationJobStatus.Complete;

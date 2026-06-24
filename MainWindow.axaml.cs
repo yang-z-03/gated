@@ -647,6 +647,11 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void manage_extension_packages_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        await new PythonPackageManagerWindow().ShowDialog(this);
+    }
+
     private async void create_macro_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
         await view_model.CreateMacroAsync();
 
