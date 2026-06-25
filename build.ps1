@@ -74,3 +74,27 @@ cd ../..
 rm -r ./artifacts/gated-osx-x64
 rm -r ./artifacts/updater-osx-x64
 
+# macOS ARM64
+
+dotnet build gated.csproj -c Release -r osx-arm64
+rm -r ./artifacts/gated-osx-arm64
+rm ./artifacts/gated-osx-arm64.zip
+mv ./bin/Release/net10.0/osx-arm64 ./artifacts/gated-osx-arm64
+rm -r ./bin/Release
+
+dotnet publish ./Updater/update.csproj -c Release -r osx-arm64 --self-contained true -p:PublishSingleFile=true -p:PublishDir="./bin/osx-arm64"
+rm -r ./artifacts/updater-osx-arm64
+rm ./artifacts/updater-osx-arm64.zip
+mkdir ./artifacts/updater-osx-arm64
+mv ./Updater/bin/osx-arm64/update ./artifacts/updater-osx-arm64/update
+rm -r ./Updater/obj
+rm -r ./Updater/bin
+
+cd ./artifacts/gated-osx-arm64
+zip -r ../gated-osx-arm64.zip .
+cd ../updater-osx-arm64
+zip -r ../updater-osx-arm64.zip .
+
+cd ../..
+rm -r ./artifacts/gated-osx-arm64
+rm -r ./artifacts/updater-osx-arm64

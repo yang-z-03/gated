@@ -233,11 +233,13 @@ public static class PlatformJobInitializer
     {
         workspace.MetadataColumns["Group"] = MetadataColumnKind.String;
         workspace.MetadataColumns["Sample"] = MetadataColumnKind.String;
+        workspace.MetadataColumns[Configuration.CytometerMetadataKey] = MetadataColumnKind.String;
         foreach (var group in workspace.Groups)
         foreach (var sample in group.Samples)
         {
             sample.Metadata["Group"] = group.Name;
             sample.Metadata["Sample"] = sample.Name;
+            sample.Metadata[Configuration.CytometerMetadataKey] = Configuration.CytometerNameForSample(sample);
         }
     }
 

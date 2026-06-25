@@ -533,6 +533,9 @@ def run_umap(
     default_epochs = 500 if connectivities.shape[0] <= 10000 else 200
     n_epochs = default_epochs if maxiter is None else maxiter
     
+    application.log(f'Running UMAP simplical')
+    application.progress(60, f'Running UMAP simplical ...')
+    
     emb = umap_simplical(
         mat, connectivities, init_coords,
         n_components = n_components,
@@ -575,9 +578,9 @@ if not skip_knn:
 umap_params = application.input(requires = [
     application.require_enum('Initial position distance metrics', ['Euclidean', 'Cosine'], 'Cosine'),
     application.require_enum('Initial position', ['Spectral', 'Random'], 'Spectral'),
-    application.require_float('Minimal distance', 0, 5, 0.5),
-    application.require_float('Spread', 0, 20, 1),
-    application.require_integer('Number of iterations', -1, 500, -1),
+    application.require_float('Minimal distance', 0.5, 0, 5),
+    application.require_float('Spread', 1, 0.3, 20),
+    application.require_integer('Number of iterations', -1, -1, 500),
     application.require_integer('Random state', 42, 0, 10000),
     application.require_enum('Key added', [f'{platform.name} UMAP'], f'{platform.name} UMAP')
 ])

@@ -5,13 +5,13 @@ using System.Linq;
 using System.Collections.Concurrent;
 using System.Runtime.ExceptionServices;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Media;
-using Avalonia.Threading;
 using gated.Models;
 using gated.Shared;
 using Python.Runtime;
@@ -179,18 +179,29 @@ public static class PythonExtensionRuntime
             if (current_log_context?.ConsumeSuppressedException() is { } suppressed_exception)
                 throw suppressed_exception;
 
-            string error_loc = "<Unk>";
+            string error_loc = "";
             try
             {
-                string location = pex.StackTrace.Split('\n')[0].Trim();
-                string line = location.Replace("File \"<string>\", line ", "").Replace(", in <module>", "");
-                error_loc = line;
-            } catch { error_loc = "<Unk>"; }
+                string[] traces = pex.StackTrace.Split('\n');
+                foreach (var trace in traces)
+                {
+                    string ln = trace.Trim();
+                    if (ln.StartsWith("File"))
+                    {
+                        // format: File "xxx", line xxx, in xxx
+                        var match = Regex.Match(ln, @"^\s*File ""(?<file>.+?)"", line (?<line>\d+), in (?<function>.+?)\s*$");
+                        string file = match.Groups["file"].Value;
+                        if (file == "<string>") file = "Evaluated code";
+                        else if (file.Contains("site-packages")) file = file.Substring(file.ToLower().IndexOf("site-packages") + 14);
+                        int lno = int.Parse(match.Groups["line"].Value);
+                        string function = match.Groups["function"].Value;
+                        error_loc += $"\n  Function call {function}, {file} ({lno})";
+                    }
+                }
+            } catch { error_loc = "\nNo stack trace available"; }
 
-            if (error_loc == "<Unk>")
-                Fatal("Python interpreter error: " + pex.Message);
-            else
-                Fatal("Python interpreter error: " + pex.Message + "\n  " + $"at line {error_loc}: ...");
+            if (error_loc == "") Fatal("Python interpreter error: " + pex.Message);
+            else Fatal("Python interpreter error: " + pex.Message + error_loc);
             throw new PythonExecutionFailedException(pex.Message, pex);
         }
         catch (PythonApplicationErrorException)

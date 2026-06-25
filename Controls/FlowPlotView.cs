@@ -891,9 +891,9 @@ public sealed class FlowPlotView : Control
         if (gate.Vertices.Count == 0 || XAxis is null || YAxis is null)
             return;
 
-        var pen = new Pen(new SolidColorBrush(Color.FromRgb(20, 133, 255)), 2);
+        var pen = new Pen(new SolidColorBrush(Color.FromRgb(0, 0, 0)), 2);
         var handle_fill = Brushes.White;
-        var handle_stroke = new Pen(new SolidColorBrush(Color.FromRgb(20, 133, 255)), 1.2);
+        var handle_stroke = new Pen(new SolidColorBrush(Color.FromRgb(0, 0, 0)), 1.2);
 
         if (gate.Kind == GateKind.Rectangle && gate.Vertices.Count >= 2)
         {
@@ -903,11 +903,7 @@ public sealed class FlowPlotView : Control
         }
         else if (gate.Kind is GateKind.Threshold or GateKind.Range)
         {
-            foreach (var vertex in gate.Vertices)
-            {
-                var point = data_to_screen(vertex);
-                context.DrawLine(pen, new Point(point.X, plot_rect.Top), new Point(point.X, plot_rect.Bottom));
-            }
+            draw_histogram_gate_indicator(context, gate.Vertices, Color.FromRgb(0, 0, 0), gate.Kind == GateKind.Range);
         }
         else if (gate.Kind is GateKind.Quadrant or GateKind.CurlyQuadrant or GateKind.OffsetQuadrant)
             draw_quadrant_gate(context, gate, pen);
@@ -968,22 +964,14 @@ public sealed class FlowPlotView : Control
         }
         else if (pending_gate.Kind == GateKind.Range)
         {
-            foreach (var vertex in pending_gate.Vertices)
-            {
-                var point = data_to_screen(vertex);
-                context.DrawLine(pen, new Point(point.X, plot_rect.Top), new Point(point.X, plot_rect.Bottom));
-            }
-
+            var vertices = pending_gate.Vertices.ToList();
             if (has_pending_preview_point)
-            {
-                var preview = data_to_screen(pending_preview_point);
-                context.DrawLine(pen, new Point(preview.X, plot_rect.Top), new Point(preview.X, plot_rect.Bottom));
-            }
+                vertices.Add(pending_preview_point);
+            draw_histogram_gate_indicator(context, vertices, Color.FromRgb(20, 133, 255), true);
         }
         else if (pending_gate.Kind is GateKind.Threshold)
         {
-            var point = data_to_screen(pending_gate.Vertices[0]);
-            context.DrawLine(pen, new Point(point.X, plot_rect.Top), new Point(point.X, plot_rect.Bottom));
+            draw_histogram_gate_indicator(context, pending_gate.Vertices, Color.FromRgb(20, 133, 255), false);
         }
         else if (pending_gate.Kind is GateKind.Quadrant or GateKind.CurlyQuadrant or GateKind.OffsetQuadrant)
             draw_quadrant_gate(context, pending_gate, pen);
@@ -1018,11 +1006,46 @@ public sealed class FlowPlotView : Control
         var pen = new Pen(new SolidColorBrush(Color.FromArgb(180, 20, 133, 255)), 1.2, DashStyle.Dash);
         if (gate.Kind == GateKind.Threshold)
         {
-            var point = data_to_screen(gate.Vertices[0]);
-            context.DrawLine(pen, new Point(point.X, plot_rect.Top), new Point(point.X, plot_rect.Bottom));
+            draw_histogram_gate_indicator(context, gate.Vertices, Color.FromArgb(180, 20, 133, 255), false);
         }
         else
             draw_quadrant_gate(context, gate, pen);
+    }
+
+    private void draw_histogram_gate_indicator(
+        DrawingContext context,
+        IEnumerable<Point> vertices,
+        Color color,
+        bool connect_handles)
+    {
+        var points = vertices.Select(data_to_screen).ToList();
+        if (points.Count == 0)
+            return;
+
+        var brush = new SolidColorBrush(color);
+        var guide_pen = new Pen(brush, 1.2, DashStyle.Dash);
+        var handle_stroke = new Pen(brush, 1.6);
+        var center_y = plot_rect.Top + plot_rect.Height / 2;
+
+        foreach (var point in points)
+            context.DrawLine(guide_pen, new Point(point.X, plot_rect.Top), new Point(point.X, plot_rect.Bottom));
+
+        if (connect_handles && points.Count >= 2)
+        {
+            double left = points.Min(point => point.X);
+            double right = points.Max(point => point.X);
+            context.DrawLine(handle_stroke, new Point(left, center_y), new Point(right, center_y));
+        }
+
+        foreach (var point in points)
+        {
+            if (!connect_handles)
+                context.DrawLine(handle_stroke, new Point(point.X - 12, center_y), new Point(point.X + 12, center_y));
+
+            var handle = new Rect(point.X - 5, center_y - 5, 10, 10);
+            context.FillRectangle(Brushes.White, handle);
+            context.DrawRectangle(null, handle_stroke, handle);
+        }
     }
 
     private void draw_quadrant_gate(DrawingContext context, GateDefinition gate, Pen pen)
@@ -1680,7 +1703,7 @@ public sealed class FlowPlotView : Control
         {
             Color[] cycle =
             [
-                Color.FromRgb(220, 220, 220),
+                Color.FromRgb(255, 255, 255),
                 Color.FromRgb(150, 150, 150),
                 Color.FromRgb(85, 85, 85),
                 Color.FromRgb(35, 35, 35),

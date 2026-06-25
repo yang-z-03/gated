@@ -50,7 +50,13 @@ public sealed class IntegrationJobRunner
         var integration = job as IntegrationPlatform
             ?? throw new InvalidOperationException("Integration can only run on an integration platform.");
         var pipeline = new ReductionPipeline(job.Compensated!);
-        pipeline.ApplyLogicle(new LogicleNormalizationOptions { Parameters = job.Axis.Logicle }, force: true);
+        pipeline.ApplyLogicle(
+            new LogicleNormalizationOptions
+            {
+                Parameters = job.Axis.Logicle,
+                Scales = build_reduction_scales(job)
+            },
+            force: true);
         var logicle_normalized = copy(pipeline.State.LogicleNormalized);
 
         if (integration.BatchIds.Distinct().Skip(1).Any())
@@ -266,6 +272,30 @@ public sealed class IntegrationJobRunner
             row_map_source_ids[row] = source_id;
             row_map_event_indices[row] = item.EventIndex;
         }
+    }
+
+    private CoordinateScaleKind[,] build_reduction_scales(Platform job)
+    {
+        var features = job.SelectedFeatureNames;
+        var scales = new CoordinateScaleKind[job.RowMap.Count, features.Length];
+        for (int row = 0; row < job.RowMap.Count; row++)
+        {
+            int source_id = job.RowMap.SourceIds[row];
+            var source = source_id >= 0 && source_id < job.RowMap.Sources.Count
+                ? job.RowMap.Sources[source_id]
+                : null;
+            var sample = source is null ? null : find_sample(source.SampleId);
+            string cytometer_name = Configuration.CytometerNameForSample(sample);
+            for (int column = 0; column < features.Length; column++)
+            {
+                string feature = features[column];
+                scales[row, column] = sample is not null && sample.Embeddings.ContainsKey(feature)
+                    ? CoordinateScaleKind.Linear
+                    : Configuration.DefaultCoordinateScaleForChannel(feature, cytometer_name);
+            }
+        }
+
+        return scales;
     }
 
     private Dictionary<Guid, string> build_batch_lookup(Platform job, IEnumerable<Guid> sample_ids)

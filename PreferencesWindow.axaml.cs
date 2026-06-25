@@ -16,17 +16,7 @@ public partial class PreferencesWindow : Window
         cytometerList.SelectedItem = Configuration.Preferences.Cytometers.FirstOrDefault(item => item.Name == Configuration.Preferences.SelectedCytometerName)
             ?? Configuration.Preferences.Cytometers.FirstOrDefault();
         channelGrid.ItemsSource = (cytometerList.SelectedItem as CytometerPreference)?.Channels;
-        cytometerNameBox.TextChanged += (_, _) =>
-        {
-            string? name = cytometerNameBox.Text;
-            if (cytometerList.SelectedItem is CytometerPreference preference && !string.IsNullOrWhiteSpace(name))
-            {
-                preference.Name = name.Trim();
-                cytometerList.ItemsSource = null;
-                cytometerList.ItemsSource = Configuration.Preferences.Cytometers;
-                cytometerList.SelectedItem = preference;
-            }
-        };
+        
         addCytometerButton.Click += (_, _) => add_cytometer();
         addChannelButton.Click += (_, _) => add_channel();
         removeChannelButton.Click += (_, _) => remove_channel();
@@ -43,9 +33,7 @@ public partial class PreferencesWindow : Window
 
     private void bind_selected()
     {
-        if (cytometerList.SelectedItem is not CytometerPreference preference)
-            return;
-        cytometerNameBox.Text = preference.Name;
+        if (cytometerList.SelectedItem is not CytometerPreference preference) return;
         channelGrid.ItemsSource = preference.Channels;
     }
 

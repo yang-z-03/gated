@@ -5,7 +5,9 @@ using System.ComponentModel;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
+using Avalonia.Media;
 using Avalonia.Threading;
+using gated.Controls;
 using gated.Models;
 using gated.Reduction;
 using gated.Services;
@@ -818,7 +820,7 @@ public abstract class PlatformEditorViewModel : NotifyBase
         Platform.WarningText = "Cancellation requested. Completed intermediate results remain available.";
     }
 
-    private void platform_changed(object? sender, PropertyChangedEventArgs e)
+    protected virtual void platform_changed(object? sender, PropertyChangedEventArgs e)
     {
         OnPropertyChanged(nameof(HasWarning));
         OnPropertyChanged(nameof(IsEditable));
@@ -913,11 +915,13 @@ public abstract class PlatformEditorViewModel : NotifyBase
     {
         Workspace.MetadataColumns["Group"] = MetadataColumnKind.String;
         Workspace.MetadataColumns["Sample"] = MetadataColumnKind.String;
+        Workspace.MetadataColumns[Configuration.CytometerMetadataKey] = MetadataColumnKind.String;
         foreach (var group in Workspace.Groups)
         foreach (var sample in group.Samples)
         {
             sample.Metadata["Group"] = group.Name;
             sample.Metadata["Sample"] = sample.Name;
+            sample.Metadata[Configuration.CytometerMetadataKey] = Configuration.CytometerNameForSample(sample);
         }
     }
 
@@ -1011,7 +1015,379 @@ public sealed record EnumDisplayChoice<T>(T Value, string DisplayLabel) where T 
 
 public sealed class IntegrationPlatformEditorViewModel : PlatformEditorViewModel
 {
-    public IntegrationPlatformEditorViewModel(FlowWorkspace workspace, Platform platform) : base(workspace, platform) { }
+    private static readonly Color[] histogram_palette =
+    [
+        Color.FromRgb(20, 133, 255),
+        Color.FromRgb(230, 126, 34),
+        Color.FromRgb(46, 204, 113),
+        Color.FromRgb(155, 89, 182),
+        Color.FromRgb(231, 76, 60),
+        Color.FromRgb(22, 160, 133),
+        Color.FromRgb(241, 196, 15),
+        Color.FromRgb(52, 152, 219)
+    ];
+
+    private AxisChoice? selected_histogram_channel;
+    private bool show_normalized_histogram = true;
+
+    public IntegrationPlatformEditorViewModel(FlowWorkspace workspace, Platform platform) : base(workspace, platform)
+    {
+        PreviousHistogramChannelCommand = new RelayCommand(_ => move_histogram_channel(-1), _ => can_move_histogram_channel(-1));
+        NextHistogramChannelCommand = new RelayCommand(_ => move_histogram_channel(1), _ => can_move_histogram_channel(1));
+        refresh_integration_histogram();
+    }
+
+    public ObservableCollection<HistogramSeries> IntegrationHistogramSeries { get; } = new();
+    public ObservableCollection<AxisChoice> IntegrationHistogramChannelChoices { get; } = new();
+    public ICommand PreviousHistogramChannelCommand { get; }
+    public ICommand NextHistogramChannelCommand { get; }
+
+    public bool HasIntegrationHistogram => Platform.Kind == PlatformKind.Integration && Platform.HasIntegrated;
+    public bool CanShowNormalizedHistogram => Platform is MultivariatePlatform { Normalized: not null };
+    public int IntegrationHistogramSmoothing => 3;
+    public double IntegrationHistogramMinimum { get; private set; }
+    public double IntegrationHistogramMaximum { get; private set; } = new LogicleParameters().T;
+    public HistogramAxisScaleKind IntegrationHistogramAxisScale { get; private set; } = HistogramAxisScaleKind.Linear;
+    public double IntegrationHistogramLogicleT { get; private set; } = new LogicleParameters().T;
+    public double IntegrationHistogramLogicleW { get; private set; } = new LogicleParameters().W;
+    public double IntegrationHistogramLogicleM { get; private set; } = new LogicleParameters().M;
+    public double IntegrationHistogramLogicleA { get; private set; } = new LogicleParameters().A;
+
+    public bool ShowNormalizedHistogram
+    {
+        get => show_normalized_histogram && CanShowNormalizedHistogram;
+        set
+        {
+            bool next = value && CanShowNormalizedHistogram;
+            if (show_normalized_histogram == next)
+                return;
+            show_normalized_histogram = next;
+            refresh_integration_histogram();
+            OnPropertyChanged();
+        }
+    }
+
+    public AxisChoice? SelectedIntegrationHistogramChannel
+    {
+        get
+        {
+            ensure_histogram_channel();
+            return selected_histogram_channel;
+        }
+        set
+        {
+            if (value is null || selected_histogram_channel?.Name == value.Name)
+                return;
+            selected_histogram_channel = value;
+            refresh_integration_histogram();
+            OnPropertyChanged();
+        }
+    }
+
+    protected override void platform_changed(object? sender, PropertyChangedEventArgs e)
+    {
+        base.platform_changed(sender, e);
+        if (e.PropertyName is nameof(Platform.HasIntegrated) or nameof(Platform.HasResults) or nameof(Platform.IsConfigurationLocked) or nameof(Platform.Parameters) or null or "")
+            refresh_integration_histogram();
+    }
+
+    private void refresh_integration_histogram()
+    {
+        refresh_histogram_channel_choices();
+        ensure_histogram_channel();
+        IntegrationHistogramSeries.Clear();
+        if (!HasIntegrationHistogram || selected_histogram_channel is null)
+        {
+            notify_histogram_properties();
+            return;
+        }
+
+        var matrix = ShowNormalizedHistogram && Platform is MultivariatePlatform { Normalized: not null } multivariate
+            ? multivariate.Normalized
+            : Platform.Compensated;
+        if (matrix is null || Platform.RowMap.Count == 0)
+        {
+            notify_histogram_properties();
+            return;
+        }
+
+        string channel_name = selected_histogram_channel.Name;
+        int column = Array.IndexOf(Platform.SelectedFeatureNames, channel_name);
+        if (column < 0 || column >= matrix.GetLength(1))
+        {
+            notify_histogram_properties();
+            return;
+        }
+
+        update_histogram_axis(channel_name, matrix, column);
+        var value_transform = histogram_value_transform(channel_name);
+        for (int source_id = 0; source_id < Platform.RowMap.Sources.Count; source_id++)
+        {
+            var values = new List<double>();
+            for (int row = 0; row < Platform.RowMap.SourceIds.Length && row < matrix.GetLength(0); row++)
+            {
+                if (Platform.RowMap.SourceIds[row] != source_id)
+                    continue;
+                double value = value_transform(matrix[row, column]);
+                if (double.IsFinite(value))
+                    values.Add(value);
+            }
+
+            if (values.Count == 0)
+                continue;
+
+            IntegrationHistogramSeries.Add(new HistogramSeries
+            {
+                Name = source_label(source_id),
+                Values = values,
+                BinCount = 400,
+                Color = histogram_palette[source_id % histogram_palette.Length]
+            });
+        }
+
+        notify_histogram_properties();
+    }
+
+    private void update_histogram_axis(string channel_name, float[,] matrix, int column)
+    {
+        bool normalized = ShowNormalizedHistogram;
+        var scale = histogram_channel_scale(channel_name);
+        double maximum = channel_maximum(channel_name);
+        IntegrationHistogramLogicleT = maximum;
+        IntegrationHistogramLogicleW = Platform.Axis.Logicle.W;
+        IntegrationHistogramLogicleM = Platform.Axis.Logicle.M;
+        IntegrationHistogramLogicleA = Platform.Axis.Logicle.A;
+
+        if (scale == HistogramAxisScaleKind.Linear)
+        {
+            IntegrationHistogramAxisScale = HistogramAxisScaleKind.Linear;
+            if (normalized)
+            {
+                IntegrationHistogramMinimum = normalized_observed_minimum(channel_name);
+                IntegrationHistogramMaximum = normalized_observed_maximum(channel_name);
+            }
+            else
+            {
+                IntegrationHistogramMinimum = -0.1 * maximum;
+                IntegrationHistogramMaximum = 1.1 * maximum;
+            }
+            return;
+        }
+
+        if (scale == HistogramAxisScaleKind.Log)
+        {
+            IntegrationHistogramAxisScale = HistogramAxisScaleKind.Log;
+            var log_observed = observed_real_range(matrix, column, ShowNormalizedHistogram ? value => Math.Pow(10, value) : null);
+            double log_minimum = Math.Log10(Math.Max(log_observed.Minimum, double.Epsilon));
+            double log_maximum = Math.Log10(Math.Max(log_observed.Maximum, double.Epsilon));
+            double log_span = log_maximum - log_minimum;
+            if (!double.IsFinite(log_span) || log_span <= 0)
+                log_span = 1;
+            IntegrationHistogramMinimum = Math.Pow(10, log_minimum - log_span * 0.1);
+            IntegrationHistogramMaximum = Math.Pow(10, log_maximum + log_span * 0.1);
+            return;
+        }
+
+        IntegrationHistogramAxisScale = HistogramAxisScaleKind.Logicle;
+        var transform = new LogicleTransform(new LogicleParameters(
+            IntegrationHistogramLogicleT,
+            IntegrationHistogramLogicleW,
+            IntegrationHistogramLogicleM,
+            IntegrationHistogramLogicleA));
+        var observed = observed_real_range(matrix, column, ShowNormalizedHistogram ? value => transform.InverseTransform(value) : null);
+        double transformed_minimum = transform.Transform(observed.Minimum);
+        double transformed_maximum = transform.Transform(observed.Maximum);
+        double transformed_span = transformed_maximum - transformed_minimum;
+        if (!double.IsFinite(transformed_span) || transformed_span <= 0)
+        {
+            transformed_minimum = -0.1;
+            transformed_maximum = 1.1;
+            transformed_span = 1.2;
+        }
+        IntegrationHistogramMinimum = transform.InverseTransform(transformed_minimum - transformed_span * 0.1);
+        IntegrationHistogramMaximum = transform.InverseTransform(transformed_maximum + transformed_span * 0.1);
+    }
+
+    private (double Minimum, double Maximum) observed_real_range(float[,] matrix, int column, Func<double, double>? transform = null)
+    {
+        double minimum = double.PositiveInfinity;
+        double maximum = double.NegativeInfinity;
+        for (int row = 0; row < matrix.GetLength(0); row++)
+        {
+            double value = matrix[row, column];
+            if (transform is not null)
+                value = transform(value);
+            if (!double.IsFinite(value))
+                continue;
+            minimum = Math.Min(minimum, value);
+            maximum = Math.Max(maximum, value);
+        }
+
+        if (!double.IsFinite(minimum) || !double.IsFinite(maximum))
+            return (0, channel_maximum(selected_histogram_channel?.Name ?? ""));
+        if (maximum <= minimum)
+            maximum = minimum + 1;
+        return (minimum, maximum);
+    }
+
+    private HistogramAxisScaleKind histogram_channel_scale(string channel_name)
+    {
+        if (Platform.Axis.Transform == PlatformTransformationKind.Logarithm)
+            return HistogramAxisScaleKind.Log;
+        if (Configuration.DefaultCoordinateScaleForChannel(channel_name) == CoordinateScaleKind.Logicle)
+            return HistogramAxisScaleKind.Logicle;
+        return HistogramAxisScaleKind.Linear;
+    }
+
+    private Func<double, double> histogram_value_transform(string channel_name)
+    {
+        if (!ShowNormalizedHistogram)
+            return value => value;
+
+        var scale = histogram_channel_scale(channel_name);
+        if (scale == HistogramAxisScaleKind.Log)
+            return value => Math.Pow(10, value);
+        if (scale == HistogramAxisScaleKind.Logicle)
+        {
+            var transform = new LogicleTransform(new LogicleParameters(
+                IntegrationHistogramLogicleT,
+                IntegrationHistogramLogicleW,
+                IntegrationHistogramLogicleM,
+                IntegrationHistogramLogicleA));
+            return value => transform.InverseTransform(value);
+        }
+
+        return value => value;
+    }
+
+    private double normalized_observed_minimum(string channel_name)
+    {
+        if (Platform is not MultivariatePlatform { Normalized: not null } multivariate)
+            return -0.1;
+        int column = Array.IndexOf(Platform.SelectedFeatureNames, channel_name);
+        if (column < 0)
+            return -0.1;
+        double minimum = Enumerable.Range(0, multivariate.Normalized.GetLength(0))
+            .Select(row => (double)multivariate.Normalized[row, column])
+            .Where(double.IsFinite)
+            .DefaultIfEmpty(-0.1)
+            .Min();
+        return Math.Min(-0.1, minimum);
+    }
+
+    private double normalized_observed_maximum(string channel_name)
+    {
+        if (Platform is not MultivariatePlatform { Normalized: not null } multivariate)
+            return 1.1;
+        int column = Array.IndexOf(Platform.SelectedFeatureNames, channel_name);
+        if (column < 0)
+            return 1.1;
+        double maximum = Enumerable.Range(0, multivariate.Normalized.GetLength(0))
+            .Select(row => (double)multivariate.Normalized[row, column])
+            .Where(double.IsFinite)
+            .DefaultIfEmpty(1.1)
+            .Max();
+        return Math.Max(1.1, maximum);
+    }
+
+    private double channel_maximum(string channel_name)
+    {
+        var sample_ids = Platform.RowMap.Sources.Select(source => source.SampleId).ToHashSet();
+        return Workspace.Groups
+            .SelectMany(group => group.Samples)
+            .Where(sample => sample_ids.Count == 0 || sample_ids.Contains(sample.Id))
+            .Select(sample => sample.Channels.FirstOrDefault(channel => channel.Name == channel_name)?.Maximum)
+            .Where(value => value.HasValue && value.Value > 0)
+            .Select(value => (double)value!.Value)
+            .DefaultIfEmpty(new LogicleParameters().T)
+            .Max();
+    }
+
+    private string source_label(int source_id)
+    {
+        if (source_id < 0 || source_id >= Platform.RowMap.Sources.Count)
+            return "";
+        var source = Platform.RowMap.Sources[source_id];
+        return Platform.Populations.FirstOrDefault(row =>
+                   row.GroupId == source.GroupId &&
+                   row.SampleId == source.SampleId &&
+                   row.GateId == source.GateId &&
+                   row.Region == source.Region)?.DisplayName
+               ?? $"Population {source_id + 1}";
+    }
+
+    private void ensure_histogram_channel()
+    {
+        var names = Platform.SelectedFeatureNames;
+        if (names.Length == 0)
+        {
+            selected_histogram_channel = null;
+            return;
+        }
+
+        if (selected_histogram_channel is not null && names.Contains(selected_histogram_channel.Name, StringComparer.Ordinal))
+        {
+            selected_histogram_channel = IntegrationHistogramChannelChoices.FirstOrDefault(choice => choice.Name == selected_histogram_channel.Name) ?? selected_histogram_channel;
+            return;
+        }
+        string name = names[0];
+        selected_histogram_channel = IntegrationHistogramChannelChoices.FirstOrDefault(choice => choice.Name == name);
+    }
+
+    private void refresh_histogram_channel_choices()
+    {
+        var names = Platform.SelectedFeatureNames;
+        if (IntegrationHistogramChannelChoices.Count == names.Length &&
+            IntegrationHistogramChannelChoices.Select(choice => choice.Name).SequenceEqual(names))
+            return;
+
+        IntegrationHistogramChannelChoices.Clear();
+        foreach (string name in names)
+        {
+            var feature = Platform.Features.FirstOrDefault(item => item.IsChannel && item.ChannelName == name);
+            IntegrationHistogramChannelChoices.Add(new AxisChoice(name, feature?.Label ?? ""));
+        }
+    }
+
+    private bool can_move_histogram_channel(int delta)
+    {
+        var names = Platform.SelectedFeatureNames;
+        if (names.Length <= 1)
+            return false;
+        int index = Array.IndexOf(names, selected_histogram_channel?.Name ?? "");
+        return index + delta >= 0 && index + delta < names.Length;
+    }
+
+    private void move_histogram_channel(int delta)
+    {
+        var names = Platform.SelectedFeatureNames;
+        int index = Array.IndexOf(names, selected_histogram_channel?.Name ?? "");
+        int next = Math.Clamp(index + delta, 0, names.Length - 1);
+        if (next < 0 || next >= names.Length)
+            return;
+        string name = names[next];
+        SelectedIntegrationHistogramChannel = IntegrationHistogramChannelChoices.FirstOrDefault(choice => choice.Name == name);
+    }
+
+    private void notify_histogram_properties()
+    {
+        OnPropertyChanged(nameof(HasIntegrationHistogram));
+        OnPropertyChanged(nameof(CanShowNormalizedHistogram));
+        OnPropertyChanged(nameof(ShowNormalizedHistogram));
+        OnPropertyChanged(nameof(IntegrationHistogramChannelChoices));
+        OnPropertyChanged(nameof(SelectedIntegrationHistogramChannel));
+        OnPropertyChanged(nameof(IntegrationHistogramMinimum));
+        OnPropertyChanged(nameof(IntegrationHistogramMaximum));
+        OnPropertyChanged(nameof(IntegrationHistogramAxisScale));
+        OnPropertyChanged(nameof(IntegrationHistogramLogicleT));
+        OnPropertyChanged(nameof(IntegrationHistogramLogicleW));
+        OnPropertyChanged(nameof(IntegrationHistogramLogicleM));
+        OnPropertyChanged(nameof(IntegrationHistogramLogicleA));
+        if (PreviousHistogramChannelCommand is RelayCommand previous)
+            previous.RaiseCanExecuteChanged();
+        if (NextHistogramChannelCommand is RelayCommand next)
+            next.RaiseCanExecuteChanged();
+    }
 }
 
 public sealed class CellCyclePlatformEditorViewModel : PlatformEditorViewModel

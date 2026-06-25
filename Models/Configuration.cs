@@ -77,10 +77,17 @@ public static class Configuration
         SavePreferences();
     }
 
-    public static string CytometerNameForSample(FlowSample? sample) =>
-        sample is not null && sample.Metadata.TryGetValue(CytometerMetadataKey, out var name)
-            ? normalize_cytometer_name(name)
-            : store.SelectedCytometerName;
+    public static string CytometerNameForSample(FlowSample? sample)
+    {
+        if (sample is null)
+            return DefaultCytometerName;
+        if (!sample.Metadata.TryGetValue(CytometerMetadataKey, out var name) || string.IsNullOrWhiteSpace(name))
+        {
+            sample.Metadata[CytometerMetadataKey] = DefaultCytometerName;
+            return DefaultCytometerName;
+        }
+        return normalize_cytometer_name(name);
+    }
 
     public static void SavePreferences()
     {
@@ -328,8 +335,9 @@ public static class Configuration
             yield return 0;
         if (maximum <= 0)
             yield break;
+
         double top_power = Math.Floor(Math.Log10(maximum));
-        for (int offset = 2; offset >= 0; offset--)
+        for (int offset = 1; offset >= 0; offset--)
         {
             double value = Math.Pow(10, top_power - offset);
             if (value >= minimum && value <= maximum)

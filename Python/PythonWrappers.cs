@@ -89,6 +89,7 @@ public sealed class Workspace
                 Model.MetadataColumns.Clear();
                 Model.MetadataColumns["Group"] = MetadataColumnKind.String;
                 Model.MetadataColumns["Sample"] = MetadataColumnKind.String;
+                Model.MetadataColumns[Configuration.CytometerMetadataKey] = MetadataColumnKind.String;
                 foreach (string column in metadata_columns)
                     Model.MetadataColumns[column] = infer_metadata_kind_from_frame(frame, pandas, column);
                 using PyObject records = frame.InvokeMethod("to_dict", "records".ToPython());
@@ -112,7 +113,7 @@ public sealed class Workspace
                         continue;
                 
                     foreach (string existing_key in sample.Metadata.Keys
-                                 .Where(key => key is not ("Group" or "Sample"))
+                                 .Where(key => key is not ("Group" or "Sample") && key != Configuration.CytometerMetadataKey)
                                  .Except(metadata_columns, StringComparer.Ordinal)
                                  .ToArray())
                         sample.Metadata.Remove(existing_key);
@@ -122,6 +123,7 @@ public sealed class Workspace
                             continue;
                         sample.Metadata[column] = python_metadata_value_to_string(value!, Model.MetadataColumns[column]);
                     }
+                    sample.Metadata[Configuration.CytometerMetadataKey] = Configuration.CytometerNameForSample(sample);
                 }
             }
         });
@@ -134,9 +136,11 @@ public sealed class Workspace
         {
             sample.Metadata["Group"] = group.Name;
             sample.Metadata["Sample"] = sample.Name;
+            sample.Metadata[Configuration.CytometerMetadataKey] = Configuration.CytometerNameForSample(sample);
         }
         Model.MetadataColumns["Group"] = MetadataColumnKind.String;
         Model.MetadataColumns["Sample"] = MetadataColumnKind.String;
+        Model.MetadataColumns[Configuration.CytometerMetadataKey] = MetadataColumnKind.String;
         foreach (string key in Model.Groups
                      .SelectMany(group => group.Samples)
                      .SelectMany(sample => sample.Metadata.Keys)

@@ -49,6 +49,46 @@
       </Expander>
       <ProgressBar Height="5" Minimum="0" Maximum="1" Value="{Binding Platform.ProgressFraction}" IsVisible="{Binding Platform.IsRunning}" />
       <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="{Binding Platform.ProgressText}" IsVisible="{Binding Platform.IsRunning}" />
+      <Expander Header="Integration histogram preview" IsVisible="{Binding HasIntegrationHistogram}" IsExpanded="True">
+        <StackPanel Margin="0,10,0,14" Spacing="0">
+          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8" HorizontalAlignment="Center" Width="390">
+            <Button Classes="Small" Width="30" Command="{Binding PreviousHistogramChannelCommand}">
+              <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/left.svg}" />
+            </Button>
+            <ComboBox Grid.Column="1"
+                      Classes="Small"
+                      HorizontalAlignment="Stretch"
+                      ItemsSource="{Binding IntegrationHistogramChannelChoices}"
+                      SelectedItem="{Binding SelectedIntegrationHistogramChannel}">
+              <ComboBox.ItemTemplate>
+                <DataTemplate>
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock IsVisible="{Binding HasLabel}" Foreground="{DynamicResource SemiColorText0}" FontWeight="SemiBold" Text="{Binding Label}" />
+                    <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="{Binding Name}" />
+                  </StackPanel>
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+            <Button Grid.Column="2" Classes="Small" Width="30" Command="{Binding NextHistogramChannelCommand}">
+              <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/right.svg}" />
+            </Button>
+          </Grid>
+          <controls:HistogramView Height="230" Margin="0 -5 0 5"
+                                  Series="{Binding IntegrationHistogramSeries}"
+                                  Minimum="{Binding IntegrationHistogramMinimum}"
+                                  Maximum="{Binding IntegrationHistogramMaximum}"
+                                  AxisScale="{Binding IntegrationHistogramAxisScale}"
+                                  LogicleTopOfScale="{Binding IntegrationHistogramLogicleT}"
+                                  LogicleLinearizationWidth="{Binding IntegrationHistogramLogicleW}"
+                                  LogicleDecades="{Binding IntegrationHistogramLogicleM}"
+                                  LogicleNegativeDecades="{Binding IntegrationHistogramLogicleA}"
+                                  BinSmoothing="{Binding IntegrationHistogramSmoothing}"
+                                  YMaximumFactor="1.1"
+                                  IsGatingEnabled="False" />
+          <CheckBox HorizontalAlignment="Center" IsChecked="{Binding ShowNormalizedHistogram}" Margin="0 8 0 0"
+                    IsEnabled="{Binding CanShowNormalizedHistogram}" Content="Show normalized data post CytoNorm integration" />
+        </StackPanel>
+      </Expander>
       <Grid Margin="0 4 0 24" ColumnDefinitions="Auto,*,Auto">
         <StackPanel Orientation="Horizontal" Spacing="8">
           <Button Classes="Small" Command="{Binding RunCommand}"><StackPanel Orientation="Horizontal" Spacing="6"><Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/run.svg}" /><TextBlock Text="{Binding RunCaption}" /></StackPanel></Button>

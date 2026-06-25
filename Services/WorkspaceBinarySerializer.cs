@@ -78,6 +78,7 @@ public sealed class WorkspaceBinarySerializer
     {
         workspace.MetadataColumns["Group"] = MetadataColumnKind.String;
         workspace.MetadataColumns["Sample"] = MetadataColumnKind.String;
+        workspace.MetadataColumns[Configuration.CytometerMetadataKey] = MetadataColumnKind.String;
         writer.Write(workspace.MetadataColumns.Count);
         foreach (var column in workspace.MetadataColumns.OrderBy(item => item.Key, StringComparer.Ordinal))
         {
@@ -93,6 +94,7 @@ public sealed class WorkspaceBinarySerializer
             workspace.MetadataColumns[read_string(reader)] = (MetadataColumnKind)reader.ReadInt32();
         workspace.MetadataColumns["Group"] = MetadataColumnKind.String;
         workspace.MetadataColumns["Sample"] = MetadataColumnKind.String;
+        workspace.MetadataColumns[Configuration.CytometerMetadataKey] = MetadataColumnKind.String;
         sync_identity_metadata(workspace);
     }
 
@@ -103,6 +105,7 @@ public sealed class WorkspaceBinarySerializer
         {
             sample.Metadata["Group"] = group.Name;
             sample.Metadata["Sample"] = sample.Name;
+            sample.Metadata[Configuration.CytometerMetadataKey] = Configuration.CytometerNameForSample(sample);
         }
     }
 

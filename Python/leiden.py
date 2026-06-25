@@ -486,6 +486,7 @@ def leiden(  # noqa: PLR0912, PLR0913, PLR0915
 
     clustering_args["n_iterations"] = n_iterations
     
+    application.log(f'Constructing neighborhood graph')
     application.progress(50, f'Constructing neighborhood graph ...')
     g = get_igraph_from_adjacency(connectivity, directed = False)
     
@@ -496,6 +497,7 @@ def leiden(  # noqa: PLR0912, PLR0913, PLR0915
     
     clustering_args.setdefault("objective_function", "modularity")
     
+    application.log(f'Running leiden')
     application.progress(70, f'Running leiden ...')
     with set_igraph_random_state(random_state):
         part = g.community_leiden(**clustering_args)

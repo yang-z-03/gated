@@ -86,6 +86,7 @@ public sealed partial class MainWindowViewModel
         sync_identity_metadata();
         Workspace.MetadataColumns["Group"] = MetadataColumnKind.String;
         Workspace.MetadataColumns["Sample"] = MetadataColumnKind.String;
+        Workspace.MetadataColumns[Configuration.CytometerMetadataKey] = MetadataColumnKind.String;
         foreach (var key in Workspace.Groups
                      .SelectMany(group => group.Samples)
                      .SelectMany(sample => sample.Metadata.Keys)
@@ -104,6 +105,7 @@ public sealed partial class MainWindowViewModel
         {
             sample.Metadata["Group"] = group.Name;
             sample.Metadata["Sample"] = sample.Name;
+            sample.Metadata[Configuration.CytometerMetadataKey] = Configuration.CytometerNameForSample(sample);
         }
     }
 
@@ -156,9 +158,16 @@ public sealed partial class MainWindowViewModel
         {
             object value = row.Table.Columns.Contains(column.Key) ? row[column.Key] : DBNull.Value;
             if (value == DBNull.Value || value is null || string.IsNullOrWhiteSpace(Convert.ToString(value)))
-                sample.Metadata.Remove(column.Key);
+            {
+                if (column.Key == Configuration.CytometerMetadataKey)
+                    sample.Metadata[column.Key] = Configuration.DefaultCytometerName;
+                else
+                    sample.Metadata.Remove(column.Key);
+            }
             else
+            {
                 sample.Metadata[column.Key] = format_metadata_value(value, column.Value);
+            }
         }
         sync_identity_metadata();
     }

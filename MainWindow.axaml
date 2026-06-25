@@ -15,101 +15,6 @@
         Background="{DynamicResource SemiColorBackground0}">
         
     <Window.Styles>
-        <Style Selector="ToggleButton.PageModeSwitch">
-            <Setter Property="Width" Value="164" />
-            <Setter Property="Height" Value="28" />
-            <Setter Property="Padding" Value="0" />
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Focusable" Value="False" />
-            <Setter Property="Template">
-                <ControlTemplate>
-                    <Border x:Name="PART_Track"
-                            Width="164"
-                            Height="28"
-                            CornerRadius="7"
-                            Background="#1A1B22"
-                            BorderBrush="#4A4D58"
-                            BorderThickness="1"
-                            ClipToBounds="True">
-                        <Border.Transitions>
-                            <Transitions>
-                                <BrushTransition Property="Background" Duration="0:0:0.16" />
-                                <BrushTransition Property="BorderBrush" Duration="0:0:0.16" />
-                            </Transitions>
-                        </Border.Transitions>
-                        <Grid ColumnDefinitions="*,*">
-                            <Border x:Name="PART_Thumb"
-                                    Grid.ColumnSpan="2"
-                                    Width="76"
-                                    Height="20"
-                                    Margin="3,3,0,3"
-                                    HorizontalAlignment="Left"
-                                    CornerRadius="5"
-                                    Background="#ECEEF5"
-                                    BoxShadow="0 1 5 0 #80000000">
-                                <Border.Transitions>
-                                    <Transitions>
-                                        <ThicknessTransition Property="Margin" Duration="0:0:0.20" />
-                                        <BrushTransition Property="Background" Duration="0:0:0.16" />
-                                    </Transitions>
-                                </Border.Transitions>
-                            </Border>
-                            <TextBlock x:Name="PART_AnalysisText"
-                                       Grid.Column="0"
-                                       Text="Analysis"
-                                       FontSize="12"
-                                       FontWeight="SemiBold"
-                                       Foreground="#20232C"
-                                       HorizontalAlignment="Center"
-                                       VerticalAlignment="Center"
-                                       IsHitTestVisible="False">
-                                <TextBlock.Transitions>
-                                    <Transitions>
-                                        <BrushTransition Property="Foreground" Duration="0:0:0.16" />
-                                    </Transitions>
-                                </TextBlock.Transitions>
-                            </TextBlock>
-                            <TextBlock x:Name="PART_LayoutText"
-                                       Grid.Column="1"
-                                       Text="Layout"
-                                       FontSize="12"
-                                       FontWeight="SemiBold"
-                                       Foreground="#B9BDCA"
-                                       HorizontalAlignment="Center"
-                                       VerticalAlignment="Center"
-                                       IsHitTestVisible="False">
-                                <TextBlock.Transitions>
-                                    <Transitions>
-                                        <BrushTransition Property="Foreground" Duration="0:0:0.16" />
-                                    </Transitions>
-                                </TextBlock.Transitions>
-                            </TextBlock>
-                        </Grid>
-                    </Border>
-                </ControlTemplate>
-            </Setter>
-        </Style>
-        <Style Selector="ToggleButton.PageModeSwitch:pointerover /template/ Border#PART_Track">
-            <Setter Property="Background" Value="#20222B" />
-            <Setter Property="BorderBrush" Value="#656A78" />
-        </Style>
-        <Style Selector="ToggleButton.PageModeSwitch:pointerover /template/ Border#PART_Thumb">
-            <Setter Property="Background" Value="#FFFFFF" />
-        </Style>
-        <Style Selector="ToggleButton.PageModeSwitch:checked /template/ Border#PART_Thumb">
-            <Setter Property="Margin" Value="83,3,0,3" />
-        </Style>
-        <Style Selector="ToggleButton.PageModeSwitch:checked /template/ TextBlock#PART_AnalysisText">
-            <Setter Property="Foreground" Value="#B9BDCA" />
-        </Style>
-        <Style Selector="ToggleButton.PageModeSwitch:checked /template/ TextBlock#PART_LayoutText">
-            <Setter Property="Foreground" Value="#20232C" />
-        </Style>
-        <Style Selector="ToggleButton.PageModeSwitch:pressed /template/ Border#PART_Thumb">
-            <Setter Property="Background" Value="#D8DBE5" />
-        </Style>
-        
         <Style Selector="RadioButton.GateToolButton">
             <Setter Property="Width" Value="44" />
             <Setter Property="Height" Value="44" />
@@ -236,10 +141,12 @@
             <Rectangle Fill="#252530" PointerPressed="title_bar_pressed"/>
             <DockPanel>
               <Border BorderBrush="#252530" BorderThickness="0 0 0 0"/>
+              
+              <!-- Page mode switch -->
               <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                 <Border x:Name="mainModeSwitch"
                         Margin="5 6 8 6"
-                        Width="246"
+                        Width="220"
                         Height="28"
                         CornerRadius="7"
                         Background="#1A1B22"
@@ -255,9 +162,9 @@
                   <Grid ColumnDefinitions="*,*,*">
                     <Border x:Name="mainModeSwitchThumb"
                             Grid.ColumnSpan="3"
-                            Width="76"
+                            Width="68"
                             Height="20"
-                            Margin="3,3,0,3"
+                            Margin="3,3,3,3"
                             HorizontalAlignment="Left"
                             CornerRadius="5"
                             Background="#ECEEF5"
@@ -273,7 +180,7 @@
                                Grid.Column="0"
                                Text="Analysis"
                                FontSize="12"
-                               FontWeight="SemiBold"
+                               FontWeight="Bold"
                                Foreground="#20232C"
                                HorizontalAlignment="Center"
                                VerticalAlignment="Center"
@@ -288,7 +195,7 @@
                                Grid.Column="1"
                                Text="Layout"
                                FontSize="12"
-                               FontWeight="SemiBold"
+                               FontWeight="Bold"
                                Foreground="#B9BDCA"
                                HorizontalAlignment="Center"
                                VerticalAlignment="Center"
@@ -303,7 +210,7 @@
                                Grid.Column="2"
                                Text="Code"
                                FontSize="12"
-                               FontWeight="SemiBold"
+                               FontWeight="Bold"
                                Foreground="#B9BDCA"
                                HorizontalAlignment="Center"
                                VerticalAlignment="Center"
@@ -325,6 +232,7 @@
                     </Border>
                   </Grid>
                 </Border>
+
                 <Button x:Name="minimizeButton" Width="30" Height="30" Margin="5 5 0 5" Click="window_minimize" Classes="Title">
                   <TextBlock IsHitTestVisible="False" FontFamily="{DynamicResource SemiFontFamilyIcon}" Text="&#xe1d8;" 
                              HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="14"/>

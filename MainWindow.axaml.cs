@@ -117,9 +117,9 @@ public partial class MainWindow : Window
     private void update_main_mode_switch()
     {
         mainModeSwitchThumb.Margin = view_model.ViewState == MainWindowViewState.Code
-            ? new Thickness(163, 3, 0, 3)
+            ? new Thickness(147, 3, 3, 3)
             : view_model.ViewState == MainWindowViewState.Layout
-                ? new Thickness(83, 3, 0, 3)
+                ? new Thickness(75, 3, 0, 3)
                 : new Thickness(3, 3, 0, 3);
 
         var active = new SolidColorBrush(Color.FromRgb(32, 35, 44));
