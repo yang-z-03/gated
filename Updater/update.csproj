@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
         <OutputType>WinExe</OutputType>
         <TargetFramework>net10.0</TargetFramework>
@@ -19,5 +19,18 @@
         <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.12" />
         <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.12" />
         <PackageReference Include="Tmds.DBus.Protocol" Version="0.21.3" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <AvaloniaResource Include="..\Fonts\roboto-bi.ttf" Link="Fonts\roboto-bi.ttf"/>
+        <AvaloniaResource Include="..\Fonts\roboto-bn.ttf" Link="Fonts\roboto-bn.ttf"/>
+        <AvaloniaResource Include="..\Fonts\roboto-i.ttf" Link="Fonts\roboto-i.ttf"/>
+        <AvaloniaResource Include="..\Fonts\roboto-n.ttf" Link="Fonts\roboto-n.ttf"/>
+        <AvaloniaResource Include="..\Fonts\roboto-ti.ttf" Link="Fonts\roboto-ti.ttf"/>
+        <AvaloniaResource Include="..\Fonts\roboto-tn.ttf" Link="Fonts\roboto-tn.ttf"/>
+        <AvaloniaResource Include="..\Fonts\plex-mono-bi.ttf" Link="Fonts\plex-mono-bi.ttf"/>
+        <AvaloniaResource Include="..\Fonts\plex-mono-bn.ttf" Link="Fonts\plex-mono-bn.ttf"/>
+        <AvaloniaResource Include="..\Fonts\plex-mono-i.ttf" Link="Fonts\plex-mono-i.ttf"/>
+        <AvaloniaResource Include="..\Fonts\plex-mono-n.ttf" Link="Fonts\plex-mono-n.ttf"/>
     </ItemGroup>
 </Project>

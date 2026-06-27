@@ -9,7 +9,7 @@
         MaxWidth="680"
         MaxHeight="500"
         WindowStartupLocation="CenterScreen"
-        FontFamily="Adobe Clean, Roboto, Inter, SF Pro Text, Arial"
+        FontFamily="avares://update/Fonts/#Roboto"
         Background="#282828">
     <Window.Resources>
         <LinearGradientBrush x:Key="RightFadeMask"

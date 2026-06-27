@@ -1081,7 +1081,7 @@ public sealed partial class UpdaterWindow : Window
 
     private static SolidColorBrush brush(byte r, byte g, byte b) => new(Color.FromRgb(r, g, b));
 
-    private static FontFamily code_font_family() => new("avares://gated/Fonts#IBM Plex Mono");
+    private static FontFamily code_font_family() => new("avares://update/Fonts#IBM Plex Mono");
 
     private static string format_bytes(long bytes)
     {
