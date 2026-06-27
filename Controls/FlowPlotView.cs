@@ -1177,7 +1177,7 @@ public sealed class FlowPlotView : Control
 
         string name = gate.PopulationName(region);
         string statistics = $"{event_count:N0}  {parent_frequency:0.#}%";
-        string label = ShowGateAnnotationNames ? $"{name}  {statistics}" : statistics;
+        string label = ShowGateAnnotationNames ? $"{name}\n{statistics}" : statistics;
         var text = new FormattedText(
             label,
             CultureInfo.CurrentCulture,
@@ -1196,6 +1196,14 @@ public sealed class FlowPlotView : Control
         const double margin = 8;
         double width = text.Width + 12;
         double height = text.Height + 8;
+        if (gate.Kind is GateKind.Polygon or GateKind.Rectangle)
+        {
+            var top_left = gate_screen_bounds_top_left(gate);
+            return new Point(
+                clamp_to_range(top_left.X + 12, plot_rect.Left + margin, plot_rect.Right - width + 6),
+                clamp_to_range(top_left.Y + 10, plot_rect.Top + margin, plot_rect.Bottom - height + 4));
+        }
+
         var anchor = data_to_screen(gate.Vertices[0]);
         double x = anchor.X + 10;
         double y = anchor.Y - 24;
@@ -1230,6 +1238,22 @@ public sealed class FlowPlotView : Control
         return new Point(
             clamp_to_range(x, plot_rect.Left + margin, plot_rect.Right - width + 6),
             clamp_to_range(y, plot_rect.Top + margin, plot_rect.Bottom - height + 4));
+    }
+
+    private Point gate_screen_bounds_top_left(GateDefinition gate)
+    {
+        double left = double.PositiveInfinity;
+        double top = double.PositiveInfinity;
+        foreach (var vertex in gate.Vertices)
+        {
+            var point = data_to_screen(vertex);
+            left = Math.Min(left, point.X);
+            top = Math.Min(top, point.Y);
+        }
+
+        return double.IsFinite(left) && double.IsFinite(top)
+            ? new Point(left, top)
+            : data_to_screen(gate.Vertices[0]);
     }
 
     private static double clamp_to_range(double value, double minimum, double maximum) =>

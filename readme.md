@@ -1,5 +1,5 @@
 
-# ![Icon](gated-32.png) Gated: Flow Cytometry Analyser
+# Gated: Flow Cytometry Analyser
 
 Gated is a free, light-weight and elegant analyser and visualizer of FCS data.
 It is a cross-platform application with supports of:
@@ -17,16 +17,22 @@ It is a cross-platform application with supports of:
 
 ### Installation
 
-See the releases for compiled binary packages for **Windows x64 (.Net 10)**
-[Download Releases](https://github.com/yang-z-03/gated/releases)
+See the releases for compiled binary packages for 
+**Windows x64, macOS ARM64, macOS x64 and Linux x64 (.NET 10)**
+[Download Releases](https://github.com/yang-z-03/gated/releases). 
+.NET runtime installation is required to install manually rather than packed.
 
 This is the portable software package that you could decompress anywhere without
 administrator previlege and run the application. The software will try to update
 itself if newer versions are released if there are network connection from the GitHub
 repository releases.
 
-From 0.25.3, the binary package contains an embeddable Python runtime and are
-capable of executing arbitary code. User should only execute trusted macros and scripts.
+This application bundles with a copy of embedded Python runtime. For Windows,
+its machinary of library finding and isolation makes it works fine, however, for 
+UNIX like operating system, we disabled PATH finding to independently isolate the Python
+environment. However, this will make it fail to locate system compilers when compiling 
+package sources. (Also, for UMAP and Numba for example, CMake is required). These
+dependencies should be resolved by user and installed and configured manually.
 
 ### Screenshots
 

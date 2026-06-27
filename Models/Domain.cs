@@ -100,19 +100,25 @@ public enum StatisticKind
 
 public sealed class ChannelDefinition : NotifyBase
 {
+    private string name;
     private string label;
 
     public ChannelDefinition(int index, string name, string label, float maximum, float gain)
     {
         Index = index;
-        Name = name;
+        this.name = name;
         this.label = label;
         Maximum = maximum;
         Gain = gain;
     }
 
     public int Index { get; }
-    public string Name { get; }
+
+    public string Name
+    {
+        get => name;
+        set => SetField(ref name, value ?? "");
+    }
 
     public string Label
     {
@@ -749,6 +755,15 @@ public sealed class CompensationMatrix : NotifyBase
         Values = (float[,])new_values.Clone();
     }
 
+    public void RenameChannel(string old_name, string new_name)
+    {
+        if (!ChannelNames.Contains(old_name, StringComparer.Ordinal))
+            return;
+
+        ChannelNames = ChannelNames.Select(name => string.Equals(name, old_name, StringComparison.Ordinal) ? new_name : name).ToArray();
+        OnPropertyChanged(nameof(ChannelNames));
+    }
+
     public bool IsEquivalentTo(CompensationMatrix other)
     {
         if (!ChannelNames.SequenceEqual(other.ChannelNames, StringComparer.Ordinal))
@@ -776,6 +791,206 @@ public sealed class EmbeddingData
     public bool IsCategorical => Kind == EmbeddingValueKind.Integer;
 }
 
+public sealed record SpilloverRangeSelection(double Minimum, double Maximum);
+
+public sealed class SpilloverControlRow : NotifyBase
+{
+    private Guid control_sample_id;
+    private string parameter_name = "";
+    private SpilloverRangeSelection? positive_selection;
+
+    public Guid ControlSampleId
+    {
+        get => control_sample_id;
+        set => SetField(ref control_sample_id, value);
+    }
+
+    public string ParameterName
+    {
+        get => parameter_name;
+        set => SetField(ref parameter_name, value ?? "");
+    }
+
+    public SpilloverRangeSelection? PositiveSelection
+    {
+        get => positive_selection;
+        set => SetField(ref positive_selection, value);
+    }
+}
+
+public sealed class SpilloverCompensationState : NotifyBase
+{
+    private string matrix_name = "Auto Comp";
+
+    public string MatrixName
+    {
+        get => matrix_name;
+        set => SetField(ref matrix_name, string.IsNullOrWhiteSpace(value) ? "Auto Comp" : value.Trim());
+    }
+
+    public ObservableCollection<Point> PrimaryVertices { get; } = new();
+    public ObservableCollection<SpilloverControlRow> Rows { get; } = new();
+}
+
+public sealed class ControlSample : NotifyBase
+{
+    private string name = "";
+    private readonly object normalized_channel_cache_lock = new();
+    private readonly Dictionary<NormalizedChannelCacheKey, float[]> normalized_channel_cache = new();
+
+    public Guid Id { get; init; } = Guid.NewGuid();
+
+    public string Name
+    {
+        get => name;
+        set => SetField(ref name, value ?? "");
+    }
+
+    public ObservableCollection<ChannelDefinition> Channels { get; } = new();
+    public float[,] RawEvents { get; private set; } = new float[0, 0];
+    public Dictionary<string, string> Metadata { get; } = new();
+    public int EventCount => RawEvents.GetLength(0);
+    public int ChannelCount => RawEvents.GetLength(1);
+    public string ChannelProfile => string.Join("|", Channels.Select(channel => channel.Name));
+
+    public ControlSample(string name, IEnumerable<ChannelDefinition> channels, float[,] raw_events)
+    {
+        Name = name;
+        RawEvents = raw_events;
+        foreach (var channel in channels)
+            Channels.Add(channel);
+    }
+
+    public int GetChannelIndex(string channel_name)
+    {
+        for (int index = 0; index < Channels.Count; index++)
+            if (Channels[index].Name == channel_name)
+                return index;
+        return -1;
+    }
+
+    public float[] GetChannelValues(string channel_name, int[]? event_indices = null)
+    {
+        int channel_index = GetChannelIndex(channel_name);
+        if (channel_index < 0)
+            return Array.Empty<float>();
+
+        if (event_indices is null)
+        {
+            var values = new float[EventCount];
+            for (int row = 0; row < EventCount; row++)
+                values[row] = RawEvents[row, channel_index];
+            return values;
+        }
+
+        var selected = new float[event_indices.Length];
+        for (int index = 0; index < event_indices.Length; index++)
+        {
+            int row = event_indices[index];
+            selected[index] = row >= 0 && row < EventCount ? RawEvents[row, channel_index] : float.NaN;
+        }
+        return selected;
+    }
+
+    public float[] GetNormalizedChannelValues(
+        string channel_name,
+        double minimum,
+        double maximum,
+        AxisScale scale,
+        CancellationToken cancellation_token = default)
+    {
+        var key = NormalizedChannelCacheKey.Create(channel_name, minimum, maximum, scale);
+        lock (normalized_channel_cache_lock)
+        {
+            if (normalized_channel_cache.TryGetValue(key, out var cached))
+                return cached;
+        }
+
+        var normalized = create_normalized_channel_values(channel_name, null, minimum, maximum, scale, cancellation_token);
+        lock (normalized_channel_cache_lock)
+        {
+            if (normalized_channel_cache.TryGetValue(key, out var cached))
+                return cached;
+            normalized_channel_cache[key] = normalized;
+            return normalized;
+        }
+    }
+
+    public void ProjectChannels(IReadOnlyList<ChannelDefinition> required_channels)
+    {
+        var indices = required_channels.Select(channel => GetChannelIndex(channel.Name)).ToArray();
+        if (indices.Any(index => index < 0))
+            throw new InvalidOperationException("Control sample does not contain every required channel.");
+
+        RawEvents = project_matrix(RawEvents, indices);
+        Channels.Clear();
+        for (int index = 0; index < required_channels.Count; index++)
+        {
+            var source = required_channels[index];
+            Channels.Add(new ChannelDefinition(index, source.Name, source.Label, source.Maximum, source.Gain));
+        }
+        InvalidateNormalizedChannelCache();
+    }
+
+    public void InvalidateNormalizedChannelCache()
+    {
+        lock (normalized_channel_cache_lock)
+            normalized_channel_cache.Clear();
+    }
+
+    private float[] create_normalized_channel_values(
+        string channel_name,
+        int[]? event_indices,
+        double minimum,
+        double maximum,
+        AxisScale scale,
+        CancellationToken cancellation_token)
+    {
+        var source = GetChannelValues(channel_name, event_indices);
+        if (source.Length == 0)
+            return Array.Empty<float>();
+
+        double transformed_minimum;
+        double transformed_maximum;
+        LogicleTransform? transform = null;
+        if (scale.Kind == CoordinateScaleKind.Linear)
+        {
+            transformed_minimum = minimum;
+            transformed_maximum = maximum;
+        }
+        else
+        {
+            transform = new LogicleTransform(scale.Logicle);
+            transformed_minimum = transform.Transform(minimum);
+            transformed_maximum = transform.Transform(maximum);
+        }
+
+        double transformed_span = transformed_maximum - transformed_minimum;
+        if (transformed_span <= 0)
+            return new float[source.Length];
+
+        var normalized = new float[source.Length];
+        for (int index = 0; index < source.Length; index++)
+        {
+            if ((index & 4095) == 0)
+                cancellation_token.ThrowIfCancellationRequested();
+            double transformed = transform is null ? source[index] : transform.Transform(source[index]);
+            normalized[index] = Convert.ToSingle((transformed - transformed_minimum) / transformed_span);
+        }
+
+        return normalized;
+    }
+
+    private static float[,] project_matrix(float[,] source, IReadOnlyList<int> indices)
+    {
+        var projected = new float[source.GetLength(0), indices.Count];
+        for (int row = 0; row < source.GetLength(0); row++)
+        for (int column = 0; column < indices.Count; column++)
+            projected[row, column] = source[row, indices[column]];
+        return projected;
+    }
+}
+
 public sealed class FlowSample : NotifyBase
 {
     private string name = "";
@@ -798,7 +1013,7 @@ public sealed class FlowSample : NotifyBase
     }
 
     public ObservableCollection<ChannelDefinition> Channels { get; } = new();
-    public float[,] RawEvents { get; private init; } = new float[0, 0];
+    public float[,] RawEvents { get; private set; } = new float[0, 0];
     public ObservableCollection<PopulationResult> Populations { get; } = new();
     public Dictionary<string, EmbeddingData> Embeddings { get; } = new();
     public Dictionary<string, string> Metadata { get; } = new();
@@ -822,6 +1037,33 @@ public sealed class FlowSample : NotifyBase
         foreach (var channel in channels)
             Channels.Add(channel);
         CompensatedEvents = (float[,])raw_events.Clone();
+    }
+
+    public void ProjectChannels(IReadOnlyList<ChannelDefinition> required_channels)
+    {
+        var indices = required_channels.Select(channel => GetChannelIndex(channel.Name)).ToArray();
+        if (indices.Any(index => index < 0))
+            throw new InvalidOperationException("Sample does not contain every required channel.");
+
+        RawEvents = project_matrix(RawEvents, indices);
+        CompensatedEvents = project_matrix(CompensatedEvents, indices);
+        Channels.Clear();
+        for (int index = 0; index < required_channels.Count; index++)
+        {
+            var source = required_channels[index];
+            Channels.Add(new ChannelDefinition(index, source.Name, source.Label, source.Maximum, source.Gain));
+        }
+        DefaultCompensation = null;
+        InvalidateNormalizedChannelCache();
+    }
+
+    private static float[,] project_matrix(float[,] source, IReadOnlyList<int> indices)
+    {
+        var projected = new float[source.GetLength(0), indices.Count];
+        for (int row = 0; row < source.GetLength(0); row++)
+        for (int column = 0; column < indices.Count; column++)
+            projected[row, column] = source[row, indices[column]];
+        return projected;
     }
 
     public float[] GetChannelValues(string channel_name, int[]? event_indices = null)
@@ -1259,9 +1501,11 @@ public sealed class FlowGroup : NotifyBase
     }
 
     public ObservableCollection<FlowSample> Samples { get; } = new();
+    public ObservableCollection<ControlSample> ControlSamples { get; } = new();
     public ObservableCollection<GateDefinition> Gates { get; } = new();
     public ObservableCollection<StatisticDefinition> Statistics { get; } = new();
     public ObservableCollection<CompensationMatrix> CompensationCandidates { get; } = new();
+    public SpilloverCompensationState SpilloverCompensation { get; } = new();
     public GateViewOptions RootViewOptions { get; set; } = new();
     public Dictionary<string, GateViewOptions> SampleRootViewOptions { get; } = new(StringComparer.Ordinal);
     public string ChannelProfile { get; private set; } = "";
@@ -1277,6 +1521,45 @@ public sealed class FlowGroup : NotifyBase
         : Array.Empty<ChannelDefinition>();
 
     public bool CanAccept(FlowSample sample) => Samples.Count == 0 || ChannelProfile == sample.ChannelProfile;
+
+    public void RefreshChannelProfile()
+    {
+        ChannelProfile = Samples.FirstOrDefault()?.ChannelProfile ?? "";
+        OnPropertyChanged(nameof(Channels));
+    }
+
+    public void ResetIdentityCompensation()
+    {
+        CompensationCandidates.Clear();
+        AppliedCompensation = null;
+        applied_compensation_is_manual = false;
+        if (Samples.FirstOrDefault() is not { } sample)
+            return;
+
+        var identity = new CompensationMatrix { Name = "Identity" };
+        identity.ResetIdentity(sample.Channels.Select(channel => channel.Name).ToArray());
+        RegisterCompensation(identity, make_applied_if_first: true);
+    }
+
+    public void RenameChannelInProfile(string old_name, string new_name)
+    {
+        if (string.IsNullOrWhiteSpace(ChannelProfile))
+            return;
+
+        var names = ChannelProfile.Split('|');
+        bool changed = false;
+        for (int i = 0; i < names.Length; i++)
+        {
+            if (names[i] != old_name)
+                continue;
+
+            names[i] = new_name;
+            changed = true;
+        }
+
+        if (changed)
+            ChannelProfile = string.Join("|", names);
+    }
 
     public void AddSample(FlowSample sample, bool recalculate = true)
     {

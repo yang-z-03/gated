@@ -112,6 +112,9 @@ public static class Configuration
     public static bool IsTimeChannel(string channel_name) =>
         ChannelKind(channel_name) == ChannelSemanticKind.Time;
 
+    public static bool IsFscChannel(string channel_name) =>
+        ChannelKind(channel_name) == ChannelSemanticKind.FSC;
+
     public static bool IsSscChannel(string channel_name) =>
         ChannelKind(channel_name) == ChannelSemanticKind.SSC;
 

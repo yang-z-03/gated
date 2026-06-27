@@ -71,6 +71,13 @@
         <Style Selector="ComboBox.SampleSwitcher:pointerover">
             <Setter Property="Background" Value="{DynamicResource SemiColorBackground2}" />
         </Style>
+        <Style Selector="Button.ChannelIconButton">
+            <Setter Property="Width" Value="26" />
+            <Setter Property="Height" Value="23" />
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="Padding" Value="4" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
         <Style Selector="Border.PageModeSwitchHit">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="HorizontalAlignment" Value="Stretch" />
@@ -132,6 +139,11 @@
         <Style Selector="ToggleButton.LogLevelToggle:checked:pointerover /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="#2B4774" />
             <Setter Property="BorderBrush" Value="#5079B6" />
+        </Style>
+        <Style Selector="ListBox#spillover_control_table ListBoxItem">
+            <Setter Property="Margin" Value="0,0" />
+            <Setter Property="Padding" Value="4,0" />
+            <Setter Property="CornerRadius" Value="4" />
         </Style>
     </Window.Styles>
 
@@ -271,9 +283,11 @@
                 <MenuItem Header="Delete group" Command="{Binding DeleteSelectedCommand}" InputGesture="Delete"/>
                 <Separator />
                 <MenuItem Header="Append samples to groups" Click="open_fcs_menu_item_click" />
+                <MenuItem Header="Add control samples ..." Click="add_control_samples_menu_item_click" />
                 <MenuItem Header="Delete selected samples" Command="{Binding DeleteSelectedCommand}" InputGesture="Delete"/>
                 <MenuItem Header="Delete selected embedding" Command="{Binding DeleteSelectedCommand}" InputGesture="Delete"/>
                 <MenuItem Header="Concatenate" Click="concatenate_samples_menu_item_click" />
+                <MenuItem Header="Subsample sample ..." Click="subsample_sample_menu_item_click" />
                 <MenuItem Header="Copy hierarchy view options to group" Command="{Binding CopyHierarchyViewOptionsToGroupCommand}" />
                 <MenuItem Header="Select equivalent nodes" IsEnabled="False" />
                 <MenuItem Header="Expand" Command="{Binding ExpandProjectTreeCommand}" InputGesture="Ctrl + E"/>
@@ -467,7 +481,8 @@
                         <controls:ProjectTreeView x:Name="project_tree"
                                                   Nodes="{Binding ProjectNodes}"
                                                   SelectNodeCommand="{Binding SelectProjectNodeCommand}"
-                                                  ToggleNodeCommand="{Binding ToggleProjectNodeCommand}" />
+                                                  ToggleNodeCommand="{Binding ToggleProjectNodeCommand}"
+                                                  DropNodeCommand="{Binding DropProjectNodeCommand}" />
                     </ScrollViewer>
                 </Grid>
             </Border>
@@ -485,7 +500,7 @@
                   Background="{DynamicResource SemiColorBackground1}">
                 <Grid x:Name="analysis_plot_grid"
                       Grid.Row="0"
-                      ColumnDefinitions="*,336">
+                      ColumnDefinitions="*,346">
                     <Grid Grid.Column="0"
                           RowDefinitions="Auto,*">
                         <Border Grid.Row="0"
@@ -612,37 +627,11 @@
                             Padding="8">
                         <ScrollViewer HorizontalScrollBarVisibility="Disabled"
                                       VerticalScrollBarVisibility="Auto">
+                          <StackPanel>
                             <StackPanel Spacing="8" Margin="16, 8, 16, 16"
-                                        Grid.IsSharedSizeScope="True">
+                                        Grid.IsSharedSizeScope="True"
+                                        IsVisible="{Binding IsPlotPropertiesMode}">
                                 <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Properties" />
-
-                                <Expander Header="Channels" IsExpanded="False">
-                                    <StackPanel Spacing="6" Margin="-10,8,0,16">
-                                        <DataGrid MaxHeight="200"
-                                                  AutoGenerateColumns="False"
-                                                  CanUserReorderColumns="False"
-                                                  CanUserResizeColumns="True"
-                                                  CanUserSortColumns="False"
-                                                  GridLinesVisibility="Horizontal"
-                                                  HeadersVisibility="Column"
-                                                  ItemsSource="{Binding ChannelRows}">
-                                            <DataGrid.Columns>
-                                                <DataGridTextColumn Header="Channel"
-                                                                    Width="95"
-                                                                    IsReadOnly="True"
-                                                                    Binding="{Binding Name}" />
-                                                <DataGridTextColumn Header="Label"
-                                                                    Width="95"
-                                                                    FontWeight="Bold"
-                                                                    Binding="{Binding Label, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                                                <DataGridTextColumn Header="Maximum"
-                                                                    Width="90"
-                                                                    IsReadOnly="True"
-                                                                    Binding="{Binding MaximumDisplay}" />
-                                            </DataGrid.Columns>
-                                        </DataGrid>
-                                    </StackPanel>
-                                </Expander>
 
                                 <Expander Header="X axis" IsExpanded="False">
                                     <StackPanel Spacing="8" Margin="0,8,0,16">
@@ -806,6 +795,7 @@
                                     </StackPanel>
                                 </Expander>
                             </StackPanel>
+                          </StackPanel>
                         </ScrollViewer>
                     </Border>
                 </Grid>
@@ -846,7 +836,7 @@
             <Grid x:Name="layout_mode_grid"
                   Grid.Column="2"
                   IsVisible="{Binding IsPageEditorMode}"
-                  ColumnDefinitions="*,336"
+                  ColumnDefinitions="*,346"
                   Background="{DynamicResource SemiColorBackground1}">
                 <controls:PageEditorView x:Name="page_editor"
                                          HorizontalAlignment="Stretch"
@@ -1116,6 +1106,330 @@
             </Grid>
 
             <Grid Grid.Column="2"
+                  IsVisible="{Binding IsSpilloverCompensationMode}"
+                  Background="{DynamicResource SemiColorBackground1}">
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                              VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="24"
+                                Spacing="14"
+                                MaxWidth="750"
+                                MinWidth="700"
+                                HorizontalAlignment="Center">
+                        <StackPanel Margin="0 12 0 0">
+                            <TextBlock Foreground="{DynamicResource SemiColorText1}" Text="Traditional spillover compensation" />
+                        </StackPanel>
+
+                        <Grid ColumnDefinitions="280,*" ColumnSpacing="5">
+                            <Grid RowDefinitions="250, 28">
+                                <controls:ScatterGateView Grid.Row="0"
+                                                          Grid.Column="0"
+                                                          Height="250"
+                                                          Sample="{Binding SpilloverScatterSample}"
+                                                          XChannel="{Binding SpilloverFscChannel}"
+                                                          YChannel="{Binding SpilloverSscChannel}"
+                                                          XMinimum="{Binding SpilloverScatterXMinimum}"
+                                                          XMaximum="{Binding SpilloverScatterXMaximum}"
+                                                          XScale="{Binding SpilloverScatterXScale}"
+                                                          YMinimum="{Binding SpilloverScatterYMinimum}"
+                                                          YMaximum="{Binding SpilloverScatterYMaximum}"
+                                                          YScale="{Binding SpilloverScatterYScale}"
+                                                          Vertices="{Binding SpilloverPrimaryVertices}"
+                                                          VerticesCommittedCommand="{Binding MarkSpilloverPreviewOutdatedCommand}" />
+                            </Grid>
+                            <Grid Grid.Column="1" RowDefinitions="250, 28">
+                                <controls:HistogramView Grid.Row="0"
+                                                        Height="250"
+                                                        Series="{Binding SpilloverHistogramSeries}"
+                                                        Minimum="{Binding SpilloverHistogramMinimum}"
+                                                        Maximum="{Binding SpilloverHistogramMaximum}"
+                                                        AxisScale="{Binding SpilloverHistogramAxisScale}"
+                                                        LogicleTopOfScale="{Binding SpilloverHistogramLogicleT}"
+                                                        LogicleLinearizationWidth="{Binding SpilloverHistogramLogicleW}"
+                                                        LogicleDecades="{Binding SpilloverHistogramLogicleM}"
+                                                        LogicleNegativeDecades="{Binding SpilloverHistogramLogicleA}"
+                                                        BinSmoothing="3"
+                                                        YMaximumFactor="1.1"
+                                                        IsGatingEnabled="True"
+                                                        Selection="{Binding SpilloverSelection, Mode=TwoWay}" />
+                                
+                                <Grid ColumnDefinitions="Auto,150,Auto" Grid.Row="1" ColumnSpacing="8" VerticalAlignment="Center" HorizontalAlignment="Center" Height="32">
+                                    <Button Classes="Small" Width="30" Command="{Binding SelectPreviousSpilloverChannelCommand}">
+                                        <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/left.svg}" />
+                                    </Button>
+                                    <ComboBox Grid.Column="1"
+                                              Width="150"
+                                              Classes="Small"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              ItemsSource="{Binding SpilloverConfiguredParameterChoices}"
+                                              SelectedItem="{Binding SelectedSpilloverParameterChoice, Mode=TwoWay}" />
+                                    <Button Grid.Column="2" Classes="Small" Width="30" Command="{Binding SelectNextSpilloverChannelCommand}">
+                                        <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/right.svg}" />
+                                    </Button>
+                                </Grid>
+                            </Grid>
+                        </Grid>
+
+                        <StackPanel Margin="0 12 0 0">
+                            <TextBlock Foreground="{DynamicResource SemiColorText1}" 
+                                       Text="Drag samples to the area for blank control and single-staining samples" />
+                        </StackPanel>
+
+                        <Border Height="300"
+                                BorderBrush="#505050"
+                                BorderThickness="1"
+                                CornerRadius="6"
+                                Background="#1e1e1e"
+                                ClipToBounds="True">
+                            <Grid RowDefinitions="29,*">
+                                <Border Background="#1e1e1e" CornerRadius="6 6 0 0" Padding="10,0">
+                                    <Grid ColumnDefinitions="*,150,190,34" Margin="8 0 8 0" ColumnSpacing="12">
+                                        <TextBlock Text="Control sample" Padding="15 0 0 0" FontSize="13" Foreground="{DynamicResource SemiColorText1}" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="1" Padding="3 0 0 0" Text="Parameter" FontSize="13" Foreground="{DynamicResource SemiColorText1}" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="2" Padding="3 0 0 0" Text="Population" FontSize="13" Foreground="{DynamicResource SemiColorText1}" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="3" Padding="3 0 0 0" Text="" FontSize="13" Foreground="{DynamicResource SemiColorText1}" VerticalAlignment="Center" HorizontalAlignment="Center" />
+                                    </Grid>
+                                </Border>
+
+                                <ListBox x:Name="spillover_control_table"
+                                         Grid.Row="1"
+                                         SelectionMode="Single"
+                                         Margin="8 0 8 8"
+                                         ItemsSource="{Binding SpilloverRows}"
+                                         SelectedItem="{Binding SelectedSpilloverRow, Mode=TwoWay}"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Height="28" Padding="3,0" CornerRadius="4">
+                                                <Grid ColumnDefinitions="*,150,190,34" ColumnSpacing="12">
+                                                    <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
+                                                        <Image Width="15" Height="15" Source="{Binding SampleIcon}" />
+                                                        <TextBlock Text="{Binding SampleName}"
+                                                                   FontSize="13"
+                                                                   Foreground="{DynamicResource SemiColorText0}"
+                                                                   VerticalAlignment="Center"
+                                                                   TextTrimming="CharacterEllipsis" />
+                                                    </StackPanel>
+                                                    <ComboBox Grid.Column="1"
+                                                              Margin="0 1 0 -1"
+                                                              Width="150"
+                                                              Classes="Small"
+                                                              ItemsSource="{Binding ParameterChoices}"
+                                                              SelectedItem="{Binding ParameterName, Mode=TwoWay}" />
+                                                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
+                                                        <Image Width="15" Height="15" Source="{Binding PopulationIcon}" />
+                                                        <TextBlock Text="{Binding PositivePercentText}"
+                                                                   FontSize="13"
+                                                                   Foreground="{DynamicResource SemiColorText1}"
+                                                                   VerticalAlignment="Center"
+                                                                   TextTrimming="CharacterEllipsis" />
+                                                    </StackPanel>
+                                                    <Button Grid.Column="3"
+                                                            Classes="Quiet ChannelIconButton"
+                                                            Command="{Binding RemoveCommand}"
+                                                            CommandParameter="{Binding}"
+                                                            ToolTip.Tip="Remove from plot">
+                                                        <Image Width="15" Height="15" Source="{Binding RemoveIcon}" />
+                                                    </Button>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </Grid>
+                        </Border>
+
+                        <StackPanel Margin="0 12 0 4">
+                            <TextBlock Foreground="{DynamicResource SemiColorText1}" TextWrapping="Wrap" LineHeight="18"
+                                       Text="Calculate auto-compensation will overwrite matrix. You may calculate once and manually edit the table before applying it to the group. Once generated, the preview matrix plot will update real-time as you edit." />
+                        </StackPanel>
+
+                        <Grid Margin="0 4 0 6" ColumnDefinitions="Auto,220,*,Auto,Auto" ColumnSpacing="10">
+                            <TextBlock Text="Compensation Matrix"
+                                       Foreground="{DynamicResource SemiColorText2}"
+                                       VerticalAlignment="Center" />
+                            <TextBox Grid.Column="1"
+                                     Classes="Small"
+                                     Text="{Binding SpilloverMatrixName, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" />
+                            <Button Grid.Column="3"
+                                    Classes="Small"
+                                    Command="{Binding CalculateSpilloverCompensationCommand}">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/ok.svg}" />
+                                    <TextBlock Text="Calculate Auto-compensation" />
+                                </StackPanel>
+                            </Button>
+                            <Button Grid.Column="4"
+                                    Classes="Small"
+                                    Command="{Binding ApplySpilloverCompensationCommand}">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/ok.svg}" />
+                                    <TextBlock Text="Apply" />
+                                </StackPanel>
+                            </Button>
+                        </Grid>
+
+                        <Border IsVisible="{Binding HasSpilloverPreviewMatrix}"
+                                BorderBrush="#505050"
+                                BorderThickness="1"
+                                CornerRadius="6"
+                                Background="#1e1e1e"
+                                Padding="8"
+                                Margin="0,0,0,10">
+                            <StackPanel Spacing="4">
+                                <Grid ColumnDefinitions="100,*">
+                                    <TextBlock />
+                                    <ItemsControl Grid.Column="1" ItemsSource="{Binding SpilloverPreviewChannels}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <StackPanel Orientation="Horizontal" />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Width="100"
+                                                           Text="{Binding}"
+                                                           FontSize="13"
+                                                           Foreground="{DynamicResource SemiColorText1}"
+                                                           TextAlignment="Center"
+                                                           HorizontalAlignment="Center"
+                                                           Margin="0,0,4,0"
+                                                           TextTrimming="CharacterEllipsis" />
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </Grid>
+                                <ItemsControl ItemsSource="{Binding SpilloverPreviewMatrixRows}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid ColumnDefinitions="100,*" Margin="0,2">
+                                                <TextBlock Text="{Binding ChannelName}"
+                                                           FontSize="13"
+                                                           Foreground="{DynamicResource SemiColorText1}"
+                                                           VerticalAlignment="Center"
+                                                           TextAlignment="Right"
+                                                           HorizontalAlignment="Stretch"
+                                                           Margin="0,0,10,0"
+                                                           TextTrimming="CharacterEllipsis" />
+                                                <ItemsControl Grid.Column="1" ItemsSource="{Binding Values}">
+                                                    <ItemsControl.ItemsPanel>
+                                                        <ItemsPanelTemplate>
+                                                            <StackPanel Orientation="Horizontal" />
+                                                        </ItemsPanelTemplate>
+                                                    </ItemsControl.ItemsPanel>
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <TextBox Width="100"
+                                                                     Margin="0,0,4,0"
+                                                                     Classes="Small"
+                                                                     Classes.SpilloverMatrixInvalid="{Binding IsInvalid}"
+                                                                     FontSize="13"
+                                                                     IsReadOnly="{Binding IsDiagonal}"
+                                                                     IsEnabled="{Binding IsEditable}"
+                                                                     Text="{Binding Text, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+
+                        <Expander Header="Preview matrix"
+                                  IsVisible="{Binding HasSpilloverPreviewMatrix}"
+                                  IsExpanded="True"
+                                  Margin="0 -8 0 24">
+                            <ScrollViewer MaxHeight="750"
+                                          HorizontalScrollBarVisibility="Auto"
+                                          VerticalScrollBarVisibility="Auto">
+                            <StackPanel Spacing="10" Margin="0,8,0,0">
+                                <Border IsVisible="{Binding IsSpilloverPreviewOutdated}"
+                                        Background="#3A2D18"
+                                        BorderBrush="#8A6A2A"
+                                        BorderThickness="1"
+                                        CornerRadius="6"
+                                        Padding="10,7">
+                                    <TextBlock Text="Preview is outdated. Recalculate to update the matrix and plots."
+                                               FontSize="13"
+                                               Foreground="#FFD98A" />
+                                </Border>
+                                <Border BorderBrush="#505050"
+                                        BorderThickness="1"
+                                        CornerRadius="6"
+                                        Background="#1e1e1e"
+                                        Padding="8">
+                                    <StackPanel Spacing="6">
+                                        <Grid ColumnDefinitions="30,*">
+                                            <TextBlock />
+                                            <ItemsControl Grid.Column="1" ItemsSource="{Binding SpilloverPreviewChannels}">
+                                                <ItemsControl.ItemsPanel>
+                                                    <ItemsPanelTemplate>
+                                                        <StackPanel Orientation="Horizontal" />
+                                                    </ItemsPanelTemplate>
+                                                </ItemsControl.ItemsPanel>
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Width="150"
+                                                                   Text="{Binding}"
+                                                                   FontSize="13"
+                                                                   Foreground="{DynamicResource SemiColorText1}"
+                                                                   TextAlignment="Center"
+                                                                   HorizontalAlignment="Center"
+                                                                   Margin="0,0,2,0"
+                                                                   Padding="15,0,0,0"
+                                                                   TextTrimming="CharacterEllipsis" />
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </Grid>
+                                        <ItemsControl ItemsSource="{Binding SpilloverPreviewPlotRows}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Grid ColumnDefinitions="30,*" Margin="0,0,0,2">
+                                                        <LayoutTransformControl Margin="10 0 5 15">
+                                                            <LayoutTransformControl.LayoutTransform>
+                                                                <RotateTransform Angle="-90" />
+                                                            </LayoutTransformControl.LayoutTransform>
+                                                            <TextBlock Text="{Binding YChannel}"
+                                                                   FontSize="13"
+                                                                   Foreground="{DynamicResource SemiColorText1}"
+                                                                   VerticalAlignment="Center"
+                                                                   TextAlignment="Center"
+                                                                   TextTrimming="CharacterEllipsis" />
+                                                        </LayoutTransformControl>
+                                                        
+                                                        <ItemsControl Grid.Column="1" ItemsSource="{Binding Cells}">
+                                                            <ItemsControl.ItemsPanel>
+                                                                <ItemsPanelTemplate>
+                                                                    <StackPanel Orientation="Horizontal" />
+                                                                </ItemsPanelTemplate>
+                                                            </ItemsControl.ItemsPanel>
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <controls:SpilloverPreviewScatterView Width="150"
+                                                                                                          Height="150"
+                                                                                                          Margin="0,0,2,0"
+                                                                                                          Cell="{Binding}" />
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                            </ScrollViewer>
+                        </Expander>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+
+            <Grid Grid.Column="2"
                   IsVisible="{Binding IsIntegrationJobMode}"
                   Background="{DynamicResource SemiColorBackground1}">
                 <controls:PlatformEditorHost Workspace="{Binding Workspace}"
@@ -1186,6 +1500,76 @@
                                 <TextBlock Text="Apply metadata" />
                             </StackPanel>
                         </Button>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+
+            <Grid Grid.Column="2"
+                  IsVisible="{Binding IsGroupMetadataMode}"
+                  Background="{DynamicResource SemiColorBackground1}">
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                              VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="24"
+                                Spacing="14"
+                                MaxWidth="650"
+                                MinWidth="650"
+                                HorizontalAlignment="Center"
+                                Background="{DynamicResource SemiColorBackground1}">
+                        <StackPanel Margin="0 12 0 0">
+                            <TextBlock Foreground="{DynamicResource SemiColorText1}" Text="Grouping channel metadata" />
+                        </StackPanel>
+
+                        <Border Height="430"
+                                BorderBrush="#505050"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Background="#1e1e1e"
+                                Padding="8"
+                                ClipToBounds="True">
+                            <DataGrid AutoGenerateColumns="False"
+                                      CanUserReorderColumns="False"
+                                      CanUserResizeColumns="True"
+                                      CanUserSortColumns="False"
+                                      GridLinesVisibility="Horizontal"
+                                      HeadersVisibility="Column"
+                                      Background="#1e1e1e"
+                                      HorizontalAlignment="Stretch"
+                                      VerticalAlignment="Stretch"
+                                      HorizontalScrollBarVisibility="Auto"
+                                      VerticalScrollBarVisibility="Auto"
+                                      ItemsSource="{Binding ChannelRows}">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Name"
+                                                        Width="*"
+                                                        Binding="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" />
+                                    <DataGridTextColumn Header="Label"
+                                                        Width="*"
+                                                        FontWeight="Bold"
+                                                        Binding="{Binding Label, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                    <DataGridTextColumn Header="Maximum"
+                                                        Width="120"
+                                                        IsReadOnly="True"
+                                                        Binding="{Binding MaximumDisplay}" />
+                                    <DataGridTemplateColumn Header=""
+                                                            Width="42"
+                                                            IsReadOnly="True">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <Button Classes="Quiet ChannelIconButton"
+                                                        Command="{Binding RemoveCommand}"
+                                                        CommandParameter="{Binding}"
+                                                        IsEnabled="{Binding CanRemove}"
+                                                        ToolTip.Tip="{Binding RemoveTooltip}">
+                                                    <Image Width="15"
+                                                           Height="15"
+                                                           Source="{SvgImage avares://gated/Resources/delete.svg}" />
+                                                </Button>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </Border>
                     </StackPanel>
                 </ScrollViewer>
             </Grid>

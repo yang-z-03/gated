@@ -28,6 +28,9 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
     public static readonly StyledProperty<ICommand?> ToggleNodeCommandProperty =
         AvaloniaProperty.Register<ProjectTreeView, ICommand?>(nameof(ToggleNodeCommand));
 
+    public static readonly StyledProperty<ICommand?> DropNodeCommandProperty =
+        AvaloniaProperty.Register<ProjectTreeView, ICommand?>(nameof(DropNodeCommand));
+
     private const double top_padding = 2;
     private const double row_height = 25;
     private const double indent_width = 25;
@@ -49,7 +52,16 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
         AffectsRender<ProjectTreeView>(
             NodesProperty,
             SelectNodeCommandProperty,
-            ToggleNodeCommandProperty);
+            ToggleNodeCommandProperty,
+            DropNodeCommandProperty);
+
+    }
+
+    public ProjectTreeView()
+    {
+        DragDrop.SetAllowDrop(this, true);
+        DragDrop.AddDragOverHandler(this, (_, e) => drag_over(e));
+        DragDrop.AddDropHandler(this, (_, e) => drop_node(e));
     }
 
     public INotifyCollectionChanged? Nodes
@@ -68,6 +80,12 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
     {
         get => GetValue(ToggleNodeCommandProperty);
         set => SetValue(ToggleNodeCommandProperty, value);
+    }
+
+    public ICommand? DropNodeCommand
+    {
+        get => GetValue(DropNodeCommandProperty);
+        set => SetValue(DropNodeCommandProperty, value);
     }
 
     public ProjectNode? GetNodeAt(Point point) => node_at(point.Y);
@@ -135,7 +153,7 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
 
         drag_started = true;
         PageEditorView.DraggedProjectNode = pressed_node;
-        await DragDrop.DoDragDropAsync(e, new DataTransfer(), DragDropEffects.Copy);
+        await DragDrop.DoDragDropAsync(e, new DataTransfer(), DragDropEffects.Copy | DragDropEffects.Move);
         PageEditorView.DraggedProjectNode = null;
         pressed_node = null;
     }
@@ -155,6 +173,7 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
             or ProjectNodeKind.GatePopulationSlot
             or ProjectNodeKind.Population
             or ProjectNodeKind.Sample
+            or ProjectNodeKind.ControlSample
             or ProjectNodeKind.Group
             or ProjectNodeKind.GateFolder
             or ProjectNodeKind.StatisticDefinition
@@ -177,6 +196,9 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
             or ProjectNodeKind.StatisticValue
             or ProjectNodeKind.CompensationFolder
             or ProjectNodeKind.Compensation
+            or ProjectNodeKind.ControlFolder
+            or ProjectNodeKind.SpilloverCompensation
+            or ProjectNodeKind.ControlSample
             or ProjectNodeKind.Embedding;
 
     protected override Size MeasureOverride(Size availableSize)
@@ -231,6 +253,32 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
     {
         if (SelectNodeCommand?.CanExecute(node) == true)
             SelectNodeCommand.Execute(node);
+    }
+
+    private void drag_over(DragEventArgs e)
+    {
+        var target = node_at(e.GetPosition(this).Y);
+        var source = PageEditorView.DraggedProjectNode;
+        var request = source is null || target is null ? null : new ProjectNodeDropRequest(source, target);
+        e.DragEffects = request is not null && DropNodeCommand?.CanExecute(request) == true
+            ? DragDropEffects.Move
+            : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void drop_node(DragEventArgs e)
+    {
+        var target = node_at(e.GetPosition(this).Y);
+        var source = PageEditorView.DraggedProjectNode;
+        if (source is not null && target is not null)
+        {
+            var request = new ProjectNodeDropRequest(source, target);
+            if (DropNodeCommand?.CanExecute(request) == true)
+                DropNodeCommand.Execute(request);
+        }
+
+        PageEditorView.DraggedProjectNode = null;
+        e.Handled = true;
     }
 
     private void draw_node(DrawingContext context, ProjectNode node, int index, double width)
@@ -333,6 +381,18 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
                 icon.Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri(node.IsAppliedCompensation
                     ? "avares://gated/Resources/ok.svg"
                     : "avares://gated/Resources/matrix.svg")));
+                break;
+
+            case ProjectNodeKind.ControlFolder:
+                icon.Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri("avares://gated/Resources/controls.svg")));
+                break;
+
+            case ProjectNodeKind.SpilloverCompensation:
+                icon.Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri("avares://gated/Resources/matrix.svg")));
+                break;
+
+            case ProjectNodeKind.ControlSample:
+                icon.Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri("avares://gated/Resources/tube.svg")));
                 break;
 
             case ProjectNodeKind.Sample:

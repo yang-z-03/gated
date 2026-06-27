@@ -27,6 +27,24 @@ public sealed class FcsReader
 
     public FlowSample Read(string file_path)
     {
+        var parsed = read_fcs_payload(file_path);
+        var sample = new FlowSample(parsed.SampleName, parsed.Channels, parsed.Values);
+        sample.Metadata[Configuration.CytometerMetadataKey] = parsed.CytometerName;
+        if (try_parse_spillover(parsed.Text, parsed.SampleName, out var spillover))
+            sample.DefaultCompensation = spillover;
+        return sample;
+    }
+
+    public ControlSample ReadControl(string file_path)
+    {
+        var parsed = read_fcs_payload(file_path);
+        var sample = new ControlSample(parsed.SampleName, parsed.Channels, parsed.Values);
+        sample.Metadata[Configuration.CytometerMetadataKey] = parsed.CytometerName;
+        return sample;
+    }
+
+    private static ParsedFcsPayload read_fcs_payload(string file_path)
+    {
         using var file_stream = new FileStream(file_path, FileMode.Open, FileAccess.Read, FileShare.Read);
         var header = parse_header(file_stream, 0);
         var text = parse_text(file_stream, (int)header["text_start"], (int)header["text_stop"]);
@@ -40,14 +58,17 @@ public sealed class FcsReader
         var channels = extract_channels(text, channel_count);
         var values = read_data(file_stream, data_start, data_stop, channel_count, event_count, data_type, byte_order, text);
         string sample_name = Path.GetFileNameWithoutExtension(file_path);
-        var sample = new FlowSample(sample_name, channels, values);
         string cytometer_name = cytometer_name_from_text(text);
-        sample.Metadata[Configuration.CytometerMetadataKey] = cytometer_name;
         Configuration.RememberCytometer(cytometer_name, channels);
-        if (try_parse_spillover(text, sample_name, out var spillover))
-            sample.DefaultCompensation = spillover;
-        return sample;
+        return new ParsedFcsPayload(sample_name, channels, values, cytometer_name, text);
     }
+
+    private sealed record ParsedFcsPayload(
+        string SampleName,
+        IReadOnlyList<ChannelDefinition> Channels,
+        float[,] Values,
+        string CytometerName,
+        Dictionary<string, string> Text);
 
     private static string cytometer_name_from_text(Dictionary<string, string> text)
     {

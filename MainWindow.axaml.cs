@@ -34,6 +34,14 @@ internal enum UpdateDialogChoice
     SuppressForOneWeek
 }
 
+internal enum SubsampleMode
+{
+    Percentage,
+    Number
+}
+
+internal sealed record SubsampleSampleResult(string Name, SubsampleMode Mode, double Percentage, int Count);
+
 public partial class MainWindow : Window
 {
     private readonly MainWindowViewModel view_model = new();
@@ -43,8 +51,8 @@ public partial class MainWindow : Window
     private bool close_confirmed;
     private bool close_prompt_active;
     private bool plot_properties_panel_visible = true;
-    private double analysis_properties_panel_width = 336;
-    private double layout_properties_panel_width = 336;
+    private double analysis_properties_panel_width = 346;
+    private double layout_properties_panel_width = 346;
 
     public MainWindow()
     {
@@ -56,6 +64,8 @@ public partial class MainWindow : Window
         view_model.RequestMultipleChoiceInputAsync = show_multiple_choice_input_dialog;
         view_model.RequestBooleanGateInputAsync = show_boolean_gate_input_dialog;
         view_model.RequestCompensationEditorAsync = show_compensation_editor_dialog;
+        view_model.RequestMessageAsync = show_message_dialog;
+        view_model.RequestConfirmationAsync = show_confirmation_dialog;
         gated.Python.PythonExtensionRuntime.InputRequested = show_python_input_dialog_blocking;
         view_model.PropertyChanged += view_model_property_changed;
         view_model.AxisChoices.CollectionChanged += channel_choices_collection_changed;
@@ -82,6 +92,9 @@ public partial class MainWindow : Window
         DragDrop.SetAllowDrop(this, true);
         DragDrop.AddDragOverHandler(this, drag_over);
         DragDrop.AddDropHandler(this, drop_files);
+        DragDrop.SetAllowDrop(spillover_control_table, true);
+        DragDrop.AddDragOverHandler(spillover_control_table, spillover_control_table_drag_over);
+        DragDrop.AddDropHandler(spillover_control_table, spillover_control_table_drop);
 
         this.PropertyChanged += (s, e) => {
             if (e.Property == Window.WindowStateProperty)
@@ -126,7 +139,8 @@ public partial class MainWindow : Window
         var inactive = new SolidColorBrush(Color.FromRgb(185, 189, 202));
         mainModeAnalysisText.Foreground = view_model.ViewState is MainWindowViewState.Analysis
             or MainWindowViewState.Metadata
-            or MainWindowViewState.Platform ? active : inactive;
+            or MainWindowViewState.Platform
+            or MainWindowViewState.SpilloverCompensation ? active : inactive;
         mainModeLayoutText.Foreground = view_model.ViewState == MainWindowViewState.Layout ? active : inactive;
         mainModeCodeText.Foreground = view_model.ViewState == MainWindowViewState.Code ? active : inactive;
     }
@@ -183,8 +197,8 @@ public partial class MainWindow : Window
         plot_properties_panel_visible = is_visible;
         if (!is_visible)
         {
-            analysis_properties_panel_width = Math.Max(336, analysis_plot_grid.ColumnDefinitions[1].ActualWidth);
-            layout_properties_panel_width = Math.Max(336, layout_mode_grid.ColumnDefinitions[1].ActualWidth);
+            analysis_properties_panel_width = Math.Max(346, analysis_plot_grid.ColumnDefinitions[1].ActualWidth);
+            layout_properties_panel_width = Math.Max(346, layout_mode_grid.ColumnDefinitions[1].ActualWidth);
         }
 
         set_properties_panel_column(analysis_plot_grid, analysis_properties_panel, 1, is_visible, analysis_properties_panel_width);
@@ -506,6 +520,7 @@ public partial class MainWindow : Window
             or ProjectNodeKind.GatePopulationSlot
             or ProjectNodeKind.Population
             or ProjectNodeKind.Embedding
+            or ProjectNodeKind.ControlSample
             or ProjectNodeKind.StatisticDefinition
             or ProjectNodeKind.StatisticValue
             or ProjectNodeKind.Layout
@@ -515,8 +530,14 @@ public partial class MainWindow : Window
     private async void open_fcs_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
         await open_fcs_files_async();
 
+    private async void add_control_samples_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
+        await open_control_fcs_files_async();
+
     private async void concatenate_samples_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
         await concatenate_samples_async();
+
+    private async void subsample_sample_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
+        await subsample_sample_async();
 
     private async void split_sample_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
         await split_sample_async();
@@ -538,6 +559,32 @@ public partial class MainWindow : Window
             files.Select(file => file.Path.LocalPath),
             "Failed to open FCS files",
             target_group: selected_import_target_group());
+    }
+
+    private async Task open_control_fcs_files_async()
+    {
+        var target_group = selected_import_target_group();
+        if (target_group is null)
+        {
+            await show_message_dialog("Add control samples failed", "Select a grouping before adding control samples.");
+            return;
+        }
+
+        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Add control FCS samples",
+            AllowMultiple = true,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("FCS files") { Patterns = ["*.fcs", "*.FCS"] },
+                FilePickerFileTypes.All
+            ]
+        });
+
+        await import_control_fcs_files(
+            files.Select(file => file.Path.LocalPath),
+            "Failed to add control samples",
+            target_group);
     }
 
     private FlowGroup? selected_import_target_group()
@@ -1268,6 +1315,63 @@ public partial class MainWindow : Window
         await dialog.ShowDialog(this);
     }
 
+    private async Task<bool> show_confirmation_dialog(string title, string message)
+    {
+        var result = false;
+        var dialog = new Window
+        {
+            Title = title,
+            Width = 520,
+            MinWidth = 380,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = Background,
+            SizeToContent = SizeToContent.Height,
+            Content = new StackPanel
+            {
+                Margin = new Thickness(16),
+                Spacing = 12,
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = title,
+                        FontWeight = FontWeight.SemiBold,
+                        Foreground = Brushes.White
+                    },
+                    new TextBlock
+                    {
+                        Text = message,
+                        TextWrapping = TextWrapping.Wrap,
+                        LineHeight = 18,
+                        Foreground = new SolidColorBrush(Color.FromRgb(218, 221, 228))
+                    },
+                    new StackPanel
+                    {
+                        Orientation = Avalonia.Layout.Orientation.Horizontal,
+                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                        Spacing = 8,
+                        Children =
+                        {
+                            new Button { Content = "Cancel", MinWidth = 80, IsCancel = true },
+                            new Button { Content = "Proceed", MinWidth = 80, IsDefault = true }
+                        }
+                    }
+                }
+            }
+        };
+
+        var buttons = ((StackPanel)((StackPanel)dialog.Content).Children[2]).Children;
+        apply_small_button_classes((Control)dialog.Content);
+        ((Button)buttons[0]).Click += (_, _) => dialog.Close();
+        ((Button)buttons[1]).Click += (_, _) =>
+        {
+            result = true;
+            dialog.Close();
+        };
+        await dialog.ShowDialog(this);
+        return result;
+    }
+
     public async Task OpenCommandLineFilesAsync(IEnumerable<string> paths)
     {
         var file_paths = paths
@@ -1519,6 +1623,7 @@ public partial class MainWindow : Window
                     command_menu_item("Rename grouping ...", view_model.RenameGroupCommand),
                     command_menu_item("Delete grouping", view_model.DeleteSelectedCommand),
                     click_menu_item("Append FCS to grouping ...", open_fcs_menu_item_click),
+                    click_menu_item("Add control samples ...", add_control_samples_menu_item_click),
                     new Separator(),
                     click_menu_item("Concatenate samples ...", concatenate_samples_menu_item_click),
                     new Separator(),
@@ -1534,6 +1639,31 @@ public partial class MainWindow : Window
                     build_plotting_context_menu("Default plotting options"),
                     new Separator(),
                     command_menu_item("Recalculate gating scheme", view_model.RecalculateSelectedGroupCommand),
+                    new Separator(),
+                    command_menu_item("Expand all", view_model.ExpandProjectTreeCommand),
+                    command_menu_item("Collapse all", view_model.CollapseProjectTreeCommand));
+                break;
+
+            case ProjectNodeKind.ControlFolder:
+                add_menu_items(menu,
+                    click_menu_item("Add control samples ...", add_control_samples_menu_item_click),
+                    new Separator(),
+                    command_menu_item("Expand all", view_model.ExpandProjectTreeCommand),
+                    command_menu_item("Collapse all", view_model.CollapseProjectTreeCommand));
+                break;
+
+            case ProjectNodeKind.SpilloverCompensation:
+                add_menu_items(menu,
+                    click_menu_item("Add control samples ...", add_control_samples_menu_item_click),
+                    new Separator(),
+                    command_menu_item("Expand all", view_model.ExpandProjectTreeCommand),
+                    command_menu_item("Collapse all", view_model.CollapseProjectTreeCommand));
+                break;
+
+            case ProjectNodeKind.ControlSample:
+                add_menu_items(menu,
+                    command_menu_item("Rename control sample ...", view_model.RenameSelectedNodeCommand),
+                    command_menu_item("Delete control sample", view_model.DeleteSelectedCommand),
                     new Separator(),
                     command_menu_item("Expand all", view_model.ExpandProjectTreeCommand),
                     command_menu_item("Collapse all", view_model.CollapseProjectTreeCommand));
@@ -1609,6 +1739,7 @@ public partial class MainWindow : Window
                     command_menu_item("Copy hierarchy view options to group", view_model.CopyHierarchyViewOptionsToGroupCommand),
                     new Separator(),
                     command_menu_item("Recalculate gating scheme", view_model.RecalculateSelectedGroupCommand),
+                    click_menu_item("Subsample sample ...", subsample_sample_menu_item_click),
                     click_menu_item("Split sample ...", split_sample_menu_item_click),
                     new Separator(),
                     command_menu_item("Expand all", view_model.ExpandProjectTreeCommand),
@@ -1944,6 +2075,24 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
+    private void spillover_control_table_drag_over(object? sender, DragEventArgs e)
+    {
+        var node = PageEditorView.DraggedProjectNode;
+        e.DragEffects = node is not null && view_model.DropSpilloverControlCommand.CanExecute(node)
+            ? DragDropEffects.Copy
+            : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void spillover_control_table_drop(object? sender, DragEventArgs e)
+    {
+        var node = PageEditorView.DraggedProjectNode;
+        if (node is not null && view_model.DropSpilloverControlCommand.CanExecute(node))
+            view_model.DropSpilloverControlCommand.Execute(node);
+        PageEditorView.DraggedProjectNode = null;
+        e.Handled = true;
+    }
+
     private async void drop_files(object? sender, DragEventArgs e)
     {
         if (PageEditorView.DraggedProjectNode is not null)
@@ -2018,6 +2167,49 @@ public partial class MainWindow : Window
                     : view_model.AddSamplesToGroup(samples, target_group);
                 await Task.Run(() => view_model.RecalculateImportedGroups(groups));
                 view_model.FinishSampleImport(samples.Length);
+            });
+            view_model.AddRecentFilePaths(file_paths);
+        }
+        catch (Exception exception)
+        {
+            view_model.StatusText = $"{failure_title}: {exception.Message}";
+            await show_message_dialog(failure_title, exception.Message);
+        }
+    }
+
+    private async Task import_control_fcs_files(IEnumerable<string?> paths, string failure_title, FlowGroup target_group)
+    {
+        var file_paths = paths
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Select(path => path!)
+            .Where(path => path.EndsWith(".fcs", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+        if (file_paths.Length == 0)
+        {
+            await show_message_dialog(failure_title, "No .fcs files were provided.");
+            return;
+        }
+
+        var missing_paths = file_paths.Where(path => !File.Exists(path)).ToArray();
+        if (missing_paths.Length > 0)
+        {
+            await show_message_dialog(
+                failure_title,
+                $"The following file could not be found:{Environment.NewLine}{missing_paths[0]}");
+            return;
+        }
+
+        try
+        {
+            await run_with_progress_dialog("Loading control FCS files ...", fcs_import_subtitle(file_paths), async () =>
+            {
+                var samples = await Task.Run(() =>
+                {
+                    var reader = new FcsReader();
+                    return file_paths.Select(file_path => reader.ReadControl(file_path)).ToArray();
+                });
+                await view_model.AddControlSamplesAsync(samples, target_group);
             });
             view_model.AddRecentFilePaths(file_paths);
         }
@@ -2112,6 +2304,213 @@ public partial class MainWindow : Window
                 step = Math.Min(step <= 0 ? delta : step, delta);
         }
         return step <= 0 ? 1f : step;
+    }
+
+    private async Task subsample_sample_async()
+    {
+        var group = view_model.SelectedGroup;
+        var sample = view_model.SelectedSample;
+        if (group is null || sample is null)
+            return;
+        if (sample.EventCount == 0)
+        {
+            await show_message_dialog("Subsample sample", "The selected sample has no events.");
+            return;
+        }
+
+        var result = await show_subsample_dialog(group, sample);
+        if (result is null)
+            return;
+
+        int count = result.Mode == SubsampleMode.Percentage
+            ? (int)Math.Round(sample.EventCount * Math.Clamp(result.Percentage, 0.0, 100.0) / 100.0)
+            : result.Count;
+        count = Math.Clamp(count, 1, sample.EventCount);
+        var subsample = build_subsample(sample, result.Name, count);
+        view_model.AddArtificialSample(group, subsample, $"Subsampled {count:N0} event(s) from {sample.Name}");
+    }
+
+    private async Task<SubsampleSampleResult?> show_subsample_dialog(FlowGroup group, FlowSample sample)
+    {
+        var name_input = new TextBox
+        {
+            Text = unique_subsample_name(group, sample),
+            Width = 280
+        };
+        name_input.Classes.Add("Small");
+
+        var percentage_radio = new RadioButton
+        {
+            Content = "Percentage",
+            GroupName = "SubsampleMode",
+            IsChecked = true,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
+        };
+        var number_radio = new RadioButton
+        {
+            Content = "Number",
+            GroupName = "SubsampleMode",
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
+        };
+        var percentage_input = new NumericUpDown
+        {
+            Minimum = 0.001m,
+            Maximum = 100m,
+            Increment = 1m,
+            Value = 10m,
+            Width = 120
+        };
+        percentage_input.Classes.Add("Small");
+        var number_input = new NumericUpDown
+        {
+            Minimum = 1m,
+            Maximum = sample.EventCount,
+            Increment = 100m,
+            Value = Math.Min(sample.EventCount, Math.Max(1, sample.EventCount / 10)),
+            Width = 120,
+            IsEnabled = false
+        };
+        number_input.Classes.Add("Small");
+
+        void update_mode()
+        {
+            bool use_percentage = percentage_radio.IsChecked == true;
+            percentage_input.IsEnabled = use_percentage;
+            number_input.IsEnabled = !use_percentage;
+        }
+        percentage_radio.IsCheckedChanged += (_, _) => update_mode();
+        number_radio.IsCheckedChanged += (_, _) => update_mode();
+
+        var buttons = new StackPanel
+        {
+            Orientation = Avalonia.Layout.Orientation.Horizontal,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+            Spacing = 8,
+            Children =
+            {
+                new Button { Content = "Cancel", MinWidth = 80, IsCancel = true },
+                new Button { Content = "Create", MinWidth = 80, IsDefault = true }
+            }
+        };
+
+        var dialog = new Window
+        {
+            Title = "Subsample sample",
+            Width = 430,
+            MinWidth = 360,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = Background,
+            SizeToContent = SizeToContent.Height,
+            Content = new StackPanel
+            {
+                Margin = new Thickness(16),
+                Spacing = 12,
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = "Subsample sample",
+                        FontWeight = FontWeight.SemiBold,
+                        Foreground = Brushes.White
+                    },
+                    new TextBlock
+                    {
+                        Text = $"{sample.Name} ({sample.EventCount:N0} events)",
+                        Foreground = new SolidColorBrush(Color.FromRgb(164, 168, 178))
+                    },
+                    labeled_control("Subsample name", name_input),
+                    new Grid
+                    {
+                        ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+                        RowDefinitions = new RowDefinitions("Auto,Auto"),
+                        ColumnSpacing = 10,
+                        RowSpacing = 8,
+                        Children =
+                        {
+                            percentage_radio,
+                            percentage_input,
+                            number_radio,
+                            number_input
+                        }
+                    },
+                    buttons
+                }
+            }
+        };
+
+        var mode_grid = (Grid)((StackPanel)dialog.Content).Children[3];
+        Grid.SetColumn(percentage_input, 1);
+        Grid.SetRow(number_radio, 1);
+        Grid.SetRow(number_input, 1);
+        Grid.SetColumn(number_input, 1);
+        apply_small_button_classes((Control)dialog.Content);
+
+        SubsampleSampleResult? result = null;
+        ((Button)buttons.Children[0]).Click += (_, _) => dialog.Close();
+        ((Button)buttons.Children[1]).Click += (_, _) =>
+        {
+            string name = name_input.Text?.Trim() ?? "";
+            if (string.IsNullOrWhiteSpace(name))
+                return;
+
+            result = new SubsampleSampleResult(
+                name,
+                percentage_radio.IsChecked == true ? SubsampleMode.Percentage : SubsampleMode.Number,
+                Convert.ToDouble(percentage_input.Value ?? 0),
+                Convert.ToInt32(number_input.Value ?? 0));
+            dialog.Close();
+        };
+
+        await dialog.ShowDialog(this);
+        return result;
+    }
+
+    private static StackPanel labeled_control(string label, Control control) =>
+        new()
+        {
+            Spacing = 15,
+            Orientation = Avalonia.Layout.Orientation.Horizontal,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = label,
+                    Foreground = new SolidColorBrush(Color.FromRgb(150, 150, 158)),
+                    FontWeight = FontWeight.SemiBold
+                },
+                control
+            }
+        };
+
+    private static string unique_subsample_name(FlowGroup group, FlowSample sample)
+    {
+        string base_name = $"{sample.Name} subsample";
+        var sibling_names = group.Samples.Select(item => item.Name).ToHashSet(StringComparer.Ordinal);
+        string name = base_name;
+        int index = 2;
+        while (sibling_names.Contains(name))
+            name = $"{base_name} {index++}";
+        return name;
+    }
+
+    private static FlowSample build_subsample(FlowSample sample, string name, int count)
+    {
+        var indices = Enumerable.Range(0, sample.EventCount).ToArray();
+        var random = new Random();
+        for (int index = indices.Length - 1; index > 0; index--)
+        {
+            int swap_index = random.Next(index + 1);
+            (indices[index], indices[swap_index]) = (indices[swap_index], indices[index]);
+        }
+        Array.Resize(ref indices, count);
+        Array.Sort(indices);
+
+        var raw_events = new float[count, sample.ChannelCount];
+        for (int row = 0; row < count; row++)
+        for (int column = 0; column < sample.ChannelCount; column++)
+            raw_events[row, column] = sample.RawEvents[indices[row], column];
+        return new FlowSample(name, sample.Channels, raw_events);
     }
 
     private async Task split_sample_async()

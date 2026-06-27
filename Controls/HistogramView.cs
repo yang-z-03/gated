@@ -97,6 +97,7 @@ public sealed class HistogramView : Control
     private INotifyCollectionChanged? subscribed_series_collection;
     private readonly List<HistogramSeries> subscribed_series = new();
     private DragTarget drag_target = DragTarget.None;
+    private HistogramRangeSelection? draft_selection;
 
     static HistogramView()
     {
@@ -223,8 +224,12 @@ public sealed class HistogramView : Control
         drag_target = nearest_selection_edge(point.X);
         if (drag_target == DragTarget.None)
         {
-            Selection = new HistogramRangeSelection(value, value);
+            draft_selection = new HistogramRangeSelection(value, value);
             drag_target = DragTarget.Maximum;
+        }
+        else
+        {
+            draft_selection = Selection;
         }
         update_selection(value);
         e.Pointer.Capture(this);
@@ -250,8 +255,9 @@ public sealed class HistogramView : Control
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
         base.OnPointerReleased(e);
-        if (Selection is { } selection)
+        if (draft_selection is { } selection)
             Selection = normalized_selection(selection);
+        draft_selection = null;
         drag_target = DragTarget.None;
         e.Pointer.Capture(null);
     }
@@ -362,7 +368,7 @@ public sealed class HistogramView : Control
 
     private void draw_selection(DrawingContext context)
     {
-        if (Selection is not { } selection)
+        if ((draft_selection ?? Selection) is not { } selection)
             return;
 
         var normalized = normalized_selection(selection);
@@ -439,17 +445,18 @@ public sealed class HistogramView : Control
 
     private IEnumerable<double> major_axis_ticks()
     {
-        if (Maximum <= Minimum)
+        double minimum = effective_minimum();
+        if (Maximum <= minimum)
             yield break;
 
         if (AxisScale == HistogramAxisScaleKind.Log)
         {
-            double start = Math.Ceiling(Math.Log10(Math.Max(Minimum, double.Epsilon)));
+            double start = Math.Ceiling(Math.Log10(Math.Max(minimum, double.Epsilon)));
             double stop = Math.Floor(Math.Log10(Maximum));
             for (double power = start; power <= stop; power++)
             {
                 double value = Math.Pow(10, power);
-                if (value >= Minimum && value <= Maximum)
+                if (value >= minimum && value <= Maximum)
                     yield return value;
             }
             yield break;
@@ -457,7 +464,7 @@ public sealed class HistogramView : Control
 
         var axis = new AxisSettings
         {
-            Minimum = Minimum,
+            Minimum = minimum,
             Maximum = Maximum,
             ScaleKind = AxisScale == HistogramAxisScaleKind.Logicle ? CoordinateScaleKind.Logicle : CoordinateScaleKind.Linear
         };
@@ -469,18 +476,19 @@ public sealed class HistogramView : Control
             LogicleNegativeDecades);
 
         foreach (double value in Configuration.MajorAxisTicks(axis))
-            if (value >= Minimum && value <= Maximum)
+            if (value >= minimum && value <= Maximum)
                 yield return value;
     }
 
     private IEnumerable<double> minor_axis_ticks()
     {
-        if (Maximum <= Minimum)
+        double minimum = effective_minimum();
+        if (Maximum <= minimum)
             yield break;
 
         if (AxisScale == HistogramAxisScaleKind.Log)
         {
-            double start = Math.Floor(Math.Log10(Math.Max(Minimum, double.Epsilon)));
+            double start = Math.Floor(Math.Log10(Math.Max(minimum, double.Epsilon)));
             double stop = Math.Ceiling(Math.Log10(Maximum));
             var major = major_axis_ticks().ToHashSet();
             for (double power = start; power <= stop; power++)
@@ -489,7 +497,7 @@ public sealed class HistogramView : Control
                 for (int factor = 2; factor < 10; factor++)
                 {
                     double value = factor * decade;
-                    if (value >= Minimum && value <= Maximum && !major.Contains(value))
+                    if (value >= minimum && value <= Maximum && !major.Contains(value))
                         yield return value;
                 }
             }
@@ -498,7 +506,7 @@ public sealed class HistogramView : Control
 
         var axis = new AxisSettings
         {
-            Minimum = Minimum,
+            Minimum = minimum,
             Maximum = Maximum,
             ScaleKind = AxisScale == HistogramAxisScaleKind.Logicle ? CoordinateScaleKind.Logicle : CoordinateScaleKind.Linear
         };
@@ -509,7 +517,7 @@ public sealed class HistogramView : Control
             LogicleNegativeDecades);
 
         foreach (double value in Configuration.MinorAxisTicks(axis))
-            if (value >= Minimum && value <= Maximum)
+            if (value >= minimum && value <= Maximum)
                 yield return value;
     }
 
@@ -527,20 +535,21 @@ public sealed class HistogramView : Control
     private double screen_to_data(double x)
     {
         if (!try_axis_range(out double transformed_minimum, out double transformed_maximum))
-            return Minimum;
+            return effective_minimum();
 
         double normalized = Math.Clamp((x - plot_rect.Left) / plot_rect.Width, 0, 1);
         double transformed = transformed_minimum + normalized * (transformed_maximum - transformed_minimum);
-        return try_inverse_transform(transformed, out double value) ? value : Minimum;
+        return try_inverse_transform(transformed, out double value) ? value : effective_minimum();
     }
 
     private bool try_axis_range(out double transformed_minimum, out double transformed_maximum)
     {
         transformed_minimum = 0;
         transformed_maximum = 0;
-        if (!double.IsFinite(Minimum) || !double.IsFinite(Maximum) || Maximum <= Minimum)
+        double minimum = effective_minimum();
+        if (!double.IsFinite(minimum) || !double.IsFinite(Maximum) || Maximum <= minimum)
             return false;
-        if (!try_transform(Minimum, out transformed_minimum) || !try_transform(Maximum, out transformed_maximum))
+        if (!try_transform(minimum, out transformed_minimum) || !try_transform(Maximum, out transformed_maximum))
             return false;
         return transformed_maximum > transformed_minimum;
     }
@@ -591,15 +600,17 @@ public sealed class HistogramView : Control
 
     private void update_selection(double value)
     {
-        if (Selection is not { } selection)
+        var current = draft_selection ?? Selection;
+        if (current is not { } selection)
             return;
 
-        Selection = drag_target switch
+        draft_selection = drag_target switch
         {
             DragTarget.Minimum => new HistogramRangeSelection(value, selection.Maximum),
             DragTarget.Maximum => new HistogramRangeSelection(selection.Minimum, value),
             _ => selection
         };
+        InvalidateVisual();
     }
 
     private DragTarget nearest_selection_edge(double x)
@@ -622,6 +633,11 @@ public sealed class HistogramView : Control
         selection.Minimum <= selection.Maximum
             ? selection
             : new HistogramRangeSelection(selection.Maximum, selection.Minimum);
+
+    private double effective_minimum() =>
+        AxisScale == HistogramAxisScaleKind.Logicle && Math.Abs(Minimum) < double.Epsilon && Maximum > 0
+            ? -0.01 * Maximum
+            : Minimum;
 
     private static double[] smooth(double[] source, int passes)
     {

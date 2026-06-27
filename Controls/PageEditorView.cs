@@ -1348,6 +1348,14 @@ public sealed class PageEditorView : Control
     private static Point gate_annotation_origin(PagePlotElement element, GateDefinition gate, PopulationRegion region, Rect plot_rect, double width, double height)
     {
         const double margin = 4;
+        if (gate.Kind is GateKind.Polygon or GateKind.Rectangle)
+        {
+            var top_left = gate_screen_bounds_top_left(element, gate, plot_rect);
+            return new Point(
+                clamp_to_range(top_left.X, plot_rect.Left + margin, plot_rect.Right - width + 3),
+                clamp_to_range(top_left.Y, plot_rect.Top + margin, plot_rect.Bottom - height + 2));
+        }
+
         var anchor = data_to_screen(gate.Vertices[0], element, plot_rect);
         double x = anchor.X + 6;
         double y = anchor.Y - 36;
@@ -1382,6 +1390,22 @@ public sealed class PageEditorView : Control
         return new Point(
             clamp_to_range(x, plot_rect.Left + margin, plot_rect.Right - width + 3),
             clamp_to_range(y, plot_rect.Top + margin, plot_rect.Bottom - height + 2));
+    }
+
+    private static Point gate_screen_bounds_top_left(PagePlotElement element, GateDefinition gate, Rect plot_rect)
+    {
+        double left = double.PositiveInfinity;
+        double top = double.PositiveInfinity;
+        foreach (var vertex in gate.Vertices)
+        {
+            var point = data_to_screen(vertex, element, plot_rect);
+            left = Math.Min(left, point.X);
+            top = Math.Min(top, point.Y);
+        }
+
+        return double.IsFinite(left) && double.IsFinite(top)
+            ? new Point(left, top)
+            : data_to_screen(gate.Vertices[0], element, plot_rect);
     }
 
     private static IReadOnlyList<PopulationRegion> annotation_regions(GateDefinition gate) =>
@@ -2552,15 +2576,18 @@ public sealed class PageEditorView : Control
         double text_height = element.ShowGateAnnotationNames ? 26 : 14;
         var origin = gate_annotation_origin(element, gate, region, plot, text_width + 6, text_height);
 
-        svg.AppendLine($"""<rect x="{(origin.X - 3).ToString(CultureInfo.InvariantCulture)}" y="{(origin.Y - 10).ToString(CultureInfo.InvariantCulture)}" width="{(text_width + 6).ToString(CultureInfo.InvariantCulture)}" height="{text_height.ToString(CultureInfo.InvariantCulture)}" fill="white" fill-opacity="0.86"/>""");
+        bool top_left_origin = gate.Kind is GateKind.Polygon or GateKind.Rectangle;
+        double rect_y = top_left_origin ? origin.Y : origin.Y - 10;
+        double text_y = top_left_origin ? origin.Y + 10 : origin.Y;
+        svg.AppendLine($"""<rect x="{(origin.X - 3).ToString(CultureInfo.InvariantCulture)}" y="{rect_y.ToString(CultureInfo.InvariantCulture)}" width="{(text_width + 6).ToString(CultureInfo.InvariantCulture)}" height="{text_height.ToString(CultureInfo.InvariantCulture)}" fill="white" fill-opacity="0.86"/>""");
         if (element.ShowGateAnnotationNames)
         {
-            svg.AppendLine($"""<text x="{origin.X.ToString(CultureInfo.InvariantCulture)}" y="{origin.Y.ToString(CultureInfo.InvariantCulture)}" font-family="Arial" font-size="10" fill="black">{escape_xml(name)}</text>""");
-            svg.AppendLine($"""<text x="{origin.X.ToString(CultureInfo.InvariantCulture)}" y="{(origin.Y + 12).ToString(CultureInfo.InvariantCulture)}" font-family="Arial" font-size="10" fill="black">{escape_xml(count_line)}</text>""");
+            svg.AppendLine($"""<text x="{origin.X.ToString(CultureInfo.InvariantCulture)}" y="{text_y.ToString(CultureInfo.InvariantCulture)}" font-family="Arial" font-size="10" fill="black">{escape_xml(name)}</text>""");
+            svg.AppendLine($"""<text x="{origin.X.ToString(CultureInfo.InvariantCulture)}" y="{(text_y + 12).ToString(CultureInfo.InvariantCulture)}" font-family="Arial" font-size="10" fill="black">{escape_xml(count_line)}</text>""");
         }
         else
         {
-            svg.AppendLine($"""<text x="{origin.X.ToString(CultureInfo.InvariantCulture)}" y="{origin.Y.ToString(CultureInfo.InvariantCulture)}" font-family="Arial" font-size="10" fill="black">{escape_xml(count_line)}</text>""");
+            svg.AppendLine($"""<text x="{origin.X.ToString(CultureInfo.InvariantCulture)}" y="{text_y.ToString(CultureInfo.InvariantCulture)}" font-family="Arial" font-size="10" fill="black">{escape_xml(count_line)}</text>""");
         }
     }
 

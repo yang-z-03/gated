@@ -8,7 +8,7 @@ Version 0.30.0
 - Python persistence memory
 - Implementation of UMAP and Leiden (based on igraph)
 - Implementation and optimization of NNdescent algorithm to fully utilize CPU threads
-- Now running kNN takes about 5 minutes for 750k cells, UMAP for <10 minutes, and leiden for <2 minutes, requiring less than 10GB memory
+- Now running kNN takes about 1 minutes for 750k cells, UMAP for <10 minutes, and leiden for <2 minutes, requiring less than 10GB memory
 - Hidable property panel by pressing Ctrl + R
 - Figures can now be exported with high resolution e.g. 300-600 dpi as bitmap image
 - Background figure refresh in layout

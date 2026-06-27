@@ -1,14 +1,45 @@
 using Avalonia;
 using System;
 using System.Reflection;
+using System.Runtime.InteropServices;
 
 namespace gated.Updater;
+
+internal static class NativeEnvironment
+{
+    [DllImport("libc", SetLastError = true)]
+    private static extern int setenv(string name, string value, int overwrite);
+
+    public static void Set(string name, string value)
+    {
+        if (setenv(name, value, 1) != 0)
+            throw new InvalidOperationException("setenv failed");
+    }
+}
 
 internal static class Program
 {
     [STAThread]
     public static void Main(string[] args)
     {
+        Environment.SetEnvironmentVariable("PYTHONHOME", 
+            Shared.PlatformSupport.EmbeddedPythonHome(AppContext.BaseDirectory), 
+            EnvironmentVariableTarget.Process);
+        
+        Environment.SetEnvironmentVariable("PATH",
+            AppContext.BaseDirectory + Shared.PlatformSupport.EnvironmentPathSeparator +
+            Shared.PlatformSupport.EmbeddedPythonHome(AppContext.BaseDirectory),
+            EnvironmentVariableTarget.Process);
+
+        if (Shared.PlatformSupport.CurrentPlatform != "windows")
+        {
+            NativeEnvironment.Set("PYTHONHOME", Shared.PlatformSupport.EmbeddedPythonHome(AppContext.BaseDirectory));
+            NativeEnvironment.Set("PATH",
+                AppContext.BaseDirectory + Shared.PlatformSupport.EnvironmentPathSeparator +
+                Shared.PlatformSupport.EmbeddedPythonHome(AppContext.BaseDirectory)
+            );
+        }
+
         if (args.Length == 1 && string.Equals(args[0], "--version", StringComparison.OrdinalIgnoreCase))
         {
             Console.WriteLine(updater_version());

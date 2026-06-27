@@ -44,9 +44,6 @@ class Program
             );
         }
 
-        Console.WriteLine($"Initialized PYTHONHOME = {Environment.GetEnvironmentVariable("PYTHONHOME")}");
-        Console.WriteLine($"Initialized PATH = {Environment.GetEnvironmentVariable("PATH")}");
-
         BuildAvaloniaApp()
             .StartWithClassicDesktopLifetime(args);
     }

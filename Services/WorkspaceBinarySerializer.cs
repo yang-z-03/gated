@@ -11,7 +11,7 @@ namespace gated.Services;
 public sealed class WorkspaceBinarySerializer
 {
     private const uint magic = 0x44544731;
-    private const int version = 41;
+    private const int version = 42;
 
     public void Save(FlowWorkspace workspace, string file_path)
     {
@@ -137,6 +137,12 @@ public sealed class WorkspaceBinarySerializer
         writer.Write(group.Samples.Count);
         foreach (var sample in group.Samples)
             write_sample(writer, sample);
+
+        writer.Write(group.ControlSamples.Count);
+        foreach (var sample in group.ControlSamples)
+            write_control_sample(writer, sample);
+
+        write_spillover_state(writer, group.SpilloverCompensation);
     }
 
     private static FlowGroup read_group(BinaryReader reader, bool read_root_view, int file_version)
@@ -178,22 +184,98 @@ public sealed class WorkspaceBinarySerializer
         for (int index = 0; index < sample_count; index++)
             group.AddSample(read_sample(reader, group.Gates), recalculate: false);
 
+        if (file_version >= 42)
+        {
+            int control_sample_count = reader.ReadInt32();
+            for (int index = 0; index < control_sample_count; index++)
+                group.ControlSamples.Add(read_control_sample(reader));
+            read_spillover_state(reader, group.SpilloverCompensation);
+        }
+
         return group;
+    }
+
+    private static void write_control_sample(BinaryWriter writer, ControlSample sample)
+    {
+        writer.Write(sample.Id.ToByteArray());
+        write_string(writer, sample.Name);
+        write_channels(writer, sample.Channels);
+        writer.Write(sample.EventCount);
+        writer.Write(sample.ChannelCount);
+        write_float_matrix_payload(writer, sample.RawEvents);
+        writer.Write(sample.Metadata.Count);
+        foreach (var item in sample.Metadata.OrderBy(item => item.Key, StringComparer.Ordinal))
+        {
+            write_string(writer, item.Key);
+            write_string(writer, item.Value);
+        }
+    }
+
+    private static ControlSample read_control_sample(BinaryReader reader)
+    {
+        Guid id = new Guid(reader.ReadBytes(16));
+        string name = read_string(reader);
+        var channels = read_channels(reader);
+        int row_count = reader.ReadInt32();
+        int column_count = reader.ReadInt32();
+        var raw_events = read_float_matrix_payload(reader, row_count, column_count);
+        var sample = new ControlSample(name, channels, raw_events) { Id = id };
+        int metadata_count = reader.ReadInt32();
+        for (int index = 0; index < metadata_count; index++)
+            sample.Metadata[read_string(reader)] = read_string(reader);
+        return sample;
+    }
+
+    private static void write_spillover_state(BinaryWriter writer, SpilloverCompensationState state)
+    {
+        write_string(writer, state.MatrixName);
+        writer.Write(state.PrimaryVertices.Count);
+        foreach (var vertex in state.PrimaryVertices)
+        {
+            writer.Write(vertex.X);
+            writer.Write(vertex.Y);
+        }
+
+        writer.Write(state.Rows.Count);
+        foreach (var row in state.Rows)
+        {
+            writer.Write(row.ControlSampleId.ToByteArray());
+            write_string(writer, row.ParameterName);
+            writer.Write(row.PositiveSelection is not null);
+            if (row.PositiveSelection is { } selection)
+            {
+                writer.Write(selection.Minimum);
+                writer.Write(selection.Maximum);
+            }
+        }
+    }
+
+    private static void read_spillover_state(BinaryReader reader, SpilloverCompensationState state)
+    {
+        state.MatrixName = read_string(reader);
+        int vertex_count = reader.ReadInt32();
+        for (int index = 0; index < vertex_count; index++)
+            state.PrimaryVertices.Add(new Point(reader.ReadDouble(), reader.ReadDouble()));
+
+        int row_count = reader.ReadInt32();
+        for (int index = 0; index < row_count; index++)
+        {
+            var row = new SpilloverControlRow
+            {
+                ControlSampleId = new Guid(reader.ReadBytes(16)),
+                ParameterName = read_string(reader)
+            };
+            if (reader.ReadBoolean())
+                row.PositiveSelection = new SpilloverRangeSelection(reader.ReadDouble(), reader.ReadDouble());
+            state.Rows.Add(row);
+        }
     }
 
     private static void write_sample(BinaryWriter writer, FlowSample sample)
     {
         writer.Write(sample.Id.ToByteArray());
         write_string(writer, sample.Name);
-        writer.Write(sample.Channels.Count);
-        foreach (var channel in sample.Channels)
-        {
-            writer.Write(channel.Index);
-            write_string(writer, channel.Name);
-            write_string(writer, channel.Label);
-            writer.Write(channel.Maximum);
-            writer.Write(channel.Gain);
-        }
+        write_channels(writer, sample.Channels);
 
         writer.Write(sample.EventCount);
         writer.Write(sample.ChannelCount);
@@ -230,17 +312,7 @@ public sealed class WorkspaceBinarySerializer
     {
         Guid id = new Guid(reader.ReadBytes(16));
         string name = read_string(reader);
-        int channel_count = reader.ReadInt32();
-        var channels = new List<ChannelDefinition>(channel_count);
-        for (int index = 0; index < channel_count; index++)
-        {
-            channels.Add(new ChannelDefinition(
-                reader.ReadInt32(),
-                read_string(reader),
-                read_string(reader),
-                reader.ReadSingle(),
-                reader.ReadSingle()));
-        }
+        var channels = read_channels(reader);
 
         int row_count = reader.ReadInt32();
         int column_count = reader.ReadInt32();
@@ -269,6 +341,35 @@ public sealed class WorkspaceBinarySerializer
 
         read_population_results(reader, sample.Populations, gates);
         return sample;
+    }
+
+    private static void write_channels(BinaryWriter writer, IReadOnlyCollection<ChannelDefinition> channels)
+    {
+        writer.Write(channels.Count);
+        foreach (var channel in channels)
+        {
+            writer.Write(channel.Index);
+            write_string(writer, channel.Name);
+            write_string(writer, channel.Label);
+            writer.Write(channel.Maximum);
+            writer.Write(channel.Gain);
+        }
+    }
+
+    private static List<ChannelDefinition> read_channels(BinaryReader reader)
+    {
+        int channel_count = reader.ReadInt32();
+        var channels = new List<ChannelDefinition>(channel_count);
+        for (int index = 0; index < channel_count; index++)
+        {
+            channels.Add(new ChannelDefinition(
+                reader.ReadInt32(),
+                read_string(reader),
+                read_string(reader),
+                reader.ReadSingle(),
+                reader.ReadSingle()));
+        }
+        return channels;
     }
 
     private static void write_population_results(BinaryWriter writer, IReadOnlyCollection<PopulationResult> populations)

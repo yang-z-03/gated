@@ -39,6 +39,9 @@
         <Setter Property="Template">
             <ControlTemplate TargetType="TextBox">
                 <DataValidationErrors>
+                    <DataValidationErrors.ErrorTemplate>
+                        <DataTemplate />
+                    </DataValidationErrors.ErrorTemplate>
                     <Border
                         Name="PART_ContentPresenterBorder"
                         MinHeight="{TemplateBinding MinHeight}"
@@ -159,21 +162,22 @@
         </Style>
 
         <Style Selector="^:error">
+            <Setter Property="Foreground" Value="#FFD7DD" />
             <Style Selector="^ /template/ Border#PART_ContentPresenterBorder">
-                <Setter Property="Background" Value="{DynamicResource DataValidationErrorsBackground}" />
-                <Setter Property="BorderBrush" Value="Transparent" />
+                <Setter Property="Background" Value="#3A1D22" />
+                <Setter Property="BorderBrush" Value="#D84F5F" />
             </Style>
             <Style Selector="^:pointerover /template/ Border#PART_ContentPresenterBorder">
-                <Setter Property="Background" Value="{DynamicResource DataValidationErrorsPointeroverBackground}" />
-                <Setter Property="BorderBrush" Value="Transparent" />
+                <Setter Property="Background" Value="#46242A" />
+                <Setter Property="BorderBrush" Value="#E66573" />
             </Style>
             <Style Selector="^:pressed /template/ Border#PART_ContentPresenterBorder">
-                <Setter Property="Background" Value="{DynamicResource DataValidationErrorsPressedBackground}" />
-                <Setter Property="BorderBrush" Value="Transparent" />
+                <Setter Property="Background" Value="#46242A" />
+                <Setter Property="BorderBrush" Value="#E66573" />
             </Style>
             <Style Selector="^:focus /template/ Border#PART_ContentPresenterBorder">
-                <Setter Property="Background" Value="{DynamicResource DataValidationErrorsSelectedBackground}" />
-                <Setter Property="BorderBrush" Value="{DynamicResource DataValidationErrorsSelectedBorderBrush}" />
+                <Setter Property="Background" Value="#4E252D" />
+                <Setter Property="BorderBrush" Value="#FF7F8D" />
             </Style>
         </Style>
 
@@ -199,6 +203,21 @@
         <Style Selector="^.Small">
             <Setter Property="MinHeight" Value="{DynamicResource TextBoxSmallHeight}" />
         </Style>
+        <Style Selector="^.Invalid, ^.Danger, ^.SpilloverMatrixInvalid">
+            <Setter Property="Foreground" Value="#FFD7DD" />
+            <Style Selector="^ /template/ Border#PART_ContentPresenterBorder">
+                <Setter Property="Background" Value="#3A1D22" />
+                <Setter Property="BorderBrush" Value="#D84F5F" />
+            </Style>
+            <Style Selector="^:pointerover /template/ Border#PART_ContentPresenterBorder">
+                <Setter Property="Background" Value="#46242A" />
+                <Setter Property="BorderBrush" Value="#E66573" />
+            </Style>
+            <Style Selector="^:focus /template/ Border#PART_ContentPresenterBorder">
+                <Setter Property="Background" Value="#4E252D" />
+                <Setter Property="BorderBrush" Value="#FF7F8D" />
+            </Style>
+        </Style>
 
         <Style Selector="^.Bordered">
             <Setter Property="Background" Value="{DynamicResource TextBoxBorderedDefaultBackground}" />
@@ -214,6 +233,21 @@
             <Style Selector="^:disabled /template/ Border#PART_ContentPresenterBorder">
                 <Setter Property="Background" Value="{DynamicResource TextBoxDisabledBackground}" />
                 <Setter Property="BorderBrush" Value="{DynamicResource TextBoxDisabledBorderBrush}" />
+            </Style>
+            <Style Selector="^.Invalid, ^.Danger, ^.SpilloverMatrixInvalid">
+                <Setter Property="Foreground" Value="#FFD7DD" />
+                <Style Selector="^ /template/ Border#PART_ContentPresenterBorder">
+                    <Setter Property="Background" Value="#3A1D22" />
+                    <Setter Property="BorderBrush" Value="#D84F5F" />
+                </Style>
+                <Style Selector="^:pointerover /template/ Border#PART_ContentPresenterBorder">
+                    <Setter Property="Background" Value="#46242A" />
+                    <Setter Property="BorderBrush" Value="#E66573" />
+                </Style>
+                <Style Selector="^:focus /template/ Border#PART_ContentPresenterBorder">
+                    <Setter Property="Background" Value="#4E252D" />
+                    <Setter Property="BorderBrush" Value="#FF7F8D" />
+                </Style>
             </Style>
 
             <Style Selector="^:error">
@@ -284,6 +318,9 @@
         <Setter Property="Template">
             <ControlTemplate TargetType="TextBox">
                 <DataValidationErrors Theme="{DynamicResource SilentDataValidationErrors}">
+                    <DataValidationErrors.ErrorTemplate>
+                        <DataTemplate />
+                    </DataValidationErrors.ErrorTemplate>
                     <Border
                         Name="PART_ContentPresenterBorder"
                         MinHeight="{TemplateBinding MinHeight}"
@@ -387,21 +424,22 @@
         </Style>
 
         <Style Selector="^:error">
+            <Setter Property="Foreground" Value="#FFD7DD" />
             <Style Selector="^ /template/ Border#PART_ContentPresenterBorder">
-                <Setter Property="Background" Value="{DynamicResource DataValidationErrorsBackground}" />
-                <Setter Property="BorderBrush" Value="Transparent" />
+                <Setter Property="Background" Value="#3A1D22" />
+                <Setter Property="BorderBrush" Value="#D84F5F" />
             </Style>
             <Style Selector="^:pointerover /template/ Border#PART_ContentPresenterBorder">
-                <Setter Property="Background" Value="{DynamicResource DataValidationErrorsPointeroverBackground}" />
-                <Setter Property="BorderBrush" Value="Transparent" />
+                <Setter Property="Background" Value="#46242A" />
+                <Setter Property="BorderBrush" Value="#E66573" />
             </Style>
             <Style Selector="^:pressed /template/ Border#PART_ContentPresenterBorder">
-                <Setter Property="Background" Value="{DynamicResource DataValidationErrorsPressedBackground}" />
-                <Setter Property="BorderBrush" Value="Transparent" />
+                <Setter Property="Background" Value="#46242A" />
+                <Setter Property="BorderBrush" Value="#E66573" />
             </Style>
             <Style Selector="^:focus /template/ Border#PART_ContentPresenterBorder">
-                <Setter Property="Background" Value="{DynamicResource DataValidationErrorsSelectedBackground}" />
-                <Setter Property="BorderBrush" Value="{DynamicResource DataValidationErrorsSelectedBorderBrush}" />
+                <Setter Property="Background" Value="#4E252D" />
+                <Setter Property="BorderBrush" Value="#FF7F8D" />
             </Style>
         </Style>
 
