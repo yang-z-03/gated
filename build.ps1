@@ -46,7 +46,6 @@ cd ../updater-win-x64
 zip -r ../updater-win-x64.zip .
 
 cd ../..
-rm -r ./artifacts/gated-win-x64
 rm -r ./artifacts/updater-win-x64
 
 # macOS Intel x64

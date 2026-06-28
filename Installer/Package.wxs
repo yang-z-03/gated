@@ -1,0 +1,16 @@
+﻿<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+    <Package Id="Gated" Name="Gated" Manufacturer="Xornent" Version="0.31.3"
+             UpgradeCode="{40CB66CE-AB87-4489-A9CA-9D7687EC7A3F}"
+             Scope="perUser">
+        <MajorUpgrade DowngradeErrorMessage="A newer version has already been installed." />
+        <Icon Id="icon" SourceFile="..\gated.ico" />
+        <Property Id="ARPPRODUCTICON" Value="icon" />
+        <Property Id="INSTALLPYTHON">
+            <RegistrySearch Root="HKCU" Key="Software\Xornent\Gated\gated-core" Name="python" Type="raw" />
+        </Property>
+        <Media Id="1" Cabinet="cab1.cab" EmbedCab="yes" />
+        <Feature Id="gated_core">
+            <ComponentGroupRef Id="gated_core_comps" />
+        </Feature>
+    </Package>
+</Wix>
