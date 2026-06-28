@@ -149,6 +149,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
     public ICommand ApplyCompensationCommand { get; }
     public ICommand EditCompensationCommand { get; }
     public ICommand ReapplyCompensationCommand { get; }
+    public ICommand OpenSpilloverCompensationCommand { get; }
     public ICommand RecalculateSelectedGroupCommand { get; }
     public ICommand RecalculateSelectedGateCommand { get; }
     public ICommand RecalculateSelectedStatisticCommand { get; }
@@ -229,6 +230,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         ApplyCompensationCommand = new RelayCommand(_ => apply_selected_compensation(), _ => selected_group is not null && selected_compensation is not null);
         EditCompensationCommand = new RelayCommand(_ => _ = edit_selected_compensation_async(), _ => selected_group is not null && selected_compensation is not null);
         ReapplyCompensationCommand = new RelayCommand(_ => reapply_selected_group_compensation(), _ => selected_group is not null);
+        OpenSpilloverCompensationCommand = new RelayCommand(_ => open_spillover_compensation_panel(), _ => selected_group is not null);
         RecalculateSelectedGroupCommand = new RelayCommand(_ => RecalculateSelectedGroup(), _ => selected_group is not null);
         RecalculateSelectedGateCommand = new RelayCommand(_ => RecalculateEditedGate(selected_gate), _ => selected_group is not null);
         RecalculateSelectedStatisticCommand = new RelayCommand(_ => recalculate_selected_statistic(), _ => selected_group is not null && selected_statistic_definition() is not null);
@@ -273,7 +275,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         AddStringMetadataColumnCommand = new RelayCommand(_ => _ = add_metadata_column_async(MetadataColumnKind.String));
         AddIntegerMetadataColumnCommand = new RelayCommand(_ => _ = add_metadata_column_async(MetadataColumnKind.Integer));
         AddFloatMetadataColumnCommand = new RelayCommand(_ => _ = add_metadata_column_async(MetadataColumnKind.Float));
-        OpenPythonScriptEditorCommand = new RelayCommand(_ => OpenPythonScriptEditor());
+        OpenPythonScriptEditorCommand = new RelayCommand(_ => ShowPythonScriptEditor());
         ClosePythonScriptEditorCommand = new RelayCommand(_ => _ = ClosePythonScriptEditorAsync());
         RunPythonScriptCommand = new RelayCommand(_ => _ = run_python_script_async(), _ => !is_python_script_running);
         SelectPreviousEquivalentSampleCommand = new RelayCommand(_ => select_relative_equivalent_sample(-1), _ => EquivalentSampleChoices.Count > 1);
@@ -1661,6 +1663,16 @@ public sealed partial class MainWindowViewModel : NotifyBase
         return Task.CompletedTask;
     }
 
+    public void ShowPythonScriptEditor()
+    {
+        if (editing_python_script is not null)
+            SelectedPythonLogTask = python_log_task_for_script(editing_python_script);
+        else
+            SelectedPythonLogTask ??= python_log_task("code:interactive", "Interactive code");
+
+        IsPythonScriptEditorMode = true;
+    }
+
     public void OpenPythonScriptEditor(PythonScriptDefinition? script = null, bool dirty = false)
     {
         editing_python_script = script;
@@ -2508,6 +2520,22 @@ public sealed partial class MainWindowViewModel : NotifyBase
         schedule_compensation_application(selected_group, "Re-applied compensation", force_compensation: true);
     }
 
+    private void open_spillover_compensation_panel()
+    {
+        if (selected_group is null)
+            return;
+
+        SelectedIntegrationJob = null;
+        IsWorkspaceMetadataMode = false;
+        SelectedSample = null;
+        SelectedPopulation = null;
+        SelectedGate = null;
+        SelectedControlSample = selected_group.ControlSamples.FirstOrDefault();
+        SelectedCompensation = null;
+        IsSpilloverCompensationMode = true;
+        refresh_spillover_workspace();
+    }
+
     private void recalculate_selected_statistic()
     {
         var statistic = selected_statistic_definition();
@@ -3079,6 +3107,13 @@ public sealed partial class MainWindowViewModel : NotifyBase
 
         IsPythonScriptEditorMode = false;
         bool passive_control_selection = node.Kind is ProjectNodeKind.ControlFolder or ProjectNodeKind.ControlSample;
+        bool analysis_node_selection = node.Kind is ProjectNodeKind.GateFolder
+            or ProjectNodeKind.Gate
+            or ProjectNodeKind.GatePopulationSlot
+            or ProjectNodeKind.Sample
+            or ProjectNodeKind.Population;
+        if (IsPageEditorMode && analysis_node_selection)
+            set_view_state(MainWindowViewState.Analysis, "Analysis view");
         if (node.Kind is not ProjectNodeKind.Metadata and not ProjectNodeKind.Group &&
             !passive_control_selection &&
             ViewState is MainWindowViewState.Metadata or MainWindowViewState.GroupMetadata)
@@ -4806,6 +4841,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
             ApplyCompensationCommand,
             EditCompensationCommand,
             ReapplyCompensationCommand,
+            OpenSpilloverCompensationCommand,
             RecalculateSelectedGroupCommand,
             RecalculateSelectedGateCommand,
             RecalculateSelectedStatisticCommand,

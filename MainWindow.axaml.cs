@@ -107,6 +107,7 @@ public partial class MainWindow : Window
         configure_platform_window_chrome();
         update_window_margin_for_state();
         update_main_mode_switch();
+        update_application_title();
     }
 
     private async void analysis_mode_tab_pressed(object? sender, PointerPressedEventArgs e)
@@ -124,7 +125,7 @@ public partial class MainWindow : Window
     private void code_mode_tab_pressed(object? sender, PointerPressedEventArgs e)
     {
         e.Handled = true;
-        view_model.OpenPythonScriptEditor();
+        view_model.ShowPythonScriptEditor();
     }
 
     private void update_main_mode_switch()
@@ -277,9 +278,10 @@ public partial class MainWindow : Window
             {
                 var item = new MenuItem
                 {
-                    Header = path,
+                    Header = recent_file_menu_header(path),
                     Tag = path
                 };
+                ToolTip.SetTip(item, path);
                 item.Click += recent_file_menu_item_click;
                 recent_items_menu.Items.Add(item);
             }
@@ -341,6 +343,9 @@ public partial class MainWindow : Window
 
         if (path.EndsWith(".gated", StringComparison.OrdinalIgnoreCase))
         {
+            if (!await prepare_to_replace_workspace_async())
+                return;
+
             await load_workspace_with_progress(path);
             return;
         }
@@ -614,6 +619,9 @@ public partial class MainWindow : Window
             return;
 
         string path = file.Path.LocalPath;
+        if (!await prepare_to_replace_workspace_async())
+            return;
+
         await load_workspace_with_progress(path);
     }
 
@@ -640,6 +648,7 @@ public partial class MainWindow : Window
 
         view_model.CloseWorkspace();
         current_workspace_path = null;
+        update_application_title();
     }
 
     private async Task<bool> save_workspace_async()
@@ -670,6 +679,7 @@ public partial class MainWindow : Window
             await run_with_progress_dialog("Saving workspace ...", path, () => Task.Run(() => new WorkspaceBinarySerializer().Save(view_model.Workspace, path)));
             view_model.StatusText = $"Saved workspace: {System.IO.Path.GetFileName(path)}";
             current_workspace_path = path;
+            update_application_title();
             return true;
         }
         catch (Exception exception)
@@ -1406,6 +1416,7 @@ public partial class MainWindow : Window
                 view_model.LoadWorkspace(workspace, path);
             });
             current_workspace_path = path;
+            update_application_title();
             view_model.AddRecentFilePaths([path]);
         }
         catch (Exception exception)
@@ -1414,6 +1425,76 @@ public partial class MainWindow : Window
             if (exception is NotSupportedException)
                 await show_message_dialog("Workspace version incompatible", exception.Message);
         }
+    }
+
+    private async Task<bool> prepare_to_replace_workspace_async()
+    {
+        if (close_prompt_active)
+            return false;
+
+        if (!await view_model.TryLeavePythonScriptEditorAsync())
+            return false;
+
+        ScriptSaveChoice choice;
+        try
+        {
+            close_prompt_active = true;
+            choice = await show_workspace_exit_dialog(
+                "Save current workspace?",
+                "Choose Save to write the current workspace, Discard to replace it without saving, or Cancel to keep working.");
+        }
+        finally
+        {
+            close_prompt_active = false;
+        }
+
+        if (choice == ScriptSaveChoice.Cancel)
+            return false;
+        return choice != ScriptSaveChoice.Save || await save_workspace_async();
+    }
+
+    private void update_application_title()
+    {
+        Title = string.IsNullOrWhiteSpace(current_workspace_path)
+            ? "Gated \u00b7 Untitled"
+            : $"Gated \u00b7 {Path.GetFileName(current_workspace_path)} ({workspace_parent_folder_name(current_workspace_path)})";
+    }
+
+    private static string workspace_parent_folder_name(string path)
+    {
+        string? directory = Path.GetDirectoryName(path);
+        if (string.IsNullOrWhiteSpace(directory))
+            return "";
+
+        return new DirectoryInfo(directory).Name;
+    }
+
+    private static Control recent_file_menu_header(string path)
+    {
+        bool is_workspace = path.EndsWith(".gated", StringComparison.OrdinalIgnoreCase);
+        string file_name = Path.GetFileName(path);
+        string folder_name = workspace_parent_folder_name(path);
+        var panel = new StackPanel
+        {
+            Orientation = Avalonia.Layout.Orientation.Horizontal,
+            Spacing = 8
+        };
+        panel.Children.Add(new TextBlock
+        {
+            Text = string.IsNullOrWhiteSpace(file_name) ? path : file_name,
+            FontWeight = is_workspace ? FontWeight.SemiBold : FontWeight.Normal,
+            Foreground = Brushes.White
+        });
+        if (!string.IsNullOrWhiteSpace(folder_name))
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = folder_name,
+                Foreground = new SolidColorBrush(Color.FromRgb(150, 156, 170))
+            });
+        }
+
+        return panel;
     }
 
     private async Task run_with_progress_dialog(string title, string subtitle, Func<Task> operation)
@@ -1726,6 +1807,7 @@ public partial class MainWindow : Window
             case ProjectNodeKind.Compensation:
                 add_menu_items(menu,
                     command_menu_item("Apply compensation", view_model.ApplyCompensationCommand),
+                    command_menu_item("Edit compensation matrix ...", view_model.EditCompensationCommand),
                     new Separator(),
                     command_menu_item("Rename compensation ...", view_model.RenameSelectedNodeCommand),
                     command_menu_item("Delete compensation", view_model.DeleteSelectedCommand));
@@ -2710,7 +2792,12 @@ public partial class MainWindow : Window
         else this.Close();
     }
 
-    private async Task<ScriptSaveChoice> show_workspace_exit_dialog()
+    private Task<ScriptSaveChoice> show_workspace_exit_dialog() =>
+        show_workspace_exit_dialog(
+            "Save workspace before exit?",
+            "Choose Save to write the current workspace, Discard to exit without saving, or Cancel to keep working.");
+
+    private async Task<ScriptSaveChoice> show_workspace_exit_dialog(string heading, string message)
     {
         var dialog = new Window
         {
@@ -2728,13 +2815,13 @@ public partial class MainWindow : Window
                 {
                     new TextBlock
                     {
-                        Text = "Save workspace before exit?",
+                        Text = heading,
                         FontWeight = FontWeight.SemiBold,
                         Foreground = Brushes.White
                     },
                     new TextBlock
                     {
-                        Text = "Choose Save to write the current workspace, Discard to exit without saving, or Cancel to keep working.",
+                        Text = message,
                         TextWrapping = TextWrapping.Wrap,
                         LineHeight = 18,
                         Foreground = new SolidColorBrush(Color.FromRgb(218, 221, 228))

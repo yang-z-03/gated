@@ -259,7 +259,7 @@
                             HorizontalAlignment="Center" VerticalAlignment="Stretch">
                   <Image Width="16" Height="16" Source="avares://gated/gated-32.png"/>
                   <Grid Width="10"/>
-                  <TextBlock Text="Gated · Flow Cytometry Analyser" VerticalAlignment="Center"
+                  <TextBlock Text="{Binding Title, RelativeSource={RelativeSource FindAncestor, AncestorType=Window}}" VerticalAlignment="Center"
                              FontWeight="Bold" Foreground="White" FontSize="13"/>
                 </StackPanel>
               </Grid>
@@ -388,6 +388,7 @@
             <MenuItem Header="_Compensation">
                 <MenuItem Header="Apply selected compensation" Command="{Binding ApplyCompensationCommand}"/>
                 <MenuItem Header="Compensation table editor ..." Command="{Binding EditCompensationCommand}" InputGesture="Ctrl + P"/>
+                <MenuItem Header="Auto-compensation" Command="{Binding OpenSpilloverCompensationCommand}"/>
             </MenuItem>
             <MenuItem Header="_Statistics">
                 <MenuItem Header="Mean" Command="{Binding AddMeanStatisticCommand}" />

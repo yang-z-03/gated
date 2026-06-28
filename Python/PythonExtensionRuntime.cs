@@ -22,6 +22,8 @@ namespace gated.Python;
 public static class PythonExtensionRuntime
 {
     private static readonly object gate = new();
+    private static readonly TimeSpan shutdown_python_timeout = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan shutdown_thread_join_timeout = TimeSpan.FromMilliseconds(250);
     // PythonNet is initialized and used only on caller_thread. The language server
     // owns its request queue, then marshals Python/Jedi work to caller_thread.
     private static readonly PythonInteropThread caller_thread = new("Gated Python caller", owns_python: true);
@@ -33,6 +35,7 @@ public static class PythonExtensionRuntime
     private static PyObject? pandas_module;
     private static Task? startup_task;
     private static PythonLogExecutionContext? current_log_context;
+    private static int shutdown_started;
     public static event Action<PythonLogRunStarted>? LogRunStarted;
     public static event Action<PythonLogMessage>? LogReceived;
     public static event Action<PythonExecutionStatus>? StatusChanged;
@@ -42,6 +45,9 @@ public static class PythonExtensionRuntime
     {
         lock (gate)
         {
+            if (Volatile.Read(ref shutdown_started) != 0)
+                return;
+
             startup_task ??= Task.Run(() =>
             {
                 try
@@ -100,34 +106,39 @@ public static class PythonExtensionRuntime
 
     public static void Shutdown()
     {
+        if (Interlocked.Exchange(ref shutdown_started, 1) != 0)
+            return;
+
+        bool shutdown_python;
         lock (gate)
         {
-            if (!engine_initialized)
-            {
-                startup_task = null;
-                language_thread.Dispose();
-                caller_thread.Dispose();
-                return;
-            }
+            shutdown_python = engine_initialized;
+            startup_task = null;
         }
 
         try
         {
-            caller_thread.InvokePythonShutdown(() =>
+            if (shutdown_python)
             {
-                lock (gate)
+                bool completed = caller_thread.InvokePythonShutdown(() =>
                 {
-                    if (initialized)
-                        dispose_python_modules();
-                    initialized = false;
-                    startup_task = null;
-                }
-            });
+                    lock (gate)
+                    {
+                        if (initialized)
+                            dispose_python_modules();
+                        initialized = false;
+                        startup_task = null;
+                    }
+                }, shutdown_python_timeout);
+
+                if (!completed)
+                    Console.WriteLine("Timed out while waiting for Python runtime shutdown.");
+            }
         }
         finally
         {
-            language_thread.Dispose();
-            caller_thread.Dispose();
+            language_thread.Stop(shutdown_thread_join_timeout);
+            caller_thread.Stop(shutdown_thread_join_timeout);
         }
     }
 
@@ -754,13 +765,13 @@ public static class PythonExtensionRuntime
             return null;
         });
 
-        public void InvokePythonShutdown(Action action)
+        public bool InvokePythonShutdown(Action action, TimeSpan timeout)
         {
             if (!owns_python)
                 throw new InvalidOperationException("Only the Python owner thread can shut down Python.");
 
             if (Volatile.Read(ref disposed) != 0)
-                return;
+                return true;
 
             var item = new PythonWorkItem(() =>
             {
@@ -771,8 +782,16 @@ public static class PythonExtensionRuntime
                 IsPythonShutdown = true,
                 SkipModuleInitialization = true
             };
-            queue.Add(item);
-            item.Wait();
+            try
+            {
+                queue.Add(item);
+            }
+            catch (InvalidOperationException)
+            {
+                return true;
+            }
+
+            return item.Wait(timeout);
         }
 
         public T Invoke<T>(Func<T> action)
@@ -813,13 +832,23 @@ public static class PythonExtensionRuntime
 
         public void Dispose()
         {
+            Stop(TimeSpan.FromSeconds(5));
+        }
+
+        public bool Stop(TimeSpan join_timeout)
+        {
             if (Interlocked.Exchange(ref disposed, 1) != 0)
-                return;
+                return true;
 
             queue.CompleteAdding();
             if (Thread.CurrentThread.ManagedThreadId != thread.ManagedThreadId && thread.IsAlive)
-                thread.Join(TimeSpan.FromSeconds(5));
+            {
+                if (!thread.Join(join_timeout))
+                    return false;
+            }
+
             queue.Dispose();
+            return true;
         }
 
         private void run()
@@ -886,6 +915,15 @@ public static class PythonExtensionRuntime
         {
             completed.Wait();
             Exception?.Throw();
+        }
+
+        public bool Wait(TimeSpan timeout)
+        {
+            if (!completed.Wait(timeout))
+                return false;
+
+            Exception?.Throw();
+            return true;
         }
     }
 

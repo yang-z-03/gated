@@ -398,6 +398,7 @@ class Workspace:
     groupings: list[Grouping]
     platforms: dict[str, Platform]
     storage: dict
+    
     def add_grouping(self, name: str) -> Grouping: ...
     def apply_metadata(self, dataframe: pd.DataFrame): 
         '''
