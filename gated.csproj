@@ -2,7 +2,7 @@
     <PropertyGroup>
         <OutputType>WinExe</OutputType>
         <TargetFramework>net10.0</TargetFramework>
-        <Version>0.31.3</Version>
+        <Version>0.31.6</Version>
         <Nullable>enable</Nullable>
         <RuntimeIdentifiers>win-x64;osx-x64;osx-arm64;linux-x64</RuntimeIdentifiers>
         <ApplicationManifest>app.manifest</ApplicationManifest>
@@ -14,6 +14,11 @@
       <Compile Remove="Updater\**" />
       <EmbeddedResource Remove="Updater\**" />
       <None Remove="Updater\**" />
+
+      <AvaloniaXaml Remove="Installer\**" />
+      <Compile Remove="Installer\**" />
+      <EmbeddedResource Remove="Installer\**" />
+      <None Remove="Installer\**" />
     </ItemGroup>
 
     <ItemGroup>
@@ -25,7 +30,7 @@
         <PackageReference Include="Avalonia.Svg.Skia" Version="11.3.0" />
         <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.12" />
         <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.12" />
-        <!--Condition below is needed to remove Avalonia.Diagnostics package from build output in Release configuration.-->
+        <!-- Condition below is needed to remove Avalonia.Diagnostics package from build output in Release configuration. -->
         <PackageReference Include="Avalonia.ReactiveUI" Version="11.3.9" />
         <PackageReference Include="Avalonia.Diagnostics" Version="11.3.12">
             <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>

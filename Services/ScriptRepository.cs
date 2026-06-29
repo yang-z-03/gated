@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using gated.Shared;
 
 namespace gated.Services;
 
@@ -31,8 +32,8 @@ public static class PythonScriptRepository
     public const int FormatVersion = 1;
     private const string Magic = "GATEDSCRIPT";
 
-    public static string MacroDirectory => Path.Combine(AppContext.BaseDirectory, "macros");
-    public static string StatisticDirectory => Path.Combine(AppContext.BaseDirectory, "statistics");
+    public static string MacroDirectory => PlatformSupport.MacroDirectory;
+    public static string StatisticDirectory => PlatformSupport.StatisticDirectory;
 
     public static IReadOnlyList<PythonScriptDefinition> LoadMacros() =>
         load_directory(MacroDirectory, PythonScriptRepositoryKind.Macro, "*.macro");

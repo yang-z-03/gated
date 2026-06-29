@@ -1,5 +1,6 @@
 ﻿using Avalonia;
 using System;
+using System.IO;
 using System.Runtime.InteropServices;
 
 namespace gated;
@@ -25,23 +26,28 @@ class Program
     
     [STAThread]
     public static void Main(string[] args) {
-        
+        Directory.CreateDirectory(Shared.PlatformSupport.PersistenceDirectory);
+        string python_home = Shared.PlatformSupport.EmbeddedPythonHome();
+        string path = string.Join(
+            Shared.PlatformSupport.EnvironmentPathSeparator,
+            [
+                AppContext.BaseDirectory,
+                python_home,
+                Environment.GetEnvironmentVariable("PATH") ?? ""
+            ]);
+
         Environment.SetEnvironmentVariable("PYTHONHOME", 
-            Shared.PlatformSupport.EmbeddedPythonHome(AppContext.BaseDirectory), 
+            python_home,
             EnvironmentVariableTarget.Process);
         
         Environment.SetEnvironmentVariable("PATH",
-            AppContext.BaseDirectory + Shared.PlatformSupport.EnvironmentPathSeparator +
-            Shared.PlatformSupport.EmbeddedPythonHome(AppContext.BaseDirectory),
+            path,
             EnvironmentVariableTarget.Process);
 
         if (Shared.PlatformSupport.CurrentPlatform != "windows")
         {
-            NativeEnvironment.Set("PYTHONHOME", Shared.PlatformSupport.EmbeddedPythonHome(AppContext.BaseDirectory));
-            NativeEnvironment.Set("PATH",
-                AppContext.BaseDirectory + Shared.PlatformSupport.EnvironmentPathSeparator +
-                Shared.PlatformSupport.EmbeddedPythonHome(AppContext.BaseDirectory)
-            );
+            NativeEnvironment.Set("PYTHONHOME", python_home);
+            NativeEnvironment.Set("PATH", path);
         }
 
         BuildAvaloniaApp()

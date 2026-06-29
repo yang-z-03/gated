@@ -33,24 +33,10 @@ public sealed class WorkspaceBinarySerializer
 
     public FlowWorkspace Load(string file_path)
     {
-        try
-        {
-            return load(file_path, read_group_root_view: true);
-        }
-        catch (Exception exception) when (exception is not NotSupportedException)
-        {
-            try
-            {
-                return load(file_path, read_group_root_view: false);
-            }
-            catch
-            {
-                throw exception;
-            }
-        }
+        return load(file_path);
     }
 
-    private static FlowWorkspace load(string file_path, bool read_group_root_view)
+    private static FlowWorkspace load(string file_path)
     {
         using var stream = new FileStream(file_path, FileMode.Open, FileAccess.Read, FileShare.Read);
         using var reader = new BinaryReader(stream);
@@ -58,16 +44,16 @@ public sealed class WorkspaceBinarySerializer
             throw new InvalidDataException("The file is not a Gated workspace.");
 
         int file_version = reader.ReadInt32();
-        if (file_version < 32 || file_version > version)
-            throw new NotSupportedException($"Unsupported Gated workspace version: {file_version}.");
+        if (file_version != version)
+            throw new NotSupportedException($"Unsupported Gated workspace version: {file_version}. Current version is {version}.");
 
         var workspace = new FlowWorkspace { Name = read_string(reader) };
         int group_count = reader.ReadInt32();
         for (int index = 0; index < group_count; index++)
-            workspace.Groups.Add(read_group(reader, read_group_root_view, file_version));
+            workspace.Groups.Add(read_group(reader));
 
-        read_integration_jobs(reader, workspace, file_version);
-        read_page_layouts(reader, workspace, file_version);
+        read_integration_jobs(reader, workspace);
+        read_page_layouts(reader, workspace);
         read_recent_file_paths(reader, workspace);
         read_metadata_columns(reader, workspace);
 
@@ -145,27 +131,15 @@ public sealed class WorkspaceBinarySerializer
         write_spillover_state(writer, group.SpilloverCompensation);
     }
 
-    private static FlowGroup read_group(BinaryReader reader, bool read_root_view, int file_version)
+    private static FlowGroup read_group(BinaryReader reader)
     {
         Guid id = new Guid(reader.ReadBytes(16));
         var group = new FlowGroup { Id = id, Name = read_string(reader) };
-        read_statistics(reader, group.Statistics, file_version);
-        if (read_root_view)
-        {
-            group.RootViewOptions = read_gate_view_options(reader);
-            if (file_version == 40)
-            {
-                var legacy_gate_root_view = read_gate_view_options(reader);
-                if (!group.RootViewOptions.HasView && legacy_gate_root_view.HasView)
-                    group.RootViewOptions = legacy_gate_root_view;
-            }
-            if (file_version >= 38)
-            {
-                int sample_root_view_count = reader.ReadInt32();
-                for (int index = 0; index < sample_root_view_count; index++)
-                    group.SampleRootViewOptions[read_string(reader)] = read_gate_view_options(reader);
-            }
-        }
+        read_statistics(reader, group.Statistics);
+        group.RootViewOptions = read_gate_view_options(reader);
+        int sample_root_view_count = reader.ReadInt32();
+        for (int index = 0; index < sample_root_view_count; index++)
+            group.SampleRootViewOptions[read_string(reader)] = read_gate_view_options(reader);
 
         int compensation_count = reader.ReadInt32();
         int applied_index = reader.ReadInt32();
@@ -178,19 +152,16 @@ public sealed class WorkspaceBinarySerializer
 
         int gate_count = reader.ReadInt32();
         for (int index = 0; index < gate_count; index++)
-            group.Gates.Add(read_gate(reader, parent: null, file_version));
+            group.Gates.Add(read_gate(reader, parent: null));
 
         int sample_count = reader.ReadInt32();
         for (int index = 0; index < sample_count; index++)
             group.AddSample(read_sample(reader, group.Gates), recalculate: false);
 
-        if (file_version >= 42)
-        {
-            int control_sample_count = reader.ReadInt32();
-            for (int index = 0; index < control_sample_count; index++)
-                group.ControlSamples.Add(read_control_sample(reader));
-            read_spillover_state(reader, group.SpilloverCompensation);
-        }
+        int control_sample_count = reader.ReadInt32();
+        for (int index = 0; index < control_sample_count; index++)
+            group.ControlSamples.Add(read_control_sample(reader));
+        read_spillover_state(reader, group.SpilloverCompensation);
 
         return group;
     }
@@ -582,7 +553,7 @@ public sealed class WorkspaceBinarySerializer
             write_gate(writer, child);
     }
 
-    private static GateDefinition read_gate(BinaryReader reader, GateDefinition? parent, int file_version)
+    private static GateDefinition read_gate(BinaryReader reader, GateDefinition? parent)
     {
         Guid id = new Guid(reader.ReadBytes(16));
         var gate = new GateDefinition
@@ -646,7 +617,7 @@ public sealed class WorkspaceBinarySerializer
         for (int index = 0; index < vertex_count; index++)
             gate.Vertices.Add(new Point(reader.ReadDouble(), reader.ReadDouble()));
 
-        read_statistics(reader, gate.Statistics, file_version);
+        read_statistics(reader, gate.Statistics);
         gate.IsTreeExpanded = reader.ReadBoolean();
         if (reader.ReadBoolean())
             gate.BooleanFirstGateId = new Guid(reader.ReadBytes(16));
@@ -657,7 +628,7 @@ public sealed class WorkspaceBinarySerializer
 
         int child_count = reader.ReadInt32();
         for (int index = 0; index < child_count; index++)
-            gate.Children.Add(read_gate(reader, gate, file_version));
+            gate.Children.Add(read_gate(reader, gate));
 
         return gate;
     }
@@ -799,13 +770,13 @@ public sealed class WorkspaceBinarySerializer
         }
     }
 
-    private static void read_page_layouts(BinaryReader reader, FlowWorkspace workspace, int file_version)
+    private static void read_page_layouts(BinaryReader reader, FlowWorkspace workspace)
     {
         int layout_count = reader.ReadInt32();
         for (int index = 0; index < layout_count; index++)
         {
             var layout = new PageLayout { Name = read_string(reader) };
-            read_page_elements(reader, workspace, layout, file_version);
+            read_page_elements(reader, workspace, layout);
         }
     }
 
@@ -891,7 +862,7 @@ public sealed class WorkspaceBinarySerializer
         }
     }
 
-    private static void read_integration_jobs(BinaryReader reader, FlowWorkspace workspace, int file_version)
+    private static void read_integration_jobs(BinaryReader reader, FlowWorkspace workspace)
     {
         int job_count = reader.ReadInt32();
         for (int index = 0; index < job_count; index++)
@@ -912,7 +883,7 @@ public sealed class WorkspaceBinarySerializer
                 integration.CytoNormOptions = cytonorm_options;
                 integration.BatchColumnName = batch_column_name;
             }
-            read_platform_options(reader, job, file_version);
+            read_platform_options(reader, job);
 
             int population_count = reader.ReadInt32();
             for (int item = 0; item < population_count; item++)
@@ -974,7 +945,7 @@ public sealed class WorkspaceBinarySerializer
             job.RowMap.Set(row_map_sources, read_int_array(reader) ?? [], read_int_array(reader) ?? []);
 
             job.Compensated = read_float_matrix(reader);
-            job.Matrix = file_version >= 36 ? read_float_matrix(reader) : job.Compensated;
+            job.Matrix = read_float_matrix(reader);
             var batch_ids = read_int_array(reader) ?? [];
             var legacy_logicle = read_float_matrix(reader);
             var normalized = read_float_matrix(reader);
@@ -982,11 +953,10 @@ public sealed class WorkspaceBinarySerializer
                 loaded_integration.BatchIds = batch_ids;
             if (job is MultivariatePlatform multivariate)
                 multivariate.Normalized = normalized ?? legacy_logicle;
-            job.Transformed = file_version >= 36 ? read_float_matrix(reader) : legacy_logicle ?? job.Compensated;
+            job.Transformed = read_float_matrix(reader);
             _ = read_string(reader);
-            read_platform_results(reader, job, file_version);
-            if (file_version >= 35)
-                workspace.IntegrationJobs.Add(job);
+            read_platform_results(reader, job);
+            workspace.IntegrationJobs.Add(job);
         }
     }
 
@@ -1024,7 +994,7 @@ public sealed class WorkspaceBinarySerializer
             _ => null
         };
 
-    private static void read_platform_options(BinaryReader reader, Platform job, int file_version)
+    private static void read_platform_options(BinaryReader reader, Platform job)
     {
         job.Axis.Transform = (PlatformTransformationKind)reader.ReadInt32();
         var cell_cycle_model = (CellCycleModelKind)reader.ReadInt32();
@@ -1072,8 +1042,7 @@ public sealed class WorkspaceBinarySerializer
             comparison.ReferenceSample = reference_sample;
         job.Axis.Minimum = reader.ReadDouble();
         job.Axis.Maximum = reader.ReadDouble();
-        if (file_version >= 34)
-            read_platform_parameters(reader, job);
+        read_platform_parameters(reader, job);
     }
 
     private static void write_platform_parameters(BinaryWriter writer, Platform job)
@@ -1094,14 +1063,9 @@ public sealed class WorkspaceBinarySerializer
         {
             string key = read_string(reader);
             string value = read_string(reader);
-            job.Parameters[key] = file_version_parameter_is_json(value) ? Platform.ParameterFromJson(value) : value;
+            job.Parameters[key] = Platform.ParameterFromJson(value);
         }
     }
-
-    private static bool file_version_parameter_is_json(string value) =>
-        string.IsNullOrWhiteSpace(value) ||
-        value[0] is '"' or '{' or '[' or 't' or 'f' or 'n' or '-' ||
-        char.IsDigit(value[0]);
 
     private static void write_platform_results(BinaryWriter writer, Platform job)
     {
@@ -1159,7 +1123,7 @@ public sealed class WorkspaceBinarySerializer
         }
     }
 
-    private static void read_platform_results(BinaryReader reader, Platform job, int file_version)
+    private static void read_platform_results(BinaryReader reader, Platform job)
     {
         int table_count = reader.ReadInt32();
         for (int table_index = 0; table_index < table_count; table_index++)
@@ -1205,9 +1169,9 @@ public sealed class WorkspaceBinarySerializer
                 FitLogicle = read_logicle_parameters(reader),
                 Normalizer = reader.ReadDouble(),
                 Parameters = read_double_array(reader) ?? [],
-                ModelKeys = file_version >= 36 ? read_string_array(reader) : [],
-                Weights = file_version >= 36 ? read_double_array(reader) ?? [] : [],
-                Intercept = file_version >= 36 ? reader.ReadDouble() : 0
+                ModelKeys = read_string_array(reader),
+                Weights = read_double_array(reader) ?? [],
+                Intercept = reader.ReadDouble()
             };
             job.FitCurves.Add(curve);
             if (curve.Key.Contains("component", StringComparison.OrdinalIgnoreCase) ||
@@ -1302,7 +1266,7 @@ public sealed class WorkspaceBinarySerializer
         }
     }
 
-    private static void read_page_elements(BinaryReader reader, FlowWorkspace workspace, PageLayout layout, int file_version)
+    private static void read_page_elements(BinaryReader reader, FlowWorkspace workspace, PageLayout layout)
     {
         int count = reader.ReadInt32();
         for (int index = 0; index < count; index++)
@@ -1344,8 +1308,8 @@ public sealed class WorkspaceBinarySerializer
             double x = reader.ReadDouble();
             double y = reader.ReadDouble();
             double size = reader.ReadDouble();
-            double width = file_version >= 33 ? reader.ReadDouble() : size;
-            double height = file_version >= 33 ? reader.ReadDouble() : size;
+            double width = reader.ReadDouble();
+            double height = reader.ReadDouble();
             string title = read_string(reader);
             var plot_mode = (PlotMode)reader.ReadInt32();
             bool show_gridlines = reader.ReadBoolean();
@@ -1660,7 +1624,7 @@ public sealed class WorkspaceBinarySerializer
         }
     }
 
-    private static void read_statistics(BinaryReader reader, ICollection<StatisticDefinition> statistics, int file_version)
+    private static void read_statistics(BinaryReader reader, ICollection<StatisticDefinition> statistics)
     {
         int count = reader.ReadInt32();
         for (int index = 0; index < count; index++)
@@ -1670,8 +1634,7 @@ public sealed class WorkspaceBinarySerializer
                 Kind = (StatisticKind)reader.ReadInt32(),
                 ChannelName = read_string(reader)
             };
-            if (file_version >= 39)
-                statistic.DisplayName = read_string(reader);
+            statistic.DisplayName = read_string(reader);
             if (statistic.Kind == StatisticKind.Python)
             {
                 statistic.PythonSource = read_string(reader);

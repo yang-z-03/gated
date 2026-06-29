@@ -24,6 +24,7 @@ namespace gated.Updater;
 public sealed partial class UpdaterWindow : Window
 {
     private const string default_versions_url = "https://raw.githubusercontent.com/yang-z-03/gated/refs/heads/master/.github/versions";
+    private const string managed_installation_message = "Your installation seems to be per-machine or managed through system package manager. You should update the package from where you installed (e.g. Microsoft Store or App Store).";
     private static readonly HttpClient http_client = new() { Timeout = TimeSpan.FromSeconds(30) };
 
     private readonly string[] args;
@@ -220,7 +221,7 @@ public sealed partial class UpdaterWindow : Window
             ? []
             : download_archives(target.Archives, staging_root, "base", progress);
         var python = target.Requirements.FirstOrDefault(requirement => requirement.Type == "package" && requirement.Name == "python");
-        bool python_exists = File.Exists(PlatformSupport.EmbeddedPythonLibraryPath(options.InstallRoot));
+        bool python_exists = File.Exists(PlatformSupport.EmbeddedPythonLibraryPath(options.RuntimeRoot));
         bool python_required = python is not null &&
             (python.OverrideIfExist || !python_exists || (!options.RequirementsOnly && !installed.HasRequirement(python.InstallKey)));
         StagedArchive? staged_python = null;
@@ -229,7 +230,7 @@ public sealed partial class UpdaterWindow : Window
         if (options.RequirementsOnly && python is null)
             throw new InvalidDataException("The version manifest does not contain an embedded Python requirement.");
 
-        var protected_items = scan_scripts(options.InstallRoot, target.ScriptAreas);
+        var protected_items = scan_scripts(options.RuntimeRoot, target.ScriptAreas);
         var packages = python?.PythonPackages.Select(package =>
         {
             var installed_package = installed.PythonPackages.FirstOrDefault(item => string.Equals(item.Name, package.Name, StringComparison.OrdinalIgnoreCase));
@@ -244,23 +245,24 @@ public sealed partial class UpdaterWindow : Window
     {
         wait_for_parent(options.ParentPid, quick: false);
         Thread.Sleep(750);
-        terminate_embedded_python_processes(options.InstallRoot);
         string extract_root = Path.Combine(Path.GetTempPath(), "gated-update-extract-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture));
+        string python_extract_root = Path.Combine(Path.GetTempPath(), "gated-update-python-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture));
         string preserve_root = Path.Combine(Path.GetTempPath(), "gated-update-preserve-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture));
         Directory.CreateDirectory(extract_root);
+        Directory.CreateDirectory(python_extract_root);
         Directory.CreateDirectory(preserve_root);
 
         try
         {
             progress("Checking installation file access.", 4);
-            if (options.RequirementsOnly)
-                assert_python_can_be_replaced_if_needed(options.InstallRoot, plan.PythonRequired);
-            else
-                assert_installation_can_be_replaced(options.InstallRoot, options.UpdaterPath);
+            if (!options.RequirementsOnly)
+                assert_install_root_allows_low_privilege_writes(options.InstallRoot);
+            assert_runtime_files_can_be_replaced(options.RuntimeRoot, plan.ProtectedItems);
+            terminate_embedded_python_processes(options.RuntimeRoot);
 
             if (!options.RequirementsOnly)
             {
-                preserve_compatible_items(options.InstallRoot, preserve_root, plan.ProtectedItems, progress);
+                preserve_compatible_items(options.RuntimeRoot, preserve_root, plan.ProtectedItems, progress);
 
                 progress("Extracting base package.", 10);
                 foreach (var archive in plan.BaseArchives)
@@ -274,7 +276,7 @@ public sealed partial class UpdaterWindow : Window
             if (plan.PythonRequired && plan.PythonArchive is not null)
             {
                 progress("Extracting embedded Python.", 20);
-                string target = safe_combine(extract_root, plan.PythonArchive.ExtractPath);
+                string target = safe_combine(python_extract_root, plan.PythonArchive.ExtractPath);
                 if (Directory.Exists(target))
                     delete_directory_with_retries(target, progress);
                 Directory.CreateDirectory(target);
@@ -285,11 +287,11 @@ public sealed partial class UpdaterWindow : Window
             {
                 if (plan.PythonRequired)
                 {
-                    string python_root = Path.Combine(options.InstallRoot, "python");
+                    string python_root = PlatformSupport.EmbeddedPythonHome(options.RuntimeRoot);
                     progress("Installing embedded Python.", 30);
                     if (Directory.Exists(python_root))
                         delete_directory_with_retries(python_root, progress);
-                    copy_directory(extract_root, options.InstallRoot, options.UpdaterPath, progress, 35, 25);
+                    copy_directory(python_extract_root, options.RuntimeRoot, options.UpdaterPath, progress, 35, 25);
                     restore_executable_bits(options);
                 }
             }
@@ -299,15 +301,22 @@ public sealed partial class UpdaterWindow : Window
                 clean_installation(
                     options.InstallRoot,
                     options.UpdaterPath,
-                    plan.PythonRequired ? [] : ["python"]);
+                    []);
 
                 progress("Copying base package.", 42);
                 copy_directory(extract_root, options.InstallRoot, options.UpdaterPath, progress, 42, 25);
-                restore_compatible_items(preserve_root, options.InstallRoot, plan.ProtectedItems, progress);
+                if (plan.PythonRequired)
+                {
+                    string python_root = PlatformSupport.EmbeddedPythonHome(options.RuntimeRoot);
+                    if (Directory.Exists(python_root))
+                        delete_directory_with_retries(python_root, progress);
+                    copy_directory(python_extract_root, options.RuntimeRoot, options.UpdaterPath, progress, 67, 10);
+                }
+                restore_compatible_items(preserve_root, options.RuntimeRoot, plan.ProtectedItems, progress);
                 restore_executable_bits(options);
             }
 
-            var python_exe = find_python(options.InstallRoot);
+            var python_exe = find_python(options.RuntimeRoot);
             var installed_packages = read_python_packages(python_exe, progress);
             foreach (var package in plan.PythonPackages)
             {
@@ -331,6 +340,7 @@ public sealed partial class UpdaterWindow : Window
         finally
         {
             delete_quietly(extract_root);
+            delete_quietly(python_extract_root);
             delete_quietly(preserve_root);
             delete_quietly(plan.StagingRoot);
         }
@@ -605,89 +615,54 @@ public sealed partial class UpdaterWindow : Window
         }
     }
 
-    private static void assert_installation_can_be_replaced(string install_root, string updater_path)
+    private static void assert_install_root_allows_low_privilege_writes(string install_root)
     {
-        var occupied = find_processes_running_from_installation(install_root, updater_path).ToArray();
-        if (occupied.Length > 0)
+        string probe = Path.Combine(install_root, ".gated-write-test-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture) + ".tmp");
+        try
         {
-            string processes = string.Join(", ", occupied.Select(process => $"{process.Name} ({process.Id})"));
-            throw new IOException($"The update cannot continue because the installation is still used by another program: {processes}. Close that program and retry the update.");
-        }
-
-        foreach (string file in Directory.EnumerateFiles(install_root, "*", SearchOption.AllDirectories))
-        {
-            if (is_same_path(file, updater_path))
-                continue;
-
-            try
+            using (var stream = new FileStream(probe, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             {
-                using var stream = File.Open(file, FileMode.Open, FileAccess.Read, FileShare.None);
+                stream.WriteByte(0);
             }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-            {
-                throw new IOException($"The update cannot continue because '{file}' is occupied by another program. Close that program and retry the update.", exception);
-            }
+            File.Delete(probe);
         }
-    }
-
-    private static void assert_python_can_be_replaced_if_needed(string install_root, bool python_required)
-    {
-        if (!python_required)
-            return;
-
-        string python_root = Path.Combine(install_root, "python");
-        if (!Directory.Exists(python_root))
-            return;
-
-        foreach (string file in Directory.EnumerateFiles(python_root, "*", SearchOption.AllDirectories))
+        catch (Exception exception) when (exception is UnauthorizedAccessException or IOException)
         {
             try
             {
-                using var stream = File.Open(file, FileMode.Open, FileAccess.Read, FileShare.None);
+                if (File.Exists(probe))
+                    File.Delete(probe);
             }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            catch
             {
-                throw new IOException($"The Python runtime cannot be replaced because '{file}' is occupied by another program. Close that program and retry.", exception);
             }
+
+            throw new ManagedInstallationException(managed_installation_message, exception);
         }
     }
 
-    private static IEnumerable<ProcessUse> find_processes_running_from_installation(string install_root, string updater_path)
+    private static void assert_runtime_files_can_be_replaced(string runtime_root, IReadOnlyList<ProtectedItem> scripts)
     {
-        if (!OperatingSystem.IsWindows())
-            yield break;
+        foreach (var item in scripts)
+            assert_file_can_be_replaced(safe_combine(runtime_root, item.RelativePath), $"The script '{item.RelativePath}' is occupied by another program. Close that program and retry.");
 
-        string full_root = Path.GetFullPath(install_root);
-        string current_process_path = Environment.ProcessPath ?? updater_path;
-        foreach (var process in Process.GetProcesses())
+        string python_library = PlatformSupport.EmbeddedPythonLibraryPath(runtime_root);
+        if (File.Exists(python_library))
+            assert_file_can_be_replaced(python_library, $"The Python runtime cannot be replaced because '{python_library}' is occupied by another program. Close that program and retry.");
+    }
+
+    private static void assert_file_can_be_replaced(string path, string failure_message)
+    {
+        if (!File.Exists(path))
+            return;
+
+        try
         {
-            try
-            {
-                if (process.Id == Environment.ProcessId)
-                    continue;
-
-                string? path;
-                try
-                {
-                    path = process.MainModule?.FileName;
-                }
-                catch
-                {
-                    continue;
-                }
-
-                if (string.IsNullOrWhiteSpace(path) ||
-                    is_same_path(path, updater_path) ||
-                    is_same_path(path, current_process_path) ||
-                    !is_path_under_or_same(path, full_root))
-                    continue;
-
-                yield return new ProcessUse(process.Id, process.ProcessName);
-            }
-            finally
-            {
-                process.Dispose();
-            }
+            using var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.None);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            throw new IOException(failure_message, exception);
         }
     }
 
@@ -795,14 +770,13 @@ public sealed partial class UpdaterWindow : Window
         return full_path.StartsWith(full_root, path_comparison());
     }
 
-    private static bool is_path_under_or_same(string path, string root)
-    {
-        string full_path = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar);
-        string full_root = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar);
-        return string.Equals(full_path, full_root, path_comparison()) || is_path_under(path, root);
-    }
-
-    private static void copy_directory(string source_root, string target_root, string updater_path, Action<string, double?> progress, double start, double weight)
+    private static void copy_directory(
+        string source_root,
+        string target_root,
+        string updater_path,
+        Action<string, double?> progress,
+        double start,
+        double weight)
     {
         var files = Directory.EnumerateFiles(source_root, "*", SearchOption.AllDirectories).ToArray();
         for (int i = 0; i < files.Length; i++)
@@ -833,7 +807,7 @@ public sealed partial class UpdaterWindow : Window
     {
         ensure_executable_bit(options.AppPath);
         ensure_executable_bit(options.UpdaterPath);
-        ensure_executable_bit(PlatformSupport.EmbeddedPythonExecutablePath(options.InstallRoot));
+        ensure_executable_bit(PlatformSupport.EmbeddedPythonExecutablePath(options.RuntimeRoot));
     }
 
     private static void ensure_executable_bit(string path)
@@ -993,6 +967,11 @@ public sealed partial class UpdaterWindow : Window
             failure_primary.Text = "This is an updater utility and should only be called via the program itself.";
             failure_secondary.Text = "Never run it manually.";
         }
+        else if (exception is ManagedInstallationException)
+        {
+            failure_primary.Text = managed_installation_message;
+            failure_secondary.Text = "";
+        }
         else
         {
             failure_primary.Text = "Exception occurs when running installation task. This is an internal error, report to the developers for future fix. You can file an issue on the project page: https://github.com/yang-z-03/gated/issues and mark 'Installer failure' tag for maintainer to capture the error.";
@@ -1106,16 +1085,18 @@ public sealed partial class UpdaterWindow : Window
             throw new ArgumentException("Invalid parent process id.");
 
         string install_root = Path.GetDirectoryName(app) ?? throw new ArgumentException("Invalid application path.");
+        string runtime_root = read_option(args, "--runtime-root", PlatformSupport.PersistenceDirectory);
         return new UpdateOptions(
             Path.GetFullPath(app),
             Path.GetFullPath(updater),
             Path.GetFullPath(install_root),
+            Path.GetFullPath(runtime_root),
             parent_pid,
             AppVersion.Parse(read_option(args, "--current-version", "0.0.0")),
             read_optional_version(args, "--target-version"),
             read_option(args, "--versions-url", default_versions_url),
             read_option(args, "--local-versions", ""),
-            Path.Combine(install_root, "gated.update.json"),
+            Path.Combine(Path.GetFullPath(runtime_root), "gated.update.json"),
             has_flag(args, "--requirements-only"));
     }
 
@@ -1209,6 +1190,7 @@ internal sealed record UpdateOptions(
     string AppPath,
     string UpdaterPath,
     string InstallRoot,
+    string RuntimeRoot,
     int ParentPid,
     AppVersion CurrentVersion,
     AppVersion? TargetVersion,
@@ -1277,7 +1259,14 @@ internal sealed record ProtectedItem(string Kind, string Name, string RelativePa
 internal sealed record PythonPackagePlan(string Name, string VersionRange, string? InstalledVersion, bool Satisfied);
 internal sealed record PythonPackageState(string Name, string Version);
 internal sealed record PipPackage(string? Name, string? Version);
-internal sealed record ProcessUse(int Id, string Name);
+
+internal sealed class ManagedInstallationException : Exception
+{
+    public ManagedInstallationException(string message, Exception inner_exception)
+        : base(message, inner_exception)
+    {
+    }
+}
 
 internal sealed record InstalledState(string AppVersion, IReadOnlyList<string> Requirements, IReadOnlyList<PythonPackageState> PythonPackages)
 {
@@ -1297,6 +1286,7 @@ internal sealed record InstalledState(string AppVersion, IReadOnlyList<string> R
 
     public static void Save(string path, InstalledState state)
     {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         File.WriteAllText(path, JsonSerializer.Serialize(state, new JsonSerializerOptions { WriteIndented = true }));
     }
 

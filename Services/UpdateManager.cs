@@ -64,6 +64,7 @@ public sealed class UpdateManager
         CancellationToken cancellation_token = default)
     {
         string updater_path = get_updater_path();
+        Directory.CreateDirectory(Path.GetDirectoryName(updater_path)!);
         progress?.Report(new UpdateProgress("Checking updater ...", "Fetching updater manifest.", null));
         var versions = await fetch_versions_async(UpdaterManifestUrl, cancellation_token);
         var system = GetCurrentSystemInfo();
@@ -131,6 +132,7 @@ public sealed class UpdateManager
         {
             "--app", quote(app_path),
             "--updater", quote(updater_path),
+            "--runtime-root", quote(PlatformSupport.PersistenceDirectory),
             "--parent-pid", Environment.ProcessId.ToString(CultureInfo.InvariantCulture),
             "--current-version", update.Current.ToString(),
             "--target-version", update.Latest.Version.ToString(),
@@ -161,6 +163,7 @@ public sealed class UpdateManager
         {
             "--app", quote(app_path),
             "--updater", quote(updater_path),
+            "--runtime-root", quote(PlatformSupport.PersistenceDirectory),
             "--parent-pid", Environment.ProcessId.ToString(CultureInfo.InvariantCulture),
             "--current-version", GetCurrentVersion().ToString(),
             "--versions-url", quote(VersionsUrl),
@@ -298,7 +301,7 @@ public sealed class UpdateManager
     }
 
     private static string get_updater_path() =>
-        Path.Combine(Path.GetDirectoryName(get_application_path())!, PlatformSupport.UpdaterFileName);
+        PlatformSupport.UpdaterPath;
 
     private static string? get_local_versions_path()
     {

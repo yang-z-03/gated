@@ -1,5 +1,6 @@
 using Avalonia;
 using System;
+using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 
@@ -22,22 +23,29 @@ internal static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        string runtime_root = runtime_root_from_args(args);
+        Directory.CreateDirectory(runtime_root);
+        string python_home = Shared.PlatformSupport.EmbeddedPythonHome(runtime_root);
+        string path = string.Join(
+            Shared.PlatformSupport.EnvironmentPathSeparator,
+            [
+                AppContext.BaseDirectory,
+                python_home,
+                Environment.GetEnvironmentVariable("PATH") ?? ""
+            ]);
+
         Environment.SetEnvironmentVariable("PYTHONHOME", 
-            Shared.PlatformSupport.EmbeddedPythonHome(AppContext.BaseDirectory), 
+            python_home,
             EnvironmentVariableTarget.Process);
         
         Environment.SetEnvironmentVariable("PATH",
-            AppContext.BaseDirectory + Shared.PlatformSupport.EnvironmentPathSeparator +
-            Shared.PlatformSupport.EmbeddedPythonHome(AppContext.BaseDirectory),
+            path,
             EnvironmentVariableTarget.Process);
 
         if (Shared.PlatformSupport.CurrentPlatform != "windows")
         {
-            NativeEnvironment.Set("PYTHONHOME", Shared.PlatformSupport.EmbeddedPythonHome(AppContext.BaseDirectory));
-            NativeEnvironment.Set("PATH",
-                AppContext.BaseDirectory + Shared.PlatformSupport.EnvironmentPathSeparator +
-                Shared.PlatformSupport.EmbeddedPythonHome(AppContext.BaseDirectory)
-            );
+            NativeEnvironment.Set("PYTHONHOME", python_home);
+            NativeEnvironment.Set("PATH", path);
         }
 
         if (args.Length == 1 && string.Equals(args[0], "--version", StringComparison.OrdinalIgnoreCase))
@@ -62,6 +70,15 @@ internal static class Program
             : informational;
 
         return normalize_version(version);
+    }
+
+    private static string runtime_root_from_args(string[] args)
+    {
+        int index = Array.IndexOf(args, "--runtime-root");
+        if (index >= 0 && index + 1 < args.Length && !string.IsNullOrWhiteSpace(args[index + 1]))
+            return Path.GetFullPath(args[index + 1]);
+
+        return Shared.PlatformSupport.PersistenceDirectory;
     }
 
     private static string normalize_version(string? value)

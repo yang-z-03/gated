@@ -30,7 +30,7 @@ public partial class PythonPackageManagerWindow : Window
     public PythonPackageManagerWindow()
     {
         InitializeComponent();
-        python_executable = PlatformSupport.EmbeddedPythonExecutablePath(AppContext.BaseDirectory);
+        python_executable = PlatformSupport.EmbeddedPythonExecutablePath();
         packageList.ItemsSource = packages;
         refreshButton.Click += async (_, _) => await refresh_packages_async();
         installCustomButton.Click += async (_, _) => await install_custom_package_async();

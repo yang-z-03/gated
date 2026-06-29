@@ -83,7 +83,7 @@ public static class PythonExtensionRuntime
             if (engine_initialized)
                 return;
 
-            Runtime.PythonDLL = PlatformSupport.EmbeddedPythonLibraryPath(AppContext.BaseDirectory);
+            Runtime.PythonDLL = PlatformSupport.EmbeddedPythonLibraryPath();
             PythonEngine.Initialize();
             engine_initialized = true;
         }

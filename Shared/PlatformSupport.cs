@@ -52,24 +52,45 @@ public static class PlatformSupport
         get
         {
             if (OperatingSystem.IsWindows())
-                return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Gated");
+                return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "gated");
 
             string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
             if (OperatingSystem.IsMacOS())
-                return Path.Combine(home, "Library", "Application Support", "Gated");
+                return Path.Combine(home, "Library", "Application Support", "gated");
 
-            return Path.Combine(home, ".local", "Gated");
+            return Path.Combine(home, ".local", "share", "gated");
         }
     }
 
-    public static string EmbeddedPythonLibraryPath(string application_root) =>
-        Path.Combine(application_root, EmbeddedPythonLibraryRelativePath);
+    public static string UpdaterPath =>
+        Path.Combine(PersistenceDirectory, UpdaterFileName);
 
-    public static string EmbeddedPythonHome(string application_root) =>
-        Path.Combine(application_root, "python");
+    public static string UpdateMetadataPath =>
+        Path.Combine(PersistenceDirectory, "gated.update.json");
 
-    public static string EmbeddedPythonExecutablePath(string application_root) =>
-        Path.Combine(application_root, EmbeddedPythonExecutableRelativePath);
+    public static string MacroDirectory =>
+        Path.Combine(PersistenceDirectory, "macros");
+
+    public static string StatisticDirectory =>
+        Path.Combine(PersistenceDirectory, "statistics");
+
+    public static string EmbeddedPythonLibraryPath(string runtime_root) =>
+        Path.Combine(runtime_root, EmbeddedPythonLibraryRelativePath);
+
+    public static string EmbeddedPythonLibraryPath() =>
+        EmbeddedPythonLibraryPath(PersistenceDirectory);
+
+    public static string EmbeddedPythonHome(string runtime_root) =>
+        Path.Combine(runtime_root, "python");
+
+    public static string EmbeddedPythonHome() =>
+        EmbeddedPythonHome(PersistenceDirectory);
+
+    public static string EmbeddedPythonExecutablePath(string runtime_root) =>
+        Path.Combine(runtime_root, EmbeddedPythonExecutableRelativePath);
+
+    public static string EmbeddedPythonExecutablePath() =>
+        EmbeddedPythonExecutablePath(PersistenceDirectory);
 
     public static string NormalizePlatform(string? platform) =>
         (platform ?? "").Trim().ToLowerInvariant() switch

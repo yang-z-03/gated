@@ -1035,7 +1035,7 @@ public partial class MainWindow : Window
 
     public async Task<bool> BootstrapPythonIfMissingAsync()
     {
-        if (File.Exists(gated.Shared.PlatformSupport.EmbeddedPythonLibraryPath(AppContext.BaseDirectory)))
+        if (File.Exists(gated.Shared.PlatformSupport.EmbeddedPythonLibraryPath()))
             return false;
 
         var manager = new UpdateManager();
