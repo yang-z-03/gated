@@ -1,0 +1,21 @@
+Version 0.31.0
+
+- Automatic compensation
+- Preview of integration
+
+Patch 3
+
+- Thread exit waiting when closing the application
+- Source code editor now memorize last opened files
+- Application titles
+
+Patch 6
+
+- Separate write locations in user application data
+
+Patch 8
+
+- Layout editor now respects display DPI
+- Layout elements have a right context menu
+- Fix macOS drag drop failures
+- Add a fallback add-to-layout in applicable node's context menu

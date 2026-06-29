@@ -97,3 +97,11 @@ zip -r ../updater-osx-arm64.zip .
 cd ../..
 rm -r ./artifacts/gated-osx-arm64
 rm -r ./artifacts/updater-osx-arm64
+
+# build msi
+
+dotnet build ./Installer/Installer.wixproj
+rm -r ./Installer/bin
+rm -r ./Installer/obj
+mv ./artifacts/Installer.msi ./artifacts/gated-win-x64.msi
+rm ./artifacts/Installer*

@@ -112,7 +112,6 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
         {
             if (is_context_menu_node(node))
             {
-                select_node(node);
                 NodeContextRequested?.Invoke(this, new ProjectNodeContextRequestedEventArgs(node, point));
                 e.Handled = true;
             }
@@ -153,7 +152,9 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
 
         drag_started = true;
         PageEditorView.DraggedProjectNode = pressed_node;
-        await DragDrop.DoDragDropAsync(e, new DataTransfer(), DragDropEffects.Copy | DragDropEffects.Move);
+        var data = new DataTransfer();
+        data.Add(DataTransferItem.CreateText(PageEditorView.ProjectNodePayload(pressed_node)));
+        await DragDrop.DoDragDropAsync(e, data, DragDropEffects.Copy | DragDropEffects.Move);
         PageEditorView.DraggedProjectNode = null;
         pressed_node = null;
     }
@@ -258,7 +259,7 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
     private void drag_over(DragEventArgs e)
     {
         var target = node_at(e.GetPosition(this).Y);
-        var source = PageEditorView.DraggedProjectNode;
+        var source = PageEditorView.ResolveDraggedProjectNode(e.DataTransfer);
         var request = source is null || target is null ? null : new ProjectNodeDropRequest(source, target);
         e.DragEffects = request is not null && DropNodeCommand?.CanExecute(request) == true
             ? DragDropEffects.Move
@@ -269,7 +270,7 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
     private void drop_node(DragEventArgs e)
     {
         var target = node_at(e.GetPosition(this).Y);
-        var source = PageEditorView.DraggedProjectNode;
+        var source = PageEditorView.ResolveDraggedProjectNode(e.DataTransfer);
         if (source is not null && target is not null)
         {
             var request = new ProjectNodeDropRequest(source, target);

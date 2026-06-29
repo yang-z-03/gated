@@ -24,10 +24,18 @@ using gated.ViewModels;
 
 namespace gated.Controls;
 
+public sealed class PageElementContextRequestedEventArgs(PagePlotElement element, Point point) : EventArgs
+{
+    public PagePlotElement Element { get; } = element;
+    public Point Point { get; } = point;
+}
+
 public sealed class PageEditorView : Control
 {
     public const string ProjectNodeDataFormat = "gated/project-node";
+    public const string ProjectNodePayloadPrefix = "gated/node:";
     public static ProjectNode? DraggedProjectNode { get; set; }
+    public static Func<string, ProjectNode?>? ResolveProjectNodeByKey { get; set; }
 
     public static readonly StyledProperty<IEnumerable?> ElementsProperty =
         AvaloniaProperty.Register<PageEditorView, IEnumerable?>(nameof(Elements));
@@ -88,6 +96,8 @@ public sealed class PageEditorView : Control
     private readonly HashSet<Guid> refreshing_element_ids = new();
     private CancellationTokenSource? render_cache_refresh_cancellation;
 
+    public event EventHandler<PageElementContextRequestedEventArgs>? ElementContextRequested;
+
     static PageEditorView()
     {
         AffectsRender<PageEditorView>(ElementsProperty, SelectedElementProperty, RefreshRevisionProperty);
@@ -133,6 +143,7 @@ public sealed class PageEditorView : Control
     public override void Render(DrawingContext context)
     {
         base.Render(context);
+        update_render_scale_from_visual_root();
         var bounds = Bounds;
         context.FillRectangle(Brushes.White, bounds);
 
@@ -175,6 +186,12 @@ public sealed class PageEditorView : Control
             refreshing_element_ids.Add(item.Element.Id);
 
         _ = refresh_render_caches_sequentially_async(work_items, token);
+    }
+
+    public void RefreshElementRenderCache(PagePlotElement element)
+    {
+        remove_element_caches(element.Id);
+        InvalidateVisual();
     }
 
     private async Task refresh_render_caches_sequentially_async(IReadOnlyList<LayoutCacheWorkItem> work_items, CancellationToken token)
@@ -234,6 +251,7 @@ public sealed class PageEditorView : Control
     protected override void OnAttachedToVisualTree(Avalonia.VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
+        update_render_scale_from_visual_root();
         clear_render_caches();
     }
 
@@ -249,6 +267,14 @@ public sealed class PageEditorView : Control
         SelectedElement = element;
         if (element is null)
         {
+            InvalidateVisual();
+            return;
+        }
+
+        if (e.GetCurrentPoint(this).Properties.IsRightButtonPressed)
+        {
+            ElementContextRequested?.Invoke(this, new PageElementContextRequestedEventArgs(element, viewport_point));
+            e.Handled = true;
             InvalidateVisual();
             return;
         }
@@ -841,6 +867,7 @@ public sealed class PageEditorView : Control
 
     private RenderTargetBitmap get_element_bitmap(PagePlotElement element)
     {
+        update_render_scale_from_visual_root();
         string key = element_bitmap_key(element);
         if (element_bitmap_cache.TryGetValue(element.Id, out var cached) && cached.Key == key)
             return cached.Bitmap;
@@ -859,6 +886,23 @@ public sealed class PageEditorView : Control
         bitmap.Render(visual);
         element_bitmap_cache[element.Id] = (key, bitmap);
         return bitmap;
+    }
+
+    private void update_render_scale_from_visual_root()
+    {
+        if (apply_rasterization_resolution)
+            return;
+
+        double scale = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1;
+        if (!double.IsFinite(scale) || scale <= 0)
+            scale = 1;
+
+        scale = Math.Round(scale, 3);
+        if (Math.Abs(render_scale - scale) < 0.001)
+            return;
+
+        render_scale = scale;
+        element_bitmap_cache.Clear();
     }
 
     private string element_bitmap_key(PagePlotElement element) =>
@@ -1475,13 +1519,13 @@ public sealed class PageEditorView : Control
 
     private void drag_over(object? sender, DragEventArgs e)
     {
-        e.DragEffects = DraggedProjectNode is not null ? DragDropEffects.Copy : DragDropEffects.None;
+        e.DragEffects = ResolveDraggedProjectNode(e.DataTransfer) is not null ? DragDropEffects.Copy : DragDropEffects.None;
         e.Handled = true;
     }
 
     private void drop_node(object? sender, DragEventArgs e)
     {
-        if (DraggedProjectNode is not { } node)
+        if (ResolveDraggedProjectNode(e.DataTransfer) is not { } node)
             return;
         var point = to_page_point(e.GetPosition(this));
         var request = new PageDropRequest(node, point);
@@ -1489,6 +1533,23 @@ public sealed class PageEditorView : Control
             AddElementCommand.Execute(request);
         DraggedProjectNode = null;
         e.Handled = true;
+    }
+
+    public static string ProjectNodePayload(ProjectNode node) =>
+        ProjectNodePayloadPrefix + node.Key;
+
+    public static ProjectNode? ResolveDraggedProjectNode(IDataTransfer? data)
+    {
+        if (DraggedProjectNode is not null)
+            return DraggedProjectNode;
+
+        string? text = data?.TryGetText();
+        if (string.IsNullOrWhiteSpace(text) ||
+            !text.StartsWith(ProjectNodePayloadPrefix, StringComparison.Ordinal))
+            return null;
+
+        string key = text[ProjectNodePayloadPrefix.Length..];
+        return string.IsNullOrWhiteSpace(key) ? null : ResolveProjectNodeByKey?.Invoke(key);
     }
 
     private void snap_position(PagePlotElement element)
