@@ -103,5 +103,6 @@ rm -r ./artifacts/updater-osx-arm64
 dotnet build ./Installer/Installer.wixproj
 rm -r ./Installer/bin
 rm -r ./Installer/obj
+rm ./artifacts/gated-win-x64.msi
 mv ./artifacts/Installer.msi ./artifacts/gated-win-x64.msi
 rm ./artifacts/Installer*
