@@ -1,0 +1,14 @@
+Version 0.31.0
+
+- Automatic compensation
+- Preview of integration
+
+Patch 3
+
+- Thread exit waiting when closing the application
+- Source code editor now memorize last opened files
+- Application titles
+
+Patch 6
+
+- Separate write locations in user application data
