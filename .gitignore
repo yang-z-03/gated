@@ -8,3 +8,6 @@ riderModule.iml
 .agents
 .vs
 artifacts
+BundleArtifacts
+Packages
+*.pfx

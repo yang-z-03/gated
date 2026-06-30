@@ -8,6 +8,7 @@
         <ApplicationManifest>app.manifest</ApplicationManifest>
         <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
         <ApplicationIcon>gated.ico</ApplicationIcon>
+        <Platforms>AnyCPU;x64</Platforms>
     </PropertyGroup>
     <ItemGroup>
       <AvaloniaXaml Remove="Updater\**" />
