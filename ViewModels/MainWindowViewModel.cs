@@ -51,6 +51,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
     private PageLayout? selected_page_layout;
     private Platform? selected_integration_job;
     private MainWindowViewState view_state = MainWindowViewState.Analysis;
+    private bool suppress_analysis_switch_for_context_selection;
     private bool syncing_metadata;
     private int layout_refresh_revision;
     private PlotMode selected_plot_mode = PlotMode.Density;
@@ -303,6 +304,19 @@ public sealed partial class MainWindowViewModel : NotifyBase
             OnPropertyChanged(nameof(IsGroupMetadataMode));
             OnPropertyChanged(nameof(IsPlotPropertiesMode));
             apply_node_selection(value);
+        }
+    }
+
+    public void SelectNodeForContextMenu(ProjectNode node)
+    {
+        suppress_analysis_switch_for_context_selection = true;
+        try
+        {
+            SelectedNode = node;
+        }
+        finally
+        {
+            suppress_analysis_switch_for_context_selection = false;
         }
     }
 
@@ -3112,7 +3126,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
             or ProjectNodeKind.GatePopulationSlot
             or ProjectNodeKind.Sample
             or ProjectNodeKind.Population;
-        if (IsPageEditorMode && analysis_node_selection)
+        if (IsPageEditorMode && analysis_node_selection && !suppress_analysis_switch_for_context_selection)
             set_view_state(MainWindowViewState.Analysis, "Analysis view");
         if (node.Kind is not ProjectNodeKind.Metadata and not ProjectNodeKind.Group &&
             !passive_control_selection &&
@@ -4738,6 +4752,9 @@ public sealed partial class MainWindowViewModel : NotifyBase
         return null;
     }
 
+    public ProjectNode? FindProjectNodeByKey(string key) =>
+        string.IsNullOrWhiteSpace(key) ? null : find_project_node(key);
+
     private static ProjectNode? find_project_node(ProjectNode node, string key)
     {
         if (node.Key == key)
@@ -5212,6 +5229,32 @@ public sealed partial class MainWindowViewModel : NotifyBase
         SelectedPageElement = target;
         refresh_project_tree();
         StatusText = $"Added statistic table column: {statistic_name(node.StatisticDefinition!)}";
+    }
+
+    public bool CanAddProjectNodeToLayout(ProjectNode? node) =>
+        node?.Kind is ProjectNodeKind.Group
+            or ProjectNodeKind.Sample
+            or ProjectNodeKind.GateFolder
+            or ProjectNodeKind.Gate
+            or ProjectNodeKind.GatePopulationSlot
+            or ProjectNodeKind.Population
+            or ProjectNodeKind.Platform;
+
+    public void AddProjectNodeToLayout(ProjectNode node, PageLayout layout)
+    {
+        if (!CanAddProjectNodeToLayout(node) || !Workspace.PageLayouts.Contains(layout))
+            return;
+
+        SelectedPageLayout = layout;
+        add_page_element(new PageDropRequest(node, next_layout_insertion_point(layout)));
+        SelectedPageLayout = layout;
+    }
+
+    private static Point next_layout_insertion_point(PageLayout layout)
+    {
+        int index = layout.Elements.Count;
+        double offset = (index % 8) * 24;
+        return new Point(170 + offset, 170 + offset);
     }
 
     private static double platform_layout_table_width(Platform platform)

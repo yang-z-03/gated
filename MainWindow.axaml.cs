@@ -67,6 +67,7 @@ public partial class MainWindow : Window
         view_model.RequestMessageAsync = show_message_dialog;
         view_model.RequestConfirmationAsync = show_confirmation_dialog;
         gated.Python.PythonExtensionRuntime.InputRequested = show_python_input_dialog_blocking;
+        PageEditorView.ResolveProjectNodeByKey = view_model.FindProjectNodeByKey;
         view_model.PropertyChanged += view_model_property_changed;
         view_model.AxisChoices.CollectionChanged += channel_choices_collection_changed;
         view_model.ColorChoices.CollectionChanged += channel_choices_collection_changed;
@@ -82,6 +83,7 @@ public partial class MainWindow : Window
         update_script_repository_menus();
         update_page_editor_viewport_size();
         project_tree.NodeContextRequested += project_tree_node_context_requested;
+        page_editor.ElementContextRequested += page_editor_element_context_requested;
         page_editor.PropertyChanged += (_, e) =>
         {
             if (e.Property == BoundsProperty)
@@ -1634,12 +1636,67 @@ public partial class MainWindow : Window
 
     private void project_tree_node_context_requested(object? sender, ProjectNodeContextRequestedEventArgs e)
     {
+        view_model.SelectNodeForContextMenu(e.Node);
         var menu = build_project_tree_context_menu(e.Node);
         if (menu.Items.Count == 0)
             return;
 
         project_tree.ContextMenu = menu;
         menu.Open(project_tree);
+    }
+
+    private void page_editor_element_context_requested(object? sender, PageElementContextRequestedEventArgs e)
+    {
+        if (e.Element.ElementKind != PageElementKind.FlowPlot)
+            return;
+
+        var menu = build_layout_plot_element_context_menu(e.Element);
+        page_editor.ContextMenu = menu;
+        menu.Open(page_editor);
+    }
+
+    private ContextMenu build_layout_plot_element_context_menu(PagePlotElement element)
+    {
+        view_model.SelectedPageElement = element;
+        var menu = new ContextMenu
+        {
+            DataContext = view_model,
+            Placement = PlacementMode.Pointer
+        };
+
+        add_menu_items(menu,
+            bound_radio_menu_item("Density", nameof(MainWindowViewModel.IsLayoutDensityPlotMode)),
+            bound_radio_menu_item("Dotplot", nameof(MainWindowViewModel.IsLayoutDotplotPlotMode)),
+            bound_radio_menu_item("Contour", nameof(MainWindowViewModel.IsLayoutContourPlotMode)),
+            bound_radio_menu_item("Zebra", nameof(MainWindowViewModel.IsLayoutZebraPlotMode)),
+            bound_radio_menu_item("Histogram", nameof(MainWindowViewModel.IsLayoutHistogramPlotMode)),
+            new Separator(),
+            bound_check_menu_item("Show outlier points", "SelectedPageElement.ShowOutlierPoints"),
+            bound_check_menu_item("Draw large dots", "SelectedPageElement.DrawLargeDots"),
+            bound_check_menu_item("Show gridlines", "SelectedPageElement.ShowGridlines"),
+            bound_check_menu_item("Show gate annotations", "SelectedPageElement.ShowGateAnnotations"),
+            bound_check_menu_item("Show gate annotation names", "SelectedPageElement.ShowGateAnnotationNames"),
+            new Separator(),
+            channel_context_menu("X selected channel", view_model.SelectedPageAxisChoices, view_model.SelectedPageXAxisChoice, layout_x_channel_menu_item_click),
+            channel_context_menu("Y selected channel", view_model.SelectedPageAxisChoices, view_model.SelectedPageYAxisChoice, layout_y_channel_menu_item_click),
+            channel_context_menu("Dot color", view_model.SelectedPageColorChoices, view_model.SelectedPageDotColorChoice, layout_color_channel_menu_item_click),
+            bound_check_menu_item("Coloring in log scale", "SelectedPageElement.DotColor.UseLogScale"),
+            parent_menu_item("Dot color palette",
+                click_menu_item("Viridis", layout_viridis_color_menu_item_click),
+                click_menu_item("Plasma", layout_plasma_color_menu_item_click),
+                click_menu_item("Turbo", layout_turbo_color_menu_item_click),
+                click_menu_item("Gray", layout_gray_color_menu_item_click)),
+            parent_menu_item("X axis scale",
+                bound_radio_menu_item("Linear", nameof(MainWindowViewModel.IsLayoutXAxisLinearScale)),
+                bound_radio_menu_item("Logicle", nameof(MainWindowViewModel.IsLayoutXAxisLogicleScale))),
+            parent_menu_item("Y axis scale",
+                bound_radio_menu_item("Linear", nameof(MainWindowViewModel.IsLayoutYAxisLinearScale)),
+                bound_radio_menu_item("Logicle", nameof(MainWindowViewModel.IsLayoutYAxisLogicleScale))),
+            new Separator(),
+            click_menu_item("Refresh", (_, _) => page_editor.RefreshElementRenderCache(element)),
+            command_menu_item("Delete", view_model.DeletePageElementCommand));
+
+        return menu;
     }
 
     private ContextMenu build_project_tree_context_menu(ProjectNode node)
@@ -1833,6 +1890,37 @@ public partial class MainWindow : Window
                     command_menu_item("Rename embedding ...", view_model.RenameSelectedNodeCommand),
                     command_menu_item("Delete embedding", view_model.DeleteSelectedCommand));
                 break;
+        }
+
+        if (build_add_to_layout_context_menu(node) is { } add_to_layout_menu)
+        {
+            if (menu.Items.Count > 0)
+                menu.Items.Add(new Separator());
+            menu.Items.Add(add_to_layout_menu);
+        }
+
+        return menu;
+    }
+
+    private MenuItem? build_add_to_layout_context_menu(ProjectNode node)
+    {
+        if (!view_model.CanAddProjectNodeToLayout(node) || view_model.Workspace.PageLayouts.Count == 0)
+            return null;
+
+        var menu = new MenuItem
+        {
+            Header = "Add to layout",
+            DataContext = view_model
+        };
+        foreach (var layout in view_model.Workspace.PageLayouts)
+        {
+            var item = new MenuItem
+            {
+                Header = layout.Name,
+                Tag = layout
+            };
+            item.Click += (_, _) => view_model.AddProjectNodeToLayout(node, layout);
+            menu.Items.Add(item);
         }
 
         return menu;
@@ -2148,7 +2236,7 @@ public partial class MainWindow : Window
 
     private void drag_over(object? sender, DragEventArgs e)
     {
-        if (PageEditorView.DraggedProjectNode is not null)
+        if (PageEditorView.ResolveDraggedProjectNode(e.DataTransfer) is not null)
             return;
 
         e.DragEffects = e.DataTransfer.Contains(DataFormat.File) && get_drop_target_node(e) is not null
@@ -2159,7 +2247,7 @@ public partial class MainWindow : Window
 
     private void spillover_control_table_drag_over(object? sender, DragEventArgs e)
     {
-        var node = PageEditorView.DraggedProjectNode;
+        var node = PageEditorView.ResolveDraggedProjectNode(e.DataTransfer);
         e.DragEffects = node is not null && view_model.DropSpilloverControlCommand.CanExecute(node)
             ? DragDropEffects.Copy
             : DragDropEffects.None;
@@ -2168,7 +2256,7 @@ public partial class MainWindow : Window
 
     private void spillover_control_table_drop(object? sender, DragEventArgs e)
     {
-        var node = PageEditorView.DraggedProjectNode;
+        var node = PageEditorView.ResolveDraggedProjectNode(e.DataTransfer);
         if (node is not null && view_model.DropSpilloverControlCommand.CanExecute(node))
             view_model.DropSpilloverControlCommand.Execute(node);
         PageEditorView.DraggedProjectNode = null;
@@ -2177,7 +2265,7 @@ public partial class MainWindow : Window
 
     private async void drop_files(object? sender, DragEventArgs e)
     {
-        if (PageEditorView.DraggedProjectNode is not null)
+        if (PageEditorView.ResolveDraggedProjectNode(e.DataTransfer) is not null)
             return;
 
         e.Handled = true;

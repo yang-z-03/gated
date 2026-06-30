@@ -74,7 +74,7 @@ public sealed class PlatformPopulationDropView : Control
 
     private void drag_over(object? sender, DragEventArgs e)
     {
-        var node = PageEditorView.DraggedProjectNode;
+        var node = PageEditorView.ResolveDraggedProjectNode(e.DataTransfer);
         e.DragEffects = node?.Kind is ProjectNodeKind.Population or ProjectNodeKind.Gate or ProjectNodeKind.Sample
             ? DragDropEffects.Copy
             : DragDropEffects.None;
@@ -83,7 +83,7 @@ public sealed class PlatformPopulationDropView : Control
 
     private void drop_node(object? sender, DragEventArgs e)
     {
-        if (PageEditorView.DraggedProjectNode is not { } node)
+        if (PageEditorView.ResolveDraggedProjectNode(e.DataTransfer) is not { } node)
             return;
 
         if (DropCommand?.CanExecute(node) == true)
