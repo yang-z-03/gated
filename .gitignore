@@ -11,3 +11,4 @@ artifacts
 BundleArtifacts
 Packages
 *.pfx
+*.cache
