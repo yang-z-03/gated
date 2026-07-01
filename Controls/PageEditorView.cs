@@ -83,6 +83,7 @@ public sealed class PageEditorView : Control
     private ResizeCorner resize_corner = ResizeCorner.None;
     private Vector scroll_offset;
     private double render_scale = 1;
+    private bool use_visual_root_render_scale = true;
     private bool apply_rasterization_resolution;
     private INotifyCollectionChanged? subscribed_elements;
     private PagePlotElement[] subscribed_page_elements = [];
@@ -890,6 +891,8 @@ public sealed class PageEditorView : Control
 
     private void update_render_scale_from_visual_root()
     {
+        if (!use_visual_root_render_scale)
+            return;
         if (apply_rasterization_resolution)
             return;
 
@@ -924,6 +927,8 @@ public sealed class PageEditorView : Control
             element.DotColor.ChannelName,
             element.DotColor.Palette,
             element.DotColor.UseLogScale,
+            element.DotColor.RangeMinimum,
+            element.DotColor.RangeMaximum,
             render_scale.ToString("G6", CultureInfo.InvariantCulture));
 
     private static string platform_element_key(PagePlotElement element) =>
@@ -1221,7 +1226,7 @@ public sealed class PageEditorView : Control
                     !float.IsNaN(color_values[index]) &&
                     !float.IsInfinity(color_values[index]))
                 {
-                    color_sums[x_bin, y_bin] += transform_dot_color_value(color_values[index], element.DotColor.UseLogScale);
+                    color_sums[x_bin, y_bin] += transform_dot_color_value(color_values[index], element.DotColor.UseLogScale, element.DotColor.ClampNegativeValuesToZero);
                     color_counts[x_bin, y_bin]++;
                 }
             }
@@ -2127,19 +2132,9 @@ public sealed class PageEditorView : Control
             return new Color?[raster_size, raster_size];
 
         int size = color_sums.GetLength(0);
-        double minimum = double.PositiveInfinity;
-        double maximum = double.NegativeInfinity;
-        for (int x = 0; x < size; x++)
-        for (int y = 0; y < size; y++)
-        {
-            if (color_counts[x, y] <= 0)
-                continue;
-            double value = color_sums[x, y] / color_counts[x, y];
-            minimum = Math.Min(minimum, value);
-            maximum = Math.Max(maximum, value);
-        }
-
-        if (double.IsInfinity(minimum) || maximum <= minimum)
+        double minimum = transform_dot_color_value(element.DotColor.RangeMinimum, element.DotColor.UseLogScale, element.DotColor.ClampNegativeValuesToZero);
+        double maximum = transform_dot_color_value(element.DotColor.RangeMaximum, element.DotColor.UseLogScale, element.DotColor.ClampNegativeValuesToZero);
+        if (!double.IsFinite(minimum) || !double.IsFinite(maximum) || maximum <= minimum)
             return new Color?[size, size];
 
         var colors = new Color?[size, size];
@@ -2150,14 +2145,18 @@ public sealed class PageEditorView : Control
                 continue;
             double value = color_sums[x, y] / color_counts[x, y];
             double normalized = Math.Clamp((value - minimum) / (maximum - minimum), 0, 1);
-            colors[x, y] = palette_color(normalized, element.DotColor.Palette);
+            colors[x, y] = PlotColorMaps.ColorAt(element.DotColor.Palette, normalized);
         }
 
         return colors;
     }
 
-    private static double transform_dot_color_value(double value, bool use_log_scale) =>
-        use_log_scale ? Math.Log10(1 + Math.Max(0, value)) : value;
+    private static double transform_dot_color_value(double value, bool use_log_scale, bool clamp_negative_values_to_zero = false)
+    {
+        if (clamp_negative_values_to_zero)
+            value = Math.Max(0, value);
+        return use_log_scale ? Math.Log10(1 + Math.Max(0, value)) : value;
+    }
 
     private static double[,] smooth_density(double[,] source, int passes)
     {
@@ -2299,53 +2298,6 @@ public sealed class PageEditorView : Control
         if (value < 0.75)
             return Color.FromRgb(Convert.ToByte((value - 0.5) * 720), 230, 95);
         return Color.FromRgb(255, Convert.ToByte(220 - (value - 0.75) * 260), 40);
-    }
-
-    private static Color palette_color(double value, PlotColorPalette palette)
-    {
-        value = Math.Clamp(value, 0, 1);
-        return palette switch
-        {
-            PlotColorPalette.Gray => Color.FromRgb(to_byte(30 + value * 220), to_byte(30 + value * 220), to_byte(30 + value * 220)),
-            PlotColorPalette.Plasma => interpolate_palette(value, [
-                Color.FromRgb(13, 8, 135),
-                Color.FromRgb(126, 3, 168),
-                Color.FromRgb(204, 71, 120),
-                Color.FromRgb(248, 149, 64),
-                Color.FromRgb(240, 249, 33)
-            ]),
-            PlotColorPalette.Turbo => interpolate_palette(value, [
-                Color.FromRgb(48, 18, 59),
-                Color.FromRgb(61, 111, 225),
-                Color.FromRgb(48, 204, 90),
-                Color.FromRgb(246, 214, 69),
-                Color.FromRgb(180, 31, 35)
-            ]),
-            _ => interpolate_palette(value, [
-                Color.FromRgb(68, 1, 84),
-                Color.FromRgb(59, 82, 139),
-                Color.FromRgb(33, 145, 140),
-                Color.FromRgb(94, 201, 98),
-                Color.FromRgb(253, 231, 37)
-            ])
-        };
-    }
-
-    private static Color interpolate_palette(double value, Color[] colors)
-    {
-        if (colors.Length == 0)
-            return Colors.Black;
-        if (colors.Length == 1)
-            return colors[0];
-        double scaled = value * (colors.Length - 1);
-        int index = Math.Clamp((int)Math.Floor(scaled), 0, colors.Length - 2);
-        double t = scaled - index;
-        var first = colors[index];
-        var second = colors[index + 1];
-        return Color.FromRgb(
-            to_byte(first.R + (second.R - first.R) * t),
-            to_byte(first.G + (second.G - first.G) * t),
-            to_byte(first.B + (second.B - first.B) * t));
     }
 
     private static byte to_byte(double value) =>
@@ -2704,7 +2656,13 @@ public sealed class PageEditorView : Control
         {
             if (!transparent_background)
                 context.FillRectangle(Brushes.White, new Rect(export_size));
-            var renderer = new PageEditorView { Elements = elements, render_scale = scale, apply_rasterization_resolution = apply_rasterization_resolution };
+            var renderer = new PageEditorView
+            {
+                Elements = elements,
+                render_scale = scale,
+                use_visual_root_render_scale = false,
+                apply_rasterization_resolution = apply_rasterization_resolution
+            };
             copy_text_properties(source, renderer);
             renderer.Measure(export_size);
             renderer.Arrange(new Rect(export_size));

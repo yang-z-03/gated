@@ -127,7 +127,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
     private readonly ObservableCollection<PagePlotElement> empty_page_elements = new();
     public ObservableCollection<CoordinateScaleKind> CoordinateScaleChoices { get; } = new(Enum.GetValues<CoordinateScaleKind>());
     public ObservableCollection<PlotMode> PlotModeChoices { get; } = new(Enum.GetValues<PlotMode>());
-    public ObservableCollection<PlotColorPalette> PlotColorPaletteChoices { get; } = new(Enum.GetValues<PlotColorPalette>());
+    public ObservableCollection<PlotColorMap> PlotColorMapChoices { get; } = new(PlotColorMaps.All);
     public ObservableCollection<PythonScriptDefinition> MacroScripts { get; } = new();
     public ObservableCollection<PythonScriptDefinition> StatisticScripts { get; } = new();
     public ObservableCollection<string> RecentFilePaths => Workspace.RecentFilePaths;
@@ -214,6 +214,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         Python.PythonExtensionRuntime.StatusChanged += UpdatePythonExecutionStatus;
         Python.PythonExtensionRuntime.LogRunStarted += BeginPythonLogRun;
         Python.PythonExtensionRuntime.LogReceived += AppendPythonLog;
+        DotColor.PropertyChanged += dot_color_property_changed;
         foreach (string path in RecentFileStore.Load())
             Workspace.RecentFilePaths.Add(path);
         ReloadScriptRepositories();
@@ -768,7 +769,21 @@ public sealed partial class MainWindowViewModel : NotifyBase
     public DotColorSettings DotColor
     {
         get => dot_color;
-        private set => SetField(ref dot_color, value);
+        private set
+        {
+            dot_color.PropertyChanged -= dot_color_property_changed;
+            if (!SetField(ref dot_color, value))
+            {
+                dot_color.PropertyChanged += dot_color_property_changed;
+                return;
+            }
+
+            dot_color.PropertyChanged += dot_color_property_changed;
+            refresh_dot_color_range(dot_color, selected_group, selected_sample, selected_population);
+            OnPropertyChanged(nameof(SelectedDotColorChoice));
+            OnPropertyChanged(nameof(SelectedDotColorMap));
+            OnPropertyChanged(nameof(CanUseDotColorLogScale));
+        }
     }
 
     public AxisChoice? SelectedDotColorChoice
@@ -780,10 +795,27 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 return;
 
             DotColor.ChannelName = value.Name;
+            refresh_dot_color_range(DotColor, selected_group, selected_sample, selected_population, reset_selection: true);
+            OnPropertyChanged(nameof(CanUseDotColorLogScale));
             OnPropertyChanged();
             refresh_axis_menu_state();
         }
     }
+
+    public PlotColorMap SelectedDotColorMap
+    {
+        get => PlotColorMaps.Get(DotColor.Palette);
+        set
+        {
+            if (value is null || DotColor.Palette == value.Palette)
+                return;
+
+            DotColor.Palette = value.Palette;
+            OnPropertyChanged();
+        }
+    }
+
+    public bool CanUseDotColorLogScale => DotColor.CanUseLogScale;
 
     public AxisChoice? SelectedXAxisChoice
     {
@@ -1091,6 +1123,8 @@ public sealed partial class MainWindowViewModel : NotifyBase
             OnPropertyChanged(nameof(SelectedPageXAxisChoice));
             OnPropertyChanged(nameof(SelectedPageYAxisChoice));
             OnPropertyChanged(nameof(SelectedPageDotColorChoice));
+            OnPropertyChanged(nameof(SelectedPageDotColorMap));
+            OnPropertyChanged(nameof(CanUseSelectedPageDotColorLogScale));
             refresh_selected_page_menu_state();
             if (DeletePageElementCommand is RelayCommand relay)
                 relay.RaiseCanExecuteChanged();
@@ -1191,11 +1225,29 @@ public sealed partial class MainWindowViewModel : NotifyBase
             if (selected_page_element is null || value is null || selected_page_element.DotColor.ChannelName == value.Name)
                 return;
             selected_page_element.DotColor.ChannelName = value.Name;
+            refresh_dot_color_range(selected_page_element.DotColor, selected_page_element.Group, selected_page_element.Sample, selected_page_element.Population, reset_selection: true);
             OnPropertyChanged();
             OnPropertyChanged(nameof(SelectedPageElement));
+            OnPropertyChanged(nameof(CanUseSelectedPageDotColorLogScale));
             refresh_axis_menu_state();
         }
     }
+
+    public PlotColorMap? SelectedPageDotColorMap
+    {
+        get => selected_page_element is null ? null : PlotColorMaps.Get(selected_page_element.DotColor.Palette);
+        set
+        {
+            if (selected_page_element is null || value is null || selected_page_element.DotColor.Palette == value.Palette)
+                return;
+
+            selected_page_element.DotColor.Palette = value.Palette;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(SelectedPageElement));
+        }
+    }
+
+    public bool CanUseSelectedPageDotColorLogScale => selected_page_element?.DotColor.CanUseLogScale == true;
 
     public void AddFiles(IEnumerable<string> file_paths)
     {
@@ -2936,19 +2988,18 @@ public sealed partial class MainWindowViewModel : NotifyBase
         gate.PreferredYMinimum = string.IsNullOrWhiteSpace(source_gate.PreferredYChannel) ? source_gate.YMinimum : source_gate.PreferredYMinimum;
         gate.PreferredYMaximum = string.IsNullOrWhiteSpace(source_gate.PreferredYChannel) ? source_gate.YMaximum : source_gate.PreferredYMaximum;
         gate.PreferredYScale = (string.IsNullOrWhiteSpace(source_gate.PreferredYChannel) ? source_gate.YScale : source_gate.PreferredYScale).Clone();
+        gate.PreferredPlotMode = source_gate.PreferredPlotMode;
+        gate.PreferredShowOutlierPoints = source_gate.PreferredShowOutlierPoints;
+        gate.PreferredDrawLargeDots = source_gate.PreferredDrawLargeDots;
+        gate.PreferredShowGridlines = source_gate.PreferredShowGridlines;
+        gate.PreferredShowGateAnnotations = source_gate.PreferredShowGateAnnotations;
+        gate.PreferredShowGateAnnotationNames = source_gate.PreferredShowGateAnnotationNames;
+        gate.PreferredContourLevelCount = source_gate.PreferredContourLevelCount;
+        gate.PreferredDensitySmoothing = source_gate.PreferredDensitySmoothing;
+        gate.PreferredDotColor = clone_dot_color(source_gate.PreferredDotColor);
 
         foreach (var item in source_gate.SamplePreferredViews)
-            gate.SamplePreferredViews[item.Key] = new GateViewOptions
-            {
-                XChannel = item.Value.XChannel,
-                YChannel = item.Value.YChannel,
-                XMinimum = item.Value.XMinimum,
-                XMaximum = item.Value.XMaximum,
-                XScale = item.Value.XScale.Clone(),
-                YMinimum = item.Value.YMinimum,
-                YMaximum = item.Value.YMaximum,
-                YScale = item.Value.YScale.Clone()
-            };
+            gate.SamplePreferredViews[item.Key] = clone_gate_view_options(item.Value);
     }
 
     private async Task add_statistic_async(StatisticKind kind)
@@ -3484,6 +3535,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         show_gate_annotation_names = view.ShowGateAnnotationNames;
         contour_level_count = Math.Clamp(view.ContourLevelCount, 2, 80);
         density_smoothing = Math.Clamp(view.DensitySmoothing, 0, 12);
+        DotColor = clone_dot_color(view.DotColor);
         OnPropertyChanged(nameof(SelectedPlotMode));
         OnPropertyChanged(nameof(EffectivePlotMode));
         OnPropertyChanged(nameof(IsYAxisEnabled));
@@ -3571,7 +3623,8 @@ public sealed partial class MainWindowViewModel : NotifyBase
             ShowGateAnnotations = view.ShowGateAnnotations,
             ShowGateAnnotationNames = view.ShowGateAnnotationNames,
             ContourLevelCount = view.ContourLevelCount,
-            DensitySmoothing = view.DensitySmoothing
+            DensitySmoothing = view.DensitySmoothing,
+            DotColor = clone_dot_color(view.DotColor)
         };
 
     private bool can_copy_hierarchy_view_options_to_group() =>
@@ -3654,6 +3707,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         gate.PreferredShowGateAnnotationNames = view.ShowGateAnnotationNames;
         gate.PreferredContourLevelCount = view.ContourLevelCount;
         gate.PreferredDensitySmoothing = view.DensitySmoothing;
+        gate.PreferredDotColor = clone_dot_color(view.DotColor);
     }
 
     private static GateViewOptions root_view_for_current_selection(FlowGroup group, ProjectNodeKind? node_kind, FlowSample? sample) =>
@@ -3826,6 +3880,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         gate.PreferredShowGateAnnotationNames = view.ShowGateAnnotationNames;
         gate.PreferredContourLevelCount = view.ContourLevelCount;
         gate.PreferredDensitySmoothing = view.DensitySmoothing;
+        gate.PreferredDotColor = clone_dot_color(view.DotColor);
     }
 
     private static string sample_preferred_view_key(string sample_name, PopulationRegion region) =>
@@ -3851,7 +3906,8 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 ShowGateAnnotations = gate.PreferredShowGateAnnotations,
                 ShowGateAnnotationNames = gate.PreferredShowGateAnnotationNames,
                 ContourLevelCount = gate.PreferredContourLevelCount,
-                DensitySmoothing = gate.PreferredDensitySmoothing
+                DensitySmoothing = gate.PreferredDensitySmoothing,
+                DotColor = clone_dot_color(gate.PreferredDotColor)
             };
 
     private GateViewOptions current_gate_view()
@@ -3869,7 +3925,8 @@ public sealed partial class MainWindowViewModel : NotifyBase
             ShowGateAnnotations = ShowGateAnnotations,
             ShowGateAnnotationNames = ShowGateAnnotationNames,
             ContourLevelCount = ContourLevelCount,
-            DensitySmoothing = DensitySmoothing
+            DensitySmoothing = DensitySmoothing,
+            DotColor = DotColorClone()
         };
         if (IsYAxisEnabled)
         {
@@ -4106,6 +4163,28 @@ public sealed partial class MainWindowViewModel : NotifyBase
         refresh_plot_gates();
     }
 
+    private void dot_color_property_changed(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(DotColorSettings.ChannelName))
+        {
+            refresh_dot_color_range(DotColor, selected_group, selected_sample, selected_population, reset_selection: true);
+            OnPropertyChanged(nameof(SelectedDotColorChoice));
+        }
+
+        if (e.PropertyName is nameof(DotColorSettings.Palette))
+            OnPropertyChanged(nameof(SelectedDotColorMap));
+
+        if (e.PropertyName is nameof(DotColorSettings.HasAvailableRange)
+            or nameof(DotColorSettings.AvailableMinimum)
+            or nameof(DotColorSettings.AvailableMaximum)
+            or nameof(DotColorSettings.UseLogScale)
+            or nameof(DotColorSettings.ChannelName))
+            OnPropertyChanged(nameof(CanUseDotColorLogScale));
+
+        sync_selected_gate_preferred_view();
+        refresh_plot_gates();
+    }
+
     private bool can_remove_channel(ChannelRow? row) =>
         selected_group is not null &&
         row is not null &&
@@ -4166,11 +4245,15 @@ public sealed partial class MainWindowViewModel : NotifyBase
 
         if (fsc is not null && ssc is not null && root_still_valid && !string.Equals(removed_name, group.RootViewOptions.XChannel, StringComparison.Ordinal) &&
             !string.Equals(removed_name, group.RootViewOptions.YChannel, StringComparison.Ordinal))
+        {
+            clear_removed_dot_color_channels(group, removed_name);
             return;
+        }
 
         if (fsc is not null && ssc is not null)
         {
             group.RootViewOptions = create_default_root_view(group);
+            clear_removed_dot_color_channels(group, removed_name);
             return;
         }
 
@@ -4186,6 +4269,30 @@ public sealed partial class MainWindowViewModel : NotifyBase
             YChannel = null,
             PlotMode = PlotMode.Histogram
         };
+        clear_removed_dot_color_channels(group, removed_name);
+    }
+
+    private static void clear_removed_dot_color_channels(FlowGroup group, string removed_name)
+    {
+        foreach (var gate in flatten_gates(group.Gates))
+        {
+            if (gate.PreferredDotColor.ChannelName == removed_name)
+                gate.PreferredDotColor.ChannelName = "";
+            clear_removed_dot_color_channels(gate.PopulationPreferredViews.Values, removed_name);
+            clear_removed_dot_color_channels(gate.SamplePreferredViews.Values, removed_name);
+        }
+
+        clear_removed_dot_color_channels([group.RootViewOptions], removed_name);
+        clear_removed_dot_color_channels(group.SampleRootViewOptions.Values, removed_name);
+    }
+
+    private static void clear_removed_dot_color_channels(IEnumerable<GateViewOptions> views, string removed_name)
+    {
+        foreach (var view in views)
+        {
+            if (view.DotColor.ChannelName == removed_name)
+                view.DotColor.ChannelName = "";
+        }
     }
 
     private void repair_page_elements_after_channel_removal(FlowGroup group, string removed_name)
@@ -4281,6 +4388,8 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 gate.PreferredXChannel = new_name;
             if (gate.PreferredYChannel == old_name)
                 gate.PreferredYChannel = new_name;
+            if (gate.PreferredDotColor.ChannelName == old_name)
+                gate.PreferredDotColor.ChannelName = new_name;
             rename_channel_in_view_options(gate.PopulationPreferredViews.Values, old_name, new_name);
             rename_channel_in_view_options(gate.SamplePreferredViews.Values, old_name, new_name);
             foreach (var statistic in gate.Statistics.Where(statistic => statistic.ChannelName == old_name))
@@ -4316,6 +4425,8 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 view.XChannel = new_name;
             if (view.YChannel == old_name)
                 view.YChannel = new_name;
+            if (view.DotColor.ChannelName == old_name)
+                view.DotColor.ChannelName = new_name;
         }
     }
 
@@ -4352,6 +4463,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         OnPropertyChanged(nameof(SelectedXAxisChoice));
         OnPropertyChanged(nameof(SelectedYAxisChoice));
         OnPropertyChanged(nameof(SelectedDotColorChoice));
+        refresh_dot_color_range(DotColor, selected_group, selected_sample, selected_population);
         refresh_axis_menu_state();
     }
 
@@ -4386,6 +4498,10 @@ public sealed partial class MainWindowViewModel : NotifyBase
         OnPropertyChanged(nameof(SelectedPageXAxisChoice));
         OnPropertyChanged(nameof(SelectedPageYAxisChoice));
         OnPropertyChanged(nameof(SelectedPageDotColorChoice));
+        if (selected_page_element is not null)
+            refresh_dot_color_range(selected_page_element.DotColor, selected_page_element.Group, selected_page_element.Sample, selected_page_element.Population);
+        OnPropertyChanged(nameof(SelectedPageDotColorMap));
+        OnPropertyChanged(nameof(CanUseSelectedPageDotColorLogScale));
         refresh_axis_menu_state();
     }
 
@@ -5069,7 +5185,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
             ShowGateAnnotationNames = preferred_view?.ShowGateAnnotationNames ?? gate.PreferredShowGateAnnotationNames,
             ShowTickLabels = false,
             UsePseudocolor = true,
-            DotColor = DotColorClone(),
+            DotColor = preferred_view is not null ? clone_dot_color(preferred_view.DotColor) : clone_dot_color(gate.PreferredDotColor),
             ContourLevelCount = preferred_view?.ContourLevelCount ?? gate.PreferredContourLevelCount,
             DensitySmoothing = preferred_view?.DensitySmoothing ?? gate.PreferredDensitySmoothing
         };
@@ -5115,7 +5231,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
             ShowGateAnnotationNames = view?.ShowGateAnnotationNames ?? ShowGateAnnotationNames,
             ShowTickLabels = false,
             UsePseudocolor = true,
-            DotColor = DotColorClone(),
+            DotColor = view is not null ? clone_dot_color(view.DotColor) : DotColorClone(),
             ContourLevelCount = view?.ContourLevelCount ?? ContourLevelCount,
             DensitySmoothing = view?.DensitySmoothing ?? DensitySmoothing
         };
@@ -5380,7 +5496,16 @@ public sealed partial class MainWindowViewModel : NotifyBase
         new() { ChannelName = YAxis.ChannelName, Minimum = YAxis.Minimum, Maximum = YAxis.Maximum, Scale = YAxis.Scale.Clone() };
 
     private DotColorSettings DotColorClone() =>
-        new() { ChannelName = DotColor.ChannelName, Palette = DotColor.Palette, UseLogScale = DotColor.UseLogScale };
+        clone_dot_color(DotColor);
+
+    private static DotColorSettings clone_dot_color(DotColorSettings source)
+    {
+        var clone = new DotColorSettings { ChannelName = source.ChannelName, Palette = source.Palette };
+        clone.SetAvailableRangeForChannel(source.ChannelName, source.AvailableMinimum, source.AvailableMaximum, source.ClampNegativeValuesToZero);
+        clone.SetRange(source.RangeMinimum, source.RangeMaximum);
+        clone.UseLogScale = source.UseLogScale;
+        return clone;
+    }
 
     private static string normalize_recent_file_path(string file_path)
     {
@@ -5512,9 +5637,15 @@ public sealed partial class MainWindowViewModel : NotifyBase
     {
         private const int high_outlier_count = 50;
         private readonly PriorityQueue<double, double> largest_values = new();
+        private readonly bool ignore_high_outliers;
         private double minimum = double.PositiveInfinity;
         private double raw_maximum = double.NegativeInfinity;
         private int valid_count;
+
+        public ChannelRangeAccumulator(bool ignore_high_outliers = true)
+        {
+            this.ignore_high_outliers = ignore_high_outliers;
+        }
 
         public void Add(double value)
         {
@@ -5532,7 +5663,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         public bool TryGetRange(out double range_minimum, out double range_maximum)
         {
             range_minimum = minimum;
-            range_maximum = valid_count > high_outlier_count && largest_values.Count > high_outlier_count
+            range_maximum = ignore_high_outliers && valid_count > high_outlier_count && largest_values.Count > high_outlier_count
                 ? largest_values.UnorderedItems.Min(item => item.Element)
                 : raw_maximum;
             return valid_count > 0;
@@ -5609,12 +5740,72 @@ public sealed partial class MainWindowViewModel : NotifyBase
             OnPropertyChanged(nameof(SelectedPageYAxisChoice));
             refresh_axis_menu_state();
         }
-        if (ReferenceEquals(sender, selected_page_element?.DotColor))
+        if (sender is DotColorSettings page_dot_color && ReferenceEquals(page_dot_color, selected_page_element?.DotColor))
         {
+            if (e.PropertyName == nameof(DotColorSettings.ChannelName))
+                refresh_dot_color_range(page_dot_color, selected_page_element.Group, selected_page_element.Sample, selected_page_element.Population, reset_selection: true);
+            if (e.PropertyName == nameof(DotColorSettings.Palette))
+                OnPropertyChanged(nameof(SelectedPageDotColorMap));
+            OnPropertyChanged(nameof(CanUseSelectedPageDotColorLogScale));
             OnPropertyChanged(nameof(SelectedPageDotColorChoice));
             refresh_axis_menu_state();
         }
     }
+
+    private static void refresh_dot_color_range(DotColorSettings settings, FlowGroup? group, FlowSample? sample, PopulationResult? population, bool reset_selection = false)
+    {
+        if (string.IsNullOrWhiteSpace(settings.ChannelName) ||
+            actual_dot_color_range(group, sample, population, settings.ChannelName) is not { } range)
+        {
+            settings.SetAvailableRange(double.NaN, double.NaN);
+            return;
+        }
+
+        settings.SetAvailableRangeForChannel(settings.ChannelName, range.Minimum, range.Maximum, range.ClampNegativeValuesToZero, force_reset_selection: reset_selection);
+    }
+
+    private static (double Minimum, double Maximum, bool ClampNegativeValuesToZero)? actual_dot_color_range(FlowGroup? group, FlowSample? sample, PopulationResult? population, string channel_name)
+    {
+        if (dot_color_channel_definition(group, sample, channel_name) is { } channel)
+        {
+            var theoretical_range = Configuration.DefaultChannelRange(channel.Maximum);
+            double theoretical_maximum = double.IsFinite(channel.Maximum) && channel.Maximum > 0
+                ? channel.Maximum
+                : theoretical_range.Maximum;
+            return (0, theoretical_maximum, true);
+        }
+
+        var range = new ChannelRangeAccumulator(ignore_high_outliers: false);
+        if (sample is not null)
+        {
+            accumulate_dot_color_range(sample, population?.EventIndices, channel_name, range);
+        }
+        else if (group is not null)
+        {
+            foreach (var group_sample in group.Samples)
+                accumulate_dot_color_range(group_sample, event_indices: null, channel_name, range);
+        }
+
+        return range.TryGetRange(out var minimum, out var maximum)
+            ? (minimum, maximum, false)
+            : null;
+    }
+
+    private static void accumulate_dot_color_range(FlowSample sample, int[]? event_indices, string channel_name, ChannelRangeAccumulator range)
+    {
+        var values = sample.GetChannelValues(channel_name, event_indices);
+        foreach (float value in values)
+        {
+            if (float.IsNaN(value) || float.IsInfinity(value))
+                continue;
+
+            range.Add(value);
+        }
+    }
+
+    private static ChannelDefinition? dot_color_channel_definition(FlowGroup? group, FlowSample? sample, string channel_name) =>
+        sample?.Channels.FirstOrDefault(channel => channel.Name == channel_name) ??
+        group?.Channels.FirstOrDefault(channel => channel.Name == channel_name);
 
     private void refresh_axis_menu_state()
     {

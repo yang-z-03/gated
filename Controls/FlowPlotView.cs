@@ -591,7 +591,7 @@ public sealed class FlowPlotView : Control
 
         var density = new int[density_size, density_size];
         var category_colors = should_color_dots() ? create_category_colors(samples, DotColor!.ChannelName, DotColor.Palette) : null;
-        var color_accumulator = should_color_dots() ? new DotColorAccumulator(DotColor!.Palette, category_colors) : null;
+        var color_accumulator = should_color_dots() ? new DotColorAccumulator(DotColor!.Palette, category_colors, DotColor!.RangeMinimum, DotColor!.RangeMaximum, DotColor!.UseLogScale, DotColor!.ClampNegativeValuesToZero) : null;
         int max_density = 0;
         int total_count = 0;
         double x_minimum = XAxis.Scale.Transform(XAxis.Minimum);
@@ -651,8 +651,12 @@ public sealed class FlowPlotView : Control
     private bool should_color_dots() =>
         DotColor is { HasChannel: true } && PlotMode == PlotMode.Dotplot;
 
-    private static double transform_dot_color_value(double value, bool use_log_scale) =>
-        use_log_scale ? Math.Log10(1 + Math.Max(0, value)) : value;
+    private static double transform_dot_color_value(double value, bool use_log_scale, bool clamp_negative_values_to_zero = false)
+    {
+        if (clamp_negative_values_to_zero)
+            value = Math.Max(0, value);
+        return use_log_scale ? Math.Log10(1 + Math.Max(0, value)) : value;
+    }
 
     private static Dictionary<string, Color>? create_category_colors(
         IEnumerable<FlowSample> samples,
@@ -673,7 +677,7 @@ public sealed class FlowPlotView : Control
         for (int index = 0; index < labels.Length; index++)
         {
             double normalized = labels.Length == 1 ? 0.5 : index / (double)(labels.Length - 1);
-            colors[labels[index]] = palette_color(normalized, palette);
+            colors[labels[index]] = PlotColorMaps.ColorAt(palette, normalized);
         }
 
         return colors;
@@ -683,15 +687,29 @@ public sealed class FlowPlotView : Control
     {
         private readonly PlotColorPalette palette;
         private readonly IReadOnlyDictionary<string, Color>? category_colors;
+        private readonly double range_minimum;
+        private readonly double range_maximum;
+        private readonly bool use_log_scale;
+        private readonly bool clamp_negative_values_to_zero;
         private readonly double[,] continuous_sums = new double[density_size, density_size];
         private readonly int[,] continuous_counts = new int[density_size, density_size];
         private readonly Dictionary<string, int>?[] category_counts = new Dictionary<string, int>?[density_size * density_size];
         private Dictionary<int, string>? current_category_labels;
 
-        public DotColorAccumulator(PlotColorPalette palette, IReadOnlyDictionary<string, Color>? category_colors)
+        public DotColorAccumulator(
+            PlotColorPalette palette,
+            IReadOnlyDictionary<string, Color>? category_colors,
+            double range_minimum,
+            double range_maximum,
+            bool use_log_scale,
+            bool clamp_negative_values_to_zero)
         {
             this.palette = palette;
             this.category_colors = category_colors;
+            this.range_minimum = range_minimum;
+            this.range_maximum = range_maximum;
+            this.use_log_scale = use_log_scale;
+            this.clamp_negative_values_to_zero = clamp_negative_values_to_zero;
         }
 
         public void ConfigureCategories(EmbeddingData? embedding)
@@ -722,7 +740,7 @@ public sealed class FlowPlotView : Control
                 return;
             }
 
-            continuous_sums[x_bin, y_bin] += transform_dot_color_value(value, use_log_scale);
+            continuous_sums[x_bin, y_bin] += transform_dot_color_value(value, use_log_scale, clamp_negative_values_to_zero);
             continuous_counts[x_bin, y_bin]++;
         }
 
@@ -750,22 +768,12 @@ public sealed class FlowPlotView : Control
 
         private Color?[,] create_continuous_colors()
         {
-            double minimum = double.PositiveInfinity;
-            double maximum = double.NegativeInfinity;
-            for (int x = 0; x < density_size; x++)
-            for (int y = 0; y < density_size; y++)
-            {
-                if (continuous_counts[x, y] <= 0)
-                    continue;
-                double value = continuous_sums[x, y] / continuous_counts[x, y];
-                minimum = Math.Min(minimum, value);
-                maximum = Math.Max(maximum, value);
-            }
+            double minimum = transform_dot_color_value(range_minimum, use_log_scale, clamp_negative_values_to_zero);
+            double maximum = transform_dot_color_value(range_maximum, use_log_scale, clamp_negative_values_to_zero);
+            if (!double.IsFinite(minimum) || !double.IsFinite(maximum) || maximum <= minimum)
+                return new Color?[density_size, density_size];
 
             var colors = new Color?[density_size, density_size];
-            if (double.IsInfinity(minimum) || maximum <= minimum)
-                return colors;
-
             for (int x = 0; x < density_size; x++)
             for (int y = 0; y < density_size; y++)
             {
@@ -773,7 +781,7 @@ public sealed class FlowPlotView : Control
                     continue;
                 double value = continuous_sums[x, y] / continuous_counts[x, y];
                 double normalized = Math.Clamp((value - minimum) / (maximum - minimum), 0, 1);
-                colors[x, y] = palette_color(normalized, palette);
+                colors[x, y] = PlotColorMaps.ColorAt(palette, normalized);
             }
 
             return colors;
@@ -1739,53 +1747,6 @@ public sealed class FlowPlotView : Control
         }
 
         return density_color(value);
-    }
-
-    private static Color palette_color(double value, PlotColorPalette palette)
-    {
-        value = Math.Clamp(value, 0, 1);
-        return palette switch
-        {
-            PlotColorPalette.Gray => Color.FromRgb(to_byte(30 + value * 220), to_byte(30 + value * 220), to_byte(30 + value * 220)),
-            PlotColorPalette.Plasma => interpolate_palette(value, [
-                Color.FromRgb(13, 8, 135),
-                Color.FromRgb(126, 3, 168),
-                Color.FromRgb(204, 71, 120),
-                Color.FromRgb(248, 149, 64),
-                Color.FromRgb(240, 249, 33)
-            ]),
-            PlotColorPalette.Turbo => interpolate_palette(value, [
-                Color.FromRgb(48, 18, 59),
-                Color.FromRgb(61, 111, 225),
-                Color.FromRgb(48, 204, 90),
-                Color.FromRgb(246, 214, 69),
-                Color.FromRgb(180, 31, 35)
-            ]),
-            _ => interpolate_palette(value, [
-                Color.FromRgb(68, 1, 84),
-                Color.FromRgb(59, 82, 139),
-                Color.FromRgb(33, 145, 140),
-                Color.FromRgb(94, 201, 98),
-                Color.FromRgb(253, 231, 37)
-            ])
-        };
-    }
-
-    private static Color interpolate_palette(double value, Color[] colors)
-    {
-        if (colors.Length == 0)
-            return Colors.Black;
-        if (colors.Length == 1)
-            return colors[0];
-        double scaled = value * (colors.Length - 1);
-        int index = Math.Clamp((int)Math.Floor(scaled), 0, colors.Length - 2);
-        double t = scaled - index;
-        var first = colors[index];
-        var second = colors[index + 1];
-        return Color.FromRgb(
-            to_byte(first.R + (second.R - first.R) * t),
-            to_byte(first.G + (second.G - first.G) * t),
-            to_byte(first.B + (second.B - first.B) * t));
     }
 
     private static byte to_byte(double value) =>

@@ -5,6 +5,7 @@ using System.ComponentModel;
 using System.Linq;
 using System.Threading;
 using Avalonia;
+using Avalonia.Media;
 using Python.Runtime;
 
 namespace gated.Models;
@@ -44,6 +45,82 @@ public enum PlotColorPalette
     Plasma,
     Turbo,
     Gray
+}
+
+public sealed class PlotColorMap
+{
+    public PlotColorMap(PlotColorPalette palette, string name, IReadOnlyList<Color> colors)
+    {
+        Palette = palette;
+        Name = name;
+        Colors = colors;
+    }
+
+    public PlotColorPalette Palette { get; }
+    public string Name { get; }
+    public IReadOnlyList<Color> Colors { get; }
+
+    public Color ColorAt(double value)
+    {
+        value = Math.Clamp(value, 0, 1);
+        if (Colors.Count == 0)
+            return Avalonia.Media.Colors.Black;
+        if (Colors.Count == 1)
+            return Colors[0];
+
+        double scaled = value * (Colors.Count - 1);
+        int index = Math.Clamp((int)Math.Floor(scaled), 0, Colors.Count - 2);
+        double t = scaled - index;
+        var first = Colors[index];
+        var second = Colors[index + 1];
+        return Color.FromRgb(
+            to_byte(first.R + (second.R - first.R) * t),
+            to_byte(first.G + (second.G - first.G) * t),
+            to_byte(first.B + (second.B - first.B) * t));
+    }
+
+    public override string ToString() => Name;
+
+    private static byte to_byte(double value) =>
+        Convert.ToByte(Math.Clamp((int)Math.Round(value), 0, 255));
+}
+
+public static class PlotColorMaps
+{
+    public static IReadOnlyList<PlotColorMap> All { get; } =
+    [
+        new(PlotColorPalette.Viridis, "Viridis", [
+            Color.FromRgb(68, 1, 84),
+            Color.FromRgb(59, 82, 139),
+            Color.FromRgb(33, 145, 140),
+            Color.FromRgb(94, 201, 98),
+            Color.FromRgb(253, 231, 37)
+        ]),
+        new(PlotColorPalette.Plasma, "Plasma", [
+            Color.FromRgb(13, 8, 135),
+            Color.FromRgb(126, 3, 168),
+            Color.FromRgb(204, 71, 120),
+            Color.FromRgb(248, 149, 64),
+            Color.FromRgb(240, 249, 33)
+        ]),
+        new(PlotColorPalette.Turbo, "Turbo", [
+            Color.FromRgb(48, 18, 59),
+            Color.FromRgb(61, 111, 225),
+            Color.FromRgb(48, 204, 90),
+            Color.FromRgb(246, 214, 69),
+            Color.FromRgb(180, 31, 35)
+        ]),
+        new(PlotColorPalette.Gray, "Gray", [
+            Color.FromRgb(30, 30, 30),
+            Color.FromRgb(250, 250, 250)
+        ])
+    ];
+
+    public static PlotColorMap Get(PlotColorPalette palette) =>
+        All.FirstOrDefault(item => item.Palette == palette) ?? All[0];
+
+    public static Color ColorAt(PlotColorPalette palette, double value) =>
+        Get(palette).ColorAt(value);
 }
 
 public enum MetadataColumnKind
@@ -308,11 +385,24 @@ public sealed class DotColorSettings : NotifyBase
     private string channel_name = "";
     private PlotColorPalette palette = PlotColorPalette.Viridis;
     private bool use_log_scale;
+    private double available_minimum;
+    private double available_maximum = 1;
+    private double range_minimum;
+    private double range_maximum = 1;
+    private bool has_available_range;
+    private string range_channel_name = "";
+    private bool clamp_negative_values_to_zero;
 
     public string ChannelName
     {
         get => channel_name;
-        set => SetField(ref channel_name, value ?? "");
+        set
+        {
+            if (!SetField(ref channel_name, value ?? ""))
+                return;
+
+            OnPropertyChanged(nameof(HasChannel));
+        }
     }
 
     public PlotColorPalette Palette
@@ -324,10 +414,124 @@ public sealed class DotColorSettings : NotifyBase
     public bool UseLogScale
     {
         get => use_log_scale;
-        set => SetField(ref use_log_scale, value);
+        set => SetField(ref use_log_scale, value && CanUseLogScale);
     }
 
     public bool HasChannel => !string.IsNullOrWhiteSpace(channel_name);
+
+    public double AvailableMinimum
+    {
+        get => available_minimum;
+        private set => SetField(ref available_minimum, value);
+    }
+
+    public double AvailableMaximum
+    {
+        get => available_maximum;
+        private set => SetField(ref available_maximum, value);
+    }
+
+    public double RangeMinimum
+    {
+        get => range_minimum;
+        set
+        {
+            double coerced = coerce_range_value(value);
+            if (coerced > range_maximum)
+                coerced = range_maximum;
+            SetField(ref range_minimum, coerced);
+        }
+    }
+
+    public double RangeMaximum
+    {
+        get => range_maximum;
+        set
+        {
+            double coerced = coerce_range_value(value);
+            if (coerced < range_minimum)
+                coerced = range_minimum;
+            SetField(ref range_maximum, coerced);
+        }
+    }
+
+    public bool HasAvailableRange
+    {
+        get => has_available_range;
+        private set => SetField(ref has_available_range, value);
+    }
+
+    public bool CanUseLogScale => HasAvailableRange && available_minimum >= 0;
+
+    public bool ClampNegativeValuesToZero
+    {
+        get => clamp_negative_values_to_zero;
+        private set => SetField(ref clamp_negative_values_to_zero, value);
+    }
+
+    public void SetAvailableRange(double minimum, double maximum, bool reset_selection = true)
+    {
+        if (!double.IsFinite(minimum) || !double.IsFinite(maximum))
+        {
+            range_channel_name = "";
+            SetField(ref has_available_range, false, nameof(HasAvailableRange));
+            SetField(ref available_minimum, 0d, nameof(AvailableMinimum));
+            SetField(ref available_maximum, 1d, nameof(AvailableMaximum));
+            SetField(ref range_minimum, 0d, nameof(RangeMinimum));
+            SetField(ref range_maximum, 1d, nameof(RangeMaximum));
+            UseLogScale = false;
+            OnPropertyChanged(nameof(CanUseLogScale));
+            return;
+        }
+
+        if (maximum <= minimum)
+            maximum = minimum + 1;
+
+        SetField(ref has_available_range, true, nameof(HasAvailableRange));
+        SetField(ref available_minimum, minimum, nameof(AvailableMinimum));
+        SetField(ref available_maximum, maximum, nameof(AvailableMaximum));
+        if (reset_selection)
+        {
+            SetField(ref range_minimum, minimum, nameof(RangeMinimum));
+            SetField(ref range_maximum, maximum, nameof(RangeMaximum));
+        }
+        else
+        {
+            SetRange(range_minimum, range_maximum);
+        }
+        if (!CanUseLogScale)
+            UseLogScale = false;
+        OnPropertyChanged(nameof(CanUseLogScale));
+    }
+
+    public void SetAvailableRangeForChannel(string channel_name, double minimum, double maximum, bool clamp_negative_values_to_zero, bool force_reset_selection = false)
+    {
+        bool reset_selection = force_reset_selection || !string.Equals(range_channel_name, channel_name, StringComparison.Ordinal);
+        range_channel_name = channel_name;
+        ClampNegativeValuesToZero = clamp_negative_values_to_zero;
+        SetAvailableRange(minimum, maximum, reset_selection);
+    }
+
+    public void SetRange(double minimum, double maximum)
+    {
+        if (!HasAvailableRange)
+            return;
+
+        minimum = coerce_range_value(minimum);
+        maximum = coerce_range_value(maximum);
+        if (maximum < minimum)
+            (minimum, maximum) = (maximum, minimum);
+
+        SetField(ref range_minimum, minimum, nameof(RangeMinimum));
+        SetField(ref range_maximum, maximum, nameof(RangeMaximum));
+    }
+
+    private double coerce_range_value(double value)
+    {
+        if (!HasAvailableRange || !double.IsFinite(value))
+            return value;
+        return Math.Clamp(value, available_minimum, available_maximum);
+    }
 }
 
 public sealed class GateViewOptions
@@ -348,6 +552,7 @@ public sealed class GateViewOptions
     public bool ShowGateAnnotationNames { get; set; }
     public int ContourLevelCount { get; set; } = 10;
     public int DensitySmoothing { get; set; } = 9;
+    public DotColorSettings DotColor { get; set; } = new();
 
     public bool HasView => !string.IsNullOrWhiteSpace(XChannel);
 }
@@ -387,6 +592,7 @@ public sealed class GateDefinition : NotifyBase
     public bool PreferredShowGateAnnotationNames { get; set; }
     public int PreferredContourLevelCount { get; set; } = 10;
     public int PreferredDensitySmoothing { get; set; } = 9;
+    public DotColorSettings PreferredDotColor { get; set; } = new();
     public Dictionary<PopulationRegion, string> PopulationNames { get; } = new();
     public Dictionary<PopulationRegion, GateViewOptions> PopulationPreferredViews { get; } = new();
     public Dictionary<string, GateViewOptions> SamplePreferredViews { get; } = new(StringComparer.Ordinal);

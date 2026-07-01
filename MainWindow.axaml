@@ -778,10 +778,30 @@
 
                                         <TextBlock Margin="0,4,0,-4" Foreground="{DynamicResource SemiColorText2}" Text="Color palette" />
                                         <ComboBox Classes='Small'
-                                                  ItemsSource="{Binding PlotColorPaletteChoices}"
-                                                  SelectedItem="{Binding DotColor.Palette}" />
+                                                  ItemsSource="{Binding PlotColorMapChoices}"
+                                                  SelectedItem="{Binding SelectedDotColorMap}">
+                                            <ComboBox.SelectionBoxItemTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <controls:ColorMapPreview Width="64" Height="14" ColorMap="{Binding}" />
+                                                        <TextBlock VerticalAlignment="Center" Text="{Binding Name}" />
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ComboBox.SelectionBoxItemTemplate>
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <controls:ColorMapPreview Width="64" Height="14" ColorMap="{Binding}" />
+                                                        <TextBlock VerticalAlignment="Center" Text="{Binding Name}" />
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
                                         <CheckBox Content="Coloring in log scale" Margin="0,4,0,0"
+                                                  IsEnabled="{Binding CanUseDotColorLogScale}"
                                                   IsChecked="{Binding DotColor.UseLogScale}" />
+                                        <controls:ColorMapRangeSlider Height="58"
+                                                                      Settings="{Binding DotColor}" />
 
                                         <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
                                             <StackPanel>
@@ -976,11 +996,31 @@
                                     <TextBlock Margin="0,4,0,-4" Foreground="{DynamicResource SemiColorText2}" Text="Color palette" />
                                     <ComboBox Classes="Small"
                                               IsEnabled="{Binding CanEditSelectedPageFlowOptions}"
-                                              ItemsSource="{Binding PlotColorPaletteChoices}"
-                                              SelectedItem="{Binding SelectedPageElement.DotColor.Palette}" />
+                                              ItemsSource="{Binding PlotColorMapChoices}"
+                                              SelectedItem="{Binding SelectedPageDotColorMap}">
+                                        <ComboBox.SelectionBoxItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                                    <controls:ColorMapPreview Width="64" Height="14" ColorMap="{Binding}" />
+                                                    <TextBlock VerticalAlignment="Center" Text="{Binding Name}" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ComboBox.SelectionBoxItemTemplate>
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                                    <controls:ColorMapPreview Width="64" Height="14" ColorMap="{Binding}" />
+                                                    <TextBlock VerticalAlignment="Center" Text="{Binding Name}" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
                                     <CheckBox Content="Coloring in log scale"
-                                              IsEnabled="{Binding CanEditSelectedPageFlowOptions}"
+                                              IsEnabled="{Binding CanUseSelectedPageDotColorLogScale}"
                                               IsChecked="{Binding SelectedPageElement.DotColor.UseLogScale}" />
+                                    <controls:ColorMapRangeSlider Height="58"
+                                                                  IsEnabled="{Binding CanEditSelectedPageFlowOptions}"
+                                                                  Settings="{Binding SelectedPageElement.DotColor}" />
 
                                     <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
                                         <StackPanel>

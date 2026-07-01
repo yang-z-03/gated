@@ -11,7 +11,8 @@ namespace gated.Services;
 public sealed class WorkspaceBinarySerializer
 {
     private const uint magic = 0x44544731;
-    private const int version = 42;
+    private const int version = 44;
+    private const int minimum_supported_version = 42;
 
     public void Save(FlowWorkspace workspace, string file_path)
     {
@@ -44,16 +45,16 @@ public sealed class WorkspaceBinarySerializer
             throw new InvalidDataException("The file is not a Gated workspace.");
 
         int file_version = reader.ReadInt32();
-        if (file_version != version)
+        if (file_version < minimum_supported_version || file_version > version)
             throw new NotSupportedException($"Unsupported Gated workspace version: {file_version}. Current version is {version}.");
 
         var workspace = new FlowWorkspace { Name = read_string(reader) };
         int group_count = reader.ReadInt32();
         for (int index = 0; index < group_count; index++)
-            workspace.Groups.Add(read_group(reader));
+            workspace.Groups.Add(read_group(reader, file_version));
 
         read_integration_jobs(reader, workspace);
-        read_page_layouts(reader, workspace);
+        read_page_layouts(reader, workspace, file_version);
         read_recent_file_paths(reader, workspace);
         read_metadata_columns(reader, workspace);
 
@@ -131,15 +132,15 @@ public sealed class WorkspaceBinarySerializer
         write_spillover_state(writer, group.SpilloverCompensation);
     }
 
-    private static FlowGroup read_group(BinaryReader reader)
+    private static FlowGroup read_group(BinaryReader reader, int file_version)
     {
         Guid id = new Guid(reader.ReadBytes(16));
         var group = new FlowGroup { Id = id, Name = read_string(reader) };
         read_statistics(reader, group.Statistics);
-        group.RootViewOptions = read_gate_view_options(reader);
+        group.RootViewOptions = read_gate_view_options(reader, file_version);
         int sample_root_view_count = reader.ReadInt32();
         for (int index = 0; index < sample_root_view_count; index++)
-            group.SampleRootViewOptions[read_string(reader)] = read_gate_view_options(reader);
+            group.SampleRootViewOptions[read_string(reader)] = read_gate_view_options(reader, file_version);
 
         int compensation_count = reader.ReadInt32();
         int applied_index = reader.ReadInt32();
@@ -152,7 +153,7 @@ public sealed class WorkspaceBinarySerializer
 
         int gate_count = reader.ReadInt32();
         for (int index = 0; index < gate_count; index++)
-            group.Gates.Add(read_gate(reader, parent: null));
+            group.Gates.Add(read_gate(reader, parent: null, file_version));
 
         int sample_count = reader.ReadInt32();
         for (int index = 0; index < sample_count; index++)
@@ -506,7 +507,8 @@ public sealed class WorkspaceBinarySerializer
             gate.PreferredShowGateAnnotations,
             gate.PreferredShowGateAnnotationNames,
             gate.PreferredContourLevelCount,
-            gate.PreferredDensitySmoothing);
+            gate.PreferredDensitySmoothing,
+            gate.PreferredDotColor);
 
         writer.Write(gate.SamplePreferredViews.Count);
         foreach (var item in gate.SamplePreferredViews.OrderBy(item => item.Key, StringComparer.Ordinal))
@@ -553,7 +555,7 @@ public sealed class WorkspaceBinarySerializer
             write_gate(writer, child);
     }
 
-    private static GateDefinition read_gate(BinaryReader reader, GateDefinition? parent)
+    private static GateDefinition read_gate(BinaryReader reader, GateDefinition? parent, int file_version)
     {
         Guid id = new Guid(reader.ReadBytes(16));
         var gate = new GateDefinition
@@ -593,11 +595,13 @@ public sealed class WorkspaceBinarySerializer
             value => gate.PreferredShowGateAnnotations = value,
             value => gate.PreferredShowGateAnnotationNames = value,
             value => gate.PreferredContourLevelCount = value,
-            value => gate.PreferredDensitySmoothing = value);
+            value => gate.PreferredDensitySmoothing = value,
+            value => gate.PreferredDotColor = value,
+            file_version);
 
         int sample_view_count = reader.ReadInt32();
         for (int index = 0; index < sample_view_count; index++)
-            gate.SamplePreferredViews[read_string(reader)] = read_gate_view_options(reader);
+            gate.SamplePreferredViews[read_string(reader)] = read_gate_view_options(reader, file_version);
 
         int population_name_count = reader.ReadInt32();
         for (int index = 0; index < population_name_count; index++)
@@ -610,7 +614,7 @@ public sealed class WorkspaceBinarySerializer
         for (int index = 0; index < population_view_count; index++)
         {
             var region = (PopulationRegion)reader.ReadInt32();
-            gate.PopulationPreferredViews[region] = read_gate_view_options(reader);
+            gate.PopulationPreferredViews[region] = read_gate_view_options(reader, file_version);
         }
 
         int vertex_count = reader.ReadInt32();
@@ -628,7 +632,7 @@ public sealed class WorkspaceBinarySerializer
 
         int child_count = reader.ReadInt32();
         for (int index = 0; index < child_count; index++)
-            gate.Children.Add(read_gate(reader, gate));
+            gate.Children.Add(read_gate(reader, gate, file_version));
 
         return gate;
     }
@@ -654,10 +658,11 @@ public sealed class WorkspaceBinarySerializer
             view.ShowGateAnnotations,
             view.ShowGateAnnotationNames,
             view.ContourLevelCount,
-            view.DensitySmoothing);
+            view.DensitySmoothing,
+            view.DotColor);
     }
 
-    private static GateViewOptions read_gate_view_options(BinaryReader reader)
+    private static GateViewOptions read_gate_view_options(BinaryReader reader, int file_version)
     {
         var view = new GateViewOptions
         {
@@ -680,7 +685,9 @@ public sealed class WorkspaceBinarySerializer
             value => view.ShowGateAnnotations = value,
             value => view.ShowGateAnnotationNames = value,
             value => view.ContourLevelCount = value,
-            value => view.DensitySmoothing = value);
+            value => view.DensitySmoothing = value,
+            value => view.DotColor = value,
+            file_version);
         return view;
     }
 
@@ -693,7 +700,8 @@ public sealed class WorkspaceBinarySerializer
         bool show_gate_annotations,
         bool show_gate_annotation_names,
         int contour_level_count,
-        int density_smoothing)
+        int density_smoothing,
+        DotColorSettings dot_color)
     {
         writer.Write((int)plot_mode);
         writer.Write(show_outlier_points);
@@ -703,6 +711,7 @@ public sealed class WorkspaceBinarySerializer
         writer.Write(show_gate_annotation_names);
         writer.Write(contour_level_count);
         writer.Write(density_smoothing);
+        write_dot_color_settings(writer, dot_color);
     }
 
     private static void read_gate_plot_options(
@@ -714,7 +723,9 @@ public sealed class WorkspaceBinarySerializer
         Action<bool> set_show_gate_annotations,
         Action<bool> set_show_gate_annotation_names,
         Action<int> set_contour_level_count,
-        Action<int> set_density_smoothing)
+        Action<int> set_density_smoothing,
+        Action<DotColorSettings> set_dot_color,
+        int file_version)
     {
         set_plot_mode((PlotMode)reader.ReadInt32());
         set_show_outlier_points(reader.ReadBoolean());
@@ -724,6 +735,48 @@ public sealed class WorkspaceBinarySerializer
         set_show_gate_annotation_names(reader.ReadBoolean());
         set_contour_level_count(reader.ReadInt32());
         set_density_smoothing(reader.ReadInt32());
+        if (file_version >= 44)
+            set_dot_color(read_dot_color_settings(reader));
+    }
+
+    private static void write_dot_color_settings(BinaryWriter writer, DotColorSettings settings)
+    {
+        write_string(writer, settings.ChannelName);
+        writer.Write((int)settings.Palette);
+        writer.Write(settings.UseLogScale);
+        writer.Write(settings.AvailableMinimum);
+        writer.Write(settings.AvailableMaximum);
+        writer.Write(settings.RangeMinimum);
+        writer.Write(settings.RangeMaximum);
+        writer.Write(settings.ClampNegativeValuesToZero);
+    }
+
+    private static DotColorSettings read_dot_color_settings(BinaryReader reader)
+    {
+        string channel_name = read_string(reader);
+        var palette = (PlotColorPalette)reader.ReadInt32();
+        bool use_log_scale = reader.ReadBoolean();
+        double available_minimum = reader.ReadDouble();
+        double available_maximum = reader.ReadDouble();
+        double range_minimum = reader.ReadDouble();
+        double range_maximum = reader.ReadDouble();
+        bool clamp_negative_values_to_zero = reader.ReadBoolean();
+        var settings = new DotColorSettings
+        {
+            ChannelName = channel_name,
+            Palette = palette
+        };
+        if (string.IsNullOrWhiteSpace(channel_name))
+        {
+            settings.SetAvailableRange(double.NaN, double.NaN);
+        }
+        else
+        {
+            settings.SetAvailableRangeForChannel(channel_name, available_minimum, available_maximum, clamp_negative_values_to_zero);
+            settings.SetRange(range_minimum, range_maximum);
+        }
+        settings.UseLogScale = use_log_scale;
+        return settings;
     }
 
     private static void write_compensation(BinaryWriter writer, CompensationMatrix compensation)
@@ -770,13 +823,13 @@ public sealed class WorkspaceBinarySerializer
         }
     }
 
-    private static void read_page_layouts(BinaryReader reader, FlowWorkspace workspace)
+    private static void read_page_layouts(BinaryReader reader, FlowWorkspace workspace, int file_version)
     {
         int layout_count = reader.ReadInt32();
         for (int index = 0; index < layout_count; index++)
         {
             var layout = new PageLayout { Name = read_string(reader) };
-            read_page_elements(reader, workspace, layout);
+            read_page_elements(reader, workspace, layout, file_version);
         }
     }
 
@@ -1261,12 +1314,16 @@ public sealed class WorkspaceBinarySerializer
             write_string(writer, element.DotColor.ChannelName);
             writer.Write((int)element.DotColor.Palette);
             writer.Write(element.DotColor.UseLogScale);
+            writer.Write(element.DotColor.AvailableMinimum);
+            writer.Write(element.DotColor.AvailableMaximum);
+            writer.Write(element.DotColor.RangeMinimum);
+            writer.Write(element.DotColor.RangeMaximum);
             if (element is StatisticTableElement statistic_table)
                 write_statistic_table_columns(writer, workspace, statistic_table);
         }
     }
 
-    private static void read_page_elements(BinaryReader reader, FlowWorkspace workspace, PageLayout layout)
+    private static void read_page_elements(BinaryReader reader, FlowWorkspace workspace, PageLayout layout, int file_version)
     {
         int count = reader.ReadInt32();
         for (int index = 0; index < count; index++)
@@ -1327,6 +1384,17 @@ public sealed class WorkspaceBinarySerializer
             string dot_color_channel = read_string(reader);
             var dot_color_palette = (PlotColorPalette)reader.ReadInt32();
             bool dot_color_use_log_scale = reader.ReadBoolean();
+            double dot_color_available_minimum = 0;
+            double dot_color_available_maximum = 1;
+            double dot_color_range_minimum = 0;
+            double dot_color_range_maximum = 1;
+            if (file_version >= 43)
+            {
+                dot_color_available_minimum = reader.ReadDouble();
+                dot_color_available_maximum = reader.ReadDouble();
+                dot_color_range_minimum = reader.ReadDouble();
+                dot_color_range_maximum = reader.ReadDouble();
+            }
 
             PagePlotElement element;
             if (element_kind == PageElementKind.FlowPlot)
@@ -1356,7 +1424,7 @@ public sealed class WorkspaceBinarySerializer
                     PopulationRegion = population_region,
                     XAxis = x_axis,
                     YAxis = y_axis,
-                    DotColor = new DotColorSettings { ChannelName = dot_color_channel, Palette = dot_color_palette, UseLogScale = dot_color_use_log_scale }
+                    DotColor = create_dot_color_settings(dot_color_channel, dot_color_palette, dot_color_use_log_scale, dot_color_available_minimum, dot_color_available_maximum, dot_color_range_minimum, dot_color_range_maximum)
                 };
             }
             else if (element_kind == PageElementKind.PlatformPlot)
@@ -1371,7 +1439,7 @@ public sealed class WorkspaceBinarySerializer
                     PlotKey = platform_plot_key,
                     XAxis = x_axis,
                     YAxis = y_axis,
-                    DotColor = new DotColorSettings { ChannelName = dot_color_channel, Palette = dot_color_palette, UseLogScale = dot_color_use_log_scale }
+                    DotColor = create_dot_color_settings(dot_color_channel, dot_color_palette, dot_color_use_log_scale, dot_color_available_minimum, dot_color_available_maximum, dot_color_range_minimum, dot_color_range_maximum)
                 };
             }
             else if (element_kind == PageElementKind.PlatformStatisticTable)
@@ -1385,7 +1453,7 @@ public sealed class WorkspaceBinarySerializer
                     Platform = workspace.IntegrationJobs[platform_index_value],
                     XAxis = x_axis,
                     YAxis = y_axis,
-                    DotColor = new DotColorSettings { ChannelName = dot_color_channel, Palette = dot_color_palette, UseLogScale = dot_color_use_log_scale }
+                    DotColor = create_dot_color_settings(dot_color_channel, dot_color_palette, dot_color_use_log_scale, dot_color_available_minimum, dot_color_available_maximum, dot_color_range_minimum, dot_color_range_maximum)
                 };
             }
             else
@@ -1396,7 +1464,7 @@ public sealed class WorkspaceBinarySerializer
                     ParentElementId = parent_element_id,
                     XAxis = x_axis,
                     YAxis = y_axis,
-                    DotColor = new DotColorSettings { ChannelName = dot_color_channel, Palette = dot_color_palette, UseLogScale = dot_color_use_log_scale }
+                    DotColor = create_dot_color_settings(dot_color_channel, dot_color_palette, dot_color_use_log_scale, dot_color_available_minimum, dot_color_available_maximum, dot_color_range_minimum, dot_color_range_maximum)
                 };
             }
 
@@ -1417,11 +1485,94 @@ public sealed class WorkspaceBinarySerializer
             element.ShowGateAnnotationNames = show_gate_annotation_names;
             element.ContourLevelCount = contour_level_count;
             element.DensitySmoothing = density_smoothing;
+            initialize_dot_color_range(element, reset_selection: file_version < 43);
             if (element is StatisticTableElement statistic_table)
                 read_statistic_table_columns(reader, workspace, statistic_table);
             layout.Elements.Add(element);
         }
         workspace.PageLayouts.Add(layout);
+    }
+
+    private static void initialize_dot_color_range(PagePlotElement element, bool reset_selection)
+    {
+        if (string.IsNullOrWhiteSpace(element.DotColor.ChannelName) ||
+            actual_dot_color_range(element) is not { } range)
+            return;
+
+        element.DotColor.SetAvailableRangeForChannel(element.DotColor.ChannelName, range.Minimum, range.Maximum, range.ClampNegativeValuesToZero, force_reset_selection: reset_selection);
+    }
+
+    private static (double Minimum, double Maximum, bool ClampNegativeValuesToZero)? actual_dot_color_range(PagePlotElement element)
+    {
+        if (dot_color_channel_definition(element) is { } channel)
+        {
+            var theoretical_range = Configuration.DefaultChannelRange(channel.Maximum);
+            double theoretical_maximum = double.IsFinite(channel.Maximum) && channel.Maximum > 0
+                ? channel.Maximum
+                : theoretical_range.Maximum;
+            return (0, theoretical_maximum, true);
+        }
+
+        double minimum = double.PositiveInfinity;
+        double maximum = double.NegativeInfinity;
+        int count = 0;
+        foreach (var sample in dot_color_samples(element))
+        {
+            int[]? event_indices = ReferenceEquals(sample, element.Sample) ? element.Population?.EventIndices : null;
+            foreach (float value in sample.GetChannelValues(element.DotColor.ChannelName, event_indices))
+            {
+                if (float.IsNaN(value) || float.IsInfinity(value))
+                    continue;
+
+                minimum = Math.Min(minimum, value);
+                maximum = Math.Max(maximum, value);
+                count++;
+            }
+        }
+
+        return count > 0 && maximum > minimum ? (minimum, maximum, false) : null;
+    }
+
+    private static ChannelDefinition? dot_color_channel_definition(PagePlotElement element) =>
+        element.Sample?.Channels.FirstOrDefault(channel => channel.Name == element.DotColor.ChannelName) ??
+        element.Group?.Channels.FirstOrDefault(channel => channel.Name == element.DotColor.ChannelName);
+
+    private static IEnumerable<FlowSample> dot_color_samples(PagePlotElement element)
+    {
+        if (element.Sample is not null)
+            yield return element.Sample;
+        else if (element.Group is not null)
+        {
+            foreach (var sample in element.Group.Samples)
+                yield return sample;
+        }
+    }
+
+    private static DotColorSettings create_dot_color_settings(
+        string channel_name,
+        PlotColorPalette palette,
+        bool use_log_scale,
+        double available_minimum,
+        double available_maximum,
+        double range_minimum,
+        double range_maximum)
+    {
+        var settings = new DotColorSettings
+        {
+            ChannelName = channel_name,
+            Palette = palette
+        };
+        if (string.IsNullOrWhiteSpace(channel_name))
+        {
+            settings.SetAvailableRange(double.NaN, double.NaN);
+        }
+        else
+        {
+            settings.SetAvailableRange(available_minimum, available_maximum);
+            settings.SetRange(range_minimum, range_maximum);
+        }
+        settings.UseLogScale = use_log_scale;
+        return settings;
     }
 
     private static void write_statistic_table_columns(BinaryWriter writer, FlowWorkspace workspace, StatisticTableElement table)
