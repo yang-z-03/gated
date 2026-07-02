@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:controls="using:gated.Controls"
+        xmlns:shared="using:gated.Shared"
         x:Class="gated.MainWindow"
         x:CompileBindings="False"
         Width="1500" Height="850"
@@ -13,7 +14,12 @@
         ExtendClientAreaTitleBarHeightHint="0"
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource SemiColorBackground0}">
-        
+
+    <Window.Resources>
+        <shared:CoordinateScaleIconConverter x:Key="CoordinateScaleIconConverter" />
+        <shared:CoordinateScaleToolTipConverter x:Key="CoordinateScaleToolTipConverter" />
+    </Window.Resources>
+
     <Window.Styles>
         <Style Selector="RadioButton.GateToolButton">
             <Setter Property="Width" Value="44" />
@@ -605,19 +611,20 @@
                                                    GateEditedCommand="{Binding GateEditedCommand}"
                                                    TransformPreparing="{Binding IsEditorPlotCalculating}" />
                             <Border HorizontalAlignment="Center"
-                                    Canvas.Left="{Binding PlotLeft, ElementName=editor_plot}"
+                                    Canvas.Left="{Binding PlotAxisControlLeft, ElementName=editor_plot}"
                                     Canvas.Top="{Binding PlotAxisControlTop, ElementName=editor_plot}"
-                                    Width="{Binding PlotSize, ElementName=editor_plot}"
+                                    Width="{Binding PlotAxisControlWidth, ElementName=editor_plot}"
                                     Padding="4"
                                     Background="{DynamicResource SemiColorBackground0}"
                                     BorderBrush="{DynamicResource SemiColorBorder}"
                                     BorderThickness="1"
-                                    CornerRadius="6">
+                                    CornerRadius="6"
+                                    IsVisible="{Binding PlotAxisControlsVisible, ElementName=editor_plot}">
                                 <StackPanel Orientation="Horizontal"
                                             HorizontalAlignment="Center"
                                             Spacing="4">
                                     <ComboBox Classes='Small'
-                                              Width="180"
+                                              Width="{Binding PlotAxisChannelControlWidth, ElementName=editor_plot}"
                                               ItemsSource="{Binding AxisChoices}"
                                               SelectedItem="{Binding SelectedXAxisChoice, Mode=TwoWay}">
                                         <ComboBox.ItemTemplate>
@@ -630,13 +637,31 @@
                                         </ComboBox.ItemTemplate>
                                     </ComboBox>
                                     <ComboBox Classes='Small'
-                                              Width="92"
+                                              Width="48"
                                               ItemsSource="{Binding CoordinateScaleChoices}"
-                                              SelectedItem="{Binding XAxis.ScaleKind}" />
+                                              SelectedItem="{Binding XAxis.ScaleKind}">
+                                        <ComboBox.SelectionBoxItemTemplate>
+                                            <DataTemplate>
+                                                <PathIcon Width="16"
+                                                          Height="16"
+                                                          Data="{Binding Converter={StaticResource CoordinateScaleIconConverter}}"
+                                                          ToolTip.Tip="{Binding Converter={StaticResource CoordinateScaleToolTipConverter}}" />
+                                            </DataTemplate>
+                                        </ComboBox.SelectionBoxItemTemplate>
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <PathIcon Width="16"
+                                                          Height="16"
+                                                          Data="{Binding Converter={StaticResource CoordinateScaleIconConverter}}"
+                                                          ToolTip.Tip="{Binding Converter={StaticResource CoordinateScaleToolTipConverter}}" />
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
                                 </StackPanel>
                             </Border>
                             <LayoutTransformControl Canvas.Left="{Binding PlotYAxisControlLeft, ElementName=editor_plot}"
-                                                    Canvas.Top="{Binding PlotYAxisControlTop, ElementName=editor_plot}">
+                                                    Canvas.Top="{Binding PlotYAxisControlTop, ElementName=editor_plot}"
+                                                    IsVisible="{Binding PlotAxisControlsVisible, ElementName=editor_plot}">
                                 <LayoutTransformControl.LayoutTransform>
                                     <RotateTransform Angle="-90" />
                                 </LayoutTransformControl.LayoutTransform>
@@ -647,7 +672,7 @@
                                         CornerRadius="6">
                                     <StackPanel Orientation="Horizontal" Spacing="4">
                                         <ComboBox Classes='Small'
-                                                  Width="180"
+                                                  Width="{Binding PlotAxisChannelControlWidth, ElementName=editor_plot}"
                                                   IsEnabled="{Binding IsYAxisEnabled}"
                                                   ItemsSource="{Binding AxisChoices}"
                                                   SelectedItem="{Binding SelectedYAxisChoice, Mode=TwoWay}">
@@ -661,10 +686,27 @@
                                             </ComboBox.ItemTemplate>
                                         </ComboBox>
                                         <ComboBox Classes='Small'
-                                                  Width="92"
+                                                  Width="48"
                                                   IsEnabled="{Binding IsYAxisEnabled}"
                                                   ItemsSource="{Binding CoordinateScaleChoices}"
-                                                  SelectedItem="{Binding YAxis.ScaleKind}" />
+                                                  SelectedItem="{Binding YAxis.ScaleKind}">
+                                            <ComboBox.SelectionBoxItemTemplate>
+                                                <DataTemplate>
+                                                    <PathIcon Width="16"
+                                                              Height="16"
+                                                              Data="{Binding Converter={StaticResource CoordinateScaleIconConverter}}"
+                                                              ToolTip.Tip="{Binding Converter={StaticResource CoordinateScaleToolTipConverter}}" />
+                                                </DataTemplate>
+                                            </ComboBox.SelectionBoxItemTemplate>
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate>
+                                                    <PathIcon Width="16"
+                                                              Height="16"
+                                                              Data="{Binding Converter={StaticResource CoordinateScaleIconConverter}}"
+                                                              ToolTip.Tip="{Binding Converter={StaticResource CoordinateScaleToolTipConverter}}" />
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
                                     </StackPanel>
                                 </Border>
                             </LayoutTransformControl>
@@ -672,20 +714,25 @@
                                     Canvas.Top="{Binding PlotTop, ElementName=editor_plot}"
                                     Width="{Binding PlotSize, ElementName=editor_plot}"
                                     Height="{Binding PlotSize, ElementName=editor_plot}"
-                                    Padding="10,10"
-                                    CornerRadius="10"
-                                    Background="#262830"
-                                    BorderBrush="#5F6678"
-                                    BorderThickness="1"
-                                    Opacity="0.5"
                                     IsHitTestVisible="False"
                                     IsVisible="{Binding IsEditorPlotCalculating}">
-                                <StackPanel Orientation="Horizontal">
-                                    <controls:SpinnerView Width="48"
-                                                          Height="48"
-                                                          HorizontalAlignment="Center"
-                                                          VerticalAlignment="Center" />
-                                </StackPanel>
+                                <Border Width="96"
+                                        Height="96"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center"
+                                        CornerRadius="10"
+                                        Background="#262830"
+                                        BorderBrush="#101010"
+                                        BorderThickness="1"
+                                        Opacity="0.5"
+                                        Padding="24">
+                                    <Grid HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"
+                                          Width="48" Height="48">
+                                        <controls:SpinnerView Width="48"
+                                                              Height="48"/>
+                                    </Grid>
+                                </Border>
                             </Border>
                         </Canvas>
                     </Grid>

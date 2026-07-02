@@ -1323,7 +1323,13 @@ public sealed partial class MainWindowViewModel : NotifyBase
         var recalculated_groups = groups.Distinct().ToArray();
         foreach (var group in recalculated_groups)
         {
+            bool initialize_root_view = groups_pending_root_view_initialization.Contains(group);
             group.RecalculateSamples();
+            if (initialize_root_view)
+            {
+                group.RootViewOptions = create_default_root_view(group);
+                group.SampleRootViewOptions.Clear();
+            }
             groups_pending_root_view_initialization.Remove(group);
         }
         return recalculated_groups;
@@ -1482,6 +1488,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
 
     public void LoadWorkspace(FlowWorkspace loaded, string file_path)
     {
+        cancel_pending_workspace_work();
         Python.PythonExtensionRuntime.DisposeWorkspaceStorage(Workspace);
         ClearPythonLogs();
         Workspace.Name = loaded.Name;
@@ -1529,6 +1536,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
 
     public void CloseWorkspace()
     {
+        cancel_pending_workspace_work();
         Python.PythonExtensionRuntime.DisposeWorkspaceStorage(Workspace);
         ClearPythonLogs();
         Workspace.Name = "Untitled Workspace";
@@ -1558,6 +1566,19 @@ public sealed partial class MainWindowViewModel : NotifyBase
         refresh_selected_statistics();
         StatusText = "Closed workspace";
         raise_command_states();
+    }
+
+    private void cancel_pending_workspace_work()
+    {
+        plot_transform_preparation_cancellation?.Cancel();
+        plot_transform_preparation_cancellation = null;
+        gate_recalculation_cancellation?.Cancel();
+        gate_recalculation_cancellation = null;
+        compensation_application_cancellation?.Cancel();
+        compensation_application_cancellation = null;
+        IsPlotTransformPreparing = false;
+        IsGateRecalculating = false;
+        IsCompensationApplying = false;
     }
 
     private void ClearPythonLogs()
@@ -3641,6 +3662,8 @@ public sealed partial class MainWindowViewModel : NotifyBase
     private static void ensure_group_root_view_defaults(FlowGroup group)
     {
         group.RecalculateDataImpliedViewOptions();
+        group.RootViewOptions = create_default_root_view(group);
+        group.SampleRootViewOptions.Clear();
     }
 
     private static GateViewOptions clone_gate_view_options(GateViewOptions view) =>

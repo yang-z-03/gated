@@ -101,6 +101,18 @@ public sealed class FlowPlotView : Control
     public static readonly StyledProperty<double> PlotAxisControlTopProperty =
         AvaloniaProperty.Register<FlowPlotView, double>(nameof(PlotAxisControlTop));
 
+    public static readonly StyledProperty<double> PlotAxisControlLeftProperty =
+        AvaloniaProperty.Register<FlowPlotView, double>(nameof(PlotAxisControlLeft));
+
+    public static readonly StyledProperty<double> PlotAxisControlWidthProperty =
+        AvaloniaProperty.Register<FlowPlotView, double>(nameof(PlotAxisControlWidth), 242);
+
+    public static readonly StyledProperty<double> PlotAxisChannelControlWidthProperty =
+        AvaloniaProperty.Register<FlowPlotView, double>(nameof(PlotAxisChannelControlWidth), 180);
+
+    public static readonly StyledProperty<bool> PlotAxisControlsVisibleProperty =
+        AvaloniaProperty.Register<FlowPlotView, bool>(nameof(PlotAxisControlsVisible), true);
+
     public static readonly StyledProperty<double> PlotYAxisControlLeftProperty =
         AvaloniaProperty.Register<FlowPlotView, double>(nameof(PlotYAxisControlLeft));
 
@@ -287,6 +299,30 @@ public sealed class FlowPlotView : Control
         private set => SetValue(PlotAxisControlTopProperty, value);
     }
 
+    public double PlotAxisControlLeft
+    {
+        get => GetValue(PlotAxisControlLeftProperty);
+        private set => SetValue(PlotAxisControlLeftProperty, value);
+    }
+
+    public double PlotAxisControlWidth
+    {
+        get => GetValue(PlotAxisControlWidthProperty);
+        private set => SetValue(PlotAxisControlWidthProperty, value);
+    }
+
+    public double PlotAxisChannelControlWidth
+    {
+        get => GetValue(PlotAxisChannelControlWidthProperty);
+        private set => SetValue(PlotAxisChannelControlWidthProperty, value);
+    }
+
+    public bool PlotAxisControlsVisible
+    {
+        get => GetValue(PlotAxisControlsVisibleProperty);
+        private set => SetValue(PlotAxisControlsVisibleProperty, value);
+    }
+
     public double PlotYAxisControlLeft
     {
         get => GetValue(PlotYAxisControlLeftProperty);
@@ -454,12 +490,16 @@ public sealed class FlowPlotView : Control
         const double left_axis_space = 78;
         const double right_space = 20;
         const double top_space = 18;
-        const double bottom_axis_space = 104;
+        const double bottom_axis_space = 94;
         double available_width = bounds.Width - left_axis_space - right_space;
         double available_height = bounds.Height - top_space - bottom_axis_space;
         double size = Math.Min(available_width, available_height);
         if (size < 120)
+        {
+            PlotAxisControlsVisible = false;
+            PlotSize = 0;
             return;
+        }
 
         plot_rect = new Rect(
             left_axis_space + (available_width - size) / 2,
@@ -470,9 +510,13 @@ public sealed class FlowPlotView : Control
         PlotTop = plot_rect.Top;
         PlotSize = plot_rect.Width;
         PlotBottom = plot_rect.Bottom;
+        PlotAxisControlsVisible = true;
+        PlotAxisChannelControlWidth = Math.Clamp(size - 62, 56, 180);
+        PlotAxisControlWidth = PlotAxisChannelControlWidth + 62;
+        PlotAxisControlLeft = plot_rect.Left + (plot_rect.Width - PlotAxisControlWidth) / 2;
         PlotAxisControlTop = plot_rect.Bottom + 36;
         PlotYAxisControlLeft = Math.Max(0, plot_rect.Left - 78);
-        PlotYAxisControlTop = plot_rect.Top + plot_rect.Height / 2 - 140;
+        PlotYAxisControlTop = plot_rect.Top + plot_rect.Height / 2 - PlotAxisControlWidth / 2;
         context.FillRectangle(Brushes.White, plot_rect);
 
         if (XAxis is null || YAxis is null)
