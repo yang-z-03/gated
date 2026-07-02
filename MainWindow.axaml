@@ -579,8 +579,11 @@
                             </DockPanel>
                         </Border>
 
-                        <Grid Grid.Row="1" Margin="16">
-                            <controls:FlowPlotView Group="{Binding SelectedGroup}"
+                        <Canvas Grid.Row="1" Margin="16" ClipToBounds="True">
+                            <controls:FlowPlotView x:Name="editor_plot"
+                                                   Width="{Binding Bounds.Width, RelativeSource={RelativeSource AncestorType=Canvas}}"
+                                                   Height="{Binding Bounds.Height, RelativeSource={RelativeSource AncestorType=Canvas}}"
+                                                   Group="{Binding SelectedGroup}"
                                                    Sample="{Binding SelectedSample}"
                                                    Gate="{Binding PlotGate}"
                                                    Gates="{Binding PlotGates}"
@@ -596,13 +599,79 @@
                                                    ShowGateAnnotationNames="{Binding ShowGateAnnotationNames}"
                                                    ContourLevelCount="{Binding ContourLevelCount}"
                                                    DensitySmoothing="{Binding DensitySmoothing}"
+                                                   DensityPalette="{Binding SelectedDensityColorMap.Palette}"
                                                    ActiveTool="{Binding ActiveTool}"
                                                    GateCreatedCommand="{Binding AddCanvasGateCommand}"
                                                    GateEditedCommand="{Binding GateEditedCommand}"
                                                    TransformPreparing="{Binding IsEditorPlotCalculating}" />
                             <Border HorizontalAlignment="Center"
-                                    VerticalAlignment="Center"
-                                    Margin="60,0,0,40"
+                                    Canvas.Left="{Binding PlotLeft, ElementName=editor_plot}"
+                                    Canvas.Top="{Binding PlotAxisControlTop, ElementName=editor_plot}"
+                                    Width="{Binding PlotSize, ElementName=editor_plot}"
+                                    Padding="4"
+                                    Background="{DynamicResource SemiColorBackground0}"
+                                    BorderBrush="{DynamicResource SemiColorBorder}"
+                                    BorderThickness="1"
+                                    CornerRadius="6">
+                                <StackPanel Orientation="Horizontal"
+                                            HorizontalAlignment="Center"
+                                            Spacing="4">
+                                    <ComboBox Classes='Small'
+                                              Width="180"
+                                              ItemsSource="{Binding AxisChoices}"
+                                              SelectedItem="{Binding SelectedXAxisChoice, Mode=TwoWay}">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                                    <TextBlock IsVisible="{Binding HasLabel}" Foreground="{DynamicResource SemiColorText0}" FontWeight="SemiBold" Text="{Binding Label}" />
+                                                    <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="{Binding Name}" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                    <ComboBox Classes='Small'
+                                              Width="92"
+                                              ItemsSource="{Binding CoordinateScaleChoices}"
+                                              SelectedItem="{Binding XAxis.ScaleKind}" />
+                                </StackPanel>
+                            </Border>
+                            <LayoutTransformControl Canvas.Left="{Binding PlotYAxisControlLeft, ElementName=editor_plot}"
+                                                    Canvas.Top="{Binding PlotYAxisControlTop, ElementName=editor_plot}">
+                                <LayoutTransformControl.LayoutTransform>
+                                    <RotateTransform Angle="-90" />
+                                </LayoutTransformControl.LayoutTransform>
+                                <Border Padding="4"
+                                        Background="{DynamicResource SemiColorBackground0}"
+                                        BorderBrush="{DynamicResource SemiColorBorder}"
+                                        BorderThickness="1"
+                                        CornerRadius="6">
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <ComboBox Classes='Small'
+                                                  Width="180"
+                                                  IsEnabled="{Binding IsYAxisEnabled}"
+                                                  ItemsSource="{Binding AxisChoices}"
+                                                  SelectedItem="{Binding SelectedYAxisChoice, Mode=TwoWay}">
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <TextBlock IsVisible="{Binding HasLabel}" Foreground="{DynamicResource SemiColorText0}" FontWeight="SemiBold" Text="{Binding Label}" />
+                                                        <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="{Binding Name}" />
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
+                                        <ComboBox Classes='Small'
+                                                  Width="92"
+                                                  IsEnabled="{Binding IsYAxisEnabled}"
+                                                  ItemsSource="{Binding CoordinateScaleChoices}"
+                                                  SelectedItem="{Binding YAxis.ScaleKind}" />
+                                    </StackPanel>
+                                </Border>
+                            </LayoutTransformControl>
+                            <Border Canvas.Left="{Binding PlotLeft, ElementName=editor_plot}"
+                                    Canvas.Top="{Binding PlotTop, ElementName=editor_plot}"
+                                    Width="{Binding PlotSize, ElementName=editor_plot}"
+                                    Height="{Binding PlotSize, ElementName=editor_plot}"
                                     Padding="10,10"
                                     CornerRadius="10"
                                     Background="#262830"
@@ -614,10 +683,11 @@
                                 <StackPanel Orientation="Horizontal">
                                     <controls:SpinnerView Width="48"
                                                           Height="48"
+                                                          HorizontalAlignment="Center"
                                                           VerticalAlignment="Center" />
                                 </StackPanel>
                             </Border>
-                        </Grid>
+                        </Canvas>
                     </Grid>
 
                     <Border x:Name="analysis_properties_panel"
@@ -639,7 +709,7 @@
                                         <TextBlock Margin="0,4,0,-4" Foreground="{DynamicResource SemiColorText2}" Text="Selected channel" />
                                         <ComboBox Classes='Small'
                                                   ItemsSource="{Binding AxisChoices}"
-                                                  SelectedItem="{Binding SelectedXAxisChoice}">
+                                                  SelectedItem="{Binding SelectedXAxisChoice, Mode=TwoWay}">
                                             <ComboBox.ItemTemplate>
                                                 <DataTemplate>
                                                     <StackPanel Orientation="Horizontal" Spacing="8">
@@ -693,7 +763,7 @@
                                         <ComboBox Classes='Small'
                                                   IsEnabled="{Binding IsYAxisEnabled}"
                                                   ItemsSource="{Binding AxisChoices}"
-                                                  SelectedItem="{Binding SelectedYAxisChoice}">
+                                                  SelectedItem="{Binding SelectedYAxisChoice, Mode=TwoWay}">
                                             <ComboBox.ItemTemplate>
                                                 <DataTemplate>
                                                     <StackPanel Orientation="Horizontal" Spacing="8">
@@ -749,11 +819,31 @@
                                                   ItemsSource="{Binding PlotModeChoices}"
                                                   SelectedItem="{Binding SelectedPlotMode}" />
 
-                                        <StackPanel Margin="0,4,0,0" Spacing="8">
-                                            <CheckBox Content="Show outlier points" Margin="0,0,12,0"
-                                                      IsChecked="{Binding ShowOutlierPoints}" />
-                                            <CheckBox Content="Draw large dots" Margin="0,0,12,0"
-                                                      IsChecked="{Binding DrawLargeDots}" />
+                                        <StackPanel Spacing="8" IsVisible="{Binding ShowDensityStyleOptions}">
+                                            <TextBlock Margin="0,4,0,-4" Foreground="{DynamicResource SemiColorText2}" Text="Density palette" />
+                                            <ComboBox Classes='Small'
+                                                      ItemsSource="{Binding PlotColorMapChoices}"
+                                                      SelectedItem="{Binding SelectedDensityColorMap}">
+                                                <ComboBox.SelectionBoxItemTemplate>
+                                                    <DataTemplate>
+                                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                                            <controls:ColorMapPreview Width="64" Height="14" ColorMap="{Binding}" />
+                                                            <TextBlock VerticalAlignment="Center" Text="{Binding Name}" />
+                                                        </StackPanel>
+                                                    </DataTemplate>
+                                                </ComboBox.SelectionBoxItemTemplate>
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                                            <controls:ColorMapPreview Width="64" Height="14" ColorMap="{Binding}" />
+                                                            <TextBlock VerticalAlignment="Center" Text="{Binding Name}" />
+                                                        </StackPanel>
+                                                    </DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
+                                        </StackPanel>
+
+                                        <StackPanel Margin="0,8,0,0" Spacing="8">
                                             <CheckBox Content="Show gridlines" Margin="0,0,12,0"
                                                       IsChecked="{Binding ShowGridlines}" />
                                             <CheckBox Content="Show gate annotations" Margin="0,0,12,0"
@@ -762,57 +852,67 @@
                                                       IsChecked="{Binding ShowGateAnnotationNames}" />
                                         </StackPanel>
 
-                                        <TextBlock Margin="0,4,0,-4" Foreground="{DynamicResource SemiColorText2}" Text="Dot color" />
-                                        <ComboBox Classes='Small'
-                                                  ItemsSource="{Binding ColorChoices}"
-                                                  SelectedItem="{Binding SelectedDotColorChoice}">
-                                            <ComboBox.ItemTemplate>
-                                                <DataTemplate>
-                                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                                        <TextBlock IsVisible="{Binding HasLabel}" Foreground="{DynamicResource SemiColorText0}" FontWeight="SemiBold" Text="{Binding Label}" />
-                                                        <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="{Binding Name}" />
-                                                    </StackPanel>
-                                                </DataTemplate>
-                                            </ComboBox.ItemTemplate>
-                                        </ComboBox>
+                                        <StackPanel Spacing="8" IsVisible="{Binding ShowDotplotStyleOptions}">
+                                            <CheckBox Content="Draw large dots" Margin="0,0,12,0"
+                                                      IsChecked="{Binding DrawLargeDots}" />
+                                            <TextBlock Margin="0,4,0,-4" Foreground="{DynamicResource SemiColorText2}" Text="Dot color" />
+                                            <ComboBox Classes='Small'
+                                                      ItemsSource="{Binding ColorChoices}"
+                                                      SelectedItem="{Binding SelectedDotColorChoice}">
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                                            <TextBlock IsVisible="{Binding HasLabel}" Foreground="{DynamicResource SemiColorText0}" FontWeight="SemiBold" Text="{Binding Label}" />
+                                                            <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="{Binding Name}" />
+                                                        </StackPanel>
+                                                    </DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
 
-                                        <TextBlock Margin="0,4,0,-4" Foreground="{DynamicResource SemiColorText2}" Text="Color palette" />
-                                        <ComboBox Classes='Small'
-                                                  ItemsSource="{Binding PlotColorMapChoices}"
-                                                  SelectedItem="{Binding SelectedDotColorMap}">
-                                            <ComboBox.SelectionBoxItemTemplate>
-                                                <DataTemplate>
-                                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                                        <controls:ColorMapPreview Width="64" Height="14" ColorMap="{Binding}" />
-                                                        <TextBlock VerticalAlignment="Center" Text="{Binding Name}" />
-                                                    </StackPanel>
-                                                </DataTemplate>
-                                            </ComboBox.SelectionBoxItemTemplate>
-                                            <ComboBox.ItemTemplate>
-                                                <DataTemplate>
-                                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                                        <controls:ColorMapPreview Width="64" Height="14" ColorMap="{Binding}" />
-                                                        <TextBlock VerticalAlignment="Center" Text="{Binding Name}" />
-                                                    </StackPanel>
-                                                </DataTemplate>
-                                            </ComboBox.ItemTemplate>
-                                        </ComboBox>
-                                        <CheckBox Content="Coloring in log scale" Margin="0,4,0,0"
-                                                  IsEnabled="{Binding CanUseDotColorLogScale}"
-                                                  IsChecked="{Binding DotColor.UseLogScale}" />
-                                        <controls:ColorMapRangeSlider Height="58"
-                                                                      Settings="{Binding DotColor}" />
+                                            <TextBlock Margin="0,4,0,-4" Foreground="{DynamicResource SemiColorText2}" Text="Color palette" />
+                                            <ComboBox Classes='Small'
+                                                      ItemsSource="{Binding PlotColorMapChoices}"
+                                                      SelectedItem="{Binding SelectedDotColorMap}">
+                                                <ComboBox.SelectionBoxItemTemplate>
+                                                    <DataTemplate>
+                                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                                            <controls:ColorMapPreview Width="64" Height="14" ColorMap="{Binding}" />
+                                                            <TextBlock VerticalAlignment="Center" Text="{Binding Name}" />
+                                                        </StackPanel>
+                                                    </DataTemplate>
+                                                </ComboBox.SelectionBoxItemTemplate>
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                                            <controls:ColorMapPreview Width="64" Height="14" ColorMap="{Binding}" />
+                                                            <TextBlock VerticalAlignment="Center" Text="{Binding Name}" />
+                                                        </StackPanel>
+                                                    </DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
+                                            <CheckBox Content="Coloring in log scale" Margin="0,4,0,0"
+                                                      IsEnabled="{Binding CanUseDotColorLogScale}"
+                                                      IsChecked="{Binding DotColor.UseLogScale}" />
+                                            <controls:ColorMapRangeSlider Height="58"
+                                                                          Settings="{Binding DotColor}" />
+                                        </StackPanel>
 
-                                        <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
-                                            <StackPanel>
-                                                <TextBlock Margin="0,4" Foreground="{DynamicResource SemiColorText2}" Text="Contour levels" />
-                                                <TextBox Text="{Binding ContourLevelCount, UpdateSourceTrigger=PropertyChanged}" />
-                                            </StackPanel>
-                                            <StackPanel Grid.Column="1">
-                                                <TextBlock Margin="0,4" Foreground="{DynamicResource SemiColorText2}" Text="Density smoothing" />
-                                                <TextBox Text="{Binding DensitySmoothing, UpdateSourceTrigger=PropertyChanged}" />
-                                            </StackPanel>
-                                        </Grid>
+                                        <StackPanel Spacing="8" IsVisible="{Binding ShowContourDensityStyleOptions}">
+                                            <CheckBox Content="Draw large dots" Margin="0,0,12,0"
+                                                      IsChecked="{Binding DrawLargeDots}" />
+                                            <CheckBox Content="Show outlier points" Margin="0,0,12,0"
+                                                      IsChecked="{Binding ShowOutlierPoints}" />
+                                            <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                                                <StackPanel>
+                                                    <TextBlock Margin="0,4" Foreground="{DynamicResource SemiColorText2}" Text="Contour levels" />
+                                                    <TextBox Text="{Binding ContourLevelCount, UpdateSourceTrigger=PropertyChanged}" />
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="1">
+                                                    <TextBlock Margin="0,4" Foreground="{DynamicResource SemiColorText2}" Text="Density smoothing" />
+                                                    <TextBox Text="{Binding DensitySmoothing, UpdateSourceTrigger=PropertyChanged}" />
+                                                </StackPanel>
+                                            </Grid>
+                                        </StackPanel>
                                     </StackPanel>
                                 </Expander>
                             </StackPanel>
@@ -956,18 +1056,6 @@
                                     <CheckBox Content="Show gridlines"
                                               IsEnabled="{Binding CanEditSelectedPageGridTickOptions}"
                                               IsChecked="{Binding SelectedPageElement.ShowGridlines}" />
-                                    <CheckBox Content="Show outlier points"
-                                              IsEnabled="{Binding CanEditSelectedPageFlowOptions}"
-                                              IsChecked="{Binding SelectedPageElement.ShowOutlierPoints}" />
-                                    <CheckBox Content="Draw large dots"
-                                              IsEnabled="{Binding CanEditSelectedPageFlowOptions}"
-                                              IsChecked="{Binding SelectedPageElement.DrawLargeDots}" />
-                                    <CheckBox Content="Show tick labels"
-                                              IsEnabled="{Binding CanEditSelectedPageGridTickOptions}"
-                                              IsChecked="{Binding SelectedPageElement.ShowTickLabels}" />
-                                    <CheckBox Content="Density pseudocolor"
-                                              IsEnabled="{Binding CanEditSelectedPageFlowOptions}"
-                                              IsChecked="{Binding SelectedPageElement.UsePseudocolor}" />
                                     <CheckBox Content="Show gates"
                                               IsEnabled="{Binding CanEditSelectedPageFlowOptions}"
                                               IsChecked="{Binding SelectedPageElement.ShowGates}" />
@@ -978,62 +1066,100 @@
                                               IsEnabled="{Binding CanEditSelectedPageFlowOptions}"
                                               IsChecked="{Binding SelectedPageElement.ShowGateAnnotationNames}" />
 
-                                    <TextBlock Margin="0,4,0,-4" Foreground="{DynamicResource SemiColorText2}" Text="Dot color" />
-                                    <ComboBox Classes="Small"
-                                              IsEnabled="{Binding CanEditSelectedPageFlowOptions}"
-                                              ItemsSource="{Binding SelectedPageColorChoices}"
-                                              SelectedItem="{Binding SelectedPageDotColorChoice, Mode=TwoWay}">
-                                        <ComboBox.ItemTemplate>
-                                            <DataTemplate>
-                                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                                    <TextBlock IsVisible="{Binding HasLabel}" Foreground="{DynamicResource SemiColorText0}" FontWeight="SemiBold" Text="{Binding Label}" />
-                                                    <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="{Binding Name}" />
-                                                </StackPanel>
-                                            </DataTemplate>
-                                        </ComboBox.ItemTemplate>
-                                    </ComboBox>
+                                    <StackPanel Spacing="8" IsVisible="{Binding ShowSelectedPageDensityStyleOptions}">
+                                        <TextBlock Margin="0,4,0,-4" Foreground="{DynamicResource SemiColorText2}" Text="Density palette" />
+                                        <ComboBox Classes="Small"
+                                                  IsEnabled="{Binding CanEditSelectedPageFlowOptions}"
+                                                  ItemsSource="{Binding PlotColorMapChoices}"
+                                                  SelectedItem="{Binding SelectedPageDensityColorMap}">
+                                            <ComboBox.SelectionBoxItemTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <controls:ColorMapPreview Width="64" Height="14" ColorMap="{Binding}" />
+                                                        <TextBlock VerticalAlignment="Center" Text="{Binding Name}" />
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ComboBox.SelectionBoxItemTemplate>
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <controls:ColorMapPreview Width="64" Height="14" ColorMap="{Binding}" />
+                                                        <TextBlock VerticalAlignment="Center" Text="{Binding Name}" />
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
+                                    </StackPanel>
 
-                                    <TextBlock Margin="0,4,0,-4" Foreground="{DynamicResource SemiColorText2}" Text="Color palette" />
-                                    <ComboBox Classes="Small"
-                                              IsEnabled="{Binding CanEditSelectedPageFlowOptions}"
-                                              ItemsSource="{Binding PlotColorMapChoices}"
-                                              SelectedItem="{Binding SelectedPageDotColorMap}">
-                                        <ComboBox.SelectionBoxItemTemplate>
-                                            <DataTemplate>
-                                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                                    <controls:ColorMapPreview Width="64" Height="14" ColorMap="{Binding}" />
-                                                    <TextBlock VerticalAlignment="Center" Text="{Binding Name}" />
-                                                </StackPanel>
-                                            </DataTemplate>
-                                        </ComboBox.SelectionBoxItemTemplate>
-                                        <ComboBox.ItemTemplate>
-                                            <DataTemplate>
-                                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                                    <controls:ColorMapPreview Width="64" Height="14" ColorMap="{Binding}" />
-                                                    <TextBlock VerticalAlignment="Center" Text="{Binding Name}" />
-                                                </StackPanel>
-                                            </DataTemplate>
-                                        </ComboBox.ItemTemplate>
-                                    </ComboBox>
-                                    <CheckBox Content="Coloring in log scale"
-                                              IsEnabled="{Binding CanUseSelectedPageDotColorLogScale}"
-                                              IsChecked="{Binding SelectedPageElement.DotColor.UseLogScale}" />
-                                    <controls:ColorMapRangeSlider Height="58"
-                                                                  IsEnabled="{Binding CanEditSelectedPageFlowOptions}"
-                                                                  Settings="{Binding SelectedPageElement.DotColor}" />
+                                    <StackPanel Spacing="8" IsVisible="{Binding ShowSelectedPageDotplotStyleOptions}">
+                                        <CheckBox Content="Draw large dots"
+                                                  IsEnabled="{Binding CanEditSelectedPageFlowOptions}"
+                                                  IsChecked="{Binding SelectedPageElement.DrawLargeDots}" />
+                                        <TextBlock Margin="0,4,0,-4" Foreground="{DynamicResource SemiColorText2}" Text="Dot color" />
+                                        <ComboBox Classes="Small"
+                                                  IsEnabled="{Binding CanEditSelectedPageFlowOptions}"
+                                                  ItemsSource="{Binding SelectedPageColorChoices}"
+                                                  SelectedItem="{Binding SelectedPageDotColorChoice, Mode=TwoWay}">
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <TextBlock IsVisible="{Binding HasLabel}" Foreground="{DynamicResource SemiColorText0}" FontWeight="SemiBold" Text="{Binding Label}" />
+                                                        <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="{Binding Name}" />
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
 
-                                    <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
-                                        <StackPanel>
-                                            <TextBlock Margin="0,4" Foreground="{DynamicResource SemiColorText2}" Text="Contours" />
-                                            <TextBox IsEnabled="{Binding CanEditSelectedPageFlowOptions}"
-                                                     Text="{Binding SelectedPageElement.ContourLevelCount, UpdateSourceTrigger=PropertyChanged}" />
-                                        </StackPanel>
-                                        <StackPanel Grid.Column="1">
-                                            <TextBlock Margin="0,4" Foreground="{DynamicResource SemiColorText2}" Text="Smoothing" />
-                                            <TextBox IsEnabled="{Binding CanEditSelectedPageFlowOptions}"
-                                                     Text="{Binding SelectedPageElement.DensitySmoothing, UpdateSourceTrigger=PropertyChanged}" />
-                                        </StackPanel>
-                                    </Grid>
+                                        <TextBlock Margin="0,4,0,-4" Foreground="{DynamicResource SemiColorText2}" Text="Color palette" />
+                                        <ComboBox Classes="Small"
+                                                  IsEnabled="{Binding CanEditSelectedPageFlowOptions}"
+                                                  ItemsSource="{Binding PlotColorMapChoices}"
+                                                  SelectedItem="{Binding SelectedPageDotColorMap}">
+                                            <ComboBox.SelectionBoxItemTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <controls:ColorMapPreview Width="64" Height="14" ColorMap="{Binding}" />
+                                                        <TextBlock VerticalAlignment="Center" Text="{Binding Name}" />
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ComboBox.SelectionBoxItemTemplate>
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <controls:ColorMapPreview Width="64" Height="14" ColorMap="{Binding}" />
+                                                        <TextBlock VerticalAlignment="Center" Text="{Binding Name}" />
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
+                                        <CheckBox Content="Coloring in log scale"
+                                                  IsEnabled="{Binding CanUseSelectedPageDotColorLogScale}"
+                                                  IsChecked="{Binding SelectedPageElement.DotColor.UseLogScale}" />
+                                        <controls:ColorMapRangeSlider Height="58"
+                                                                      IsEnabled="{Binding CanEditSelectedPageFlowOptions}"
+                                                                      Settings="{Binding SelectedPageElement.DotColor}" />
+                                    </StackPanel>
+
+                                    <StackPanel Spacing="8" IsVisible="{Binding ShowSelectedPageContourDensityStyleOptions}">
+                                        <CheckBox Content="Draw large dots"
+                                                  IsEnabled="{Binding CanEditSelectedPageFlowOptions}"
+                                                  IsChecked="{Binding SelectedPageElement.DrawLargeDots}" />
+                                        <CheckBox Content="Show outlier points"
+                                                  IsEnabled="{Binding CanEditSelectedPageFlowOptions}"
+                                                  IsChecked="{Binding SelectedPageElement.ShowOutlierPoints}" />
+                                        <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                                            <StackPanel>
+                                                <TextBlock Margin="0,4" Foreground="{DynamicResource SemiColorText2}" Text="Contours" />
+                                                <TextBox IsEnabled="{Binding CanEditSelectedPageFlowOptions}"
+                                                         Text="{Binding SelectedPageElement.ContourLevelCount, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1">
+                                                <TextBlock Margin="0,4" Foreground="{DynamicResource SemiColorText2}" Text="Smoothing" />
+                                                <TextBox IsEnabled="{Binding CanEditSelectedPageFlowOptions}"
+                                                         Text="{Binding SelectedPageElement.DensitySmoothing, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </StackPanel>
                                 </StackPanel>
                             </Expander>
 

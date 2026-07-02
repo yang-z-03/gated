@@ -47,6 +47,7 @@ public class PagePlotElement : NotifyBase
     private bool show_gate_annotation_names;
     private int contour_level_count = 10;
     private int density_smoothing = 6;
+    private PlotColorPalette density_palette = PlotColorPalette.Turbo;
 
     public Guid Id { get; init; } = Guid.NewGuid();
     public virtual PageElementKind ElementKind => PageElementKind.FlowPlot;
@@ -190,6 +191,12 @@ public class PagePlotElement : NotifyBase
     {
         get => density_smoothing;
         set => SetField(ref density_smoothing, Math.Clamp(value, 0, 12), nameof(DensitySmoothing));
+    }
+
+    public PlotColorPalette DensityPalette
+    {
+        get => density_palette;
+        set => SetField(ref density_palette, value, nameof(DensityPalette));
     }
 
     public bool IsHistogram => PlotMode == PlotMode.Histogram || Gate?.IsOneDimensional == true;

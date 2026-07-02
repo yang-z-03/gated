@@ -552,6 +552,7 @@ public sealed class GateViewOptions
     public bool ShowGateAnnotationNames { get; set; }
     public int ContourLevelCount { get; set; } = 10;
     public int DensitySmoothing { get; set; } = 9;
+    public PlotColorPalette DensityPalette { get; set; } = PlotColorPalette.Turbo;
     public DotColorSettings DotColor { get; set; } = new();
 
     public bool HasView => !string.IsNullOrWhiteSpace(XChannel);
@@ -592,6 +593,7 @@ public sealed class GateDefinition : NotifyBase
     public bool PreferredShowGateAnnotationNames { get; set; }
     public int PreferredContourLevelCount { get; set; } = 10;
     public int PreferredDensitySmoothing { get; set; } = 9;
+    public PlotColorPalette PreferredDensityPalette { get; set; } = PlotColorPalette.Turbo;
     public DotColorSettings PreferredDotColor { get; set; } = new();
     public Dictionary<PopulationRegion, string> PopulationNames { get; } = new();
     public Dictionary<PopulationRegion, GateViewOptions> PopulationPreferredViews { get; } = new();
@@ -1697,6 +1699,7 @@ public sealed class FlowGroup : NotifyBase
     private string name = "Samples";
     private CompensationMatrix? applied_compensation;
     private bool applied_compensation_is_manual;
+    private const double data_implied_trim_fraction = 0.0005;
 
     public Guid Id { get; init; } = Guid.NewGuid();
 
@@ -1714,6 +1717,7 @@ public sealed class FlowGroup : NotifyBase
     public SpilloverCompensationState SpilloverCompensation { get; } = new();
     public GateViewOptions RootViewOptions { get; set; } = new();
     public Dictionary<string, GateViewOptions> SampleRootViewOptions { get; } = new(StringComparer.Ordinal);
+    public Dictionary<string, AxisSettings> DataImpliedViewOptions { get; } = new(StringComparer.Ordinal);
     public string ChannelProfile { get; private set; } = "";
 
     public CompensationMatrix? AppliedCompensation
@@ -1792,9 +1796,14 @@ public sealed class FlowGroup : NotifyBase
         if (recalculate)
         {
             if (ReferenceEquals(previous_applied_compensation, AppliedCompensation))
+            {
                 sample.Recalculate(this);
+                RecalculateDataImpliedViewOptions();
+            }
             else
+            {
                 RecalculateSamples();
+            }
         }
         OnPropertyChanged(nameof(Channels));
     }
@@ -1855,6 +1864,8 @@ public sealed class FlowGroup : NotifyBase
             cancellation_token.ThrowIfCancellationRequested();
             sample.Recalculate(this, force_compensation, cancellation_token);
         }
+
+        RecalculateDataImpliedViewOptions(cancellation_token);
     }
 
     public void ApplyCompensationToSamples(bool force_compensation, CancellationToken cancellation_token = default)
@@ -1864,7 +1875,145 @@ public sealed class FlowGroup : NotifyBase
             cancellation_token.ThrowIfCancellationRequested();
             sample.ApplyCompensation(AppliedCompensation, force_compensation);
         }
+
+        RecalculateDataImpliedViewOptions(cancellation_token);
     }
+
+    public void RecalculateDataImpliedViewOptions(CancellationToken cancellation_token = default)
+    {
+        DataImpliedViewOptions.Clear();
+        if (Samples.Count == 0)
+            return;
+
+        foreach (var channel in Channels)
+        {
+            cancellation_token.ThrowIfCancellationRequested();
+            if (create_data_implied_axis(channel.Name, is_embedding: false, cancellation_token) is { } axis)
+                DataImpliedViewOptions[channel.Name] = axis;
+        }
+
+        foreach (string embedding_name in Samples
+                     .SelectMany(sample => sample.Embeddings.Keys)
+                     .Distinct(StringComparer.Ordinal)
+                     .OrderBy(name => name, StringComparer.Ordinal))
+        {
+            cancellation_token.ThrowIfCancellationRequested();
+            if (create_data_implied_axis(embedding_name, is_embedding: true, cancellation_token) is { } axis)
+                DataImpliedViewOptions[embedding_name] = axis;
+        }
+    }
+
+    private AxisSettings? create_data_implied_axis(string channel_name, bool is_embedding, CancellationToken cancellation_token)
+    {
+        var values = collect_finite_values(channel_name, is_embedding, cancellation_token);
+        if (values.Count == 0)
+            return null;
+
+        double? channel_maximum = null;
+        if (!is_embedding)
+        {
+            var channel = Channels.FirstOrDefault(item => item.Name == channel_name);
+            if (double.IsFinite(channel?.Maximum ?? double.NaN) && channel!.Maximum > 0)
+                channel_maximum = channel.Maximum;
+        }
+
+        values.Sort();
+        bool is_time = !is_embedding && Configuration.IsTimeChannel(channel_name);
+        var range = is_time
+            ? (Minimum: values[0], Maximum: values[^1])
+            : outlier_trimmed_range(values);
+        double maximum = range.Maximum;
+        if (!double.IsFinite(maximum))
+            return null;
+
+        if (is_time)
+        {
+            double minimum = apply_channel_minimum_floor(hundred_floor(range.Minimum), channel_maximum);
+            double upper = range.Maximum > range.Minimum ? hundred_ceiling(range.Maximum) : minimum + 1e-6;
+            upper = apply_channel_maximum_cap(upper, channel_maximum);
+            return new AxisSettings
+            {
+                ChannelName = channel_name,
+                Minimum = minimum,
+                Maximum = upper,
+                ScaleKind = CoordinateScaleKind.Linear
+            };
+        }
+
+        bool use_linear = is_embedding || Configuration.DefaultCoordinateScaleForChannel(channel_name) == CoordinateScaleKind.Linear;
+        double implied_maximum = Math.Max(maximum, 1e-6);
+        if (use_linear)
+        {
+            double minimum = apply_channel_minimum_floor(hundred_floor(-0.1 * implied_maximum), channel_maximum);
+            double upper = hundred_ceiling(1.1 * implied_maximum);
+            upper = apply_channel_maximum_cap(upper, channel_maximum);
+            return new AxisSettings
+            {
+                ChannelName = channel_name,
+                Minimum = Math.Max(minimum, hundred_floor(range.Minimum)),
+                Maximum = upper,
+                ScaleKind = CoordinateScaleKind.Linear
+            };
+        }
+
+        double logicle_minimum = apply_channel_minimum_floor(hundred_floor(-0.01 * implied_maximum), channel_maximum);
+        double logicle_maximum = apply_channel_maximum_cap(hundred_ceiling(3 * implied_maximum), channel_maximum);
+        return new AxisSettings
+        {
+            ChannelName = channel_name,
+            Minimum = Math.Max(logicle_minimum, hundred_floor(range.Minimum)),
+            Maximum = logicle_maximum,
+            ScaleKind = CoordinateScaleKind.Logicle
+        };
+    }
+
+    private List<double> collect_finite_values(string channel_name, bool is_embedding, CancellationToken cancellation_token)
+    {
+        var values = new List<double>();
+        foreach (var sample in Samples)
+        {
+            cancellation_token.ThrowIfCancellationRequested();
+            if (is_embedding && !sample.Embeddings.ContainsKey(channel_name))
+                continue;
+
+            foreach (float value in sample.GetChannelValues(channel_name))
+            {
+                if (double.IsFinite(value))
+                    values.Add(value);
+            }
+        }
+
+        return values;
+    }
+
+    private static (double Minimum, double Maximum) outlier_trimmed_range(IReadOnlyList<double> sorted_values)
+    {
+        int trim_count = (int)Math.Floor(sorted_values.Count * data_implied_trim_fraction);
+        if (trim_count * 2 >= sorted_values.Count)
+            trim_count = 0;
+
+        return (sorted_values[trim_count], sorted_values[sorted_values.Count - trim_count - 1]);
+    }
+
+    private static double hundred_floor(double value)
+    {
+        if (!double.IsFinite(value))
+            return 0;
+        return Math.Floor(value / 100.0) * 100.0;
+    }
+
+    private static double hundred_ceiling(double value)
+    {
+        if (!double.IsFinite(value))
+            return 0;
+        return Math.Ceiling(value / 100.0) * 100.0;
+    }
+
+    private static double apply_channel_maximum_cap(double maximum, double? channel_maximum) =>
+        channel_maximum is { } cap && maximum > cap ? cap : maximum;
+
+    private static double apply_channel_minimum_floor(double minimum, double? channel_maximum) =>
+        channel_maximum is { } cap && minimum < -0.01 * cap ? -0.01 * cap : minimum;
 
     public bool RecalculateGateSubtree(GateDefinition gate, CancellationToken cancellation_token = default)
     {

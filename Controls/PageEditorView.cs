@@ -1034,6 +1034,7 @@ public sealed class PageEditorView : Control
             element.UsePseudocolor,
             element.ContourLevelCount,
             element.DensitySmoothing,
+            element.DensityPalette,
             density_grid_key(element));
 
     private static string contour_geometry_key(PagePlotElement element) =>
@@ -1920,7 +1921,8 @@ public sealed class PageEditorView : Control
         or nameof(PagePlotElement.UsePseudocolor)
         or nameof(PagePlotElement.ShowGateAnnotationNames)
         or nameof(PagePlotElement.ContourLevelCount)
-        or nameof(PagePlotElement.DensitySmoothing);
+        or nameof(PagePlotElement.DensitySmoothing)
+        or nameof(PagePlotElement.DensityPalette);
 
     private Point to_page_point(Point viewport_point) =>
         new(viewport_point.X + scroll_offset.X, viewport_point.Y + scroll_offset.Y);
@@ -2291,13 +2293,7 @@ public sealed class PageEditorView : Control
             return Color.FromRgb(shade, shade, shade);
         }
 
-        if (value < 0.25)
-            return Color.FromRgb(21, 35, Convert.ToByte(110 + value * 360));
-        if (value < 0.5)
-            return Color.FromRgb(0, Convert.ToByte(80 + value * 260), 220);
-        if (value < 0.75)
-            return Color.FromRgb(Convert.ToByte((value - 0.5) * 720), 230, 95);
-        return Color.FromRgb(255, Convert.ToByte(220 - (value - 0.75) * 260), 40);
+        return PlotColorMaps.ColorAt(element.DensityPalette, value);
     }
 
     private static byte to_byte(double value) =>

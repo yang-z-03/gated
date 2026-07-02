@@ -63,6 +63,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
     private bool show_gate_annotation_names;
     private int contour_level_count = 10;
     private int density_smoothing = 9;
+    private PlotColorPalette density_palette = PlotColorPalette.Turbo;
     private string status_text = "Append samples to grouping to begin analysis";
     private string python_engine_status_text = "Script engine ready.";
     private bool is_python_engine_progress_visible;
@@ -571,6 +572,9 @@ public sealed partial class MainWindowViewModel : NotifyBase
             OnPropertyChanged(nameof(IsContourPlotMode));
             OnPropertyChanged(nameof(IsZebraPlotMode));
             OnPropertyChanged(nameof(IsHistogramPlotMode));
+            OnPropertyChanged(nameof(ShowDensityStyleOptions));
+            OnPropertyChanged(nameof(ShowDotplotStyleOptions));
+            OnPropertyChanged(nameof(ShowContourDensityStyleOptions));
             OnPropertyChanged(nameof(CanCreateOneDimensionalGate));
             OnPropertyChanged(nameof(CanCreateTwoDimensionalGate));
             enforce_active_tool_allowed();
@@ -586,6 +590,9 @@ public sealed partial class MainWindowViewModel : NotifyBase
     public bool IsContourPlotMode => SelectedPlotMode == PlotMode.Contour;
     public bool IsZebraPlotMode => SelectedPlotMode == PlotMode.Zebra;
     public bool IsHistogramPlotMode => SelectedPlotMode == PlotMode.Histogram;
+    public bool ShowDensityStyleOptions => SelectedPlotMode == PlotMode.Density;
+    public bool ShowDotplotStyleOptions => SelectedPlotMode == PlotMode.Dotplot;
+    public bool ShowContourDensityStyleOptions => SelectedPlotMode is PlotMode.Zebra or PlotMode.Contour;
     public bool IsEditorXAxisLinearScale { get => XAxis.ScaleKind == CoordinateScaleKind.Linear; set { if (value) XAxis.ScaleKind = CoordinateScaleKind.Linear; } }
     public bool IsEditorXAxisLogicleScale { get => XAxis.ScaleKind == CoordinateScaleKind.Logicle; set { if (value) XAxis.ScaleKind = CoordinateScaleKind.Logicle; } }
     public bool IsEditorYAxisLinearScale { get => YAxis.ScaleKind == CoordinateScaleKind.Linear; set { if (value) YAxis.ScaleKind = CoordinateScaleKind.Linear; } }
@@ -596,6 +603,9 @@ public sealed partial class MainWindowViewModel : NotifyBase
     public bool IsLayoutContourPlotMode { get => selected_page_element?.PlotMode == PlotMode.Contour; set { if (value && selected_page_element is not null) { selected_page_element.PlotMode = PlotMode.Contour; refresh_selected_page_menu_state(); } } }
     public bool IsLayoutZebraPlotMode { get => selected_page_element?.PlotMode == PlotMode.Zebra; set { if (value && selected_page_element is not null) { selected_page_element.PlotMode = PlotMode.Zebra; refresh_selected_page_menu_state(); } } }
     public bool IsLayoutHistogramPlotMode { get => selected_page_element?.PlotMode == PlotMode.Histogram; set { if (value && selected_page_element is not null) { selected_page_element.PlotMode = PlotMode.Histogram; refresh_selected_page_menu_state(); } } }
+    public bool ShowSelectedPageDensityStyleOptions => selected_page_element?.PlotMode == PlotMode.Density;
+    public bool ShowSelectedPageDotplotStyleOptions => selected_page_element?.PlotMode == PlotMode.Dotplot;
+    public bool ShowSelectedPageContourDensityStyleOptions => selected_page_element?.PlotMode is PlotMode.Zebra or PlotMode.Contour;
     public bool IsLayoutXAxisLinearScale { get => selected_page_element?.XAxis.ScaleKind == CoordinateScaleKind.Linear; set { if (value && selected_page_element is not null) { selected_page_element.XAxis.ScaleKind = CoordinateScaleKind.Linear; refresh_selected_page_menu_state(); } } }
     public bool IsLayoutXAxisLogicleScale { get => selected_page_element?.XAxis.ScaleKind == CoordinateScaleKind.Logicle; set { if (value && selected_page_element is not null) { selected_page_element.XAxis.ScaleKind = CoordinateScaleKind.Logicle; refresh_selected_page_menu_state(); } } }
     public bool IsLayoutYAxisLinearScale { get => selected_page_element?.YAxis.ScaleKind == CoordinateScaleKind.Linear; set { if (value && selected_page_element is not null) { selected_page_element.YAxis.ScaleKind = CoordinateScaleKind.Linear; refresh_selected_page_menu_state(); } } }
@@ -742,6 +752,21 @@ public sealed partial class MainWindowViewModel : NotifyBase
         }
     }
 
+    public PlotColorMap SelectedDensityColorMap
+    {
+        get => PlotColorMaps.Get(density_palette);
+        set
+        {
+            if (value is null || density_palette == value.Palette)
+                return;
+
+            density_palette = value.Palette;
+            OnPropertyChanged();
+            sync_selected_gate_preferred_view();
+            refresh_plot_gates();
+        }
+    }
+
     public AxisSettings XAxis
     {
         get => x_axis;
@@ -825,7 +850,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
             if (value is null || XAxis.ChannelName == value.Name)
                 return;
 
-            XAxis.ChannelName = value.Name;
+            set_editor_axis_channel(is_x_axis: true, value.Name);
             OnPropertyChanged();
             refresh_axis_menu_state();
         }
@@ -839,7 +864,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
             if (value is null || YAxis.ChannelName == value.Name)
                 return;
 
-            YAxis.ChannelName = value.Name;
+            set_editor_axis_channel(is_x_axis: false, value.Name);
             OnPropertyChanged();
             refresh_axis_menu_state();
         }
@@ -1124,6 +1149,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
             OnPropertyChanged(nameof(SelectedPageYAxisChoice));
             OnPropertyChanged(nameof(SelectedPageDotColorChoice));
             OnPropertyChanged(nameof(SelectedPageDotColorMap));
+            OnPropertyChanged(nameof(SelectedPageDensityColorMap));
             OnPropertyChanged(nameof(CanUseSelectedPageDotColorLogScale));
             refresh_selected_page_menu_state();
             if (DeletePageElementCommand is RelayCommand relay)
@@ -1247,6 +1273,20 @@ public sealed partial class MainWindowViewModel : NotifyBase
         }
     }
 
+    public PlotColorMap? SelectedPageDensityColorMap
+    {
+        get => selected_page_element is null ? null : PlotColorMaps.Get(selected_page_element.DensityPalette);
+        set
+        {
+            if (selected_page_element is null || value is null || selected_page_element.DensityPalette == value.Palette)
+                return;
+            selected_page_element.DensityPalette = value.Palette;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(SelectedPageElement));
+            refresh_selected_page_menu_state();
+        }
+    }
+
     public bool CanUseSelectedPageDotColorLogScale => selected_page_element?.DotColor.CanUseLogScale == true;
 
     public void AddFiles(IEnumerable<string> file_paths)
@@ -1284,8 +1324,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         foreach (var group in recalculated_groups)
         {
             group.RecalculateSamples();
-            if (groups_pending_root_view_initialization.Remove(group))
-                ensure_group_root_view_defaults(group);
+            groups_pending_root_view_initialization.Remove(group);
         }
         return recalculated_groups;
     }
@@ -1451,7 +1490,10 @@ public sealed partial class MainWindowViewModel : NotifyBase
         Workspace.IntegrationJobs.Clear();
         Workspace.MetadataColumns.Clear();
         foreach (var group in loaded.Groups)
+        {
+            group.RecalculateDataImpliedViewOptions();
             Workspace.Groups.Add(group);
+        }
         foreach (var layout in loaded.PageLayouts)
             Workspace.PageLayouts.Add(layout);
         foreach (var job in loaded.IntegrationJobs)
@@ -2996,6 +3038,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         gate.PreferredShowGateAnnotationNames = source_gate.PreferredShowGateAnnotationNames;
         gate.PreferredContourLevelCount = source_gate.PreferredContourLevelCount;
         gate.PreferredDensitySmoothing = source_gate.PreferredDensitySmoothing;
+        gate.PreferredDensityPalette = source_gate.PreferredDensityPalette;
         gate.PreferredDotColor = clone_dot_color(source_gate.PreferredDotColor);
 
         foreach (var item in source_gate.SamplePreferredViews)
@@ -3535,6 +3578,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         show_gate_annotation_names = view.ShowGateAnnotationNames;
         contour_level_count = Math.Clamp(view.ContourLevelCount, 2, 80);
         density_smoothing = Math.Clamp(view.DensitySmoothing, 0, 12);
+        density_palette = view.DensityPalette;
         DotColor = clone_dot_color(view.DotColor);
         OnPropertyChanged(nameof(SelectedPlotMode));
         OnPropertyChanged(nameof(EffectivePlotMode));
@@ -3553,6 +3597,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         OnPropertyChanged(nameof(ShowGateAnnotationNames));
         OnPropertyChanged(nameof(ContourLevelCount));
         OnPropertyChanged(nameof(DensitySmoothing));
+        OnPropertyChanged(nameof(SelectedDensityColorMap));
         enforce_active_tool_allowed();
     }
 
@@ -3565,8 +3610,8 @@ public sealed partial class MainWindowViewModel : NotifyBase
         var second = get_default_y_channel(group, first);
         XAxis = new AxisSettings { ChannelName = first.Name };
         YAxis = new AxisSettings { ChannelName = second.Name };
-        apply_channel_range_defaults(XAxis, group, sample: null, population: null);
-        apply_channel_range_defaults(YAxis, group, sample: null, population: null);
+        apply_data_implied_axis_defaults(XAxis, group, fallback_sample: null, fallback_population: null);
+        apply_data_implied_axis_defaults(YAxis, group, fallback_sample: null, fallback_population: null);
     }
 
     private static GateViewOptions create_default_root_view(FlowGroup group)
@@ -3578,8 +3623,8 @@ public sealed partial class MainWindowViewModel : NotifyBase
         var second = get_default_y_channel(group, first);
         var x_axis = new AxisSettings { ChannelName = first.Name };
         var y_axis = new AxisSettings { ChannelName = second.Name };
-        apply_channel_range_defaults(x_axis, group, sample: null, population: null);
-        apply_channel_range_defaults(y_axis, group, sample: null, population: null);
+        apply_data_implied_axis_defaults(x_axis, group, fallback_sample: null, fallback_population: null);
+        apply_data_implied_axis_defaults(y_axis, group, fallback_sample: null, fallback_population: null);
         return new GateViewOptions
         {
             XChannel = x_axis.ChannelName,
@@ -3595,14 +3640,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
 
     private static void ensure_group_root_view_defaults(FlowGroup group)
     {
-        if (group.RootViewOptions.HasView)
-            return;
-
-        var view = create_default_root_view(group);
-        if (!view.HasView)
-            return;
-
-        group.RootViewOptions = clone_gate_view_options(view);
+        group.RecalculateDataImpliedViewOptions();
     }
 
     private static GateViewOptions clone_gate_view_options(GateViewOptions view) =>
@@ -3624,6 +3662,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
             ShowGateAnnotationNames = view.ShowGateAnnotationNames,
             ContourLevelCount = view.ContourLevelCount,
             DensitySmoothing = view.DensitySmoothing,
+            DensityPalette = view.DensityPalette,
             DotColor = clone_dot_color(view.DotColor)
         };
 
@@ -3707,6 +3746,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         gate.PreferredShowGateAnnotationNames = view.ShowGateAnnotationNames;
         gate.PreferredContourLevelCount = view.ContourLevelCount;
         gate.PreferredDensitySmoothing = view.DensitySmoothing;
+        gate.PreferredDensityPalette = view.DensityPalette;
         gate.PreferredDotColor = clone_dot_color(view.DotColor);
     }
 
@@ -3826,6 +3866,30 @@ public sealed partial class MainWindowViewModel : NotifyBase
         refresh_plot_gates();
     }
 
+    private void set_editor_axis_channel(bool is_x_axis, string channel_name)
+    {
+        var axis = editor_axis_defaults(is_x_axis, channel_name);
+        if (is_x_axis)
+            XAxis = axis;
+        else
+            YAxis = axis;
+
+        refresh_axis_menu_state();
+        sync_selected_gate_preferred_view();
+        refresh_plot_gates();
+        schedule_plot_transform_preparation();
+    }
+
+    private AxisSettings editor_axis_defaults(bool is_x_axis, string channel_name)
+    {
+        var axis = new AxisSettings { ChannelName = channel_name };
+        if (try_create_inherited_gate_axis_defaults(is_x_axis, channel_name) is { } inherited)
+            return inherited;
+
+        apply_data_implied_axis_defaults(axis, selected_group, selected_sample, selected_population);
+        return axis;
+    }
+
     private void copy_current_view_to_gate(GateDefinition gate)
     {
         gate.XChannel = XAxis.ChannelName;
@@ -3880,6 +3944,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         gate.PreferredShowGateAnnotationNames = view.ShowGateAnnotationNames;
         gate.PreferredContourLevelCount = view.ContourLevelCount;
         gate.PreferredDensitySmoothing = view.DensitySmoothing;
+        gate.PreferredDensityPalette = view.DensityPalette;
         gate.PreferredDotColor = clone_dot_color(view.DotColor);
     }
 
@@ -3907,6 +3972,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 ShowGateAnnotationNames = gate.PreferredShowGateAnnotationNames,
                 ContourLevelCount = gate.PreferredContourLevelCount,
                 DensitySmoothing = gate.PreferredDensitySmoothing,
+                DensityPalette = gate.PreferredDensityPalette,
                 DotColor = clone_dot_color(gate.PreferredDotColor)
             };
 
@@ -3926,6 +3992,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
             ShowGateAnnotationNames = ShowGateAnnotationNames,
             ContourLevelCount = ContourLevelCount,
             DensitySmoothing = DensitySmoothing,
+            DensityPalette = density_palette,
             DotColor = DotColorClone()
         };
         if (IsYAxisEnabled)
@@ -4052,11 +4119,6 @@ public sealed partial class MainWindowViewModel : NotifyBase
             sample.GetNormalizedChannelValues(axis.ChannelName, axis.Minimum, axis.Maximum, axis.Scale, cancellation_token);
         else
             population.GetNormalizedChannelValues(sample, axis.ChannelName, axis.Minimum, axis.Maximum, axis.Scale, cancellation_token);
-    }
-
-    private void apply_axis_channel_defaults(AxisSettings axis)
-    {
-        apply_channel_range_defaults(axis, selected_group, selected_sample, selected_population);
     }
 
     private static ChannelDefinition? get_default_x_channel(FlowGroup group) =>
@@ -4501,6 +4563,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         if (selected_page_element is not null)
             refresh_dot_color_range(selected_page_element.DotColor, selected_page_element.Group, selected_page_element.Sample, selected_page_element.Population);
         OnPropertyChanged(nameof(SelectedPageDotColorMap));
+        OnPropertyChanged(nameof(SelectedPageDensityColorMap));
         OnPropertyChanged(nameof(CanUseSelectedPageDotColorLogScale));
         refresh_axis_menu_state();
     }
@@ -5187,7 +5250,8 @@ public sealed partial class MainWindowViewModel : NotifyBase
             UsePseudocolor = true,
             DotColor = preferred_view is not null ? clone_dot_color(preferred_view.DotColor) : clone_dot_color(gate.PreferredDotColor),
             ContourLevelCount = preferred_view?.ContourLevelCount ?? gate.PreferredContourLevelCount,
-            DensitySmoothing = preferred_view?.DensitySmoothing ?? gate.PreferredDensitySmoothing
+            DensitySmoothing = preferred_view?.DensitySmoothing ?? gate.PreferredDensitySmoothing,
+            DensityPalette = preferred_view?.DensityPalette ?? gate.PreferredDensityPalette
         };
         PageElements.Add(element);
         SelectedPageElement = element;
@@ -5233,7 +5297,8 @@ public sealed partial class MainWindowViewModel : NotifyBase
             UsePseudocolor = true,
             DotColor = view is not null ? clone_dot_color(view.DotColor) : DotColorClone(),
             ContourLevelCount = view?.ContourLevelCount ?? ContourLevelCount,
-            DensitySmoothing = view?.DensitySmoothing ?? DensitySmoothing
+            DensitySmoothing = view?.DensitySmoothing ?? DensitySmoothing,
+            DensityPalette = view?.DensityPalette ?? density_palette
         };
         PageElements.Add(element);
         SelectedPageElement = element;
@@ -5467,8 +5532,8 @@ public sealed partial class MainWindowViewModel : NotifyBase
         var second = get_default_y_channel(group, first);
         var default_x = new AxisSettings { ChannelName = first.Name };
         var default_y = new AxisSettings { ChannelName = second.Name };
-        apply_channel_range_defaults(default_x, group, sample: null, population: null);
-        apply_channel_range_defaults(default_y, group, sample: null, population: null);
+        apply_data_implied_axis_defaults(default_x, group, fallback_sample: null, fallback_population: null);
+        apply_data_implied_axis_defaults(default_y, group, fallback_sample: null, fallback_population: null);
         return (default_x, default_y, null);
     }
 
@@ -5536,7 +5601,78 @@ public sealed partial class MainWindowViewModel : NotifyBase
 
     private void apply_page_axis_channel_defaults(AxisSettings axis)
     {
-        apply_channel_range_defaults(axis, selected_page_element?.Group ?? selected_group, selected_page_element?.Sample, selected_page_element?.Population);
+        apply_data_implied_axis_defaults(
+            axis,
+            selected_page_element?.Group ?? selected_group,
+            selected_page_element?.Sample,
+            selected_page_element?.Population);
+    }
+
+    private void apply_axis_channel_defaults(AxisSettings axis)
+    {
+        if (try_apply_inherited_gate_axis_defaults(axis))
+            return;
+
+        apply_data_implied_axis_defaults(axis, selected_group, selected_sample, selected_population);
+    }
+
+    private bool try_apply_inherited_gate_axis_defaults(AxisSettings axis)
+    {
+        bool is_x_axis = ReferenceEquals(axis, XAxis);
+        if (try_create_inherited_gate_axis_defaults(is_x_axis, axis.ChannelName) is not { } inherited)
+            return false;
+
+        axis.Minimum = inherited.Minimum;
+        axis.Maximum = inherited.Maximum;
+        axis.Scale = inherited.Scale.Clone();
+        return true;
+    }
+
+    private AxisSettings? try_create_inherited_gate_axis_defaults(bool is_x_axis, string channel_name)
+    {
+        if (selected_gate is null)
+            return null;
+
+        var view = preferred_view_for_current_context(selected_gate);
+        bool has_preferred_view = view?.HasView == true;
+        string? inherited_channel = is_x_axis ? selected_gate.XChannel : selected_gate.YChannel;
+        if (string.IsNullOrWhiteSpace(inherited_channel) ||
+            !string.Equals(channel_name, inherited_channel, StringComparison.Ordinal))
+            return null;
+
+        bool preferred_matches_inherited = has_preferred_view &&
+            string.Equals(is_x_axis ? view!.XChannel : view!.YChannel, inherited_channel, StringComparison.Ordinal);
+
+        return new AxisSettings
+        {
+            ChannelName = channel_name,
+            Minimum = is_x_axis
+                ? (preferred_matches_inherited ? view!.XMinimum : selected_gate.XMinimum)
+                : (preferred_matches_inherited ? view!.YMinimum : selected_gate.YMinimum),
+            Maximum = is_x_axis
+                ? (preferred_matches_inherited ? view!.XMaximum : selected_gate.XMaximum)
+                : (preferred_matches_inherited ? view!.YMaximum : selected_gate.YMaximum),
+            Scale = (is_x_axis
+                ? (preferred_matches_inherited ? view!.XScale : selected_gate.XScale)
+                : (preferred_matches_inherited ? view!.YScale : selected_gate.YScale)).Clone()
+        };
+    }
+
+    private static void apply_data_implied_axis_defaults(
+        AxisSettings axis,
+        FlowGroup? group,
+        FlowSample? fallback_sample,
+        PopulationResult? fallback_population)
+    {
+        if (group?.DataImpliedViewOptions.TryGetValue(axis.ChannelName, out var preset) == true)
+        {
+            axis.Minimum = preset.Minimum;
+            axis.Maximum = preset.Maximum;
+            axis.Scale = preset.Scale.Clone();
+            return;
+        }
+
+        apply_channel_range_defaults(axis, group, fallback_sample, fallback_population);
     }
 
     private static void apply_channel_range_defaults(AxisSettings axis, FlowGroup? group, FlowSample? sample, PopulationResult? population)
@@ -5691,6 +5827,9 @@ public sealed partial class MainWindowViewModel : NotifyBase
         OnPropertyChanged(nameof(IsLayoutContourPlotMode));
         OnPropertyChanged(nameof(IsLayoutZebraPlotMode));
         OnPropertyChanged(nameof(IsLayoutHistogramPlotMode));
+        OnPropertyChanged(nameof(ShowSelectedPageDensityStyleOptions));
+        OnPropertyChanged(nameof(ShowSelectedPageDotplotStyleOptions));
+        OnPropertyChanged(nameof(ShowSelectedPageContourDensityStyleOptions));
         OnPropertyChanged(nameof(IsLayoutXAxisLinearScale));
         OnPropertyChanged(nameof(IsLayoutXAxisLogicleScale));
         OnPropertyChanged(nameof(IsLayoutYAxisLinearScale));
@@ -5725,18 +5864,25 @@ public sealed partial class MainWindowViewModel : NotifyBase
     {
         if (e.PropertyName == nameof(PagePlotElement.PlotMode))
             refresh_selected_page_menu_state();
+        if (e.PropertyName == nameof(PagePlotElement.DensityPalette))
+            OnPropertyChanged(nameof(SelectedPageDensityColorMap));
     }
 
     private void selected_page_menu_axis_changed(object? sender, PropertyChangedEventArgs e)
     {
         refresh_selected_page_menu_state();
-        if (ReferenceEquals(sender, selected_page_element?.XAxis))
+        var element = selected_page_element;
+        if (element is not null && ReferenceEquals(sender, element.XAxis))
         {
+            if (e.PropertyName == nameof(AxisSettings.ChannelName))
+                apply_page_axis_channel_defaults(element.XAxis);
             OnPropertyChanged(nameof(SelectedPageXAxisChoice));
             refresh_axis_menu_state();
         }
-        if (ReferenceEquals(sender, selected_page_element?.YAxis))
+        if (element is not null && ReferenceEquals(sender, element.YAxis))
         {
+            if (e.PropertyName == nameof(AxisSettings.ChannelName))
+                apply_page_axis_channel_defaults(element.YAxis);
             OnPropertyChanged(nameof(SelectedPageYAxisChoice));
             refresh_axis_menu_state();
         }

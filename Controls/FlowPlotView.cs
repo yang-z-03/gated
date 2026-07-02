@@ -71,6 +71,9 @@ public sealed class FlowPlotView : Control
     public static readonly StyledProperty<int> DensitySmoothingProperty =
         AvaloniaProperty.Register<FlowPlotView, int>(nameof(DensitySmoothing), 9);
 
+    public static readonly StyledProperty<PlotColorPalette> DensityPaletteProperty =
+        AvaloniaProperty.Register<FlowPlotView, PlotColorPalette>(nameof(DensityPalette), PlotColorPalette.Turbo);
+
     public static readonly StyledProperty<GatingTool> ActiveToolProperty =
         AvaloniaProperty.Register<FlowPlotView, GatingTool>(nameof(ActiveTool), GatingTool.View);
 
@@ -83,6 +86,27 @@ public sealed class FlowPlotView : Control
     public static readonly StyledProperty<bool> TransformPreparingProperty =
         AvaloniaProperty.Register<FlowPlotView, bool>(nameof(TransformPreparing));
 
+    public static readonly StyledProperty<double> PlotLeftProperty =
+        AvaloniaProperty.Register<FlowPlotView, double>(nameof(PlotLeft));
+
+    public static readonly StyledProperty<double> PlotTopProperty =
+        AvaloniaProperty.Register<FlowPlotView, double>(nameof(PlotTop));
+
+    public static readonly StyledProperty<double> PlotSizeProperty =
+        AvaloniaProperty.Register<FlowPlotView, double>(nameof(PlotSize));
+
+    public static readonly StyledProperty<double> PlotBottomProperty =
+        AvaloniaProperty.Register<FlowPlotView, double>(nameof(PlotBottom));
+
+    public static readonly StyledProperty<double> PlotAxisControlTopProperty =
+        AvaloniaProperty.Register<FlowPlotView, double>(nameof(PlotAxisControlTop));
+
+    public static readonly StyledProperty<double> PlotYAxisControlLeftProperty =
+        AvaloniaProperty.Register<FlowPlotView, double>(nameof(PlotYAxisControlLeft));
+
+    public static readonly StyledProperty<double> PlotYAxisControlTopProperty =
+        AvaloniaProperty.Register<FlowPlotView, double>(nameof(PlotYAxisControlTop));
+
     private const int density_size = 300;
     private int dragging_vertex_index = -1;
     private int dragging_pending_vertex_index = -1;
@@ -91,6 +115,7 @@ public sealed class FlowPlotView : Control
     private GateDefinition? pending_gate;
     private Point pending_preview_point;
     private bool has_pending_preview_point;
+    private bool pending_polygon_close_hover;
     private Rect plot_rect;
     private FlowGroup? subscribed_group;
     private FlowSample? subscribed_sample;
@@ -123,6 +148,7 @@ public sealed class FlowPlotView : Control
             ShowGateAnnotationNamesProperty,
             ContourLevelCountProperty,
             DensitySmoothingProperty,
+            DensityPaletteProperty,
             ActiveToolProperty,
             GateCreatedCommandProperty,
             GateEditedCommandProperty,
@@ -225,6 +251,54 @@ public sealed class FlowPlotView : Control
         set => SetValue(DensitySmoothingProperty, value);
     }
 
+    public PlotColorPalette DensityPalette
+    {
+        get => GetValue(DensityPaletteProperty);
+        set => SetValue(DensityPaletteProperty, value);
+    }
+
+    public double PlotLeft
+    {
+        get => GetValue(PlotLeftProperty);
+        private set => SetValue(PlotLeftProperty, value);
+    }
+
+    public double PlotTop
+    {
+        get => GetValue(PlotTopProperty);
+        private set => SetValue(PlotTopProperty, value);
+    }
+
+    public double PlotSize
+    {
+        get => GetValue(PlotSizeProperty);
+        private set => SetValue(PlotSizeProperty, value);
+    }
+
+    public double PlotBottom
+    {
+        get => GetValue(PlotBottomProperty);
+        private set => SetValue(PlotBottomProperty, value);
+    }
+
+    public double PlotAxisControlTop
+    {
+        get => GetValue(PlotAxisControlTopProperty);
+        private set => SetValue(PlotAxisControlTopProperty, value);
+    }
+
+    public double PlotYAxisControlLeft
+    {
+        get => GetValue(PlotYAxisControlLeftProperty);
+        private set => SetValue(PlotYAxisControlLeftProperty, value);
+    }
+
+    public double PlotYAxisControlTop
+    {
+        get => GetValue(PlotYAxisControlTopProperty);
+        private set => SetValue(PlotYAxisControlTopProperty, value);
+    }
+
     public GatingTool ActiveTool
     {
         get => GetValue(ActiveToolProperty);
@@ -303,6 +377,7 @@ public sealed class FlowPlotView : Control
             || change.Property == ShowOutlierPointsProperty
             || change.Property == DrawLargeDotsProperty
             || change.Property == DensitySmoothingProperty
+            || change.Property == DensityPaletteProperty
             || change.Property == ContourLevelCountProperty)
             invalidate_plot_cache();
         if ((change.Property == XAxisProperty || change.Property == YAxisProperty) && !TransformPreparing)
@@ -323,6 +398,11 @@ public sealed class FlowPlotView : Control
             InvalidateVisual();
             return;
         }
+
+        bool was_close_hover = pending_polygon_close_hover;
+        pending_polygon_close_hover = is_pending_polygon_first_vertex_hit(pointer);
+        if (was_close_hover != pending_polygon_close_hover)
+            InvalidateVisual();
 
         if (plot_rect.Contains(pointer) && (pending_gate is not null || ActiveTool is not GatingTool.View))
         {
@@ -374,7 +454,7 @@ public sealed class FlowPlotView : Control
         const double left_axis_space = 78;
         const double right_space = 20;
         const double top_space = 18;
-        const double bottom_axis_space = 56;
+        const double bottom_axis_space = 104;
         double available_width = bounds.Width - left_axis_space - right_space;
         double available_height = bounds.Height - top_space - bottom_axis_space;
         double size = Math.Min(available_width, available_height);
@@ -386,6 +466,13 @@ public sealed class FlowPlotView : Control
             top_space + (available_height - size) / 2,
             size,
             size);
+        PlotLeft = plot_rect.Left;
+        PlotTop = plot_rect.Top;
+        PlotSize = plot_rect.Width;
+        PlotBottom = plot_rect.Bottom;
+        PlotAxisControlTop = plot_rect.Bottom + 36;
+        PlotYAxisControlLeft = Math.Max(0, plot_rect.Left - 78);
+        PlotYAxisControlTop = plot_rect.Top + plot_rect.Height / 2 - 140;
         context.FillRectangle(Brushes.White, plot_rect);
 
         if (XAxis is null || YAxis is null)
@@ -577,7 +664,7 @@ public sealed class FlowPlotView : Control
             if (normalized <= 0)
                 continue;
 
-            set_pixel(pixels, x_bin, density_size - 1 - y_bin, plot_color(normalized, PlotMode, ContourLevelCount));
+            set_pixel(pixels, x_bin, density_size - 1 - y_bin, plot_color(normalized, PlotMode, ContourLevelCount, DensityPalette));
         }
 
         return create_bitmap(pixels);
@@ -949,7 +1036,10 @@ public sealed class FlowPlotView : Control
         if (pending_gate is null || XAxis is null || YAxis is null || pending_gate.Vertices.Count == 0)
             return;
 
-        var pen = new Pen(new SolidColorBrush(Color.FromRgb(20, 133, 255)), 1.2, DashStyle.Dash);
+        var pen = new Pen(
+            new SolidColorBrush(Color.FromRgb(20, 133, 255)),
+            1.2,
+            pending_gate.Kind == GateKind.Polygon && pending_polygon_close_hover ? null : DashStyle.Dash);
         var handle_fill = Brushes.White;
         var handle_stroke = new Pen(new SolidColorBrush(Color.FromRgb(20, 133, 255)), 1.2);
 
@@ -958,7 +1048,9 @@ public sealed class FlowPlotView : Control
             for (int index = 0; index < pending_gate.Vertices.Count - 1; index++)
                 context.DrawLine(pen, data_to_screen(pending_gate.Vertices[index]), data_to_screen(pending_gate.Vertices[index + 1]));
 
-            if (has_pending_preview_point)
+            if (pending_polygon_close_hover && pending_gate.Vertices.Count >= 3)
+                context.DrawLine(pen, data_to_screen(pending_gate.Vertices[^1]), data_to_screen(pending_gate.Vertices[0]));
+            else if (has_pending_preview_point)
                 context.DrawLine(pen, data_to_screen(pending_gate.Vertices[^1]), data_to_screen(pending_preview_point));
         }
         else if (pending_gate.Kind == GateKind.Rectangle)
@@ -1329,30 +1421,7 @@ public sealed class FlowPlotView : Control
                 draw_right_aligned_text(context, format_axis_value(value), new Point(plot_rect.Left - 10, y - 7), 10, Color.FromRgb(128, 128, 128));
             }
 
-            draw_vertical_centered_text(context, axis_title(YAxis), new Point(plot_rect.Left - 62, plot_rect.Top + plot_rect.Height / 2), 14, Color.FromRgb(190, 198, 210));
         }
-
-        draw_centered_text(
-            context,
-            axis_title(XAxis),
-            new Point(plot_rect.Left + plot_rect.Width / 2, plot_rect.Bottom + 34),
-            14,
-            Color.FromRgb(190, 198, 210),
-            bolded: true);
-    }
-
-    private string axis_title(AxisSettings axis)
-    {
-        string name = axis.ChannelName ?? "";
-        if (string.IsNullOrWhiteSpace(name))
-            return "";
-
-        var channel = Sample?.Channels.FirstOrDefault(item => item.Name == name) ??
-                      Group?.Channels.FirstOrDefault(item => item.Name == name);
-        string label = channel?.Label?.Trim() ?? "";
-        return string.IsNullOrWhiteSpace(label) || string.Equals(label, name, StringComparison.Ordinal)
-            ? name
-            : $"{label} ({name})";
     }
 
     private IEnumerable<FlowSample> resolve_samples()
@@ -1432,6 +1501,14 @@ public sealed class FlowPlotView : Control
 
         if (pending_gate is not null && pending_gate.Kind != active_tool_gate_kind())
             clear_pending_gate();
+
+        if (pending_gate?.Kind == GateKind.Polygon &&
+            pending_gate.Vertices.Count >= 3 &&
+            pending_polygon_close_hover)
+        {
+            commit_created_gate(pending_gate);
+            return;
+        }
 
         if (pending_gate?.Kind == GateKind.Polygon && click_count > 1 && pending_gate.Vertices.Count >= 3)
         {
@@ -1566,7 +1643,19 @@ public sealed class FlowPlotView : Control
     {
         pending_gate = null;
         has_pending_preview_point = false;
+        pending_polygon_close_hover = false;
         InvalidateVisual();
+    }
+
+    private bool is_pending_polygon_first_vertex_hit(Point pointer)
+    {
+        if (pending_gate?.Kind != GateKind.Polygon || pending_gate.Vertices.Count < 3)
+            return false;
+
+        var first = data_to_screen(pending_gate.Vertices[0]);
+        double dx = pointer.X - first.X;
+        double dy = pointer.Y - first.Y;
+        return dx * dx + dy * dy <= 100;
     }
 
     private Point data_to_screen(Point data)
@@ -1649,19 +1738,6 @@ public sealed class FlowPlotView : Control
         return Math.Sqrt(Math.Pow(vertex.X - pointer.X, 2) + Math.Pow(vertex.Y - pointer.Y, 2));
     }
 
-    private static Color density_color(double value)
-    {
-        value = Math.Clamp(value, 0, 1);
-        if (value < 0.25)
-            return Color.FromRgb(21, 35, Convert.ToByte(110 + value * 360));
-        if (value < 0.5)
-            return Color.FromRgb(0, Convert.ToByte(80 + value * 260), 220);
-        if (value < 0.75)
-            return Color.FromRgb(Convert.ToByte((value - 0.5) * 720), 230, 95);
-
-        return Color.FromRgb(255, Convert.ToByte(220 - (value - 0.75) * 260), 40);
-    }
-
     private static double[,] smooth_density(double[,] source, int passes)
     {
         passes = Math.Clamp(passes, 0, 12);
@@ -1729,7 +1805,7 @@ public sealed class FlowPlotView : Control
         return levels;
     }
 
-    private static Color plot_color(double value, PlotMode mode, int level_count)
+    private static Color plot_color(double value, PlotMode mode, int level_count, PlotColorPalette density_palette)
     {
         if (mode == PlotMode.Zebra)
         {
@@ -1746,11 +1822,8 @@ public sealed class FlowPlotView : Control
             return cycle[band % cycle.Length];
         }
 
-        return density_color(value);
+        return PlotColorMaps.ColorAt(density_palette, value);
     }
-
-    private static byte to_byte(double value) =>
-        Convert.ToByte(Math.Clamp((int)Math.Round(value), 0, 255));
 
     private void draw_text(DrawingContext context, string text, Point origin, double size, Color color, bool bolded = false)
     {

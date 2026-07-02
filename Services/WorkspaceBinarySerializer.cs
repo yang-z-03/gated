@@ -11,7 +11,7 @@ namespace gated.Services;
 public sealed class WorkspaceBinarySerializer
 {
     private const uint magic = 0x44544731;
-    private const int version = 44;
+    private const int version = 45;
     private const int minimum_supported_version = 42;
 
     public void Save(FlowWorkspace workspace, string file_path)
@@ -508,6 +508,7 @@ public sealed class WorkspaceBinarySerializer
             gate.PreferredShowGateAnnotationNames,
             gate.PreferredContourLevelCount,
             gate.PreferredDensitySmoothing,
+            gate.PreferredDensityPalette,
             gate.PreferredDotColor);
 
         writer.Write(gate.SamplePreferredViews.Count);
@@ -596,6 +597,7 @@ public sealed class WorkspaceBinarySerializer
             value => gate.PreferredShowGateAnnotationNames = value,
             value => gate.PreferredContourLevelCount = value,
             value => gate.PreferredDensitySmoothing = value,
+            value => gate.PreferredDensityPalette = value,
             value => gate.PreferredDotColor = value,
             file_version);
 
@@ -659,6 +661,7 @@ public sealed class WorkspaceBinarySerializer
             view.ShowGateAnnotationNames,
             view.ContourLevelCount,
             view.DensitySmoothing,
+            view.DensityPalette,
             view.DotColor);
     }
 
@@ -686,6 +689,7 @@ public sealed class WorkspaceBinarySerializer
             value => view.ShowGateAnnotationNames = value,
             value => view.ContourLevelCount = value,
             value => view.DensitySmoothing = value,
+            value => view.DensityPalette = value,
             value => view.DotColor = value,
             file_version);
         return view;
@@ -701,6 +705,7 @@ public sealed class WorkspaceBinarySerializer
         bool show_gate_annotation_names,
         int contour_level_count,
         int density_smoothing,
+        PlotColorPalette density_palette,
         DotColorSettings dot_color)
     {
         writer.Write((int)plot_mode);
@@ -711,6 +716,7 @@ public sealed class WorkspaceBinarySerializer
         writer.Write(show_gate_annotation_names);
         writer.Write(contour_level_count);
         writer.Write(density_smoothing);
+        writer.Write((int)density_palette);
         write_dot_color_settings(writer, dot_color);
     }
 
@@ -724,6 +730,7 @@ public sealed class WorkspaceBinarySerializer
         Action<bool> set_show_gate_annotation_names,
         Action<int> set_contour_level_count,
         Action<int> set_density_smoothing,
+        Action<PlotColorPalette> set_density_palette,
         Action<DotColorSettings> set_dot_color,
         int file_version)
     {
@@ -735,6 +742,7 @@ public sealed class WorkspaceBinarySerializer
         set_show_gate_annotation_names(reader.ReadBoolean());
         set_contour_level_count(reader.ReadInt32());
         set_density_smoothing(reader.ReadInt32());
+        set_density_palette(file_version >= 45 ? (PlotColorPalette)reader.ReadInt32() : PlotColorPalette.Turbo);
         if (file_version >= 44)
             set_dot_color(read_dot_color_settings(reader));
     }
@@ -1309,6 +1317,7 @@ public sealed class WorkspaceBinarySerializer
             writer.Write(element.ShowGateAnnotationNames);
             writer.Write(element.ContourLevelCount);
             writer.Write(element.DensitySmoothing);
+            writer.Write((int)element.DensityPalette);
             write_axis_settings(writer, element.XAxis);
             write_axis_settings(writer, element.YAxis);
             write_string(writer, element.DotColor.ChannelName);
@@ -1379,6 +1388,9 @@ public sealed class WorkspaceBinarySerializer
             bool show_gate_annotation_names = reader.ReadBoolean();
             int contour_level_count = reader.ReadInt32();
             int density_smoothing = reader.ReadInt32();
+            var density_palette = file_version >= 45
+                ? (PlotColorPalette)reader.ReadInt32()
+                : PlotColorPalette.Turbo;
             var x_axis = read_axis_settings(reader);
             var y_axis = read_axis_settings(reader);
             string dot_color_channel = read_string(reader);
@@ -1485,6 +1497,7 @@ public sealed class WorkspaceBinarySerializer
             element.ShowGateAnnotationNames = show_gate_annotation_names;
             element.ContourLevelCount = contour_level_count;
             element.DensitySmoothing = density_smoothing;
+            element.DensityPalette = density_palette;
             initialize_dot_color_range(element, reset_selection: file_version < 43);
             if (element is StatisticTableElement statistic_table)
                 read_statistic_table_columns(reader, workspace, statistic_table);
