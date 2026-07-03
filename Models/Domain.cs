@@ -44,7 +44,32 @@ public enum PlotColorPalette
     Viridis,
     Plasma,
     Turbo,
-    Gray
+    Gray,
+    YellowGreen,
+    YellowGreenBlue,
+    GreenBlue,
+    BlueGreen,
+    PurpleBlueGreen,
+    PurpleBlue,
+    BluePurple,
+    RedPurple,
+    PurpleRed,
+    OrangeRed,
+    YellowOrangeRed,
+    Purples,
+    Blues,
+    Greens,
+    Oranges,
+    Reds,
+    Greys,
+    Spectral,
+    Inferno,
+    Magma,
+    Cividis,
+    Colorblind,
+    Sunset,
+    Iridescent,
+    Rainbow
 }
 
 public sealed class PlotColorMap
@@ -89,31 +114,35 @@ public static class PlotColorMaps
 {
     public static IReadOnlyList<PlotColorMap> All { get; } =
     [
-        new(PlotColorPalette.Viridis, "Viridis", [
-            Color.FromRgb(68, 1, 84),
-            Color.FromRgb(59, 82, 139),
-            Color.FromRgb(33, 145, 140),
-            Color.FromRgb(94, 201, 98),
-            Color.FromRgb(253, 231, 37)
-        ]),
-        new(PlotColorPalette.Plasma, "Plasma", [
-            Color.FromRgb(13, 8, 135),
-            Color.FromRgb(126, 3, 168),
-            Color.FromRgb(204, 71, 120),
-            Color.FromRgb(248, 149, 64),
-            Color.FromRgb(240, 249, 33)
-        ]),
-        new(PlotColorPalette.Turbo, "Turbo", [
-            Color.FromRgb(48, 18, 59),
-            Color.FromRgb(61, 111, 225),
-            Color.FromRgb(48, 204, 90),
-            Color.FromRgb(246, 214, 69),
-            Color.FromRgb(180, 31, 35)
-        ]),
-        new(PlotColorPalette.Gray, "Gray", [
-            Color.FromRgb(30, 30, 30),
-            Color.FromRgb(250, 250, 250)
-        ])
+        map(PlotColorPalette.Viridis, "Viridis", "#440154", "#46317E", "#365A8C", "#277E8E", "#1EA087", "#49C16D", "#9DD93A", "#FDE724"),
+        map(PlotColorPalette.Plasma, "Plasma", "#0C0786", "#5201A3", "#8908A5", "#B83289", "#DA5A68", "#F38748", "#FDBB2B", "#EFF821"),
+        map(PlotColorPalette.Turbo, "Turbo", "#30123b", "#4560d6", "#36a8f9", "#1ae4b6", "#71fd5f", "#c5ef33", "#f9ba38", "#f66b18", "#cb2b03", "#7a0402"),
+        map(PlotColorPalette.Gray, "Gray", "#000000", "#252525", "#525252", "#737373", "#969696", "#bdbdbd", "#d9d9d9", "#f0f0f0", "#ffffff"),
+        map(PlotColorPalette.YellowGreen, "Yellow-Green", "#004529", "#006837", "#238443", "#41ab5d", "#78c679", "#addd8e", "#d9f0a3", "#f7fcb9", "#ffffe5"),
+        map(PlotColorPalette.YellowGreenBlue, "Yellow-Green-Blue", "#081d58", "#253494", "#225ea8", "#1d91c0", "#41b6c4", "#7fcdbb", "#c7e9b4", "#edf8b1", "#ffffd9"),
+        map(PlotColorPalette.GreenBlue, "Green-Blue", "#084081", "#0868ac", "#2b8cbe", "#4eb3d3", "#7bccc4", "#a8ddb5", "#ccebc5", "#e0f3db", "#f7fcf0"),
+        map(PlotColorPalette.BlueGreen, "Blue-Green", "#00441b", "#006d2c", "#238b45", "#41ae76", "#66c2a4", "#99d8c9", "#ccece6", "#e5f5f9", "#f7fcfd"),
+        map(PlotColorPalette.PurpleBlueGreen, "Purple-Blue-Green", "#014636", "#016c59", "#02818a", "#3690c0", "#67a9cf", "#a6bddb", "#d0d1e6", "#ece2f0", "#fff7fb"),
+        map(PlotColorPalette.PurpleBlue, "Purple-Blue", "#023858", "#045a8d", "#0570b0", "#3690c0", "#74a9cf", "#a6bddb", "#d0d1e6", "#ece7f2", "#fff7fb"),
+        map(PlotColorPalette.BluePurple, "Blue-Purple", "#4d004b", "#810f7c", "#88419d", "#8c6bb1", "#8c96c6", "#9ebcda", "#bfd3e6", "#e0ecf4", "#f7fcfd"),
+        map(PlotColorPalette.RedPurple, "Red-Purple", "#49006a", "#7a0177", "#ae017e", "#dd3497", "#f768a1", "#fa9fb5", "#fcc5c0", "#fde0dd", "#fff7f3"),
+        map(PlotColorPalette.PurpleRed, "Purple-Red", "#67001f", "#980043", "#ce1256", "#e7298a", "#df65b0", "#c994c7", "#d4b9da", "#e7e1ef", "#f7f4f9"),
+        map(PlotColorPalette.OrangeRed, "Orange-Red", "#7f0000", "#b30000", "#d7301f", "#ef6548", "#fc8d59", "#fdbb84", "#fdd49e", "#fee8c8", "#fff7ec"),
+        map(PlotColorPalette.YellowOrangeRed, "Yellow-Orange-Red", "#800026", "#bd0026", "#e31a1c", "#fc4e2a", "#fd8d3c", "#feb24c", "#fed976", "#ffeda0", "#ffffcc"),
+        map(PlotColorPalette.Purples, "Purples", "#3f007d", "#54278f", "#6a51a3", "#807dba", "#9e9ac8", "#bcbddc", "#dadaeb", "#efedf5", "#fcfbfd"),
+        map(PlotColorPalette.Blues, "Blues", "#08306b", "#08519c", "#2171b5", "#4292c6", "#6baed6", "#9ecae1", "#c6dbef", "#deebf7", "#f7fbff"),
+        map(PlotColorPalette.Greens, "Greens", "#00441b", "#006d2c", "#238b45", "#41ab5d", "#74c476", "#a1d99b", "#c7e9c0", "#e5f5e0", "#f7fcf5"),
+        map(PlotColorPalette.Oranges, "Oranges", "#7f2704", "#a63603", "#d94801", "#f16913", "#fd8d3c", "#fdae6b", "#fdd0a2", "#fee6ce", "#fff5eb"),
+        map(PlotColorPalette.Reds, "Reds", "#67000d", "#a50f15", "#cb181d", "#ef3b2c", "#fb6a4a", "#fc9272", "#fcbba1", "#fee0d2", "#fff5f0"),
+        map(PlotColorPalette.Greys, "Greys", "#000000", "#252525", "#525252", "#737373", "#969696", "#bdbdbd", "#d9d9d9", "#f0f0f0", "#ffffff"),
+        map(PlotColorPalette.Spectral, "Spectral", "#3288bd", "#66c2a5", "#abdda4", "#e6f598", "#fee08b", "#fdae61", "#f46d43", "#d53e4f"),
+        map(PlotColorPalette.Inferno, "Inferno", "#000003", "#270B52", "#63146E", "#9E2963", "#D24742", "#F57C15", "#FABF25", "#FCFEA4"),
+        map(PlotColorPalette.Magma, "Magma", "#000003", "#221150", "#5D177E", "#972C7F", "#D1426E", "#F8755C", "#FEB97F", "#FBFCBF"),
+        map(PlotColorPalette.Cividis, "Cividis", "#00204C", "#15396D", "#49536B", "#6C6D72", "#8D8878", "#B2A672", "#D9C661", "#FFE945"),
+        map(PlotColorPalette.Colorblind, "Colorblind", "#0072B2", "#E69F00", "#F0E442", "#009E73", "#56B4E9", "#D55E00", "#CC79A7", "#000000"),
+        map(PlotColorPalette.Sunset, "Sunset", "#364B9A", "#4A7BB7", "#6EA6CD", "#98CAE1", "#C2E4EF", "#EAECCC", "#FEDA8B", "#FDB366", "#F67E4B", "#DD3D2D", "#A50026"),
+        map(PlotColorPalette.Iridescent, "Iridescent", "#FEFBE9", "#FCF7D5", "#F5F3C1", "#EAF0B5", "#DDECBF", "#D0E7CA", "#C2E3D2", "#B5DDD8", "#A8D8DC", "#9BD2E1", "#8DCBE4", "#81C4E7", "#7BBCE7", "#7EB2E4", "#88A5DD", "#9398D2", "#9B8AC4", "#9D7DB2", "#9A709E", "#906388", "#805770", "#684957", "#46353A"),
+        map(PlotColorPalette.Rainbow, "Rainbow", "#E8ECFB", "#D9CCE3", "#CAACCB", "#BA8DB4", "#AA6F9E", "#994F88", "#882E72", "#1965B0", "#437DBF", "#6195CF", "#7BAFDE", "#4EB265", "#90C987", "#CAE0AB", "#F7F056", "#F7CB45", "#F4A736", "#EE8026", "#E65518", "#DC050C", "#A5170E", "#72190E", "#42150A")
     ];
 
     public static PlotColorMap Get(PlotColorPalette palette) =>
@@ -121,6 +150,20 @@ public static class PlotColorMaps
 
     public static Color ColorAt(PlotColorPalette palette, double value) =>
         Get(palette).ColorAt(value);
+
+    private static PlotColorMap map(PlotColorPalette palette, string name, params string[] colors) =>
+        new(palette, name, colors.Select(parse_hex_color).ToArray());
+
+    private static Color parse_hex_color(string value)
+    {
+        string hex = value.TrimStart('#');
+        if (hex.Length != 6)
+            return Colors.Black;
+        return Color.FromRgb(
+            Convert.ToByte(hex[..2], 16),
+            Convert.ToByte(hex[2..4], 16),
+            Convert.ToByte(hex[4..6], 16));
+    }
 }
 
 public enum MetadataColumnKind

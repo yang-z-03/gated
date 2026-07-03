@@ -5,24 +5,23 @@
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
   xmlns:uap18="http://schemas.microsoft.com/appx/manifest/uap/windows10/18"
-  xmlns:desktop6="http://schemas.microsoft.com/appx/manifest/desktop/windows10/6"
   IgnorableNamespaces="uap rescap uap18">
 
     <Identity
       Name="Gated.xornent.gated.msix"
-      Publisher="CN=286423E6-E5A4-4E0D-A786-5A50EBF8C7F5"
-      Version="0.31.13.0" />
+      Publisher="CN=XSI"
+      Version="0.31.20.0" />
 
     <Properties>
         <DisplayName>xornent.gated.msix</DisplayName>
         <PublisherDisplayName>Gated</PublisherDisplayName>
         <Logo>Images\StoreLogo.png</Logo>
-        <desktop6:FileSystemWriteVirtualization>disabled</desktop6:FileSystemWriteVirtualization>
     </Properties>
 
     <Dependencies>
         <TargetDeviceFamily Name="Windows.Universal" MinVersion="10.0.0.0" MaxVersionTested="10.0.0.0" />
         <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.14393.0" MaxVersionTested="10.0.14393.0" />
+        <PackageDependency Name="Microsoft.VCLibs.140.00.UWPDesktop" MinVersion="14.0.24217.0" Publisher="CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US" />
     </Dependencies>
 
     <Resources>
@@ -69,6 +68,5 @@
     <Capabilities>
         <Capability Name="internetClient" />
         <rescap:Capability Name="runFullTrust" />
-        <rescap:Capability Name="unvirtualizedResources" />
     </Capabilities>
 </Package>

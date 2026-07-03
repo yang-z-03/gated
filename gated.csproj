@@ -2,7 +2,7 @@
     <PropertyGroup>
         <OutputType>WinExe</OutputType>
         <TargetFramework>net10.0</TargetFramework>
-        <Version>0.31.2</Version>
+        <Version>0.31.20</Version>
         <Nullable>enable</Nullable>
         <RuntimeIdentifiers>win-x64;osx-x64;osx-arm64;linux-x64</RuntimeIdentifiers>
         <ApplicationManifest>app.manifest</ApplicationManifest>
@@ -18,12 +18,16 @@
     </Target>
     <ItemGroup>
       <AvaloniaXaml Remove="artifacts\**" />
+      <AvaloniaXaml Remove="Msix\**" />
       <AvaloniaXaml Remove="Updater\**" />
       <Compile Remove="artifacts\**" />
+      <Compile Remove="Msix\**" />
       <Compile Remove="Updater\**" />
       <EmbeddedResource Remove="artifacts\**" />
+      <EmbeddedResource Remove="Msix\**" />
       <EmbeddedResource Remove="Updater\**" />
       <None Remove="artifacts\**" />
+      <None Remove="Msix\**" />
       <None Remove="Updater\**" />
 
       <AvaloniaXaml Remove="Installer\**" />
@@ -52,7 +56,6 @@
         <PackageReference Include="Tmds.DBus.Protocol" Version="0.21.3" />
         <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="3.116.1" />
     </ItemGroup>
-
     <ItemGroup>
       <None Remove="Fonts\*.ttf" />
       <AvaloniaResource Include="Fonts\*.ttf" />

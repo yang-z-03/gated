@@ -1504,7 +1504,15 @@ public sealed class PageEditorView : Control
     private static IEnumerable<GateDefinition> resolve_plot_gates(PagePlotElement element)
     {
         if (element.Gate is null)
+        {
+            if (element.Group is null)
+                yield break;
+
+            foreach (var gate in element.Group.Gates)
+                if (gate_matches_element_axes(gate, element))
+                    yield return gate;
             yield break;
+        }
 
         foreach (var child in element.Gate.Children)
         {

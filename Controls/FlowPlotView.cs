@@ -467,7 +467,7 @@ public sealed class FlowPlotView : Control
 
         if (dragging_vertex_index < 0 || dragging_gate is null || XAxis is null || YAxis is null)
         {
-            Cursor = find_nearest_vertex(pointer, out _) >= 0 ? new Cursor(StandardCursorType.Hand) : Cursor.Default;
+            Cursor = find_nearest_vertex(pointer, out _) >= 0 ? new Avalonia.Input.Cursor(StandardCursorType.Hand) : Avalonia.Input.Cursor.Default;
             return;
         }
 
@@ -537,7 +537,7 @@ public sealed class FlowPlotView : Control
         PlotAxisControlTop = plot_rect.Bottom + 36;
         PlotYAxisControlLeft = Math.Max(0, plot_rect.Left - 78);
         PlotYAxisControlTop = plot_rect.Top + plot_rect.Height / 2 - PlotAxisControlWidth / 2;
-        PlotAxisSwapButtonLeft = Math.Max(0, PlotAxisControlLeft - 40);
+        PlotAxisSwapButtonLeft = PlotYAxisControlLeft;
         PlotAxisSwapButtonTop = PlotAxisControlTop;
         context.FillRectangle(Brushes.White, plot_rect);
 

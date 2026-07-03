@@ -25,7 +25,8 @@ class Program
     // yet and stuff might break.
     
     [STAThread]
-    public static void Main(string[] args) {
+    public static void Main(string[] args) 
+    {
         Directory.CreateDirectory(Shared.PlatformSupport.PersistenceDirectory);
         string python_home = Shared.PlatformSupport.EmbeddedPythonHome();
         string path = string.Join(

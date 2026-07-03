@@ -326,12 +326,8 @@
                 <MenuItem x:Name="editor_y_channel_menu" Header="Y selected channel" />
                 <MenuItem x:Name="editor_color_channel_menu" Header="Dot color" />
                 <MenuItem Header="Coloring in log scale" ToggleType="CheckBox" IsChecked="{Binding DotColor.UseLogScale, Mode=TwoWay}" />
-                <MenuItem Header="Dot color palette">
-                    <MenuItem Header="Viridis" Click="viridis_color_menu_item_click" />
-                    <MenuItem Header="Plasma" Click="plasma_color_menu_item_click" />
-                    <MenuItem Header="Turbo" Click="turbo_color_menu_item_click" />
-                    <MenuItem Header="Gray" Click="gray_color_menu_item_click" />
-                </MenuItem>
+                <MenuItem x:Name="editor_density_palette_menu" Header="Density palette" />
+                <MenuItem x:Name="editor_dot_color_palette_menu" Header="Dot color palette" />
                 <MenuItem Header="X axis scale">
                     <MenuItem Header="Linear" ToggleType="Radio" IsChecked="{Binding IsEditorXAxisLinearScale, Mode=TwoWay}" />
                     <MenuItem Header="Logicle" ToggleType="Radio" IsChecked="{Binding IsEditorXAxisLogicleScale, Mode=TwoWay}" />
@@ -366,12 +362,8 @@
                 <MenuItem x:Name="layout_y_channel_menu" Header="Y selected channel" IsEnabled="{Binding HasSelectedPageElement}" />
                 <MenuItem x:Name="layout_color_channel_menu" Header="Dot color" IsEnabled="{Binding HasSelectedPageElement}" />
                 <MenuItem Header="Coloring in log scale" ToggleType="CheckBox" IsEnabled="{Binding HasSelectedPageElement}" IsChecked="{Binding SelectedPageElement.DotColor.UseLogScale, Mode=TwoWay}" />
-                <MenuItem Header="Dot color palette" IsEnabled="{Binding HasSelectedPageElement}">
-                    <MenuItem Header="Viridis" Click="layout_viridis_color_menu_item_click" />
-                    <MenuItem Header="Plasma" Click="layout_plasma_color_menu_item_click" />
-                    <MenuItem Header="Turbo" Click="layout_turbo_color_menu_item_click" />
-                    <MenuItem Header="Gray" Click="layout_gray_color_menu_item_click" />
-                </MenuItem>
+                <MenuItem x:Name="layout_density_palette_menu" Header="Density palette" IsEnabled="{Binding HasSelectedPageElement}" />
+                <MenuItem x:Name="layout_dot_color_palette_menu" Header="Dot color palette" IsEnabled="{Binding HasSelectedPageElement}" />
                 <MenuItem Header="X axis scale" IsEnabled="{Binding HasSelectedPageElement}">
                     <MenuItem Header="Linear" ToggleType="Radio" IsChecked="{Binding IsLayoutXAxisLinearScale, Mode=TwoWay}" />
                     <MenuItem Header="Logicle" ToggleType="Radio" IsChecked="{Binding IsLayoutXAxisLogicleScale, Mode=TwoWay}" />

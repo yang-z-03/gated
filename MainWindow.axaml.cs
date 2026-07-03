@@ -7,7 +7,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 using System.Threading.Tasks;
-using System.Windows.Input;
+using ICommand = System.Windows.Input.ICommand;
 using Avalonia.Data;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -79,6 +79,7 @@ public partial class MainWindow : Window
         update_statistics_columns();
         update_metadata_columns(workspace_metadata_grid, view_model.WorkspaceMetadataTable);
         update_channel_menus();
+        update_palette_menus();
         update_recent_items_menu();
         update_script_repository_menus();
         update_page_editor_viewport_size();
@@ -231,6 +232,12 @@ public partial class MainWindow : Window
             update_metadata_columns(workspace_metadata_grid, view_model.WorkspaceMetadataTable);
         if (e.PropertyName == nameof(MainWindowViewModel.SelectedGroup))
             update_script_repository_menus();
+        if (e.PropertyName is nameof(MainWindowViewModel.SelectedDensityColorMap)
+            or nameof(MainWindowViewModel.SelectedDotColorMap)
+            or nameof(MainWindowViewModel.SelectedPageDensityColorMap)
+            or nameof(MainWindowViewModel.SelectedPageDotColorMap)
+            or nameof(MainWindowViewModel.SelectedPageElement))
+            update_palette_menus();
         if (e.PropertyName is nameof(MainWindowViewModel.SelectedXAxisChoice)
             or nameof(MainWindowViewModel.SelectedYAxisChoice)
             or nameof(MainWindowViewModel.SelectedDotColorChoice)
@@ -418,7 +425,7 @@ public partial class MainWindow : Window
             apply_small_button_classes(content);
     }
 
-    private async void window_key_down(object? sender, KeyEventArgs e)
+    private async void window_key_down(object? sender, Avalonia.Input.KeyEventArgs e)
     {
         if (e.KeyModifiers == KeyModifiers.Control && e.Key == Key.O)
         {
@@ -511,7 +518,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private static void execute_shortcut_command(System.Windows.Input.ICommand command, KeyEventArgs e)
+    private static void execute_shortcut_command(System.Windows.Input.ICommand command, Avalonia.Input.KeyEventArgs e)
     {
         if (!command.CanExecute(null))
             return;
@@ -1640,6 +1647,55 @@ public partial class MainWindow : Window
             view_model.SelectedPageDotColorChoice = choice;
     }
 
+    private void update_palette_menus()
+    {
+        populate_palette_menu(editor_density_palette_menu, view_model.SelectedDensityColorMap.Palette, editor_density_palette_menu_item_click);
+        populate_palette_menu(editor_dot_color_palette_menu, view_model.DotColor.Palette, editor_dot_color_palette_menu_item_click);
+        populate_palette_menu(layout_density_palette_menu, view_model.SelectedPageElement?.DensityPalette, layout_density_palette_menu_item_click);
+        populate_palette_menu(layout_dot_color_palette_menu, view_model.SelectedPageElement?.DotColor.Palette, layout_dot_color_palette_menu_item_click);
+    }
+
+    private static void populate_palette_menu(MenuItem menu, PlotColorPalette? selected, EventHandler<RoutedEventArgs> click)
+    {
+        menu.Items.Clear();
+        foreach (var color_map in PlotColorMaps.All)
+        {
+            var item = new MenuItem
+            {
+                Header = color_map.Name,
+                Tag = color_map,
+                ToggleType = MenuItemToggleType.Radio,
+                IsChecked = selected == color_map.Palette
+            };
+            item.Click += click;
+            menu.Items.Add(item);
+        }
+    }
+
+    private void editor_density_palette_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if ((e.Source as MenuItem)?.Tag is PlotColorMap color_map)
+            view_model.SelectedDensityColorMap = color_map;
+    }
+
+    private void editor_dot_color_palette_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if ((e.Source as MenuItem)?.Tag is PlotColorMap color_map)
+            view_model.SelectedDotColorMap = color_map;
+    }
+
+    private void layout_density_palette_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if ((e.Source as MenuItem)?.Tag is PlotColorMap color_map)
+            view_model.SelectedPageDensityColorMap = color_map;
+    }
+
+    private void layout_dot_color_palette_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if ((e.Source as MenuItem)?.Tag is PlotColorMap color_map)
+            view_model.SelectedPageDotColorMap = color_map;
+    }
+
     private void viridis_color_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
         view_model.DotColor.Palette = PlotColorPalette.Viridis;
 
@@ -1717,11 +1773,8 @@ public partial class MainWindow : Window
             channel_context_menu("Y selected channel", view_model.SelectedPageAxisChoices, view_model.SelectedPageYAxisChoice, layout_y_channel_menu_item_click),
             channel_context_menu("Dot color", view_model.SelectedPageColorChoices, view_model.SelectedPageDotColorChoice, layout_color_channel_menu_item_click),
             bound_check_menu_item("Coloring in log scale", "SelectedPageElement.DotColor.UseLogScale"),
-            parent_menu_item("Dot color palette",
-                click_menu_item("Viridis", layout_viridis_color_menu_item_click),
-                click_menu_item("Plasma", layout_plasma_color_menu_item_click),
-                click_menu_item("Turbo", layout_turbo_color_menu_item_click),
-                click_menu_item("Gray", layout_gray_color_menu_item_click)),
+            palette_context_menu("Density palette", element.DensityPalette, color_map => view_model.SelectedPageDensityColorMap = color_map),
+            palette_context_menu("Dot color palette", element.DotColor.Palette, color_map => view_model.SelectedPageDotColorMap = color_map),
             parent_menu_item("X axis scale",
                 bound_radio_menu_item("Linear", nameof(MainWindowViewModel.IsLayoutXAxisLinearScale)),
                 bound_radio_menu_item("Logicle", nameof(MainWindowViewModel.IsLayoutXAxisLogicleScale))),
@@ -1981,11 +2034,8 @@ public partial class MainWindow : Window
             channel_context_menu("Y selected channel", view_model.AxisChoices, view_model.SelectedYAxisChoice, editor_y_channel_menu_item_click),
             channel_context_menu("Dot color", view_model.ColorChoices, view_model.SelectedDotColorChoice, editor_color_channel_menu_item_click),
             bound_check_menu_item("Coloring in log scale", "DotColor.UseLogScale"),
-            parent_menu_item("Dot color palette",
-                click_menu_item("Viridis", viridis_color_menu_item_click),
-                click_menu_item("Plasma", plasma_color_menu_item_click),
-                click_menu_item("Turbo", turbo_color_menu_item_click),
-                click_menu_item("Gray", gray_color_menu_item_click)),
+            palette_context_menu("Density palette", view_model.SelectedDensityColorMap.Palette, color_map => view_model.SelectedDensityColorMap = color_map),
+            palette_context_menu("Dot color palette", view_model.DotColor.Palette, color_map => view_model.SelectedDotColorMap = color_map),
             parent_menu_item("X axis scale",
                 bound_radio_menu_item("Linear", nameof(MainWindowViewModel.IsEditorXAxisLinearScale)),
                 bound_radio_menu_item("Logicle", nameof(MainWindowViewModel.IsEditorXAxisLogicleScale))),
@@ -2114,6 +2164,29 @@ public partial class MainWindow : Window
         };
         foreach (var item in items)
             menu.Items.Add(item);
+        return menu;
+    }
+
+    private MenuItem palette_context_menu(string header, PlotColorPalette selected, Action<PlotColorMap> select)
+    {
+        var menu = new MenuItem
+        {
+            Header = header,
+            DataContext = view_model
+        };
+        foreach (var color_map in PlotColorMaps.All)
+        {
+            var item = new MenuItem
+            {
+                Header = color_map.Name,
+                Tag = color_map,
+                ToggleType = MenuItemToggleType.Radio,
+                IsChecked = color_map.Palette == selected
+            };
+            item.Click += (_, _) => select(color_map);
+            menu.Items.Add(item);
+        }
+
         return menu;
     }
 
