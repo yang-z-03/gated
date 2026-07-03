@@ -19,6 +19,12 @@ public sealed class UpdateManager
 {
     public const string VersionsUrl = "https://raw.githubusercontent.com/yang-z-03/gated/refs/heads/master/.github/versions";
     public const string UpdaterManifestUrl = "https://raw.githubusercontent.com/yang-z-03/gated/refs/heads/master/.github/updater";
+    public const string DisabledUpdaterMessage = "Updater service is disabled in this MSIX package. You should maintain the update via Microsoft Store";
+#if DISABLE_UPDATER
+    public static bool IsUpdaterDisabled { get; } = true;
+#else
+    public static bool IsUpdaterDisabled { get; } = false;
+#endif
 
     private static readonly HttpClient http_client = new()
     {
@@ -63,6 +69,10 @@ public sealed class UpdateManager
         IProgress<UpdateProgress>? progress = null,
         CancellationToken cancellation_token = default)
     {
+#if DISABLE_UPDATER
+        await Task.CompletedTask;
+        throw new NotSupportedException(DisabledUpdaterMessage);
+#else
         string updater_path = get_updater_path();
         Directory.CreateDirectory(Path.GetDirectoryName(updater_path)!);
         progress?.Report(new UpdateProgress("Checking updater ...", "Fetching updater manifest.", null));
@@ -117,10 +127,14 @@ public sealed class UpdateManager
             {
             }
         }
+#endif
     }
 
     public void LaunchUpdater(UpdateInfo update)
     {
+#if DISABLE_UPDATER
+        throw new NotSupportedException(DisabledUpdaterMessage);
+#else
         string app_path = get_application_path();
         string updater_path = get_updater_path();
         string? local_versions_path = get_local_versions_path();
@@ -148,10 +162,14 @@ public sealed class UpdateManager
             Arguments = string.Join(" ", arguments)
         };
         Process.Start(start_info);
+#endif
     }
 
     public void LaunchPythonBootstrapUpdater()
     {
+#if DISABLE_UPDATER
+        throw new NotSupportedException(DisabledUpdaterMessage);
+#else
         string app_path = get_application_path();
         string updater_path = get_updater_path();
         string? local_versions_path = get_local_versions_path();
@@ -178,6 +196,7 @@ public sealed class UpdateManager
             UseShellExecute = true,
             Arguments = string.Join(" ", arguments)
         });
+#endif
     }
 
     public static AppVersion GetCurrentVersion()

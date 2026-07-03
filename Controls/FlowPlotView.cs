@@ -119,6 +119,12 @@ public sealed class FlowPlotView : Control
     public static readonly StyledProperty<double> PlotYAxisControlTopProperty =
         AvaloniaProperty.Register<FlowPlotView, double>(nameof(PlotYAxisControlTop));
 
+    public static readonly StyledProperty<double> PlotAxisSwapButtonLeftProperty =
+        AvaloniaProperty.Register<FlowPlotView, double>(nameof(PlotAxisSwapButtonLeft));
+
+    public static readonly StyledProperty<double> PlotAxisSwapButtonTopProperty =
+        AvaloniaProperty.Register<FlowPlotView, double>(nameof(PlotAxisSwapButtonTop));
+
     private const int density_size = 300;
     private int dragging_vertex_index = -1;
     private int dragging_pending_vertex_index = -1;
@@ -335,6 +341,18 @@ public sealed class FlowPlotView : Control
         private set => SetValue(PlotYAxisControlTopProperty, value);
     }
 
+    public double PlotAxisSwapButtonLeft
+    {
+        get => GetValue(PlotAxisSwapButtonLeftProperty);
+        private set => SetValue(PlotAxisSwapButtonLeftProperty, value);
+    }
+
+    public double PlotAxisSwapButtonTop
+    {
+        get => GetValue(PlotAxisSwapButtonTopProperty);
+        private set => SetValue(PlotAxisSwapButtonTopProperty, value);
+    }
+
     public GatingTool ActiveTool
     {
         get => GetValue(ActiveToolProperty);
@@ -498,6 +516,8 @@ public sealed class FlowPlotView : Control
         {
             PlotAxisControlsVisible = false;
             PlotSize = 0;
+            PlotAxisSwapButtonLeft = 0;
+            PlotAxisSwapButtonTop = 0;
             return;
         }
 
@@ -517,6 +537,8 @@ public sealed class FlowPlotView : Control
         PlotAxisControlTop = plot_rect.Bottom + 36;
         PlotYAxisControlLeft = Math.Max(0, plot_rect.Left - 78);
         PlotYAxisControlTop = plot_rect.Top + plot_rect.Height / 2 - PlotAxisControlWidth / 2;
+        PlotAxisSwapButtonLeft = Math.Max(0, PlotAxisControlLeft - 40);
+        PlotAxisSwapButtonTop = PlotAxisControlTop;
         context.FillRectangle(Brushes.White, plot_rect);
 
         if (XAxis is null || YAxis is null)

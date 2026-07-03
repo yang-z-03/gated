@@ -1037,37 +1037,30 @@ public partial class MainWindow : Window
 
     public async Task<bool> BootstrapPythonIfMissingAsync()
     {
-        if (File.Exists(gated.Shared.PlatformSupport.EmbeddedPythonLibraryPath()))
+        var service = new PythonInstallationService();
+        if (service.HasLocalPythonInstallation())
             return false;
 
-        var manager = new UpdateManager();
-        var dialog = new ProgressDialog("Preparing Python runtime ...", "Installing embedded Python and required packages.");
+        var dialog = new ProgressDialog("Checking Python runtime ...", "Verifying embedded Python and required packages.");
         var progress = new Progress<UpdateProgress>(status => dialog.SetProgress(status.Title, status.Detail, status.Fraction));
         var dialog_task = dialog.ShowDialog(this);
 
         try
         {
             await Task.Yield();
-            await manager.EnsureUpdaterCurrentAsync(progress);
-            dialog.SetProgress("Starting updater ...", "Gated will close while Python is installed.", null);
-            manager.LaunchPythonBootstrapUpdater();
-
-            if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
-                desktop.Shutdown();
-            else
-                Close();
+            await service.EnsurePythonInstallationAsync(progress);
         }
         catch (Exception exception)
         {
             dialog.Close();
             await dialog_task;
-            await show_message_dialog("Python runtime is missing", $"Unable to start the Python bootstrap updater: {exception.Message}");
+            await show_message_dialog("Python installation check failed", exception.Message);
             return false;
         }
 
         dialog.Close();
         await dialog_task;
-        return true;
+        return false;
     }
 
     private async Task check_for_updates(bool is_manual_check, bool suppress_connection_errors)
@@ -1098,7 +1091,12 @@ public partial class MainWindow : Window
 
             var choice = await show_update_available_dialog(status, changelog);
             if (choice == UpdateDialogChoice.Update)
-                await install_update(manager, status.Update);
+            {
+                if (UpdateManager.IsUpdaterDisabled)
+                    await show_message_dialog("Updater disabled", UpdateManager.DisabledUpdaterMessage);
+                else
+                    await install_update(manager, status.Update);
+            }
             else if (choice == UpdateDialogChoice.SuppressForOneWeek)
                 suppress_update_for_one_week(status.Update.Latest.Version);
         }
@@ -1111,6 +1109,12 @@ public partial class MainWindow : Window
 
     private async Task install_update(UpdateManager manager, UpdateInfo update)
     {
+        if (UpdateManager.IsUpdaterDisabled)
+        {
+            await show_message_dialog("Updater disabled", UpdateManager.DisabledUpdaterMessage);
+            return;
+        }
+
         var dialog = new ProgressDialog("Preparing update ...", $"Gated {update.Latest.Version}");
         var progress = new Progress<UpdateProgress>(status => dialog.SetProgress(status.Title, status.Detail, status.Fraction));
         var dialog_task = dialog.ShowDialog(this);
@@ -1147,6 +1151,8 @@ public partial class MainWindow : Window
             Text = string.IsNullOrWhiteSpace(changelog) ? "No changelog is available for this version." : changelog,
             TextWrapping = TextWrapping.Wrap,
             Foreground = new SolidColorBrush(Color.FromRgb(218, 221, 228)),
+            FontSize = 13,
+            LineHeight = 19
         };
         changelog_text.Bind(TextBlock.FontFamilyProperty, new DynamicResourceExtension("SemiFontFamilyFixed"));
 
@@ -1155,11 +1161,89 @@ public partial class MainWindow : Window
             Content = changelog_text,
             MinHeight = 180,
             MaxHeight = 200,
-            Padding = new Thickness(10),
-            Background = new SolidColorBrush(Color.FromRgb(38, 38, 38)),
+            Background = new SolidColorBrush(Color.FromRgb(15, 15, 15)),
             HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
             VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto
         };
+
+        var border = new Border
+        {
+            Background = new SolidColorBrush(Color.FromRgb(15, 15, 15)),
+            BorderBrush = new SolidColorBrush(Color.FromRgb(50, 50, 50)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(8),
+            Child = changelog_viewer
+        };
+
+        var update_button = new Button { Content = "Update", MinWidth = 96, IsDefault = true };
+        if (UpdateManager.IsUpdaterDisabled)
+        {
+            update_button.IsEnabled = false;
+            update_button.IsDefault = false;
+        }
+
+        var content = new StackPanel
+        {
+            Margin = new Thickness(16),
+            Spacing = 6,
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = "Update available",
+                    FontWeight = FontWeight.SemiBold,
+                    Foreground = Brushes.White
+                },
+                new TextBlock
+                {
+                    Text = $"Gated {update.Latest.Version} is available.",
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = new SolidColorBrush(Color.FromRgb(218, 221, 228))
+                },
+                new TextBlock
+                {
+                    Text = build_update_status_text(status),
+                    TextWrapping = TextWrapping.Wrap,
+                    FontSize = 12,
+                    LineHeight = 18,
+                    Foreground = new SolidColorBrush(Color.FromRgb(180, 180, 180))
+                },
+                new TextBlock
+                {
+                    Text = "Changelog",
+                    FontWeight = FontWeight.SemiBold,
+                    Foreground = Brushes.White,
+                    Margin = new Thickness(0, 12, 0, 4)
+                },
+                border,
+                new StackPanel
+                {
+                    Orientation = Avalonia.Layout.Orientation.Horizontal,
+                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                    Spacing = 8,
+                    Margin = new Thickness(0, 12, 0, 0),
+                    Children =
+                    {
+                        new Button { Content = "Suppress for 1 week", MinWidth = 140 },
+                        new Button { Content = "Cancel", MinWidth = 80 },
+                        update_button
+                    }
+                }
+            }
+        };
+        if (UpdateManager.IsUpdaterDisabled)
+        {
+            content.Children.Insert(3, new TextBlock
+            {
+                Text = UpdateManager.DisabledUpdaterMessage,
+                TextWrapping = TextWrapping.Wrap,
+                FontSize = 12,
+                LineHeight = 18,
+                Foreground = new SolidColorBrush(Color.FromRgb(244, 196, 107)),
+                Margin = new Thickness(0, 6, 0, 0)
+            });
+        }
 
         var dialog = new Window
         {
@@ -1169,58 +1253,10 @@ public partial class MainWindow : Window
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Background = Background,
             SizeToContent = SizeToContent.Height,
-            Content = new StackPanel
-            {
-                Margin = new Thickness(16),
-                Spacing = 6,
-                Children =
-                {
-                    new TextBlock
-                    {
-                        Text = "Update available",
-                        FontWeight = FontWeight.SemiBold,
-                        Foreground = Brushes.White
-                    },
-                    new TextBlock
-                    {
-                        Text = $"Gated {update.Latest.Version} is available.",
-                        TextWrapping = TextWrapping.Wrap,
-                        Foreground = new SolidColorBrush(Color.FromRgb(218, 221, 228))
-                    },
-                    new TextBlock
-                    {
-                        Text = build_update_status_text(status),
-                        TextWrapping = TextWrapping.Wrap,
-                        FontSize = 12,
-                        LineHeight = 18,
-                        Foreground = new SolidColorBrush(Color.FromRgb(180, 180, 180))
-                    },
-                    new TextBlock
-                    {
-                        Text = "Changelog",
-                        FontWeight = FontWeight.SemiBold,
-                        Foreground = Brushes.White,
-                        Margin = new Thickness(0, 12, 0, 4)
-                    },
-                    changelog_viewer,
-                    new StackPanel
-                    {
-                        Orientation = Avalonia.Layout.Orientation.Horizontal,
-                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
-                        Spacing = 8,
-                        Margin = new Thickness(0, 12, 0, 0),
-                        Children =
-                        {
-                            new Button { Content = "Suppress for 1 week", MinWidth = 140 },
-                            new Button { Content = "Cancel", MinWidth = 80 },
-                            new Button { Content = "Update", MinWidth = 96, IsDefault = true }
-                        }
-                    }
-                }
-            }
+            Content = content
         };
 
-        var buttons = ((StackPanel)((StackPanel)dialog.Content).Children[5]).Children;
+        var buttons = ((StackPanel)content.Children[^1]).Children;
         apply_small_button_classes((Control)dialog.Content);
         ((Button)buttons[0]).Click += (_, _) => dialog.Close(UpdateDialogChoice.SuppressForOneWeek);
         ((Button)buttons[1]).Click += (_, _) => dialog.Close(UpdateDialogChoice.Cancel);

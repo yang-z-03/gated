@@ -2,7 +2,7 @@
     <PropertyGroup>
         <OutputType>WinExe</OutputType>
         <TargetFramework>net10.0</TargetFramework>
-        <Version>0.31.13</Version>
+        <Version>0.31.2</Version>
         <Nullable>enable</Nullable>
         <RuntimeIdentifiers>win-x64;osx-x64;osx-arm64;linux-x64</RuntimeIdentifiers>
         <ApplicationManifest>app.manifest</ApplicationManifest>
@@ -10,10 +10,20 @@
         <ApplicationIcon>gated.ico</ApplicationIcon>
         <Platforms>AnyCPU;x64</Platforms>
     </PropertyGroup>
+    <PropertyGroup Condition="'$(DisableUpdater)' == 'true' Or '$(DisableUpdater)' == 'True' Or '$(DisableUpdater)' == '1'">
+        <DefineConstants>DISABLE_UPDATER;$(DefineConstants)</DefineConstants>
+    </PropertyGroup>
+    <Target Name="ShowDisableUpdaterFlag" BeforeTargets="CoreCompile" Condition="'$(DisableUpdater)' == 'true' Or '$(DisableUpdater)' == 'True' Or '$(DisableUpdater)' == '1'">
+        <Message Importance="High" Text="DISABLE_UPDATER is enabled for $(MSBuildProjectName)." />
+    </Target>
     <ItemGroup>
+      <AvaloniaXaml Remove="artifacts\**" />
       <AvaloniaXaml Remove="Updater\**" />
+      <Compile Remove="artifacts\**" />
       <Compile Remove="Updater\**" />
+      <EmbeddedResource Remove="artifacts\**" />
       <EmbeddedResource Remove="Updater\**" />
+      <None Remove="artifacts\**" />
       <None Remove="Updater\**" />
 
       <AvaloniaXaml Remove="Installer\**" />

@@ -1699,7 +1699,6 @@ public sealed class FlowGroup : NotifyBase
     private string name = "Samples";
     private CompensationMatrix? applied_compensation;
     private bool applied_compensation_is_manual;
-    private const double data_implied_trim_fraction = 0.0005;
 
     public Guid Id { get; init; } = Guid.NewGuid();
 
@@ -1905,8 +1904,8 @@ public sealed class FlowGroup : NotifyBase
 
     private AxisSettings? create_data_implied_axis(string channel_name, bool is_embedding, CancellationToken cancellation_token)
     {
-        var values = collect_finite_values(channel_name, is_embedding, cancellation_token);
-        if (values.Count == 0)
+        var range = finite_value_range(channel_name, is_embedding, cancellation_token);
+        if (!range.HasValues)
             return null;
 
         double? channel_maximum = null;
@@ -1917,11 +1916,7 @@ public sealed class FlowGroup : NotifyBase
                 channel_maximum = channel.Maximum;
         }
 
-        values.Sort();
         bool is_time = !is_embedding && Configuration.IsTimeChannel(channel_name);
-        var range = is_time
-            ? (Minimum: values[0], Maximum: values[^1])
-            : outlier_trimmed_range(values);
         double maximum = range.Maximum;
         if (!double.IsFinite(maximum))
             return null;
@@ -1967,33 +1962,80 @@ public sealed class FlowGroup : NotifyBase
         };
     }
 
-    private List<double> collect_finite_values(string channel_name, bool is_embedding, CancellationToken cancellation_token)
+    private FiniteValueRange finite_value_range(string channel_name, bool is_embedding, CancellationToken cancellation_token)
     {
-        var values = new List<double>();
+        double minimum = double.PositiveInfinity;
+        double maximum = double.NegativeInfinity;
+        bool has_values = false;
         foreach (var sample in Samples)
         {
             cancellation_token.ThrowIfCancellationRequested();
-            if (is_embedding && !sample.Embeddings.ContainsKey(channel_name))
+            if (is_embedding)
+            {
+                if (sample.Embeddings.TryGetValue(channel_name, out var embedding))
+                    add_finite_values(embedding.Values, ref minimum, ref maximum, ref has_values, cancellation_token);
+                continue;
+            }
+
+            int channel_index = sample.GetChannelIndex(channel_name);
+            if (channel_index < 0)
                 continue;
 
-            foreach (float value in sample.GetChannelValues(channel_name))
-            {
-                if (double.IsFinite(value))
-                    values.Add(value);
-            }
+            add_finite_channel_values(sample.CompensatedEvents, channel_index, ref minimum, ref maximum, ref has_values, cancellation_token);
         }
 
-        return values;
+        return has_values
+            ? new FiniteValueRange(true, minimum, maximum)
+            : default;
     }
 
-    private static (double Minimum, double Maximum) outlier_trimmed_range(IReadOnlyList<double> sorted_values)
+    private static void add_finite_channel_values(
+        float[,] values,
+        int channel_index,
+        ref double minimum,
+        ref double maximum,
+        ref bool has_values,
+        CancellationToken cancellation_token)
     {
-        int trim_count = (int)Math.Floor(sorted_values.Count * data_implied_trim_fraction);
-        if (trim_count * 2 >= sorted_values.Count)
-            trim_count = 0;
+        int row_count = values.GetLength(0);
+        for (int row = 0; row < row_count; row++)
+        {
+            if ((row & 4095) == 0)
+                cancellation_token.ThrowIfCancellationRequested();
 
-        return (sorted_values[trim_count], sorted_values[sorted_values.Count - trim_count - 1]);
+            add_finite_value(values[row, channel_index], ref minimum, ref maximum, ref has_values);
+        }
     }
+
+    private static void add_finite_values(
+        IReadOnlyList<float> values,
+        ref double minimum,
+        ref double maximum,
+        ref bool has_values,
+        CancellationToken cancellation_token)
+    {
+        for (int index = 0; index < values.Count; index++)
+        {
+            if ((index & 4095) == 0)
+                cancellation_token.ThrowIfCancellationRequested();
+
+            add_finite_value(values[index], ref minimum, ref maximum, ref has_values);
+        }
+    }
+
+    private static void add_finite_value(float value, ref double minimum, ref double maximum, ref bool has_values)
+    {
+        if (!float.IsFinite(value))
+            return;
+
+        if (value < minimum)
+            minimum = value;
+        if (value > maximum)
+            maximum = value;
+        has_values = true;
+    }
+
+    private readonly record struct FiniteValueRange(bool HasValues, double Minimum, double Maximum);
 
     private static double hundred_floor(double value)
     {

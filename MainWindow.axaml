@@ -739,6 +739,20 @@
                                     </StackPanel>
                                 </Border>
                             </LayoutTransformControl>
+                            <Button Classes="Small"
+                                    Canvas.Left="{Binding PlotAxisSwapButtonLeft, ElementName=editor_plot}"
+                                    Canvas.Top="{Binding PlotAxisSwapButtonTop, ElementName=editor_plot}"
+                                    Width="32"
+                                    Height="32"
+                                    Padding="7"
+                                    Command="{Binding SwapEditorAxesCommand}"
+                                    IsEnabled="{Binding IsYAxisEnabled}"
+                                    IsVisible="{Binding PlotAxisControlsVisible, ElementName=editor_plot}"
+                                    ToolTip.Tip="Swap axes">
+                                <Image Width="18"
+                                       Height="18"
+                                       Source="{SvgImage avares://gated/Resources/swap.svg}" />
+                            </Button>
                             <Border Canvas.Left="{Binding PlotLeft, ElementName=editor_plot}"
                                     Canvas.Top="{Binding PlotTop, ElementName=editor_plot}"
                                     Width="{Binding PlotSize, ElementName=editor_plot}"
@@ -1762,7 +1776,7 @@
                             <TextBlock Foreground="{DynamicResource SemiColorText1}" Text="Grouping channel metadata" />
                         </StackPanel>
 
-                        <Border Height="430"
+                        <Border Height="510"
                                 BorderBrush="#505050"
                                 BorderThickness="1"
                                 CornerRadius="8"

@@ -67,6 +67,7 @@
     <HoursBetweenUpdateChecks>0</HoursBetweenUpdateChecks>
     <GenerateTemporaryStoreCertificate>True</GenerateTemporaryStoreCertificate>
     <PackageCertificateKeyFile>key.pfx</PackageCertificateKeyFile>
+    <DisableUpdater>true</DisableUpdater>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
     <AppxBundle>Always</AppxBundle>
@@ -162,6 +163,9 @@
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.7705" PrivateAssets="all" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\gated.csproj" />
+    <ProjectReference Include="..\gated.csproj">
+      <Properties>DisableUpdater=true</Properties>
+      <AdditionalProperties>DisableUpdater=true</AdditionalProperties>
+    </ProjectReference>
   </ItemGroup>
 </Project>

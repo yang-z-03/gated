@@ -96,6 +96,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
     private bool export_bitmap_transparent_background;
     private EquivalentSampleChoice? selected_equivalent_sample_choice;
     private bool syncing_equivalent_sample_choices;
+    private bool applying_node_selection;
     private bool applying_gate_view_options;
     private bool is_plot_transform_preparing;
     private CancellationTokenSource? plot_transform_preparation_cancellation;
@@ -201,6 +202,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
     public ICommand RunPythonScriptCommand { get; }
     public ICommand SelectPreviousEquivalentSampleCommand { get; }
     public ICommand SelectNextEquivalentSampleCommand { get; }
+    public ICommand SwapEditorAxesCommand { get; }
     public Func<string, string, Task<string?>>? RequestTextInputAsync { get; set; }
     public Func<string, string, Task<ScriptSaveChoice>>? RequestScriptSaveChoiceAsync { get; set; }
     public Func<string, IReadOnlyList<AxisChoice>, Task<string?>>? RequestChoiceInputAsync { get; set; }
@@ -283,6 +285,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         RunPythonScriptCommand = new RelayCommand(_ => _ = run_python_script_async(), _ => !is_python_script_running);
         SelectPreviousEquivalentSampleCommand = new RelayCommand(_ => select_relative_equivalent_sample(-1), _ => EquivalentSampleChoices.Count > 1);
         SelectNextEquivalentSampleCommand = new RelayCommand(_ => select_relative_equivalent_sample(1), _ => EquivalentSampleChoices.Count > 1);
+        SwapEditorAxesCommand = new RelayCommand(_ => swap_editor_axes());
         ensure_default_layout();
         refresh_project_tree();
         refresh_selection_sidebars();
@@ -305,7 +308,15 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 selected_node.IsSelected = true;
             OnPropertyChanged(nameof(IsGroupMetadataMode));
             OnPropertyChanged(nameof(IsPlotPropertiesMode));
-            apply_node_selection(value);
+            applying_node_selection = true;
+            try
+            {
+                apply_node_selection(value);
+            }
+            finally
+            {
+                applying_node_selection = false;
+            }
         }
     }
 
@@ -3331,6 +3342,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 break;
             case ProjectNodeKind.ControlFolder:
                 SelectedIntegrationJob = null;
+                IsWorkspaceMetadataMode = false;
                 if (node.Group is not null)
                     SelectedGroup = node.Group;
                 SelectedSample = null;
@@ -3338,6 +3350,8 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 SelectedGate = null;
                 SelectedControlSample = selected_group?.ControlSamples.FirstOrDefault();
                 SelectedCompensation = null;
+                IsSpilloverCompensationMode = true;
+                refresh_spillover_workspace();
                 break;
             case ProjectNodeKind.SpilloverCompensation:
                 SelectedIntegrationJob = null;
@@ -3933,6 +3947,22 @@ public sealed partial class MainWindowViewModel : NotifyBase
         schedule_plot_transform_preparation();
     }
 
+    private void swap_editor_axes()
+    {
+        if (!IsYAxisEnabled)
+            return;
+
+        var old_x_axis = XAxisClone();
+        var old_y_axis = YAxisClone();
+        XAxis = old_y_axis;
+        YAxis = old_x_axis;
+
+        refresh_axis_menu_state();
+        sync_selected_gate_preferred_view();
+        refresh_plot_gates();
+        schedule_plot_transform_preparation();
+    }
+
     private AxisSettings editor_axis_defaults(bool is_x_axis, string channel_name)
     {
         var axis = new AxisSettings { ChannelName = channel_name };
@@ -4060,7 +4090,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
 
     private void sync_selected_gate_preferred_view()
     {
-        if (applying_gate_view_options)
+        if (applying_node_selection || applying_gate_view_options)
             return;
 
         if (selected_gate is not null)
@@ -4837,39 +4867,11 @@ public sealed partial class MainWindowViewModel : NotifyBase
         bool is_applied_compensation = false,
         int depth = 0)
     {
-        var display_name = node_has_own_view_option(kind, group, sample, gate, population, population_region)
-            ? $"{name} *"
-            : name;
-        return new ProjectNode(kind, display_name, key, group, sample, gate, population, statistic_definition, statistic_result, compensation, control_sample, layout, integration_job, embedding_name, population_region, count, is_applied_compensation, depth)
+        return new ProjectNode(kind, name, key, group, sample, gate, population, statistic_definition, statistic_result, compensation, control_sample, layout, integration_job, embedding_name, population_region, count, is_applied_compensation, depth)
         {
             IsExpanded = project_expansion_state.TryGetValue(key, out bool is_expanded) ? is_expanded : true
         };
     }
-
-    private static bool node_has_own_view_option(
-        ProjectNodeKind kind,
-        FlowGroup? group,
-        FlowSample? sample,
-        GateDefinition? gate,
-        PopulationResult? population,
-        PopulationRegion population_region) =>
-        kind switch
-        {
-            ProjectNodeKind.Group or ProjectNodeKind.GateFolder => group?.RootViewOptions.HasView == true,
-            ProjectNodeKind.Sample when group is not null && sample is not null =>
-                group.SampleRootViewOptions.TryGetValue(sample.Name, out var sample_view) && sample_view.HasView,
-            ProjectNodeKind.Population when sample is not null && gate is not null && population is not null =>
-                sample_population_has_own_view_option(gate, sample.Name, population.Region),
-            ProjectNodeKind.GatePopulationSlot when gate is not null =>
-                gate.PopulationPreferredViews.TryGetValue(population_region, out var population_view) && population_view.HasView,
-            ProjectNodeKind.Gate when gate is not null =>
-                legacy_preferred_view(gate)?.HasView == true,
-            _ => false
-        };
-
-    private static bool sample_population_has_own_view_option(GateDefinition gate, string sample_name, PopulationRegion region) =>
-        gate.SamplePreferredViews.TryGetValue(sample_preferred_view_key(sample_name, region), out var sample_view) &&
-        sample_view.HasView;
 
     private void append_gate_node(ProjectNode parent, GateDefinition gate, FlowGroup group, string key, int depth)
     {
@@ -5043,7 +5045,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
             string group_key = $"group:{group.Id}";
             project_expansion_state[group_key] = true;
             project_expansion_state[$"{group_key}:gates"] = true;
-            project_expansion_state[$"{group_key}:controls"] = true;
+            project_expansion_state[$"{group_key}:controls"] = false;
             project_expansion_state[$"{group_key}:compensations"] = false;
             foreach (var gate in group.Gates)
                 seed_gate_expansion_state(gate, $"{group_key}:gate:{gate.Id}");
