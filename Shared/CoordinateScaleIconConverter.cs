@@ -9,16 +9,14 @@ namespace gated.Shared;
 public sealed class CoordinateScaleIconConverter : IValueConverter
 {
     private static readonly Geometry linear_icon = Geometry.Parse(
-        "M 2,7.25 L 14,7.25 L 14,8.75 L 2,8.75 Z "
-        + "M 1.25,2.5 L 2.75,2.5 L 2.75,13.5 L 1.25,13.5 Z "
+        "M 1.25,2.5 L 2.75,2.5 L 2.75,13.5 L 1.25,13.5 Z "
         + "M 13.25,2.5 L 14.75,2.5 L 14.75,13.5 L 13.25,13.5 Z "
         + "M 4.35,5 L 5.65,5 L 5.65,11 L 4.35,11 Z "
         + "M 7.35,5 L 8.65,5 L 8.65,11 L 7.35,11 Z "
         + "M 10.35,5 L 11.65,5 L 11.65,11 L 10.35,11 Z");
 
     private static readonly Geometry logicle_icon = Geometry.Parse(
-        "M 2,7.25 L 14,7.25 L 14,8.75 L 2,8.75 Z "
-        + "M 1.25,2.5 L 2.75,2.5 L 2.75,13.5 L 1.25,13.5 Z "
+        "M 1.25,2.5 L 2.75,2.5 L 2.75,13.5 L 1.25,13.5 Z "
         + "M 13.25,2.5 L 14.75,2.5 L 14.75,13.5 L 13.25,13.5 Z "
         + "M 4.35,5 L 5.65,5 L 5.65,11 L 4.35,11 Z "
         + "M 8.85,5 L 10.15,5 L 10.15,11 L 8.85,11 Z "
