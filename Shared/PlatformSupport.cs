@@ -52,7 +52,17 @@ public static class PlatformSupport
         get
         {
             if (OperatingSystem.IsWindows())
+            {
+#if MSIX
+                if (MsixPackageFamilyName is { } package_family_name)
+                    return Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                        "Packages",
+                        package_family_name,
+                        "LocalState", "Local", "gated");
+#endif
                 return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "gated");
+            }
 
             string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
             if (OperatingSystem.IsMacOS())
@@ -120,4 +130,33 @@ public static class PlatformSupport
         OperatingSystem.IsWindows()
             ? Path.Combine("python", "python.exe")
             : Path.Combine("python", "bin", "python3");
+
+#if MSIX
+    public static string? MsixPackageFamilyName
+    {
+        get
+        {
+            string package_root = MsixPackageRoot;
+            string package_full_name = Path.GetFileName(package_root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            string[] parts = package_full_name.Split('_', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length < 2)
+                return null;
+
+            return parts[0] + "_" + parts[^1];
+        }
+    }
+
+    private static string MsixPackageRoot
+    {
+        get
+        {
+            string base_directory = Path.GetFullPath(AppContext.BaseDirectory);
+            var directory = new DirectoryInfo(base_directory);
+            if (string.Equals(directory.Name, "gated", StringComparison.OrdinalIgnoreCase) && directory.Parent is { } package_root)
+                return package_root.FullName;
+
+            return base_directory;
+        }
+    }
+#endif
 }

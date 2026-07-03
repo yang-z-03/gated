@@ -13,6 +13,9 @@
     <PropertyGroup Condition="'$(DisableUpdater)' == 'true' Or '$(DisableUpdater)' == 'True' Or '$(DisableUpdater)' == '1'">
         <DefineConstants>DISABLE_UPDATER;$(DefineConstants)</DefineConstants>
     </PropertyGroup>
+    <PropertyGroup Condition="'$(MSIX)' == 'true' Or '$(MSIX)' == 'True' Or '$(MSIX)' == '1'">
+        <DefineConstants>MSIX;$(DefineConstants)</DefineConstants>
+    </PropertyGroup>
     <Target Name="ShowDisableUpdaterFlag" BeforeTargets="CoreCompile" Condition="'$(DisableUpdater)' == 'true' Or '$(DisableUpdater)' == 'True' Or '$(DisableUpdater)' == '1'">
         <Message Importance="High" Text="DISABLE_UPDATER is enabled for $(MSBuildProjectName)." />
     </Target>

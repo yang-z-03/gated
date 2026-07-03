@@ -67,6 +67,7 @@
     <HoursBetweenUpdateChecks>0</HoursBetweenUpdateChecks>
     <GenerateTemporaryStoreCertificate>True</GenerateTemporaryStoreCertificate>
     <DisableUpdater>true</DisableUpdater>
+    <MSIX>true</MSIX>
     <PackageCertificateThumbprint>4E58CA8AF8B8DD23CA62AFE187452CACC533D018</PackageCertificateThumbprint>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
@@ -165,8 +166,8 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\gated.csproj">
-      <Properties>DisableUpdater=true</Properties>
-      <AdditionalProperties>DisableUpdater=true</AdditionalProperties>
+      <Properties>DisableUpdater=true;MSIX=true</Properties>
+      <AdditionalProperties>DisableUpdater=true;MSIX=true</AdditionalProperties>
     </ProjectReference>
   </ItemGroup>
 </Project>

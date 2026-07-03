@@ -9,7 +9,7 @@
 
     <Identity
       Name="Gated.xornent.gated.msix"
-      Publisher="CN=XSI"
+      Publisher="CN=286423E6-E5A4-4E0D-A786-5A50EBF8C7F5"
       Version="0.31.20.0" />
 
     <Properties>
