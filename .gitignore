@@ -10,5 +10,6 @@ riderModule.iml
 artifacts
 BundleArtifacts
 Packages
+Pixels
 *.pfx
 *.cache

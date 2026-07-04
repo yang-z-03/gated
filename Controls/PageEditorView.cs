@@ -1391,8 +1391,16 @@ public sealed class PageEditorView : Control
         string label = element.ShowGateAnnotationNames ? $"{name}\n{statistics}" : statistics;
         var text = create_formatted_text(label, 10, Colors.Black);
         var origin = gate_annotation_origin(element, gate, region, plot_rect, text.Width + 6, text.Height + 4);
-        context.FillRectangle(new SolidColorBrush(Color.FromArgb(220, 255, 255, 255)), new Rect(origin.X - 3, origin.Y - 2, text.Width + 6, text.Height + 4));
-        context.DrawText(text, origin);
+        if (gate.Kind == GateKind.Polygon || gate.Kind == GateKind.Rectangle)
+        {
+            context.FillRectangle(new SolidColorBrush(Color.FromArgb(220, 255, 255, 255)), new Rect(origin.X + 2, origin.Y + 2, text.Width + 6, text.Height + 4));
+            context.DrawText(text, new Point(origin.X + 5, origin.Y + 4));
+        }
+        else
+        {
+            context.FillRectangle(new SolidColorBrush(Color.FromArgb(220, 255, 255, 255)), new Rect(origin.X - 3, origin.Y - 2, text.Width + 6, text.Height + 4));
+            context.DrawText(text, origin);
+        }
     }
 
     private static Point gate_annotation_origin(PagePlotElement element, GateDefinition gate, PopulationRegion region, Rect plot_rect, double width, double height)
