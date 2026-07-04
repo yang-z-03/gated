@@ -7,7 +7,6 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Input;
 using Avalonia.Media;
-using Avalonia.Threading;
 using Avalonia.Controls.Shapes;
 
 namespace gated;
@@ -15,15 +14,24 @@ namespace gated;
 public partial class AboutWindow : Window
 {
     private const int PixelScale = 4;
-    private const int EasterEggClickThreshold = 10;
+    private const int KnockLimit = 10;
     private static readonly TimeSpan FrameInterval = TimeSpan.FromMilliseconds(100);
-    private static readonly TimeSpan FadeInterval = TimeSpan.FromMilliseconds(16);
+    private static readonly int[] Ledger =
+    [
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+        10, 11, 10, 11, 10, 11,
+        13, 14, 13, 14, 13, 14, 13, 14,
+        15, 16, 17, 18, 19,
+        20, 21, 20, 21,
+        22, 23
+    ];
+    private static readonly Random Abacus = new();
 
-    private readonly DispatcherTimer pixel_timer;
-    private readonly List<Rectangle> pixel_rectangles = [];
-    private int icon_clicks;
-    private int pixel_frame_index;
-    private bool easter_egg_running;
+    private readonly List<Rectangle> paperclips = [];
+    private int[] catalog = [];
+    private int receipts;
+    private bool audit;
+    private bool sealed_packet;
 
     public AboutWindow()
     {
@@ -33,8 +41,6 @@ public partial class AboutWindow : Window
             ver.Build > 0 ? $"Patch {ver.Build}" : ""
         );
 
-        pixel_timer = new DispatcherTimer { Interval = FrameInterval };
-        pixel_timer.Tick += pixel_timer_tick;
     }
 
     private void ok_button_click(object? sender, RoutedEventArgs e)
@@ -49,55 +55,45 @@ public partial class AboutWindow : Window
             return;
         }
 
-        if (easter_egg_running)
+        if (audit || sealed_packet)
         {
             return;
         }
 
-        icon_clicks++;
-        if (icon_clicks < EasterEggClickThreshold)
+        receipts++;
+        if (receipts < KnockLimit)
         {
             return;
         }
 
-        icon_clicks = 0;
+        receipts = 0;
         e.Handled = true;
-        await play_easter_egg_async();
+        await reconcile_async();
     }
 
-    private async Task play_easter_egg_async()
+    private async Task reconcile_async()
     {
-        easter_egg_running = true;
-        pixel_timer.Stop();
-
-        await fade_async(TitlePanel, from: 1, to: 0, milliseconds: 450);
-        TitlePanel.IsVisible = false;
+        audit = true;
+        sealed_packet = true;
+        var catalogs = collect_ledgers();
+        catalog = catalogs[Abacus.Next(catalogs.Length)];
 
         PixelCanvas.IsVisible = true;
         PixelCanvas.Opacity = 0;
-        pixel_frame_index = 0;
-        render_pixel_frame(pixel_frame_index);
+        _ = tint_async(HeaderRack, Color.FromRgb(21, 21, 21), Colors.Black, milliseconds: 450);
+
+        render_pixel_frame(Ledger[0]);
         await fade_async(PixelCanvas, from: 0, to: 1, milliseconds: 220);
 
-        pixel_timer.Start();
-    }
-
-    private async void pixel_timer_tick(object? sender, EventArgs e)
-    {
-        pixel_frame_index++;
-        if (pixel_frame_index < PixelFrameCount)
+        for (int i = 1; i < Ledger.Length; i++)
         {
-            render_pixel_frame(pixel_frame_index);
-            return;
+            await Task.Delay(FrameInterval);
+            render_pixel_frame(Ledger[i]);
         }
 
-        pixel_timer.Stop();
-        await fade_async(PixelCanvas, from: 1, to: 0, milliseconds: 300);
-        PixelCanvas.IsVisible = false;
-
-        TitlePanel.IsVisible = true;
-        await fade_async(TitlePanel, from: 0, to: 1, milliseconds: 450);
-        easter_egg_running = false;
+        await Task.Delay(FrameInterval);
+        render_pixel_frame(PixelFrameCount - 1);
+        audit = false;
     }
 
     private static async Task fade_async(Control control, double from, double to, int milliseconds)
@@ -118,7 +114,7 @@ public partial class AboutWindow : Window
     private void render_pixel_frame(int frame_index)
     {
         PixelCanvas.Children.Clear();
-        pixel_rectangles.Clear();
+        paperclips.Clear();
 
         foreach (var pixel in decode_pixel_frame(frame_index))
         {
@@ -126,14 +122,31 @@ public partial class AboutWindow : Window
             {
                 Width = PixelScale,
                 Height = PixelScale,
-                Fill = new SolidColorBrush(Color.FromRgb(pixel.R, pixel.G, pixel.B))
+                Fill = new SolidColorBrush(resolve_color(pixel.Tone))
             };
 
             Canvas.SetLeft(rectangle, pixel.X * PixelScale);
             Canvas.SetTop(rectangle, pixel.Y * PixelScale);
             PixelCanvas.Children.Add(rectangle);
-            pixel_rectangles.Add(rectangle);
+            paperclips.Add(rectangle);
         }
+    }
+
+    private Color resolve_color(byte tone)
+    {
+        var active_catalog = catalog.Length > 0 ? catalog : AboutPixelColorKeys;
+        var source = tone < active_catalog.Length ? active_catalog[tone] : AboutPixelColorKeys[tone];
+        return Color.FromRgb((byte)(source >> 16), (byte)(source >> 8), (byte)source);
+    }
+
+    private static int[][] collect_ledgers()
+    {
+        return
+        [
+            AboutPixelColorKeys, // balbc
+            [0x6b6b6b, 0xad877c, 0x4f4f4f, 0xFFDBB6, 0x303030, 0xe8e8e8, 0x7d7d7d, 0x000000, 0xffffff, 0xa19473, 0x716151, 0xc78e8e, 0x715951, 0xcfadad, 0xFF9E7D, 0x636363, 0x383838, 0x454545, 0x713845], // b6
+            [0x805832, 0xad877c, 0xa15e1e, 0xFFDBB6, 0x4f2813, 0xe8e8e8, 0xa6833a, 0x6b4b33, 0xffffff, 0xa19473, 0x716151, 0xc78e8e, 0x715951, 0xcfadad, 0xFF9E7D, 0xa26940, 0x383838, 0x454545, 0x713845], // c3h
+        ];
     }
 
     private static IEnumerable<PixelCell> decode_pixel_frame(int frame_index)
@@ -151,11 +164,30 @@ public partial class AboutWindow : Window
         deflate.CopyTo(output);
 
         var bytes = output.ToArray();
-        for (int i = 0; i + 4 < bytes.Length; i += 5)
+        for (int i = 0; i + 2 < bytes.Length; i += 3)
         {
-            yield return new PixelCell(bytes[i], bytes[i + 1], bytes[i + 2], bytes[i + 3], bytes[i + 4]);
+            yield return new PixelCell(bytes[i], bytes[i + 1], bytes[i + 2]);
         }
     }
 
-    private readonly record struct PixelCell(byte X, byte Y, byte R, byte G, byte B);
+    private static async Task tint_async(Panel control, Color from, Color to, int milliseconds)
+    {
+        const int steps = 18;
+        var brush = control.Background as SolidColorBrush ?? new SolidColorBrush(from);
+        control.Background = brush;
+
+        for (int i = 1; i <= steps; i++)
+        {
+            double t = i / (double)steps;
+            brush.Color = Color.FromRgb(
+                (byte)Math.Round(from.R + ((to.R - from.R) * t)),
+                (byte)Math.Round(from.G + ((to.G - from.G) * t)),
+                (byte)Math.Round(from.B + ((to.B - from.B) * t)));
+            await Task.Delay(Math.Max(1, milliseconds / steps));
+        }
+
+        brush.Color = to;
+    }
+
+    private readonly record struct PixelCell(byte X, byte Y, byte Tone);
 }
