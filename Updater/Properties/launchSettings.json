@@ -1,8 +1,0 @@
-{
-  "profiles": {
-    "update": {
-      "commandName": "Project",
-      "commandLineArgs": "--app \"D:\\projects\\csharp\\gated\\bin\\Debug\\net10.0\\gated.exe\" --updater \"D:\\projects\\csharp\\gated\\bin\\Debug\\net10.0\\update.exe\" --parent-pid 36888 --current-version 0.30.0 --target-version 0.31.0 --versions-url \"https://raw.githubusercontent.com/yang-z-03/gated/refs/heads/master/.github/versions\" --local-versions \"D:\\projects\\csharp\\gated\\.github\\versions\""
-    }
-  }
-}
