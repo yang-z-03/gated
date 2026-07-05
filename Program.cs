@@ -32,18 +32,15 @@ class Program
         string path = string.Join(
             Shared.PlatformSupport.EnvironmentPathSeparator,
             [
-                AppContext.BaseDirectory,
                 python_home,
+                Path.Combine(python_home, "bin"),
+                Path.Combine(python_home, "lib"),
+                AppContext.BaseDirectory,
                 Environment.GetEnvironmentVariable("PATH") ?? ""
             ]);
 
-        Environment.SetEnvironmentVariable("PYTHONHOME", 
-            python_home,
-            EnvironmentVariableTarget.Process);
-        
-        Environment.SetEnvironmentVariable("PATH",
-            path,
-            EnvironmentVariableTarget.Process);
+        Environment.SetEnvironmentVariable("PYTHONHOME", python_home, EnvironmentVariableTarget.Process);
+        Environment.SetEnvironmentVariable("PATH", path, EnvironmentVariableTarget.Process);
 
         if (Shared.PlatformSupport.CurrentPlatform != "windows")
         {

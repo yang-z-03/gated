@@ -6,8 +6,10 @@ using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Input;
+using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Controls.Shapes;
+using gated.Shared;
 
 namespace gated;
 
@@ -47,6 +49,138 @@ public partial class AboutWindow : Window
     {
         Close();
     }
+
+    private async void path_info_button_click(object? sender, RoutedEventArgs e)
+    {
+        await show_path_info_dialog();
+    }
+
+    private async Task show_path_info_dialog()
+    {
+        var content = new StackPanel
+        {
+            Margin = new Avalonia.Thickness(16),
+            Spacing = 5
+        };
+
+        add_path_section(content, "Application", [
+            ("Base directory", AppContext.BaseDirectory),
+            ("Persistence directory", PlatformSupport.PersistenceDirectory)
+        ]);
+        add_path_section(content, "Update and settings", [
+            ("Updater", PlatformSupport.UpdaterPath),
+            ("Update metadata", PlatformSupport.UpdateMetadataPath),
+            ("Macros", PlatformSupport.MacroDirectory),
+            ("Statistics", PlatformSupport.StatisticDirectory)
+        ]);
+        add_path_section(content, "Python", [
+            ("Python home", PlatformSupport.EmbeddedPythonHome()),
+            ("Python DLL", PlatformSupport.EmbeddedPythonLibraryPath()),
+            ("Python executable", PlatformSupport.EmbeddedPythonExecutablePath())
+        ]);
+        add_system_path_section(content, "System PATH", Environment.GetEnvironmentVariable("PATH"));
+        add_system_path_section(content, "PYTHONHOME", Environment.GetEnvironmentVariable("PYTHONHOME"));
+
+        var ok = new Button
+        {
+            Content = "OK",
+            MinWidth = 80,
+            IsDefault = true,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Avalonia.Thickness(16, 0, 16, 16)
+        };
+
+        ok.Classes.Add("Small");
+
+        var dialog = new Window
+        {
+            Title = "Configured paths",
+            Width = 680,
+            Height = 520,
+            MinWidth = 520,
+            MinHeight = 360,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = Background,
+            Content = new Grid
+            {
+                RowDefinitions =
+                {
+                    new RowDefinition(GridLength.Star),
+                    new RowDefinition(GridLength.Auto)
+                },
+                Children =
+                {
+                    new ScrollViewer
+                    {
+                        Padding = new Avalonia.Thickness(0),
+                        Margin = new Avalonia.Thickness(8),
+                        Content = content
+                    },
+                    ok
+                }
+            }
+        };
+
+        if (dialog.Content is Grid grid && grid.Children[1] is Button ok_button)
+        {
+            Grid.SetRow(grid.Children[1], 1);
+            ok_button.Click += (_, _) => dialog.Close();
+        }
+
+        await dialog.ShowDialog(this);
+    }
+
+    private static void add_path_section(StackPanel panel, string title, IReadOnlyList<(string Name, string Path)> paths)
+    {
+        panel.Children.Add(section_title(title));
+        foreach (var path in paths)
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = path.Name,
+                Foreground = new SolidColorBrush(Color.FromRgb(224, 226, 232)),
+                FontWeight = FontWeight.SemiBold,
+                FontSize = 12
+            });
+            panel.Children.Add(code_text(path.Path));
+        }
+    }
+
+    private static void add_system_path_section(StackPanel panel, string title, string? value)
+    {
+        panel.Children.Add(section_title(title));
+        var paths = (value ?? "")
+            .Split(PlatformSupport.EnvironmentPathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (paths.Length == 0)
+        {
+            panel.Children.Add(code_text("(not set)"));
+            return;
+        }
+
+        foreach (string path in paths)
+            panel.Children.Add(code_text(path));
+    }
+
+    private static TextBlock section_title(string title) =>
+        new()
+        {
+            Text = title,
+            FontWeight = FontWeight.Bold,
+            Foreground = Brushes.White,
+            FontSize = 13,
+            Margin = new Avalonia.Thickness(0, 8, 0, 0)
+        };
+
+    private static TextBlock code_text(string text) =>
+        new()
+        {
+            Text = text,
+            TextWrapping = TextWrapping.Wrap,
+            FontFamily = FontFamily.Parse("avares://gated/Fonts#IBM Plex Mono"),
+            FontSize = 12,
+            LineHeight = 17,
+            Foreground = new SolidColorBrush(Color.FromRgb(180, 186, 198))
+        };
 
     private async void about_icon_pointer_pressed(object? sender, PointerPressedEventArgs e)
     {
