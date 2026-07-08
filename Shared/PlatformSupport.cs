@@ -28,10 +28,6 @@ public static class PlatformSupport
         // new("cugraph-cu13", "==25.10.*"),
         // new("cuvs-cu13", "==25.10.*"),
         // new("cupy-cuda13x", "==25.10.*"),
-
-        new("rapids-singlecell"),
-        new("torch", ">=2"),
-        new("anndata")
     ];
 
     public static string CurrentPlatform =>

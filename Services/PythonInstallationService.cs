@@ -34,7 +34,7 @@ public sealed class PythonInstallationService
         IProgress<UpdateProgress>? progress = null,
         CancellationToken cancellation_token = default)
     {
-        progress?.Report(new UpdateProgress("Checking Python runtime ...", "Fetching Python requirements.", null));
+        progress?.Report(new UpdateProgress("Checking Python runtime ...", "Reading Python requirements.", null));
         var target = await load_target_version(cancellation_token);
         var python = target.Requirements.FirstOrDefault(requirement =>
             string.Equals(requirement.Type, "package", StringComparison.OrdinalIgnoreCase) &&
@@ -51,8 +51,10 @@ public sealed class PythonInstallationService
 
         if (python_required)
         {
+#if !MSIX
             if (python.Href is null)
                 throw new InvalidDataException("The Python requirement does not contain a download URL.");
+#endif
 
             await install_python_runtime(python, progress, cancellation_token);
             changed = true;
@@ -96,6 +98,20 @@ public sealed class PythonInstallationService
 
     private static async Task<PythonVersionEntry> load_target_version(CancellationToken cancellation_token)
     {
+#if MSIX
+        await Task.CompletedTask;
+        return new PythonVersionEntry(
+            new AppVersion(3, 13, 0),
+            PlatformSupport.CurrentPlatform,
+            PlatformSupport.CurrentArchitecture,
+            null,
+            [new PythonRuntimeRequirement(
+                "package", "python", 3, 13, false, null, ".",
+                PlatformSupport.RequiredPythonPackages
+                    .Select(package => new PythonPackageRequirement(package.Name, package.VersionCondition))
+                    .ToArray())
+            ]);
+#else
         await ensure_connection_async(new Uri(UpdateManager.VersionsUrl), cancellation_token);
         using var response = await http_client.GetAsync(UpdateManager.VersionsUrl, cancellation_token);
         response.EnsureSuccessStatusCode();
@@ -109,6 +125,7 @@ public sealed class PythonInstallationService
             .OrderBy(version => version.Version)
             .LastOrDefault()
             ?? throw new InvalidDataException("No compatible Python runtime metadata was found.");
+#endif
     }
 
     private static PythonVersionEntry parse_version(XElement element) =>
@@ -139,6 +156,9 @@ public sealed class PythonInstallationService
         IProgress<UpdateProgress>? progress,
         CancellationToken cancellation_token)
     {
+#if MSIX
+        await install_embedded_python_runtime(progress, cancellation_token);
+#else
         string staging_root = Path.Combine(Path.GetTempPath(), "gated-python-stage-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture));
         string extract_root = Path.Combine(Path.GetTempPath(), "gated-python-extract-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture));
         string archive_path = Path.Combine(staging_root, "python.zip");
@@ -164,6 +184,96 @@ public sealed class PythonInstallationService
         {
             delete_quietly(staging_root);
             delete_quietly(extract_root);
+        }
+#endif
+    }
+
+#if MSIX
+    private static async Task install_embedded_python_runtime(
+        IProgress<UpdateProgress>? progress,
+        CancellationToken cancellation_token)
+    {
+        string archive_path = Path.Combine(AppContext.BaseDirectory, "python-313.zip");
+        if (!File.Exists(archive_path))
+            throw new FileNotFoundException("Python is not embedded in the MSIX package.", archive_path);
+
+        await Task.Run(() =>
+        {
+            string extract_root = Path.Combine(Path.GetTempPath(), "gated-python-msix-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture));
+            Directory.CreateDirectory(extract_root);
+
+            try
+            {
+                extract_archive_with_progress(archive_path, extract_root, progress, cancellation_token);
+                string source_root = embedded_python_payload_root(extract_root);
+                string python_root = PlatformSupport.EmbeddedPythonHome();
+                progress?.Report(new UpdateProgress("Installing Python runtime ...", "Replacing embedded Python files.", null));
+                if (Directory.Exists(python_root))
+                    delete_directory_with_retries(python_root);
+                Directory.CreateDirectory(Path.GetDirectoryName(python_root)!);
+                copy_directory(source_root, python_root, progress, 0.75, 0.20);
+                ensure_executable_bit(PlatformSupport.EmbeddedPythonExecutablePath());
+            }
+            finally
+            {
+                delete_quietly(extract_root);
+            }
+        }, cancellation_token);
+    }
+
+    private static string embedded_python_payload_root(string extract_root)
+    {
+        if (File.Exists(Path.Combine(extract_root, OperatingSystem.IsWindows() ? "python.exe" : Path.Combine("bin", "python3"))))
+            return extract_root;
+
+        string python_child = Path.Combine(extract_root, "python");
+        if (Directory.Exists(python_child) &&
+            File.Exists(Path.Combine(python_child, OperatingSystem.IsWindows() ? "python.exe" : Path.Combine("bin", "python3"))))
+            return python_child;
+
+        return extract_root;
+    }
+#endif
+
+    private static void extract_archive_with_progress(
+        string archive_path,
+        string target_root,
+        IProgress<UpdateProgress>? progress,
+        CancellationToken cancellation_token)
+    {
+        using var archive = ZipFile.OpenRead(archive_path);
+        if (archive.Entries.Count == 0)
+            throw new InvalidDataException("Embedded Python archive is empty.");
+
+        long total = archive.Entries.Sum(entry => Math.Max(0, entry.Length));
+        long extracted = 0;
+        progress?.Report(new UpdateProgress("Installing Python runtime ...", "Decompressing payload ...", 0));
+        foreach (var entry in archive.Entries)
+        {
+            cancellation_token.ThrowIfCancellationRequested();
+            string target_path = safe_combine(target_root, entry.FullName);
+            if (string.IsNullOrEmpty(entry.Name))
+            {
+                Directory.CreateDirectory(target_path);
+                continue;
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(target_path)!);
+            using var source = entry.Open();
+            using var target = File.Create(target_path);
+            var buffer = new byte[1024 * 64];
+            while (true)
+            {
+                cancellation_token.ThrowIfCancellationRequested();
+                int read = source.Read(buffer, 0, buffer.Length);
+                if (read == 0)
+                    break;
+
+                target.Write(buffer, 0, read);
+                extracted += read;
+                double? fraction = total > 0 ? Math.Min(0.75, (double)extracted / total * 0.75) : null;
+                progress?.Report(new UpdateProgress("Installing Python runtime ...", "Decompressing payload ...", fraction));
+            }
         }
     }
 

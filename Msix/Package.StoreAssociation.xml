@@ -363,7 +363,8 @@
   <ProductReservedInfo>
     <MainPackageIdentityName>Gated.xornent.gated.msix</MainPackageIdentityName>
     <ReservedNames>
-      <ReservedName>xornent.gated.msix</ReservedName>
+      <ReservedName>Gated Flow Cytometry Analyzer</ReservedName>
+      <ReservedName>Gated Analyzer</ReservedName>
     </ReservedNames>
   </ProductReservedInfo>
   <AccountPackageIdentityNames />

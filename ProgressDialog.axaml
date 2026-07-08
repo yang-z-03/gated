@@ -2,7 +2,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="gated.ProgressDialog"
         MinWidth="250"
-        SizeToContent="WidthAndHeight"
+        Width="520"
+        SizeToContent="Height"
         CanResize="False"
         WindowStartupLocation="CenterOwner"
         x:CompileBindings="False"
@@ -14,8 +15,9 @@
                        Foreground="{DynamicResource SemiColorText0}"
                        FontWeight="SemiBold" />
             <TextBlock Text="{Binding Subtitle}" TextAlignment="Center"
-                       TextWrapping="Wrap"
-                       MaxWidth="560" Margin="0 -4 0 4"
+                       TextWrapping="NoWrap"
+                       TextTrimming="CharacterEllipsis"
+                       Width="460" Margin="0 -4 0 4"
                        Foreground="{DynamicResource SemiColorText2}" />
             <ProgressBar Minimum="0"
                          Maximum="100"

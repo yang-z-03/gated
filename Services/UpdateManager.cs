@@ -19,8 +19,8 @@ public sealed class UpdateManager
 {
     public const string VersionsUrl = "https://raw.githubusercontent.com/yang-z-03/gated/refs/heads/master/.github/versions";
     public const string UpdaterManifestUrl = "https://raw.githubusercontent.com/yang-z-03/gated/refs/heads/master/.github/updater";
-    public const string DisabledUpdaterMessage = "Updater service is disabled in this MSIX package. You should maintain the update via Microsoft Store";
-#if DISABLE_UPDATER
+    public const string DisabledUpdaterMessage = "Update service is disabled in MSIX distribution. \nYou should use Microsoft Store to check for updates";
+#if DISABLE_UPDATER || MSIX
     public static bool IsUpdaterDisabled { get; } = true;
 #else
     public static bool IsUpdaterDisabled { get; } = false;
@@ -39,6 +39,10 @@ public sealed class UpdateManager
 
     public async Task<UpdateCheckResult> GetUpdateStatusAsync(CancellationToken cancellation_token = default)
     {
+#if MSIX
+        await Task.CompletedTask;
+        throw new NotSupportedException(DisabledUpdaterMessage);
+#else
         var versions = await fetch_versions_async(VersionsUrl, cancellation_token);
         var current = GetCurrentVersion();
         var os = GetCurrentSystemInfo();
@@ -52,6 +56,7 @@ public sealed class UpdateManager
             : null;
 
         return new UpdateCheckResult(current, latest_remote, latest_compatible, os, update);
+#endif
     }
 
     public async Task<string> DownloadChangelogAsync(UpdateVersion version, CancellationToken cancellation_token = default)
@@ -69,7 +74,7 @@ public sealed class UpdateManager
         IProgress<UpdateProgress>? progress = null,
         CancellationToken cancellation_token = default)
     {
-#if DISABLE_UPDATER
+#if DISABLE_UPDATER || MSIX
         await Task.CompletedTask;
         throw new NotSupportedException(DisabledUpdaterMessage);
 #else
@@ -132,7 +137,7 @@ public sealed class UpdateManager
 
     public void LaunchUpdater(UpdateInfo update)
     {
-#if DISABLE_UPDATER
+#if DISABLE_UPDATER || MSIX
         throw new NotSupportedException(DisabledUpdaterMessage);
 #else
         string app_path = get_application_path();
@@ -167,7 +172,7 @@ public sealed class UpdateManager
 
     public void LaunchPythonBootstrapUpdater()
     {
-#if DISABLE_UPDATER
+#if DISABLE_UPDATER || MSIX
         throw new NotSupportedException(DisabledUpdaterMessage);
 #else
         string app_path = get_application_path();

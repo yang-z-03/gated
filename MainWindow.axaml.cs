@@ -1072,6 +1072,12 @@ public partial class MainWindow : Window
 
     private async Task check_for_updates(bool is_manual_check, bool suppress_connection_errors)
     {
+#if MSIX
+        await Task.CompletedTask;
+        if (is_manual_check)
+            await show_message_dialog("Updater disabled", UpdateManager.DisabledUpdaterMessage);
+        return;
+#else
         try
         {
             var manager = new UpdateManager();
@@ -1112,6 +1118,7 @@ public partial class MainWindow : Window
             if (!suppress_connection_errors)
                 await show_message_dialog("Update check failed", exception.Message);
         }
+#endif
     }
 
     private async Task install_update(UpdateManager manager, UpdateInfo update)
@@ -1239,19 +1246,6 @@ public partial class MainWindow : Window
                 }
             }
         };
-        if (UpdateManager.IsUpdaterDisabled)
-        {
-            content.Children.Insert(3, new TextBlock
-            {
-                Text = UpdateManager.DisabledUpdaterMessage,
-                TextWrapping = TextWrapping.Wrap,
-                FontSize = 12,
-                LineHeight = 18,
-                Foreground = new SolidColorBrush(Color.FromRgb(244, 196, 107)),
-                Margin = new Thickness(0, 6, 0, 0)
-            });
-        }
-
         var dialog = new Window
         {
             Title = "Update available",
