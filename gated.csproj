@@ -76,7 +76,8 @@
 	  <None Include=".github/versions" />
 	  <None Include=".github/updater" />
     </ItemGroup>
-    <ItemGroup>
+
+    <ItemGroup Condition="'$(MSIX)' == 'true' Or '$(MSIX)' == 'True' Or '$(MSIX)' == '1'">
       <None Update="python-313.zip">
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       </None>

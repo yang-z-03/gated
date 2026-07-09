@@ -6,6 +6,7 @@
         <Component Guid="{8C24DEE6-FD51-425B-81B7-433CBD6DA0C2}">
             <File Id="exec" Source="../artifacts/gated-win-x64/gated.exe" />
             <File Id="icon" Source="../gated.ico" />
+            <File Id="wspicon" Source="../gated-workspace.ico" />
             
             <File Source="../artifacts/gated-win-x64/av_libglesv2.dll" />
             <File Source="../artifacts/gated-win-x64/Avalonia.Base.dll" />
@@ -63,6 +64,7 @@
             
             <RemoveFile Name="gated.exe" On="both" />
             <RemoveFile Name="gated.ico" On="both" />
+            <RemoveFile Name="gated-workspace.ico" On="both" />
             
             <RemoveFile On="both" Name="av_libglesv2.dll" />
             <RemoveFile On="both" Name="Avalonia.Base.dll" />
@@ -123,6 +125,16 @@
             <RemoveFolder Directory="INSTALLFOLDER" On="uninstall" />
             <RegistryValue Root="HKCU" Key="Software\Xornent\Gated\gated-core" Name="installed" Type="integer" Value="1" KeyPath="yes" />
             <RegistryValue Root="HKCU" Key="Software\Xornent\Gated\gated-core" Name="python" Type="string" Value="[INSTALLFOLDER]python" />
+
+            <ProgId Id="gated-workspace" Description="Gated Workspace" Icon="wspicon">
+                <Extension Id="gated" ContentType="application/binary">
+                    <Verb Id="open" Command="open" TargetFile="exec"
+                          Argument="&quot;%1&quot;" />
+                </Extension>
+            </ProgId>
+            <RegistryValue Root="HKCU" Key="Software\Classes\Applications\gated.exe" Type="string" Value="Gated Analyzer" />
+            <RegistryValue Root="HKCU" Key="Software\Classes\Applications\gated.exe" Type="string" Name="FriendlyAppName" Value="Gated Analyzer" />
+            <RegistryValue Root="HKCU" Key="Software\Classes\Applications\gated.exe\SupportedTypes\.gated" Type="string" Value="" />
         </Component>
         
         <Component Guid="{CCFDD7B4-B131-4AE0-A7A0-0AA98A19F327}" Subdirectory="zh-Hans">
@@ -131,6 +143,7 @@
             <RemoveFolder On="uninstall" />
             <RegistryValue Root="HKCU" Key="Software\Xornent\Gated\gated-core-locale-zhhans" Name="installed" Type="integer" Value="1" KeyPath="yes" />
         </Component>
+
     </ComponentGroup>
   </Fragment>
 </Wix>
