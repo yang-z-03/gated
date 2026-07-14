@@ -17,7 +17,8 @@ public enum HistogramAxisScaleKind
 {
     Linear,
     Log,
-    Logicle
+    Logicle,
+    Arcsinh
 }
 
 public sealed record HistogramRangeSelection(double Minimum, double Maximum);
@@ -25,6 +26,7 @@ public sealed record HistogramRangeSelection(double Minimum, double Maximum);
 public sealed class HistogramSeries : NotifyBase
 {
     private IReadOnlyList<double> values = [];
+    private IReadOnlyList<double>? sorted_values;
     private int bin_count = 256;
     private Color color = Color.FromRgb(20, 133, 255);
     private string name = "";
@@ -32,7 +34,17 @@ public sealed class HistogramSeries : NotifyBase
     public IReadOnlyList<double> Values
     {
         get => values;
-        set => SetField(ref values, value ?? []);
+        set
+        {
+            if (SetField(ref values, value ?? []))
+                SortedValues = null;
+        }
+    }
+
+    public IReadOnlyList<double>? SortedValues
+    {
+        get => sorted_values;
+        set => SetField(ref sorted_values, value);
     }
 
     public int BinCount
@@ -59,11 +71,11 @@ public sealed class HistogramView : Control
     public static readonly StyledProperty<IReadOnlyList<HistogramSeries>?> SeriesProperty =
         AvaloniaProperty.Register<HistogramView, IReadOnlyList<HistogramSeries>?>(nameof(Series));
 
-    public static readonly StyledProperty<double> MinimumProperty =
-        AvaloniaProperty.Register<HistogramView, double>(nameof(Minimum));
+    public static readonly StyledProperty<double?> MinimumProperty =
+        AvaloniaProperty.Register<HistogramView, double?>(nameof(Minimum));
 
-    public static readonly StyledProperty<double> MaximumProperty =
-        AvaloniaProperty.Register<HistogramView, double>(nameof(Maximum), new LogicleParameters().T);
+    public static readonly StyledProperty<double?> MaximumProperty =
+        AvaloniaProperty.Register<HistogramView, double?>(nameof(Maximum));
 
     public static readonly StyledProperty<HistogramAxisScaleKind> AxisScaleProperty =
         AvaloniaProperty.Register<HistogramView, HistogramAxisScaleKind>(nameof(AxisScale), HistogramAxisScaleKind.Linear);
@@ -80,6 +92,9 @@ public sealed class HistogramView : Control
     public static readonly StyledProperty<double> LogicleNegativeDecadesProperty =
         AvaloniaProperty.Register<HistogramView, double>(nameof(LogicleNegativeDecades), new LogicleParameters().A);
 
+    public static readonly StyledProperty<double> ArcsinhCofactorProperty =
+        AvaloniaProperty.Register<HistogramView, double>(nameof(ArcsinhCofactor), 5.0);
+
     public static readonly StyledProperty<int> BinSmoothingProperty =
         AvaloniaProperty.Register<HistogramView, int>(nameof(BinSmoothing), 2);
 
@@ -94,6 +109,7 @@ public sealed class HistogramView : Control
 
     private Rect plot_rect;
     private List<PreparedSeries>? prepared_series;
+    private PreparedAxis? prepared_axis;
     private INotifyCollectionChanged? subscribed_series_collection;
     private readonly List<HistogramSeries> subscribed_series = new();
     private DragTarget drag_target = DragTarget.None;
@@ -110,6 +126,7 @@ public sealed class HistogramView : Control
             LogicleLinearizationWidthProperty,
             LogicleDecadesProperty,
             LogicleNegativeDecadesProperty,
+            ArcsinhCofactorProperty,
             BinSmoothingProperty,
             YMaximumFactorProperty,
             IsGatingEnabledProperty,
@@ -122,13 +139,13 @@ public sealed class HistogramView : Control
         set => SetValue(SeriesProperty, value);
     }
 
-    public double Minimum
+    public double? Minimum
     {
         get => GetValue(MinimumProperty);
         set => SetValue(MinimumProperty, value);
     }
 
-    public double Maximum
+    public double? Maximum
     {
         get => GetValue(MaximumProperty);
         set => SetValue(MaximumProperty, value);
@@ -162,6 +179,12 @@ public sealed class HistogramView : Control
     {
         get => GetValue(LogicleNegativeDecadesProperty);
         set => SetValue(LogicleNegativeDecadesProperty, value);
+    }
+
+    public double ArcsinhCofactor
+    {
+        get => GetValue(ArcsinhCofactorProperty);
+        set => SetValue(ArcsinhCofactorProperty, value);
     }
 
     public int BinSmoothing
@@ -208,6 +231,7 @@ public sealed class HistogramView : Control
             || change.Property == LogicleLinearizationWidthProperty
             || change.Property == LogicleDecadesProperty
             || change.Property == LogicleNegativeDecadesProperty
+            || change.Property == ArcsinhCofactorProperty
             || change.Property == BinSmoothingProperty
             || change.Property == YMaximumFactorProperty)
             invalidate_bins();
@@ -268,7 +292,7 @@ public sealed class HistogramView : Control
         var bounds = Bounds;
         context.FillRectangle(new SolidColorBrush(Color.FromRgb(37, 37, 37)), bounds);
 
-        const double left_axis_space = 54;
+        const double left_axis_space = 72;
         const double right_space = 18;
         const double top_space = 10;
         const double bottom_axis_space = 42;
@@ -320,10 +344,10 @@ public sealed class HistogramView : Control
     private List<PreparedSeries> prepare_series()
     {
         var result = new List<PreparedSeries>();
-        if (Series is null || !try_axis_range(out double transformed_minimum, out double transformed_maximum))
+        if (Series is null || prepare_axis() is not { } axis)
             return result;
 
-        double transformed_span = transformed_maximum - transformed_minimum;
+        double transformed_span = axis.TransformedMaximum - axis.TransformedMinimum;
         if (transformed_span <= 0)
             return result;
 
@@ -336,7 +360,7 @@ public sealed class HistogramView : Control
                 if (!double.IsFinite(value) || !try_transform(value, out double transformed))
                     continue;
 
-                double normalized = (transformed - transformed_minimum) / transformed_span;
+                double normalized = (transformed - axis.TransformedMinimum) / transformed_span;
                 if (normalized < 0 || normalized > 1)
                     continue;
 
@@ -422,8 +446,9 @@ public sealed class HistogramView : Control
 
     private void draw_axes(DrawingContext context)
     {
-        var axis_color = Color.FromRgb(156, 164, 190);
-        var text_color = Color.FromRgb(255, 255, 255);
+        var axis_color = Color.FromRgb(142, 148, 160);
+        var text_color = Color.FromRgb(230, 235, 245);
+        var tick_text = Color.FromRgb(140, 148, 162);
         var axis_pen = new Pen(new SolidColorBrush(axis_color), 1);
         var tick_pen = new Pen(new SolidColorBrush(axis_color), 1);
         context.DrawLine(axis_pen, new Point(plot_rect.Left, plot_rect.Bottom), new Point(plot_rect.Right, plot_rect.Bottom));
@@ -439,34 +464,25 @@ public sealed class HistogramView : Control
         {
             double x = data_to_screen(tick);
             context.DrawLine(tick_pen, new Point(x, plot_rect.Bottom), new Point(x, plot_rect.Bottom + 6));
-            draw_centered_text(context, format_axis_value(tick), new Point(x, plot_rect.Bottom + 8), 12, text_color);
+            draw_centered_text(context, format_axis_value(tick), new Point(x, plot_rect.Bottom + 8), 11, tick_text);
         }
+
+        string x_title = Series?.FirstOrDefault()?.Name ?? "";
+        if (!string.IsNullOrWhiteSpace(x_title))
+            draw_centered_text(context, x_title, new Point(plot_rect.Left + plot_rect.Width / 2, Bounds.Bottom - 15), 12, text_color);
+        draw_vertical_centered_text(context, "Normalized Frequency", new Point(Bounds.Left + 45, plot_rect.Top + plot_rect.Height / 2), 12, text_color);
     }
 
     private IEnumerable<double> major_axis_ticks()
     {
-        double minimum = effective_minimum();
-        if (Maximum <= minimum)
+        if (prepare_axis() is not { } prepared || prepared.Maximum <= prepared.Minimum)
             yield break;
-
-        if (AxisScale == HistogramAxisScaleKind.Log)
-        {
-            double start = Math.Ceiling(Math.Log10(Math.Max(minimum, double.Epsilon)));
-            double stop = Math.Floor(Math.Log10(Maximum));
-            for (double power = start; power <= stop; power++)
-            {
-                double value = Math.Pow(10, power);
-                if (value >= minimum && value <= Maximum)
-                    yield return value;
-            }
-            yield break;
-        }
 
         var axis = new AxisSettings
         {
-            Minimum = minimum,
-            Maximum = Maximum,
-            ScaleKind = AxisScale == HistogramAxisScaleKind.Logicle ? CoordinateScaleKind.Logicle : CoordinateScaleKind.Linear
+            Minimum = prepared.Minimum,
+            Maximum = prepared.Maximum,
+            ScaleKind = coordinate_scale_kind()
         };
         
         axis.Scale.Logicle = new LogicleParameters(
@@ -474,84 +490,81 @@ public sealed class HistogramView : Control
             LogicleLinearizationWidth,
             LogicleDecades,
             LogicleNegativeDecades);
+        axis.ArcsinhCofactor = ArcsinhCofactor;
 
         foreach (double value in Configuration.MajorAxisTicks(axis))
-            if (value >= minimum && value <= Maximum)
+            if (value >= prepared.Minimum && value <= prepared.Maximum)
                 yield return value;
     }
 
     private IEnumerable<double> minor_axis_ticks()
     {
-        double minimum = effective_minimum();
-        if (Maximum <= minimum)
+        if (prepare_axis() is not { } prepared || prepared.Maximum <= prepared.Minimum)
             yield break;
-
-        if (AxisScale == HistogramAxisScaleKind.Log)
-        {
-            double start = Math.Floor(Math.Log10(Math.Max(minimum, double.Epsilon)));
-            double stop = Math.Ceiling(Math.Log10(Maximum));
-            var major = major_axis_ticks().ToHashSet();
-            for (double power = start; power <= stop; power++)
-            {
-                double decade = Math.Pow(10, power);
-                for (int factor = 2; factor < 10; factor++)
-                {
-                    double value = factor * decade;
-                    if (value >= minimum && value <= Maximum && !major.Contains(value))
-                        yield return value;
-                }
-            }
-            yield break;
-        }
 
         var axis = new AxisSettings
         {
-            Minimum = minimum,
-            Maximum = Maximum,
-            ScaleKind = AxisScale == HistogramAxisScaleKind.Logicle ? CoordinateScaleKind.Logicle : CoordinateScaleKind.Linear
+            Minimum = prepared.Minimum,
+            Maximum = prepared.Maximum,
+            ScaleKind = coordinate_scale_kind()
         };
         axis.Scale.Logicle = new LogicleParameters(
             LogicleTopOfScale,
             LogicleLinearizationWidth,
             LogicleDecades,
             LogicleNegativeDecades);
+        axis.ArcsinhCofactor = ArcsinhCofactor;
 
         foreach (double value in Configuration.MinorAxisTicks(axis))
-            if (value >= minimum && value <= Maximum)
+            if (value >= prepared.Minimum && value <= prepared.Maximum)
                 yield return value;
     }
 
     private double data_to_screen(double value)
     {
-        if (!try_axis_range(out double transformed_minimum, out double transformed_maximum) || !try_transform(value, out double transformed))
+        if (prepare_axis() is not { } axis || !try_transform(value, out double transformed))
             return plot_rect.Left;
 
-        double span = transformed_maximum - transformed_minimum;
+        double span = axis.TransformedMaximum - axis.TransformedMinimum;
         if (span <= 0)
             return plot_rect.Left;
-        return plot_rect.Left + Math.Clamp((transformed - transformed_minimum) / span, 0, 1) * plot_rect.Width;
+        return plot_rect.Left + Math.Clamp((transformed - axis.TransformedMinimum) / span, 0, 1) * plot_rect.Width;
     }
 
     private double screen_to_data(double x)
     {
-        if (!try_axis_range(out double transformed_minimum, out double transformed_maximum))
+        if (prepare_axis() is not { } axis)
             return effective_minimum();
 
         double normalized = Math.Clamp((x - plot_rect.Left) / plot_rect.Width, 0, 1);
-        double transformed = transformed_minimum + normalized * (transformed_maximum - transformed_minimum);
+        double transformed = axis.TransformedMinimum + normalized * (axis.TransformedMaximum - axis.TransformedMinimum);
         return try_inverse_transform(transformed, out double value) ? value : effective_minimum();
     }
 
-    private bool try_axis_range(out double transformed_minimum, out double transformed_maximum)
+    private PreparedAxis? prepare_axis()
     {
-        transformed_minimum = 0;
-        transformed_maximum = 0;
-        double minimum = effective_minimum();
-        if (!double.IsFinite(minimum) || !double.IsFinite(Maximum) || Maximum <= minimum)
-            return false;
-        if (!try_transform(minimum, out transformed_minimum) || !try_transform(Maximum, out transformed_maximum))
-            return false;
-        return transformed_maximum > transformed_minimum;
+        if (prepared_axis is not null)
+            return prepared_axis;
+
+        var (minimum, maximum) = effective_bounds();
+        if (!double.IsFinite(minimum) || !double.IsFinite(maximum))
+            return null;
+        var scale = shared_scale();
+        double transformed_minimum;
+        double transformed_maximum;
+        if (maximum <= minimum)
+        {
+            transformed_minimum = scale.Transform(minimum - 0.5);
+            transformed_maximum = scale.Transform(maximum + 0.5);
+            if (transformed_maximum <= transformed_minimum)
+                return null;
+            return prepared_axis = new PreparedAxis(minimum, maximum, transformed_minimum, transformed_maximum, scale);
+        }
+        transformed_minimum = scale.Transform(minimum);
+        transformed_maximum = scale.Transform(maximum);
+        if (!double.IsFinite(transformed_minimum) || !double.IsFinite(transformed_maximum) || transformed_maximum <= transformed_minimum)
+            return null;
+        return prepared_axis = new PreparedAxis(minimum, maximum, transformed_minimum, transformed_maximum, scale);
     }
 
     private bool try_transform(double value, out double transformed)
@@ -560,17 +573,7 @@ public sealed class HistogramView : Control
         if (!double.IsFinite(value))
             return false;
 
-        if (AxisScale == HistogramAxisScaleKind.Linear)
-            return true;
-        if (AxisScale == HistogramAxisScaleKind.Log)
-        {
-            if (value <= 0)
-                return false;
-            transformed = Math.Log10(value);
-            return double.IsFinite(transformed);
-        }
-
-        transformed = logicle_transform().Transform(value);
+        transformed = (prepared_axis?.Scale ?? shared_scale()).Transform(value);
         return double.IsFinite(transformed);
     }
 
@@ -579,24 +582,24 @@ public sealed class HistogramView : Control
         value = transformed;
         if (!double.IsFinite(transformed))
             return false;
-        if (AxisScale == HistogramAxisScaleKind.Linear)
-            return true;
-        if (AxisScale == HistogramAxisScaleKind.Log)
-        {
-            value = Math.Pow(10, transformed);
-            return double.IsFinite(value);
-        }
-
-        value = logicle_transform().InverseTransform(transformed);
+        value = (prepared_axis?.Scale ?? shared_scale()).InverseTransform(transformed);
         return double.IsFinite(value);
     }
 
-    private LogicleTransform logicle_transform() =>
-        new(new LogicleParameters(
-            LogicleTopOfScale,
-            LogicleLinearizationWidth,
-            LogicleDecades,
-            LogicleNegativeDecades));
+    private AxisScale shared_scale() => new()
+    {
+        Kind = coordinate_scale_kind(),
+        Logicle = new LogicleParameters(LogicleTopOfScale, LogicleLinearizationWidth, LogicleDecades, LogicleNegativeDecades),
+        ArcsinhCofactor = ArcsinhCofactor
+    };
+
+    private CoordinateScaleKind coordinate_scale_kind() => AxisScale switch
+    {
+        HistogramAxisScaleKind.Log => CoordinateScaleKind.Logarithmic,
+        HistogramAxisScaleKind.Logicle => CoordinateScaleKind.Logicle,
+        HistogramAxisScaleKind.Arcsinh => CoordinateScaleKind.Arcsinh,
+        _ => CoordinateScaleKind.Linear
+    };
 
     private void update_selection(double value)
     {
@@ -634,10 +637,55 @@ public sealed class HistogramView : Control
             ? selection
             : new HistogramRangeSelection(selection.Maximum, selection.Minimum);
 
-    private double effective_minimum() =>
-        AxisScale == HistogramAxisScaleKind.Logicle && Math.Abs(Minimum) < double.Epsilon && Maximum > 0
-            ? -0.01 * Maximum
-            : Minimum;
+    private double effective_minimum() => prepare_axis()?.Minimum ?? effective_bounds().Minimum;
+
+    private (double Minimum, double Maximum) effective_bounds()
+    {
+        var finite = finite_sorted_values();
+        if (finite.Length == 0)
+            return (Minimum ?? 0, Maximum ?? 1);
+        double observed_minimum = percentile_in_sorted(finite, 0.0001);
+        double observed_maximum = percentile_in_sorted(finite, 0.999);
+        double minimum = Minimum is { } requested_minimum && double.IsFinite(requested_minimum)
+            ? Math.Clamp(requested_minimum, observed_minimum, observed_maximum)
+            : observed_minimum;
+        double maximum = Maximum is { } requested_maximum && double.IsFinite(requested_maximum)
+            ? Math.Clamp(requested_maximum, observed_minimum, observed_maximum)
+            : observed_maximum;
+        if (maximum < minimum)
+            (minimum, maximum) = (maximum, minimum);
+        return (minimum, maximum);
+    }
+
+    private double[] finite_sorted_values()
+    {
+        if (Series is null || Series.Count == 0)
+            return [];
+
+        if (Series.Count == 1 && Series[0].SortedValues is { } sorted)
+        {
+            if (sorted is double[] array)
+                return array;
+            return sorted.ToArray();
+        }
+
+        var finite = Series.SelectMany(item => item.SortedValues ?? item.Values)
+            .Where(double.IsFinite)
+            .ToArray();
+        Array.Sort(finite);
+        return finite;
+    }
+
+    private static double percentile_in_sorted(double[] values, double quantile)
+    {
+        if (values.Length == 1)
+            return values[0];
+        double position = Math.Clamp(quantile, 0, 1) * (values.Length - 1);
+        int lower = (int)Math.Floor(position);
+        int upper = Math.Min(values.Length - 1, lower + 1);
+        double fraction = position - lower;
+        return values[lower] + (values[upper] - values[lower]) * fraction;
+    }
 
     private static double[] smooth(double[] source, int passes)
     {
@@ -671,6 +719,7 @@ public sealed class HistogramView : Control
     private void invalidate_bins()
     {
         prepared_series = null;
+        prepared_axis = null;
         InvalidateVisual();
     }
 
@@ -716,6 +765,15 @@ public sealed class HistogramView : Control
         context.DrawText(formatted, new Point(origin.X - formatted.Width, origin.Y));
     }
 
+    private void draw_vertical_centered_text(DrawingContext context, string text, Point center, double size, Color color)
+    {
+        var formatted = create_text(text, size, color);
+        using (context.PushTransform(Matrix.CreateTranslation(-formatted.Width / 2, -formatted.Height / 2) *
+                                     Matrix.CreateRotation(-Math.PI / 2) *
+                                     Matrix.CreateTranslation(center.X, center.Y)))
+            context.DrawText(formatted, new Point());
+    }
+
     private FormattedText create_text(string text, double size, Color color) =>
         new(
             text ?? "",
@@ -738,6 +796,7 @@ public sealed class HistogramView : Control
     }
 
     private sealed record PreparedSeries(Color Color, List<Point> Points);
+    private sealed record PreparedAxis(double Minimum, double Maximum, double TransformedMinimum, double TransformedMaximum, AxisScale Scale);
 
     private enum DragTarget
     {

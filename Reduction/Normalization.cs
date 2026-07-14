@@ -103,9 +103,13 @@ public static class LogicleNormalization
                 continue;
             }
 
-            data[row, column] = scales[row, column] == CoordinateScaleKind.Linear
-                ? (float)((value - linear_means[column]) / linear_stdevs[column])
-                : (float)transform.Transform(value);
+            data[row, column] = scales[row, column] switch
+            {
+                CoordinateScaleKind.Linear => (float)((value - linear_means[column]) / linear_stdevs[column]),
+                CoordinateScaleKind.Logarithmic => (float)(Math.Sign(value) * Math.Log10(1.0 + Math.Abs(value))),
+                CoordinateScaleKind.Arcsinh => (float)Math.Asinh(value / 5.0),
+                _ => (float)transform.Transform(value)
+            };
         }
     }
 }

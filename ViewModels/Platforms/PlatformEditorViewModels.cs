@@ -1234,9 +1234,15 @@ public sealed class IntegrationPlatformEditorViewModel : PlatformEditorViewModel
     {
         if (Platform.Axis.Transform == PlatformTransformationKind.Logarithm)
             return HistogramAxisScaleKind.Log;
-        if (Configuration.DefaultCoordinateScaleForChannel(channel_name) == CoordinateScaleKind.Logicle)
-            return HistogramAxisScaleKind.Logicle;
-        return HistogramAxisScaleKind.Linear;
+        if (Platform.Axis.Transform == PlatformTransformationKind.Arcsinh)
+            return HistogramAxisScaleKind.Arcsinh;
+        return Configuration.DefaultCoordinateScaleForChannel(channel_name) switch
+        {
+            CoordinateScaleKind.Logicle => HistogramAxisScaleKind.Logicle,
+            CoordinateScaleKind.Logarithmic => HistogramAxisScaleKind.Log,
+            CoordinateScaleKind.Arcsinh => HistogramAxisScaleKind.Arcsinh,
+            _ => HistogramAxisScaleKind.Linear
+        };
     }
 
     private Func<double, double> histogram_value_transform(string channel_name)

@@ -13,7 +13,9 @@ namespace gated.Models;
 public enum CoordinateScaleKind
 {
     Linear,
-    Logicle
+    Logicle,
+    Logarithmic,
+    Arcsinh
 }
 
 public enum GateKind
@@ -256,28 +258,36 @@ public sealed class AxisScale
 {
     public CoordinateScaleKind Kind { get; set; } = CoordinateScaleKind.Linear;
     public LogicleParameters Logicle { get; set; } = new();
+    public double ArcsinhCofactor { get; set; } = 5.0;
 
     public AxisScale Clone() =>
         new()
         {
             Kind = Kind,
-            Logicle = Logicle
+            Logicle = Logicle,
+            ArcsinhCofactor = ArcsinhCofactor
         };
 
     public double Transform(double value)
     {
-        if (Kind == CoordinateScaleKind.Linear)
-            return value;
-
-        return new LogicleTransform(Logicle).Transform(value);
+        return Kind switch
+        {
+            CoordinateScaleKind.Linear => value,
+            CoordinateScaleKind.Logarithmic => Math.Sign(value) * Math.Log10(1.0 + Math.Abs(value)),
+            CoordinateScaleKind.Arcsinh => Math.Asinh(value / valid_arcsinh_cofactor()),
+            _ => new LogicleTransform(Logicle).Transform(value)
+        };
     }
 
     public double InverseTransform(double value)
     {
-        if (Kind == CoordinateScaleKind.Linear)
-            return value;
-
-        return new LogicleTransform(Logicle).InverseTransform(value);
+        return Kind switch
+        {
+            CoordinateScaleKind.Linear => value,
+            CoordinateScaleKind.Logarithmic => Math.Sign(value) * (Math.Pow(10.0, Math.Abs(value)) - 1.0),
+            CoordinateScaleKind.Arcsinh => valid_arcsinh_cofactor() * Math.Sinh(value),
+            _ => new LogicleTransform(Logicle).InverseTransform(value)
+        };
     }
 
     public bool IsEquivalent(AxisScale other)
@@ -285,11 +295,16 @@ public sealed class AxisScale
         if (Kind != other.Kind)
             return false;
 
-        if (Kind == CoordinateScaleKind.Linear)
-            return true;
-
-        return Logicle.Equals(other.Logicle);
+        return Kind switch
+        {
+            CoordinateScaleKind.Linear or CoordinateScaleKind.Logarithmic => true,
+            CoordinateScaleKind.Arcsinh => Math.Abs(valid_arcsinh_cofactor() - other.valid_arcsinh_cofactor()) < 1e-12,
+            _ => Logicle.Equals(other.Logicle)
+        };
     }
+
+    private double valid_arcsinh_cofactor() =>
+        double.IsFinite(ArcsinhCofactor) && ArcsinhCofactor > 0 ? ArcsinhCofactor : 5.0;
 }
 
 public sealed class AxisSettings : NotifyBase
@@ -328,10 +343,12 @@ public sealed class AxisSettings : NotifyBase
 
             OnPropertyChanged(nameof(ScaleKind));
             OnPropertyChanged(nameof(IsLogicle));
+            OnPropertyChanged(nameof(IsArcsinh));
             OnPropertyChanged(nameof(LogicleTopOfScale));
             OnPropertyChanged(nameof(LogicleDecades));
             OnPropertyChanged(nameof(LogicleLinearizationWidth));
             OnPropertyChanged(nameof(LogicleNegativeDecades));
+            OnPropertyChanged(nameof(ArcsinhCofactor));
         }
     }
 
@@ -347,10 +364,26 @@ public sealed class AxisSettings : NotifyBase
             OnPropertyChanged();
             OnPropertyChanged(nameof(Scale));
             OnPropertyChanged(nameof(IsLogicle));
+            OnPropertyChanged(nameof(IsArcsinh));
         }
     }
 
     public bool IsLogicle => ScaleKind == CoordinateScaleKind.Logicle;
+    public bool IsArcsinh => ScaleKind == CoordinateScaleKind.Arcsinh;
+
+    public double ArcsinhCofactor
+    {
+        get => scale.ArcsinhCofactor;
+        set
+        {
+            value = double.IsFinite(value) && value > 0 ? value : 5.0;
+            if (Math.Abs(scale.ArcsinhCofactor - value) < double.Epsilon)
+                return;
+            scale.ArcsinhCofactor = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(Scale));
+        }
+    }
 
     public double LogicleTopOfScale
     {
@@ -1049,6 +1082,7 @@ public sealed class SpilloverControlRow : NotifyBase
     private Guid control_sample_id;
     private string parameter_name = "";
     private SpilloverRangeSelection? positive_selection;
+    private Guid gate_preset_id;
 
     public Guid ControlSampleId
     {
@@ -1067,6 +1101,22 @@ public sealed class SpilloverControlRow : NotifyBase
         get => positive_selection;
         set => SetField(ref positive_selection, value);
     }
+
+    public Guid GatePresetId { get => gate_preset_id; set => SetField(ref gate_preset_id, value); }
+}
+
+public sealed class ControlGatePreset : NotifyBase
+{
+    private string name = "Default";
+    public Guid Id { get; init; } = Guid.NewGuid();
+    public string Name { get => name; set => SetField(ref name, string.IsNullOrWhiteSpace(value) ? "Default" : value.Trim()); }
+    public string XChannel { get; set; } = "FSC-A";
+    public string YChannel { get; set; } = "SSC-A";
+    public AxisSettings XAxis { get; set; } = new() { ChannelName = "FSC-A", ScaleKind = CoordinateScaleKind.Linear };
+    public AxisSettings YAxis { get; set; } = new() { ChannelName = "SSC-A", ScaleKind = CoordinateScaleKind.Linear };
+    public ObservableCollection<Point> Vertices { get; } = new();
+
+    public override string ToString() => Name;
 }
 
 public sealed class SpilloverCompensationState : NotifyBase
@@ -1079,8 +1129,100 @@ public sealed class SpilloverCompensationState : NotifyBase
         set => SetField(ref matrix_name, string.IsNullOrWhiteSpace(value) ? "Auto Comp" : value.Trim());
     }
 
-    public ObservableCollection<Point> PrimaryVertices { get; } = new();
+    public ObservableCollection<ControlGatePreset> GatePresets { get; } = new();
+    public ControlGatePreset DefaultGatePreset
+    {
+        get
+        {
+            if (GatePresets.Count == 0)
+                GatePresets.Add(new ControlGatePreset());
+            return GatePresets[0];
+        }
+    }
+    public ObservableCollection<Point> PrimaryVertices => DefaultGatePreset.Vertices;
     public ObservableCollection<SpilloverControlRow> Rows { get; } = new();
+}
+
+public enum SpectralControlRole
+{
+    Molecule,
+    UnstainedAf
+}
+
+public sealed class SpectralControlRow : NotifyBase
+{
+    private Guid control_sample_id;
+    private SpectralControlRole role;
+    private string molecule_name = "";
+    private bool use_automatic_peak = true;
+    private string peak_channel = "";
+    private SpilloverRangeSelection? positive_selection;
+    private Guid gate_preset_id;
+    public Guid ControlSampleId { get => control_sample_id; set => SetField(ref control_sample_id, value); }
+    public SpectralControlRole Role { get => role; set => SetField(ref role, value); }
+    public string MoleculeName { get => molecule_name; set => SetField(ref molecule_name, value ?? ""); }
+    public bool UseAutomaticPeak { get => use_automatic_peak; set => SetField(ref use_automatic_peak, value); }
+    public string PeakChannel { get => peak_channel; set => SetField(ref peak_channel, value ?? ""); }
+    public SpilloverRangeSelection? PositiveSelection { get => positive_selection; set => SetField(ref positive_selection, value); }
+    public Guid GatePresetId { get => gate_preset_id; set => SetField(ref gate_preset_id, value); }
+    public SpectralPlotData? PlotCache { get; set; }
+    public int[] GatedEventCache { get; set; } = [];
+    public int[] PositiveEventCache { get; set; } = [];
+    public string CachedPeakChannel { get; set; } = "";
+    public float[] CachedFingerprint { get; set; } = [];
+    public int CachedPositiveCount { get; set; }
+    public int CachedPopulationCount { get; set; }
+}
+
+public sealed record SpectralPlotData(
+    IReadOnlyList<string> DetectorNames,
+    IReadOnlyList<ExcitationLightKind> ExcitationLights,
+    int[,] Density,
+    double RawMaximum,
+    string PeakChannel,
+    SpilloverRangeSelection? PositiveSelection);
+
+public sealed class SpectralUnmixingState : NotifyBase
+{
+    private bool is_stale = true;
+    private bool is_user_modified;
+    private Guid? linked_output_group_id;
+    public ObservableCollection<ControlGatePreset> GatePresets { get; } = new();
+    public ObservableCollection<SpectralControlRow> Rows { get; } = new();
+    public List<string> DetectorNames { get; } = new();
+    public List<string> SignatureNames { get; } = new();
+    public float[,] Signatures { get; private set; } = new float[0, 0];
+    public float[,] Similarity { get; private set; } = new float[0, 0];
+    public float[,] Coefficients { get; private set; } = new float[0, 0];
+    public Dictionary<Guid, Guid> GeneratedSampleIds { get; } = new();
+    public bool IsStale { get => is_stale; set => SetField(ref is_stale, value); }
+    public bool IsUserModified { get => is_user_modified; set => SetField(ref is_user_modified, value); }
+    public Guid? LinkedOutputGroupId { get => linked_output_group_id; set => SetField(ref linked_output_group_id, value); }
+    public ControlGatePreset DefaultGatePreset
+    {
+        get
+        {
+            if (GatePresets.Count == 0) GatePresets.Add(new ControlGatePreset());
+            return GatePresets[0];
+        }
+    }
+    public void SetFit(IReadOnlyList<string> detectors, IReadOnlyList<string> signatures, float[,] spectra, float[,] similarity, float[,] coefficients)
+    {
+        DetectorNames.Clear(); DetectorNames.AddRange(detectors);
+        SignatureNames.Clear(); SignatureNames.AddRange(signatures);
+        Signatures = (float[,])spectra.Clone();
+        Similarity = (float[,])similarity.Clone();
+        Coefficients = (float[,])coefficients.Clone();
+        IsStale = false;
+        IsUserModified = false;
+        OnPropertyChanged(nameof(Signatures)); OnPropertyChanged(nameof(Similarity)); OnPropertyChanged(nameof(Coefficients));
+    }
+    public void ReplaceCoefficients(float[,] coefficients)
+    {
+        Coefficients = (float[,])coefficients.Clone();
+        IsUserModified = true;
+        OnPropertyChanged(nameof(Coefficients));
+    }
 }
 
 public sealed class ControlSample : NotifyBase
@@ -1201,20 +1343,8 @@ public sealed class ControlSample : NotifyBase
         if (source.Length == 0)
             return Array.Empty<float>();
 
-        double transformed_minimum;
-        double transformed_maximum;
-        LogicleTransform? transform = null;
-        if (scale.Kind == CoordinateScaleKind.Linear)
-        {
-            transformed_minimum = minimum;
-            transformed_maximum = maximum;
-        }
-        else
-        {
-            transform = new LogicleTransform(scale.Logicle);
-            transformed_minimum = transform.Transform(minimum);
-            transformed_maximum = transform.Transform(maximum);
-        }
+        double transformed_minimum = scale.Transform(minimum);
+        double transformed_maximum = scale.Transform(maximum);
 
         double transformed_span = transformed_maximum - transformed_minimum;
         if (transformed_span <= 0)
@@ -1225,7 +1355,7 @@ public sealed class ControlSample : NotifyBase
         {
             if ((index & 4095) == 0)
                 cancellation_token.ThrowIfCancellationRequested();
-            double transformed = transform is null ? source[index] : transform.Transform(source[index]);
+            double transformed = scale.Transform(source[index]);
             normalized[index] = Convert.ToSingle((transformed - transformed_minimum) / transformed_span);
         }
 
@@ -1393,20 +1523,8 @@ public sealed class FlowSample : NotifyBase
         if (source.Length == 0)
             return Array.Empty<float>();
 
-        double transformed_minimum;
-        double transformed_maximum;
-        LogicleTransform? transform = null;
-        if (scale.Kind == CoordinateScaleKind.Linear)
-        {
-            transformed_minimum = minimum;
-            transformed_maximum = maximum;
-        }
-        else
-        {
-            transform = new LogicleTransform(scale.Logicle);
-            transformed_minimum = transform.Transform(minimum);
-            transformed_maximum = transform.Transform(maximum);
-        }
+        double transformed_minimum = scale.Transform(minimum);
+        double transformed_maximum = scale.Transform(maximum);
 
         double transformed_span = transformed_maximum - transformed_minimum;
         if (transformed_span <= 0)
@@ -1417,7 +1535,7 @@ public sealed class FlowSample : NotifyBase
         {
             if ((index & 4095) == 0)
                 cancellation_token.ThrowIfCancellationRequested();
-            double transformed = transform is null ? source[index] : transform.Transform(source[index]);
+            double transformed = scale.Transform(source[index]);
             normalized[index] = Convert.ToSingle((transformed - transformed_minimum) / transformed_span);
         }
 
@@ -1482,6 +1600,12 @@ public sealed class FlowSample : NotifyBase
             return;
         }
 
+        if (is_identity_matrix(matrix.Values))
+        {
+            CompensatedEvents = (float[,])RawEvents.Clone();
+            return;
+        }
+
         var mapped_indices = matrix.ChannelNames.Select(GetChannelIndex).ToArray();
         if (mapped_indices.Any(index => index < 0) || matrix.Values.GetLength(0) != mapped_indices.Length || matrix.Values.GetLength(1) != mapped_indices.Length)
         {
@@ -1511,6 +1635,24 @@ public sealed class FlowSample : NotifyBase
         }
 
         CompensatedEvents = compensated;
+    }
+
+    private static bool is_identity_matrix(float[,] matrix)
+    {
+        int rows = matrix.GetLength(0);
+        int columns = matrix.GetLength(1);
+        if (rows != columns)
+            return false;
+
+        for (int row = 0; row < rows; row++)
+        for (int column = 0; column < columns; column++)
+        {
+            float expected = row == column ? 1.0f : 0.0f;
+            if (Math.Abs(matrix[row, column] - expected) > 0.000001f)
+                return false;
+        }
+
+        return true;
     }
 
     private static bool try_invert(float[,] matrix, out double[,] inverse)
@@ -1757,6 +1899,8 @@ public sealed class FlowGroup : NotifyBase
     public ObservableCollection<StatisticDefinition> Statistics { get; } = new();
     public ObservableCollection<CompensationMatrix> CompensationCandidates { get; } = new();
     public SpilloverCompensationState SpilloverCompensation { get; } = new();
+    public SpectralUnmixingState SpectralUnmixing { get; } = new();
+    public Guid? SpectralSourceGroupId { get; set; }
     public GateViewOptions RootViewOptions { get; set; } = new();
     public Dictionary<string, GateViewOptions> SampleRootViewOptions { get; } = new(StringComparer.Ordinal);
     public Dictionary<string, AxisSettings> DataImpliedViewOptions { get; } = new(StringComparer.Ordinal);
@@ -2032,6 +2176,8 @@ public sealed class FlowGroup : NotifyBase
             : default;
     }
 
+    public override string ToString() => Name;
+
     private static void add_finite_channel_values(
         float[,] values,
         int channel_index,
@@ -2121,7 +2267,8 @@ internal readonly record struct NormalizedChannelCacheKey(
     double LogicleTopOfScale,
     double LogicleLinearizationWidth,
     double LogicleDecades,
-    double LogicleNegativeDecades)
+    double LogicleNegativeDecades,
+    double ArcsinhCofactor)
 {
     public static NormalizedChannelCacheKey Create(string channel_name, double minimum, double maximum, AxisScale scale) =>
         new(
@@ -2132,7 +2279,8 @@ internal readonly record struct NormalizedChannelCacheKey(
             scale.Logicle.T,
             scale.Logicle.W,
             scale.Logicle.M,
-            scale.Logicle.A);
+            scale.Logicle.A,
+            scale.ArcsinhCofactor);
 }
 
 public sealed class FlowWorkspace : NotifyBase

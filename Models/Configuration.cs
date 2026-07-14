@@ -5,6 +5,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using Avalonia.Platform;
 using gated.Services;
 
 namespace gated.Models;
@@ -14,13 +15,38 @@ public enum ChannelSemanticKind
     Other,
     FSC,
     SSC,
-    Time
+    Time,
+    Spectral
+}
+
+public enum ExcitationLightKind
+{
+    Unknown,
+    UV,
+    Violet,
+    Blue,
+    Green,
+    Yellow,
+    Red,
+    FarRed
 }
 
 public sealed class CytometerPreference
 {
     public string Name { get; set; } = "";
+    public ObservableCollection<SpectralDetectorPreference> Detectors { get; set; } = new();
     public ObservableCollection<ChannelAssumption> Channels { get; set; } = new();
+}
+
+public sealed class SpectralDetectorPreference
+{
+    public string ChannelName { get; set; } = "";
+    public ChannelSemanticKind Kind { get; set; }
+    public CoordinateScaleKind Scale { get; set; } = CoordinateScaleKind.Logicle;
+    public bool UseObservedRange { get; set; }
+    public bool IsSpectral { get; set; }
+    public ExcitationLightKind ExcitationLight { get; set; }
+    public int PlotOrder { get; set; }
 }
 
 public sealed class ChannelAssumption
@@ -44,6 +70,7 @@ public static class Configuration
     private const string file_name = "cytometer-preferences.json";
     private static readonly JsonSerializerOptions json_options = new() { WriteIndented = true };
     private static CytometerPreferenceStore store = load_store();
+    private static readonly Lazy<IReadOnlyList<string[]>> spectral_database = new(load_spectral_database);
 
     public static CytometerPreferenceStore Preferences => store;
 
@@ -65,8 +92,13 @@ public static class Configuration
             name = DefaultCytometerName;
 
         var preference = get_or_create_preference(name);
+        int order = preference.Detectors.Count;
         foreach (var channel in channels)
         {
+            if (preference.Detectors.Any(item => string.Equals(item.ChannelName, channel.Name, StringComparison.OrdinalIgnoreCase)))
+                continue;
+            preference.Detectors.Add(infer_detector(channel.Name, name, order++));
+            /* Legacy assumptions remain useful for old preference files. */
             if (preference.Channels.Any(item => pattern_matches(item.Pattern, channel.Name)))
                 continue;
             var inferred = infer_channel(channel.Name);
@@ -119,15 +151,44 @@ public static class Configuration
         ChannelKind(channel_name) == ChannelSemanticKind.SSC;
 
     public static ChannelSemanticKind ChannelKind(string channel_name, string? cytometer_name = null) =>
-        assumption_for_channel(channel_name, cytometer_name)?.Kind ?? infer_channel(channel_name).Kind;
+        detector_for_channel(channel_name, cytometer_name) is { } detector
+            ? detector.IsSpectral ? ChannelSemanticKind.Spectral : detector.Kind
+            : assumption_for_channel(channel_name, cytometer_name)?.Kind ?? infer_channel(channel_name).Kind;
 
     public static PlatformTransformationKind DefaultPlatformTransformationForChannel(string channel_name) =>
-        DefaultCoordinateScaleForChannel(channel_name) == CoordinateScaleKind.Linear
-            ? PlatformTransformationKind.Linear
-            : PlatformTransformationKind.Logicle;
+        DefaultCoordinateScaleForChannel(channel_name) switch
+        {
+            CoordinateScaleKind.Linear => PlatformTransformationKind.Linear,
+            CoordinateScaleKind.Logarithmic => PlatformTransformationKind.Logarithm,
+            CoordinateScaleKind.Arcsinh => PlatformTransformationKind.Arcsinh,
+            _ => PlatformTransformationKind.Logicle
+        };
 
     public static CoordinateScaleKind DefaultCoordinateScaleForChannel(string channel_name, string? cytometer_name = null) =>
+        detector_for_channel(channel_name, cytometer_name)?.Scale ??
         assumption_for_channel(channel_name, cytometer_name)?.Scale ?? infer_channel(channel_name).Scale;
+
+    public static IReadOnlyList<SpectralDetectorPreference> SpectralDetectors(string? cytometer_name = null) =>
+        ordered_preferences(cytometer_name)
+            .SelectMany(item => item.Detectors)
+            .Where(item => item.IsSpectral || item.Kind == ChannelSemanticKind.Spectral)
+            .GroupBy(item => item.ChannelName, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .OrderBy(item => item.PlotOrder)
+            .ThenBy(item => item.ChannelName, NaturalChannelNameComparer.Instance)
+            .ToArray();
+
+    public static string? ValidateSpectralDetectors(string? cytometer_name = null)
+    {
+        var detectors = SpectralDetectors(cytometer_name);
+        if (detectors.Count == 0)
+            return "No spectral detectors are configured for this cytometer.";
+        if (detectors.Any(item => item.ExcitationLight == ExcitationLightKind.Unknown))
+            return "Every spectral detector must have an excitation light.";
+        if (detectors.GroupBy(item => item.PlotOrder).Any(group => group.Count() > 1))
+            return "Spectral detector plot orders must be unique.";
+        return null;
+    }
 
     public static (double Minimum, double Maximum) DefaultChannelRange(double channel_maximum)
     {
@@ -149,6 +210,20 @@ public static class Configuration
             yield break;
         }
 
+        if (axis.ScaleKind == CoordinateScaleKind.Logarithmic)
+        {
+            foreach (double value in signed_log_ticks(axis.Minimum, axis.Maximum, major: true))
+                yield return value;
+            yield break;
+        }
+
+        if (axis.ScaleKind == CoordinateScaleKind.Arcsinh)
+        {
+            foreach (double value in arcsinh_ticks(axis, major: true))
+                yield return value;
+            yield break;
+        }
+
         foreach (double value in linear_ticks(axis.Minimum, axis.Maximum, 4, 6))
             yield return value;
     }
@@ -166,6 +241,20 @@ public static class Configuration
                 if (!major.Contains(value))
                     yield return value;
             }
+            yield break;
+        }
+
+        if (axis.ScaleKind == CoordinateScaleKind.Logarithmic)
+        {
+            foreach (double value in signed_log_ticks(axis.Minimum, axis.Maximum, major: false))
+                yield return value;
+            yield break;
+        }
+
+        if (axis.ScaleKind == CoordinateScaleKind.Arcsinh)
+        {
+            foreach (double value in arcsinh_ticks(axis, major: false))
+                yield return value;
             yield break;
         }
 
@@ -208,6 +297,11 @@ public static class Configuration
 
     private static CytometerPreferenceStore ensure_defaults(CytometerPreferenceStore loaded)
     {
+        foreach (var preference in loaded.Cytometers)
+        {
+            preference.Detectors ??= new ObservableCollection<SpectralDetectorPreference>();
+            preference.Channels ??= new ObservableCollection<ChannelAssumption>();
+        }
         if (loaded.Cytometers.All(item => item.Name != DefaultCytometerName))
             loaded.Cytometers.Insert(0, create_default_preference());
         if (string.IsNullOrWhiteSpace(loaded.SelectedCytometerName))
@@ -244,6 +338,105 @@ public static class Configuration
         return new ChannelAssumption { Pattern = channel_name, Kind = ChannelSemanticKind.Other, Scale = CoordinateScaleKind.Logicle };
     }
 
+    private static SpectralDetectorPreference infer_detector(string channel_name, string cytometer_name, int order)
+    {
+        var inferred = infer_channel(channel_name);
+        if (inferred.Kind != ChannelSemanticKind.Other)
+            return new SpectralDetectorPreference { ChannelName = channel_name, Kind = inferred.Kind, Scale = inferred.Scale, UseObservedRange = inferred.UseObservedRange, PlotOrder = order };
+
+        bool area = channel_name.EndsWith("-A", StringComparison.OrdinalIgnoreCase);
+        bool excluded = channel_name.Contains("COMP", StringComparison.OrdinalIgnoreCase) ||
+                        channel_name.Contains("IMAG", StringComparison.OrdinalIgnoreCase) ||
+                        channel_name.Contains("EVENT", StringComparison.OrdinalIgnoreCase) ||
+                        channel_name.Contains("SORT", StringComparison.OrdinalIgnoreCase) ||
+                        channel_name.Contains("LIGHTLOSS", StringComparison.OrdinalIgnoreCase);
+        bool known = try_known_detector(channel_name, cytometer_name, out var known_light, out int known_order);
+        var light = known ? known_light : infer_excitation(channel_name, cytometer_name);
+        bool spectral = area && !excluded;
+        return new SpectralDetectorPreference
+        {
+            ChannelName = channel_name,
+            Kind = spectral ? ChannelSemanticKind.Spectral : ChannelSemanticKind.Other,
+            Scale = CoordinateScaleKind.Logicle,
+            IsSpectral = spectral,
+            ExcitationLight = light,
+            PlotOrder = known ? known_order : order
+        };
+    }
+
+    private static bool try_known_detector(string channel_name, string cytometer_name, out ExcitationLightKind light, out int order)
+    {
+        light = ExcitationLightKind.Unknown; order = -1;
+        string name = cytometer_name.ToUpperInvariant();
+        (int Channel, int Laser) columns = name.Contains("NORTHERN") ? (2, 3) : name.Contains("AURORA") ? (0, 1) :
+            name.Contains("ID7000") ? (4, 5) : name.Contains("DISCOVER") ? (6, 7) : name.Contains("OPTEON") ? (8, 9) :
+            name.Contains("MOSAIC") ? (10, 11) : name.Contains("XENITH") ? (12, 14) :
+            name.Contains("SYMPHONY") || name.Contains("A5") ? (15, 16) : (-1, -1);
+        if (columns.Channel < 0) return false;
+        var rows = spectral_database.Value;
+        for (int index = 0; index < rows.Count; index++)
+        {
+            var row = rows[index];
+            if (row.Length <= Math.Max(columns.Channel, columns.Laser) || !string.Equals(row[columns.Channel], channel_name, StringComparison.OrdinalIgnoreCase)) continue;
+            light = row[columns.Laser].Trim().ToUpperInvariant() switch
+            {
+                "DEEPUV" or "UV" => ExcitationLightKind.UV, "VIOLET" => ExcitationLightKind.Violet,
+                "BLUE" => ExcitationLightKind.Blue, "GREEN" => ExcitationLightKind.Green,
+                "YELLOWGREEN" or "YELLOW" => ExcitationLightKind.Yellow, "RED" => ExcitationLightKind.Red,
+                "IR" or "FARRED" => ExcitationLightKind.FarRed, _ => ExcitationLightKind.Unknown
+            };
+            order = index;
+            return light != ExcitationLightKind.Unknown;
+        }
+        return false;
+    }
+
+    private static IReadOnlyList<string[]> load_spectral_database()
+    {
+        try
+        {
+            using var stream = AssetLoader.Open(new Uri("avares://gated/.github/resources/AutoSpectral/inst/extdata/cytometer_database.csv"));
+            using var reader = new StreamReader(stream);
+            _ = reader.ReadLine();
+            var rows = new List<string[]>();
+            while (reader.ReadLine() is { } line) rows.Add(line.Split(','));
+            return rows;
+        }
+        catch { return Array.Empty<string[]>(); }
+    }
+
+    private static ExcitationLightKind infer_excitation(string channel_name, string cytometer_name)
+    {
+        string name = channel_name.ToUpperInvariant();
+        if (name.StartsWith("UV") || name.StartsWith("U") || name.StartsWith("355CH") || name.StartsWith("320CH")) return ExcitationLightKind.UV;
+        if (name.StartsWith("V") || name.StartsWith("405CH")) return ExcitationLightKind.Violet;
+        if (name.StartsWith("B") || name.StartsWith("488CH")) return ExcitationLightKind.Blue;
+        if (name.StartsWith("G") || name.StartsWith("532CH")) return ExcitationLightKind.Green;
+        if (name.StartsWith("YG") || name.StartsWith("Y") || name.StartsWith("561CH")) return ExcitationLightKind.Yellow;
+        if (name.StartsWith("FR") || name.StartsWith("IR") || name.StartsWith("781CH") || name.StartsWith("808CH")) return ExcitationLightKind.FarRed;
+        if (name.StartsWith("R") || name.StartsWith("637CH") || name.StartsWith("640CH")) return ExcitationLightKind.Red;
+        if (cytometer_name.Contains("XENITH", StringComparison.OrdinalIgnoreCase) && try_xenith_light(name, out var xenith)) return xenith;
+        return ExcitationLightKind.Unknown;
+    }
+
+    private static bool try_xenith_light(string name, out ExcitationLightKind light)
+    {
+        light = ExcitationLightKind.Unknown;
+        if (!name.StartsWith("FL", StringComparison.Ordinal) || !int.TryParse(new string(name.Skip(2).TakeWhile(char.IsDigit).ToArray()), out int number))
+            return false;
+        light = number switch
+        {
+            0 or 1 or 2 or 3 or 4 or 5 or 6 or 7 or 8 or 9 or 10 or 11 => ExcitationLightKind.UV,
+            12 or 13 or 14 or 15 or 16 or 17 or 18 or 19 or 20 or 21 or 22 or 23 => ExcitationLightKind.Violet,
+            36 or 37 or 38 or 39 or 40 or 41 or 42 => ExcitationLightKind.Blue,
+            24 or 25 or 26 or 27 or 28 or 29 or 30 or 31 or 32 or 33 or 34 or 35 => ExcitationLightKind.Yellow,
+            43 or 44 or 45 or 46 or 47 => ExcitationLightKind.Red,
+            48 or 49 or 50 => ExcitationLightKind.FarRed,
+            _ => ExcitationLightKind.Unknown
+        };
+        return light != ExcitationLightKind.Unknown;
+    }
+
     private static ChannelAssumption? assumption_for_channel(string channel_name, string? cytometer_name)
     {
         cytometer_name = normalize_cytometer_name(cytometer_name);
@@ -251,6 +444,18 @@ public static class Configuration
             ? store.Cytometers
             : store.Cytometers.Where(item => item.Name == cytometer_name).Concat(store.Cytometers.Where(item => item.Name == DefaultCytometerName));
         return ordered.SelectMany(item => item.Channels).FirstOrDefault(item => pattern_matches(item.Pattern, channel_name));
+    }
+
+    private static SpectralDetectorPreference? detector_for_channel(string channel_name, string? cytometer_name) =>
+        ordered_preferences(cytometer_name).SelectMany(item => item.Detectors)
+            .FirstOrDefault(item => string.Equals(item.ChannelName, channel_name, StringComparison.OrdinalIgnoreCase));
+
+    private static IEnumerable<CytometerPreference> ordered_preferences(string? cytometer_name)
+    {
+        cytometer_name = normalize_cytometer_name(cytometer_name);
+        return string.IsNullOrWhiteSpace(cytometer_name)
+            ? store.Cytometers
+            : store.Cytometers.Where(item => item.Name == cytometer_name).Concat(store.Cytometers.Where(item => item.Name == DefaultCytometerName));
     }
 
     private static CytometerPreference get_or_create_preference(string name)
@@ -266,6 +471,17 @@ public static class Configuration
     private static CytometerPreference clone_preference(CytometerPreference source)
     {
         var clone = new CytometerPreference { Name = source.Name };
+        foreach (var detector in source.Detectors)
+            clone.Detectors.Add(new SpectralDetectorPreference
+            {
+                ChannelName = detector.ChannelName,
+                Kind = detector.Kind,
+                Scale = detector.Scale,
+                UseObservedRange = detector.UseObservedRange,
+                IsSpectral = detector.IsSpectral,
+                ExcitationLight = detector.ExcitationLight,
+                PlotOrder = detector.PlotOrder
+            });
         foreach (var assumption in source.Channels)
             clone.Channels.Add(new ChannelAssumption
             {
@@ -278,9 +494,59 @@ public static class Configuration
     }
 
     private static bool pattern_matches(string pattern, string channel_name) =>
-        !string.IsNullOrWhiteSpace(pattern) &&
-        !string.IsNullOrWhiteSpace(channel_name) &&
-        channel_name.Contains(pattern, StringComparison.OrdinalIgnoreCase);
+        !string.IsNullOrWhiteSpace(pattern) && !string.IsNullOrWhiteSpace(channel_name) &&
+        (pattern.StartsWith("regex:", StringComparison.OrdinalIgnoreCase)
+            ? System.Text.RegularExpressions.Regex.IsMatch(channel_name, pattern[6..], System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+            : channel_name.Contains(pattern, StringComparison.OrdinalIgnoreCase));
+
+    private static IEnumerable<double> signed_log_ticks(double minimum, double maximum, bool major)
+    {
+        if (minimum <= 0 && maximum >= 0) yield return 0;
+        double limit = Math.Max(Math.Abs(minimum), Math.Abs(maximum));
+        if (limit <= 0) yield break;
+        int top = Math.Max(0, (int)Math.Ceiling(Math.Log10(limit)));
+        for (int power = 0; power <= top; power++)
+        {
+            double decade = Math.Pow(10, power);
+            int first = major ? 1 : 2;
+            int last = major ? 1 : 9;
+            for (int factor = first; factor <= last; factor++)
+            {
+                double value = factor * decade;
+                if (-value >= minimum && -value <= maximum) yield return -value;
+                if (value >= minimum && value <= maximum) yield return value;
+            }
+        }
+    }
+
+    private static IEnumerable<double> arcsinh_ticks(AxisSettings axis, bool major)
+    {
+        double minimum = axis.Minimum;
+        double maximum = axis.Maximum;
+        if (minimum <= 0 && maximum >= 0)
+            yield return 0;
+
+        double cofactor = double.IsFinite(axis.ArcsinhCofactor) && axis.ArcsinhCofactor > 0
+            ? axis.ArcsinhCofactor
+            : 5.0;
+        double limit = Math.Max(Math.Abs(minimum), Math.Abs(maximum));
+        if (limit < cofactor)
+            yield break;
+
+        int top = Math.Max(0, (int)Math.Ceiling(Math.Log10(limit / cofactor)));
+        for (int power = 0; power <= top; power++)
+        {
+            double decade = cofactor * Math.Pow(10, power);
+            int first = major ? 1 : 2;
+            int last = major ? 1 : 9;
+            for (int factor = first; factor <= last; factor++)
+            {
+                double value = factor * decade;
+                if (-value >= minimum && -value <= maximum) yield return -value;
+                if (value >= minimum && value <= maximum) yield return value;
+            }
+        }
+    }
 
     private static string normalize_cytometer_name(string? name) =>
         string.IsNullOrWhiteSpace(name) ? DefaultCytometerName : name.Trim();
@@ -358,5 +624,30 @@ public static class Configuration
                 return candidate;
         }
         return 10 * power;
+    }
+}
+
+internal sealed class NaturalChannelNameComparer : IComparer<string>
+{
+    public static NaturalChannelNameComparer Instance { get; } = new();
+    public int Compare(string? x, string? y)
+    {
+        x ??= ""; y ??= "";
+        int xi = 0, yi = 0;
+        while (xi < x.Length && yi < y.Length)
+        {
+            if (char.IsDigit(x[xi]) && char.IsDigit(y[yi]))
+            {
+                long xn = 0, yn = 0;
+                while (xi < x.Length && char.IsDigit(x[xi])) xn = xn * 10 + x[xi++] - '0';
+                while (yi < y.Length && char.IsDigit(y[yi])) yn = yn * 10 + y[yi++] - '0';
+                int numeric = xn.CompareTo(yn);
+                if (numeric != 0) return numeric;
+                continue;
+            }
+            int character = char.ToUpperInvariant(x[xi++]).CompareTo(char.ToUpperInvariant(y[yi++]));
+            if (character != 0) return character;
+        }
+        return (x.Length - xi).CompareTo(y.Length - yi);
     }
 }

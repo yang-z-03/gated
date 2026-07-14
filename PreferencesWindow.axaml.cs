@@ -15,7 +15,7 @@ public partial class PreferencesWindow : Window
         cytometerList.SelectionChanged += (_, _) => bind_selected();
         cytometerList.SelectedItem = Configuration.Preferences.Cytometers.FirstOrDefault(item => item.Name == Configuration.Preferences.SelectedCytometerName)
             ?? Configuration.Preferences.Cytometers.FirstOrDefault();
-        channelGrid.ItemsSource = (cytometerList.SelectedItem as CytometerPreference)?.Channels;
+        channelGrid.ItemsSource = (cytometerList.SelectedItem as CytometerPreference)?.Detectors;
         
         addCytometerButton.Click += (_, _) => add_cytometer();
         addChannelButton.Click += (_, _) => add_channel();
@@ -34,7 +34,7 @@ public partial class PreferencesWindow : Window
     private void bind_selected()
     {
         if (cytometerList.SelectedItem is not CytometerPreference preference) return;
-        channelGrid.ItemsSource = preference.Channels;
+        channelGrid.ItemsSource = preference.Detectors;
     }
 
     private void add_cytometer()
@@ -49,20 +49,21 @@ public partial class PreferencesWindow : Window
     {
         if (cytometerList.SelectedItem is not CytometerPreference preference)
             return;
-        preference.Channels.Add(new ChannelAssumption
+        preference.Detectors.Add(new SpectralDetectorPreference
         {
-            Pattern = "Channel",
+            ChannelName = "Channel-A",
             Kind = ChannelSemanticKind.Other,
-            Scale = CoordinateScaleKind.Logicle
+            Scale = CoordinateScaleKind.Logicle,
+            PlotOrder = preference.Detectors.Count
         });
     }
 
     private void remove_channel()
     {
         if (cytometerList.SelectedItem is not CytometerPreference preference ||
-            channelGrid.SelectedItem is not ChannelAssumption assumption)
+            channelGrid.SelectedItem is not SpectralDetectorPreference assumption)
             return;
-        preference.Channels.Remove(assumption);
+        preference.Detectors.Remove(assumption);
     }
 
     private void reset_defaults()
@@ -77,5 +78,6 @@ public partial class PreferencesWindow : Window
     {
         public Array KindChoices { get; } = Enum.GetValues<ChannelSemanticKind>();
         public Array ScaleChoices { get; } = Enum.GetValues<CoordinateScaleKind>();
+        public Array ExcitationChoices { get; } = Enum.GetValues<ExcitationLightKind>();
     }
 }

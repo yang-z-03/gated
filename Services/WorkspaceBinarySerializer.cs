@@ -11,8 +11,9 @@ namespace gated.Services;
 public sealed class WorkspaceBinarySerializer
 {
     private const uint magic = 0x44544731;
-    private const int version = 45;
+    private const int version = 46;
     private const int minimum_supported_version = 42;
+    [ThreadStatic] private static int reading_version;
 
     public void Save(FlowWorkspace workspace, string file_path)
     {
@@ -47,6 +48,7 @@ public sealed class WorkspaceBinarySerializer
         int file_version = reader.ReadInt32();
         if (file_version < minimum_supported_version || file_version > version)
             throw new NotSupportedException($"Unsupported Gated workspace version: {file_version}. Current version is {version}.");
+        reading_version = file_version;
 
         var workspace = new FlowWorkspace { Name = read_string(reader) };
         int group_count = reader.ReadInt32();
@@ -130,6 +132,10 @@ public sealed class WorkspaceBinarySerializer
             write_control_sample(writer, sample);
 
         write_spillover_state(writer, group.SpilloverCompensation);
+        write_spectral_state(writer, group.SpectralUnmixing);
+        writer.Write(group.SpectralSourceGroupId.HasValue);
+        if (group.SpectralSourceGroupId.HasValue)
+            writer.Write(group.SpectralSourceGroupId.Value.ToByteArray());
     }
 
     private static FlowGroup read_group(BinaryReader reader, int file_version)
@@ -162,7 +168,12 @@ public sealed class WorkspaceBinarySerializer
         int control_sample_count = reader.ReadInt32();
         for (int index = 0; index < control_sample_count; index++)
             group.ControlSamples.Add(read_control_sample(reader));
-        read_spillover_state(reader, group.SpilloverCompensation);
+        read_spillover_state(reader, group.SpilloverCompensation, file_version);
+        if (file_version >= 46)
+        {
+            read_spectral_state(reader, group.SpectralUnmixing);
+            if (reader.ReadBoolean()) group.SpectralSourceGroupId = new Guid(reader.ReadBytes(16));
+        }
 
         return group;
     }
@@ -201,18 +212,15 @@ public sealed class WorkspaceBinarySerializer
     private static void write_spillover_state(BinaryWriter writer, SpilloverCompensationState state)
     {
         write_string(writer, state.MatrixName);
-        writer.Write(state.PrimaryVertices.Count);
-        foreach (var vertex in state.PrimaryVertices)
-        {
-            writer.Write(vertex.X);
-            writer.Write(vertex.Y);
-        }
+        writer.Write(state.GatePresets.Count);
+        foreach (var preset in state.GatePresets) write_control_gate_preset(writer, preset);
 
         writer.Write(state.Rows.Count);
         foreach (var row in state.Rows)
         {
             writer.Write(row.ControlSampleId.ToByteArray());
             write_string(writer, row.ParameterName);
+            writer.Write(row.GatePresetId.ToByteArray());
             writer.Write(row.PositiveSelection is not null);
             if (row.PositiveSelection is { } selection)
             {
@@ -222,12 +230,19 @@ public sealed class WorkspaceBinarySerializer
         }
     }
 
-    private static void read_spillover_state(BinaryReader reader, SpilloverCompensationState state)
+    private static void read_spillover_state(BinaryReader reader, SpilloverCompensationState state, int file_version)
     {
         state.MatrixName = read_string(reader);
-        int vertex_count = reader.ReadInt32();
-        for (int index = 0; index < vertex_count; index++)
-            state.PrimaryVertices.Add(new Point(reader.ReadDouble(), reader.ReadDouble()));
+        if (file_version >= 46)
+        {
+            int preset_count = reader.ReadInt32();
+            for (int index = 0; index < preset_count; index++) state.GatePresets.Add(read_control_gate_preset(reader));
+        }
+        else
+        {
+            int vertex_count = reader.ReadInt32();
+            for (int index = 0; index < vertex_count; index++) state.DefaultGatePreset.Vertices.Add(new Point(reader.ReadDouble(), reader.ReadDouble()));
+        }
 
         int row_count = reader.ReadInt32();
         for (int index = 0; index < row_count; index++)
@@ -237,10 +252,76 @@ public sealed class WorkspaceBinarySerializer
                 ControlSampleId = new Guid(reader.ReadBytes(16)),
                 ParameterName = read_string(reader)
             };
+            row.GatePresetId = file_version >= 46 ? new Guid(reader.ReadBytes(16)) : state.DefaultGatePreset.Id;
             if (reader.ReadBoolean())
                 row.PositiveSelection = new SpilloverRangeSelection(reader.ReadDouble(), reader.ReadDouble());
             state.Rows.Add(row);
         }
+    }
+
+    private static void write_control_gate_preset(BinaryWriter writer, ControlGatePreset preset)
+    {
+        writer.Write(preset.Id.ToByteArray());
+        write_string(writer, preset.Name); write_string(writer, preset.XChannel); write_string(writer, preset.YChannel);
+        write_axis_settings(writer, preset.XAxis); write_axis_settings(writer, preset.YAxis);
+        writer.Write(preset.Vertices.Count);
+        foreach (var vertex in preset.Vertices) { writer.Write(vertex.X); writer.Write(vertex.Y); }
+    }
+
+    private static ControlGatePreset read_control_gate_preset(BinaryReader reader)
+    {
+        var preset = new ControlGatePreset
+        {
+            Id = new Guid(reader.ReadBytes(16)), Name = read_string(reader), XChannel = read_string(reader), YChannel = read_string(reader),
+            XAxis = read_axis_settings(reader), YAxis = read_axis_settings(reader)
+        };
+        int count = reader.ReadInt32();
+        for (int index = 0; index < count; index++) preset.Vertices.Add(new Point(reader.ReadDouble(), reader.ReadDouble()));
+        return preset;
+    }
+
+    private static void write_spectral_state(BinaryWriter writer, SpectralUnmixingState state)
+    {
+        writer.Write(state.GatePresets.Count);
+        foreach (var preset in state.GatePresets) write_control_gate_preset(writer, preset);
+        writer.Write(state.Rows.Count);
+        foreach (var row in state.Rows)
+        {
+            writer.Write(row.ControlSampleId.ToByteArray()); writer.Write((int)row.Role); write_string(writer, row.MoleculeName);
+            writer.Write(row.UseAutomaticPeak); write_string(writer, row.PeakChannel); writer.Write(row.GatePresetId.ToByteArray());
+            writer.Write(row.PositiveSelection is not null);
+            if (row.PositiveSelection is { } range) { writer.Write(range.Minimum); writer.Write(range.Maximum); }
+        }
+        write_string_array(writer, state.DetectorNames.ToArray()); write_string_array(writer, state.SignatureNames.ToArray());
+        write_float_matrix(writer, state.Signatures); write_float_matrix(writer, state.Similarity); write_float_matrix(writer, state.Coefficients);
+        writer.Write(state.IsStale); writer.Write(state.IsUserModified); writer.Write(state.LinkedOutputGroupId.HasValue);
+        if (state.LinkedOutputGroupId.HasValue) writer.Write(state.LinkedOutputGroupId.Value.ToByteArray());
+        writer.Write(state.GeneratedSampleIds.Count);
+        foreach (var pair in state.GeneratedSampleIds) { writer.Write(pair.Key.ToByteArray()); writer.Write(pair.Value.ToByteArray()); }
+    }
+
+    private static void read_spectral_state(BinaryReader reader, SpectralUnmixingState state)
+    {
+        int preset_count = reader.ReadInt32();
+        for (int index = 0; index < preset_count; index++) state.GatePresets.Add(read_control_gate_preset(reader));
+        int row_count = reader.ReadInt32();
+        for (int index = 0; index < row_count; index++)
+        {
+            var row = new SpectralControlRow
+            {
+                ControlSampleId = new Guid(reader.ReadBytes(16)), Role = (SpectralControlRole)reader.ReadInt32(), MoleculeName = read_string(reader),
+                UseAutomaticPeak = reader.ReadBoolean(), PeakChannel = read_string(reader), GatePresetId = new Guid(reader.ReadBytes(16))
+            };
+            if (reader.ReadBoolean()) row.PositiveSelection = new SpilloverRangeSelection(reader.ReadDouble(), reader.ReadDouble());
+            state.Rows.Add(row);
+        }
+        var detectors = read_string_array(reader); var signatures = read_string_array(reader);
+        var spectra = read_float_matrix(reader) ?? new float[0, 0]; var similarity = read_float_matrix(reader) ?? new float[0, 0]; var coefficients = read_float_matrix(reader) ?? new float[0, 0];
+        bool stale = reader.ReadBoolean(); bool modified = reader.ReadBoolean();
+        if (reader.ReadBoolean()) state.LinkedOutputGroupId = new Guid(reader.ReadBytes(16));
+        int map_count = reader.ReadInt32();
+        for (int index = 0; index < map_count; index++) state.GeneratedSampleIds[new Guid(reader.ReadBytes(16))] = new Guid(reader.ReadBytes(16));
+        state.SetFit(detectors, signatures, spectra, similarity, coefficients); state.IsStale = stale; state.IsUserModified = modified;
     }
 
     private static void write_sample(BinaryWriter writer, FlowSample sample)
@@ -1818,11 +1899,12 @@ public sealed class WorkspaceBinarySerializer
         writer.Write(scale.Logicle.W);
         writer.Write(scale.Logicle.M);
         writer.Write(scale.Logicle.A);
+        writer.Write(scale.ArcsinhCofactor);
     }
 
     private static AxisScale read_axis_scale(BinaryReader reader)
     {
-        return new AxisScale
+        var scale = new AxisScale
         {
             Kind = (CoordinateScaleKind)reader.ReadInt32(),
             Logicle = new LogicleParameters(
@@ -1831,6 +1913,9 @@ public sealed class WorkspaceBinarySerializer
                 reader.ReadDouble(),
                 reader.ReadDouble())
         };
+        if (reading_version >= 46)
+            scale.ArcsinhCofactor = reader.ReadDouble();
+        return scale;
     }
 
     private static void write_logicle_parameters(BinaryWriter writer, LogicleParameters parameters)

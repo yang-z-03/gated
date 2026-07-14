@@ -32,7 +32,8 @@ public enum PlatformTransformationKind
 {
     Linear,
     Logarithm,
-    Logicle
+    Logicle,
+    Arcsinh
 }
 
 public enum CellCycleModelKind

@@ -29,6 +29,7 @@ public enum MainWindowViewState
     Metadata,
     GroupMetadata,
     SpilloverCompensation,
+    SpectralUnmixing,
     Platform
 }
 
@@ -44,10 +45,15 @@ public sealed partial class MainWindowViewModel : NotifyBase
     private CompensationMatrix? selected_compensation;
     private ControlSample? selected_control_sample;
     private SpilloverControlRowViewModel? selected_spillover_row;
+    private ControlGatePreset? selected_spillover_gate_preset;
     private ControlSample? spillover_scatter_sample_cache;
     private string spillover_scatter_sample_cache_key = "";
+    private readonly Dictionary<string, int[]> spillover_primary_index_cache = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, SpilloverGatedChannelCache> spillover_gated_channel_cache = new(StringComparer.Ordinal);
     private CompensationMatrix? spillover_preview_matrix;
     private bool is_spillover_preview_outdated;
+    private bool is_spillover_calculating;
+    private bool is_spillover_preparing_row_caches;
     private PageLayout? selected_page_layout;
     private Platform? selected_integration_job;
     private MainWindowViewState view_state = MainWindowViewState.Analysis;
@@ -114,6 +120,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
     public ObservableCollection<AxisChoice> SelectedPageColorChoices { get; } = new();
     public ObservableCollection<EquivalentSampleChoice> EquivalentSampleChoices { get; } = new();
     public ObservableCollection<SpilloverControlRowViewModel> SpilloverRows { get; } = new();
+    public ObservableCollection<ControlGatePreset> SpilloverGatePresets { get; } = new();
     public ObservableCollection<string> SpilloverParameterChoices { get; } = new();
     public ObservableCollection<string> SpilloverConfiguredParameterChoices { get; } = new();
     public ObservableCollection<HistogramSeries> SpilloverHistogramSeries { get; } = new();
@@ -137,6 +144,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
     public DataTable StatisticTable => statistic_table;
     public DataView WorkspaceMetadataTableView => workspace_metadata_table.DefaultView;
     public DataTable WorkspaceMetadataTable => workspace_metadata_table;
+    public SpectralUnmixingViewModel SpectralPanel { get; }
 
     public ICommand CreateGroupCommand { get; }
     public ICommand CreateLayoutCommand { get; }
@@ -190,6 +198,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
     public ICommand SelectNextSpilloverChannelCommand { get; }
     public ICommand RemoveSpilloverControlCommand { get; }
     public ICommand MarkSpilloverPreviewOutdatedCommand { get; }
+    public ICommand NewSpilloverGatePresetCommand { get; }
     public ICommand RemoveChannelCommand { get; }
     public ICommand AddPageElementCommand { get; }
     public ICommand DeletePageElementCommand { get; }
@@ -214,6 +223,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
 
     public MainWindowViewModel()
     {
+        SpectralPanel = new SpectralUnmixingViewModel(this);
         Python.PythonExtensionRuntime.StatusChanged += UpdatePythonExecutionStatus;
         Python.PythonExtensionRuntime.LogRunStarted += BeginPythonLogRun;
         Python.PythonExtensionRuntime.LogReceived += AppendPythonLog;
@@ -266,13 +276,14 @@ public sealed partial class MainWindowViewModel : NotifyBase
         ToggleProjectNodeCommand = new RelayCommand(parameter => toggle_project_node(parameter as ProjectNode));
         SelectProjectNodeCommand = new RelayCommand(parameter => _ = select_project_node_async(parameter as ProjectNode));
         DropProjectNodeCommand = new RelayCommand(parameter => _ = drop_project_node_async(parameter as ProjectNodeDropRequest), can_drop_project_node);
-        DropSpilloverControlCommand = new RelayCommand(parameter => drop_spillover_control(parameter as ProjectNode), can_drop_spillover_control);
-        CalculateSpilloverCompensationCommand = new RelayCommand(_ => calculate_spillover_compensation(), _ => can_calculate_spillover_compensation());
+        DropSpilloverControlCommand = new RelayCommand(parameter => _ = drop_spillover_control_async(parameter as ProjectNode), can_drop_spillover_control);
+        CalculateSpilloverCompensationCommand = new RelayCommand(_ => _ = calculate_spillover_compensation_async(), _ => can_calculate_spillover_compensation());
         ApplySpilloverCompensationCommand = new RelayCommand(_ => apply_spillover_compensation(), _ => can_apply_spillover_compensation());
         SelectPreviousSpilloverChannelCommand = new RelayCommand(_ => select_relative_spillover_parameter(-1), _ => can_select_relative_spillover_parameter());
         SelectNextSpilloverChannelCommand = new RelayCommand(_ => select_relative_spillover_parameter(1), _ => can_select_relative_spillover_parameter());
         RemoveSpilloverControlCommand = new RelayCommand(parameter => remove_spillover_control(parameter as SpilloverControlRowViewModel), parameter => parameter is SpilloverControlRowViewModel);
-        MarkSpilloverPreviewOutdatedCommand = new RelayCommand(_ => mark_spillover_preview_outdated());
+        MarkSpilloverPreviewOutdatedCommand = new RelayCommand(_ => spillover_gate_committed());
+        NewSpilloverGatePresetCommand = new RelayCommand(_ => new_spillover_gate_preset(), _ => selected_group is not null);
         RemoveChannelCommand = new RelayCommand(parameter => remove_channel(parameter as ChannelRow), parameter => can_remove_channel(parameter as ChannelRow));
         AddPageElementCommand = new RelayCommand(parameter => add_page_element(parameter as PageDropRequest));
         DeletePageElementCommand = new RelayCommand(_ => delete_selected_page_element(), _ => selected_page_element is not null);
@@ -485,6 +496,8 @@ public sealed partial class MainWindowViewModel : NotifyBase
             if (!SetField(ref selected_spillover_row, value))
                 return;
             if (value is not null)
+                SelectedSpilloverGatePreset = SpilloverGatePresets.FirstOrDefault(preset => preset.Id == value.State.GatePresetId) ?? SpilloverGatePresets.FirstOrDefault();
+            if (value is not null)
                 SelectedControlSample = value.Sample;
             OnPropertyChanged(nameof(SpilloverSelection));
             OnPropertyChanged(nameof(SelectedSpilloverParameterChoice));
@@ -493,10 +506,35 @@ public sealed partial class MainWindowViewModel : NotifyBase
         }
     }
 
+    public ControlGatePreset? SelectedSpilloverGatePreset
+    {
+        get => selected_spillover_gate_preset;
+        set
+        {
+            if (!SetField(ref selected_spillover_gate_preset, value)) return;
+            if (selected_spillover_row is not null && value is not null && selected_spillover_row.State.GatePresetId != value.Id)
+            {
+                selected_spillover_row.State.GatePresetId = value.Id;
+                refresh_spillover_histogram();
+                refresh_spillover_population_text();
+            }
+            OnPropertyChanged(nameof(SpilloverPrimaryVertices));
+            OnPropertyChanged(nameof(SpilloverFscChannel)); OnPropertyChanged(nameof(SpilloverSscChannel));
+            OnPropertyChanged(nameof(SpilloverScatterXMinimum)); OnPropertyChanged(nameof(SpilloverScatterXMaximum)); OnPropertyChanged(nameof(SpilloverScatterXScale));
+            OnPropertyChanged(nameof(SpilloverScatterYMinimum)); OnPropertyChanged(nameof(SpilloverScatterYMaximum)); OnPropertyChanged(nameof(SpilloverScatterYScale));
+            mark_spillover_preview_outdated();
+        }
+    }
+
     public ControlSample? SpilloverScatterSample => spillover_scatter_sample();
-    public ObservableCollection<Point>? SpilloverPrimaryVertices => selected_group?.SpilloverCompensation.PrimaryVertices;
-    public string SpilloverFscChannel => selected_group?.Channels.FirstOrDefault(channel => Configuration.IsFscChannel(channel.Name))?.Name ?? selected_group?.Channels.FirstOrDefault()?.Name ?? "FSC-A";
-    public string SpilloverSscChannel => selected_group?.Channels.FirstOrDefault(channel => Configuration.IsSscChannel(channel.Name))?.Name ?? selected_group?.Channels.Skip(1).FirstOrDefault()?.Name ?? SpilloverFscChannel;
+    public bool IsSpilloverPreparingRowCaches
+    {
+        get => is_spillover_preparing_row_caches;
+        private set => SetField(ref is_spillover_preparing_row_caches, value);
+    }
+    public ObservableCollection<Point>? SpilloverPrimaryVertices => SelectedSpilloverGatePreset?.Vertices ?? selected_group?.SpilloverCompensation.PrimaryVertices;
+    public string SpilloverFscChannel => SelectedSpilloverGatePreset?.XChannel ?? selected_group?.Channels.FirstOrDefault(channel => Configuration.IsFscChannel(channel.Name))?.Name ?? selected_group?.Channels.FirstOrDefault()?.Name ?? "FSC-A";
+    public string SpilloverSscChannel => SelectedSpilloverGatePreset?.YChannel ?? selected_group?.Channels.FirstOrDefault(channel => Configuration.IsSscChannel(channel.Name))?.Name ?? selected_group?.Channels.Skip(1).FirstOrDefault()?.Name ?? SpilloverFscChannel;
     public double SpilloverScatterXMinimum => spillover_axis_range(SpilloverFscChannel, x_axis: true).Minimum;
     public double SpilloverScatterXMaximum => spillover_axis_range(SpilloverFscChannel, x_axis: true).Maximum;
     public AxisScale SpilloverScatterXScale => spillover_axis_settings(SpilloverFscChannel, x_axis: true).Scale.Clone();
@@ -562,6 +600,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
     public double SpilloverHistogramLogicleW { get; private set; } = new LogicleParameters().W;
     public double SpilloverHistogramLogicleM { get; private set; } = new LogicleParameters().M;
     public double SpilloverHistogramLogicleA { get; private set; } = new LogicleParameters().A;
+    public bool HasSpilloverControls => SpilloverRows.Count > 0;
     public bool HasSpilloverPreviewMatrix => spillover_preview_matrix is not null;
     public bool IsSpilloverPreviewOutdated
     {
@@ -606,8 +645,12 @@ public sealed partial class MainWindowViewModel : NotifyBase
     public bool ShowContourDensityStyleOptions => SelectedPlotMode is PlotMode.Zebra or PlotMode.Contour;
     public bool IsEditorXAxisLinearScale { get => XAxis.ScaleKind == CoordinateScaleKind.Linear; set { if (value) XAxis.ScaleKind = CoordinateScaleKind.Linear; } }
     public bool IsEditorXAxisLogicleScale { get => XAxis.ScaleKind == CoordinateScaleKind.Logicle; set { if (value) XAxis.ScaleKind = CoordinateScaleKind.Logicle; } }
+    public bool IsEditorXAxisLogScale { get => XAxis.ScaleKind == CoordinateScaleKind.Logarithmic; set { if (value) XAxis.ScaleKind = CoordinateScaleKind.Logarithmic; } }
+    public bool IsEditorXAxisArcsinhScale { get => XAxis.ScaleKind == CoordinateScaleKind.Arcsinh; set { if (value) XAxis.ScaleKind = CoordinateScaleKind.Arcsinh; } }
     public bool IsEditorYAxisLinearScale { get => YAxis.ScaleKind == CoordinateScaleKind.Linear; set { if (value) YAxis.ScaleKind = CoordinateScaleKind.Linear; } }
     public bool IsEditorYAxisLogicleScale { get => YAxis.ScaleKind == CoordinateScaleKind.Logicle; set { if (value) YAxis.ScaleKind = CoordinateScaleKind.Logicle; } }
+    public bool IsEditorYAxisLogScale { get => YAxis.ScaleKind == CoordinateScaleKind.Logarithmic; set { if (value) YAxis.ScaleKind = CoordinateScaleKind.Logarithmic; } }
+    public bool IsEditorYAxisArcsinhScale { get => YAxis.ScaleKind == CoordinateScaleKind.Arcsinh; set { if (value) YAxis.ScaleKind = CoordinateScaleKind.Arcsinh; } }
 
     public bool IsLayoutDensityPlotMode { get => selected_page_element?.PlotMode == PlotMode.Density; set { if (value && selected_page_element is not null) { selected_page_element.PlotMode = PlotMode.Density; refresh_selected_page_menu_state(); } } }
     public bool IsLayoutDotplotPlotMode { get => selected_page_element?.PlotMode == PlotMode.Dotplot; set { if (value && selected_page_element is not null) { selected_page_element.PlotMode = PlotMode.Dotplot; refresh_selected_page_menu_state(); } } }
@@ -619,8 +662,12 @@ public sealed partial class MainWindowViewModel : NotifyBase
     public bool ShowSelectedPageContourDensityStyleOptions => selected_page_element?.PlotMode is PlotMode.Zebra or PlotMode.Contour;
     public bool IsLayoutXAxisLinearScale { get => selected_page_element?.XAxis.ScaleKind == CoordinateScaleKind.Linear; set { if (value && selected_page_element is not null) { selected_page_element.XAxis.ScaleKind = CoordinateScaleKind.Linear; refresh_selected_page_menu_state(); } } }
     public bool IsLayoutXAxisLogicleScale { get => selected_page_element?.XAxis.ScaleKind == CoordinateScaleKind.Logicle; set { if (value && selected_page_element is not null) { selected_page_element.XAxis.ScaleKind = CoordinateScaleKind.Logicle; refresh_selected_page_menu_state(); } } }
+    public bool IsLayoutXAxisLogScale { get => selected_page_element?.XAxis.ScaleKind == CoordinateScaleKind.Logarithmic; set { if (value && selected_page_element is not null) { selected_page_element.XAxis.ScaleKind = CoordinateScaleKind.Logarithmic; refresh_selected_page_menu_state(); } } }
+    public bool IsLayoutXAxisArcsinhScale { get => selected_page_element?.XAxis.ScaleKind == CoordinateScaleKind.Arcsinh; set { if (value && selected_page_element is not null) { selected_page_element.XAxis.ScaleKind = CoordinateScaleKind.Arcsinh; refresh_selected_page_menu_state(); } } }
     public bool IsLayoutYAxisLinearScale { get => selected_page_element?.YAxis.ScaleKind == CoordinateScaleKind.Linear; set { if (value && selected_page_element is not null) { selected_page_element.YAxis.ScaleKind = CoordinateScaleKind.Linear; refresh_selected_page_menu_state(); } } }
     public bool IsLayoutYAxisLogicleScale { get => selected_page_element?.YAxis.ScaleKind == CoordinateScaleKind.Logicle; set { if (value && selected_page_element is not null) { selected_page_element.YAxis.ScaleKind = CoordinateScaleKind.Logicle; refresh_selected_page_menu_state(); } } }
+    public bool IsLayoutYAxisLogScale { get => selected_page_element?.YAxis.ScaleKind == CoordinateScaleKind.Logarithmic; set { if (value && selected_page_element is not null) { selected_page_element.YAxis.ScaleKind = CoordinateScaleKind.Logarithmic; refresh_selected_page_menu_state(); } } }
+    public bool IsLayoutYAxisArcsinhScale { get => selected_page_element?.YAxis.ScaleKind == CoordinateScaleKind.Arcsinh; set { if (value && selected_page_element is not null) { selected_page_element.YAxis.ScaleKind = CoordinateScaleKind.Arcsinh; refresh_selected_page_menu_state(); } } }
 
     public GatingTool ActiveTool
     {
@@ -1016,6 +1063,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         OnPropertyChanged(nameof(IsIntegrationJobMode));
         OnPropertyChanged(nameof(IsGroupMetadataMode));
         OnPropertyChanged(nameof(IsSpilloverCompensationMode));
+        OnPropertyChanged(nameof(IsSpectralUnmixingMode));
         OnPropertyChanged(nameof(IsPlotPropertiesMode));
         if (!string.IsNullOrWhiteSpace(status_text))
             StatusText = status_text;
@@ -2268,6 +2316,8 @@ public sealed partial class MainWindowViewModel : NotifyBase
         OnPropertyChanged(nameof(SelectedYAxisChoice));
         OnPropertyChanged(nameof(IsEditorXAxisLinearScale));
         OnPropertyChanged(nameof(IsEditorYAxisLinearScale));
+        foreach (var group in Workspace.Groups.Where(group => group.SpectralUnmixing.Rows.Count > 0)) group.SpectralUnmixing.IsStale = true;
+        if (IsSpectralUnmixingMode) SpectralPanel.SetGroup(selected_group);
     }
 
     private async Task rename_selected_embedding_async()
@@ -3256,8 +3306,8 @@ public sealed partial class MainWindowViewModel : NotifyBase
             !passive_control_selection &&
             ViewState is MainWindowViewState.Metadata or MainWindowViewState.GroupMetadata)
             set_view_state(MainWindowViewState.Analysis, "Analysis view");
-        if (node.Kind is not ProjectNodeKind.ControlFolder and not ProjectNodeKind.SpilloverCompensation and not ProjectNodeKind.ControlSample &&
-            ViewState == MainWindowViewState.SpilloverCompensation)
+        if (node.Kind is not ProjectNodeKind.ControlFolder and not ProjectNodeKind.SpilloverCompensation and not ProjectNodeKind.SpectralUnmixing and not ProjectNodeKind.ControlSample &&
+            ViewState is MainWindowViewState.SpilloverCompensation or MainWindowViewState.SpectralUnmixing)
             set_view_state(MainWindowViewState.Analysis, "Analysis view");
         var previous_group = selected_group;
         var previous_gate = selected_gate;
@@ -3375,6 +3425,19 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 SelectedGate = null;
                 SelectedControlSample = node.ControlSample;
                 SelectedCompensation = null;
+                break;
+            case ProjectNodeKind.SpectralUnmixing:
+                SelectedIntegrationJob = null;
+                IsWorkspaceMetadataMode = false;
+                if (node.Group is not null)
+                    SelectedGroup = node.Group;
+                SelectedSample = null;
+                SelectedPopulation = null;
+                SelectedGate = null;
+                SelectedControlSample = selected_group?.ControlSamples.FirstOrDefault();
+                SelectedCompensation = null;
+                SpectralPanel.SetGroup(selected_group);
+                IsSpectralUnmixingMode = true;
                 break;
             case ProjectNodeKind.Compensation:
                 SelectedIntegrationJob = null;
@@ -3945,6 +4008,21 @@ public sealed partial class MainWindowViewModel : NotifyBase
         sync_selected_gate_preferred_view();
         refresh_plot_gates();
         schedule_plot_transform_preparation();
+    }
+
+    public bool IsSpectralUnmixingMode
+    {
+        get => ViewState == MainWindowViewState.SpectralUnmixing;
+        private set
+        {
+            if (value)
+            {
+                SelectedIntegrationJob = null;
+                set_view_state(MainWindowViewState.SpectralUnmixing, "Spectral unmixing");
+            }
+            else if (IsSpectralUnmixingMode)
+                set_view_state(MainWindowViewState.Analysis, "Analysis view");
+        }
     }
 
     private void swap_editor_axes()
@@ -4795,6 +4873,13 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 group: group,
                 count: group.SpilloverCompensation.Rows.Count,
                 depth: 3));
+            controls_node.Children.Add(create_project_node(
+                ProjectNodeKind.SpectralUnmixing,
+                "Spectral unmixing",
+                $"{group_key}:controls:spectral",
+                group: group,
+                count: group.SpectralUnmixing.Rows.Count,
+                depth: 3));
             foreach (var control_sample in group.ControlSamples)
             {
                 controls_node.Children.Add(create_project_node(
@@ -4872,6 +4957,8 @@ public sealed partial class MainWindowViewModel : NotifyBase
             IsExpanded = project_expansion_state.TryGetValue(key, out bool is_expanded) ? is_expanded : true
         };
     }
+
+    internal void RefreshProjectTreeForSpectral() => refresh_project_tree();
 
     private void append_gate_node(ProjectNode parent, GateDefinition gate, FlowGroup group, string key, int depth)
     {
@@ -6112,6 +6199,19 @@ public sealed partial class MainWindowViewModel : NotifyBase
     private void refresh_spillover_workspace()
     {
         var selected_id = selected_spillover_row?.Sample.Id;
+        SpilloverGatePresets.Clear();
+        if (selected_group is not null)
+        {
+            _ = selected_group.SpilloverCompensation.DefaultGatePreset;
+            string fsc = selected_group.Channels.FirstOrDefault(channel => Configuration.IsFscChannel(channel.Name))?.Name ?? selected_group.Channels.FirstOrDefault()?.Name ?? "FSC-A";
+            string ssc = selected_group.Channels.FirstOrDefault(channel => Configuration.IsSscChannel(channel.Name))?.Name ?? selected_group.Channels.Skip(1).FirstOrDefault()?.Name ?? fsc;
+            foreach (var preset in selected_group.SpilloverCompensation.GatePresets)
+            {
+                if (selected_group.Channels.All(channel => channel.Name != preset.XChannel)) preset.XChannel = fsc;
+                if (selected_group.Channels.All(channel => channel.Name != preset.YChannel)) preset.YChannel = ssc;
+            }
+            foreach (var preset in selected_group.SpilloverCompensation.GatePresets) SpilloverGatePresets.Add(preset);
+        }
         refresh_spillover_choices();
         refresh_spillover_rows();
         SelectedSpilloverRow = selected_id.HasValue
@@ -6134,6 +6234,21 @@ public sealed partial class MainWindowViewModel : NotifyBase
         raise_command_states();
     }
 
+    private void new_spillover_gate_preset()
+    {
+        if (selected_group is null) return;
+        var source = SelectedSpilloverGatePreset ?? selected_group.SpilloverCompensation.DefaultGatePreset;
+        int index = selected_group.SpilloverCompensation.GatePresets.Count + 1;
+        var preset = new ControlGatePreset
+        {
+            Name = $"Gate {index}", XChannel = source.XChannel, YChannel = source.YChannel,
+            XAxis = new AxisSettings { ChannelName = source.XAxis.ChannelName, Minimum = source.XAxis.Minimum, Maximum = source.XAxis.Maximum, Scale = source.XAxis.Scale.Clone() },
+            YAxis = new AxisSettings { ChannelName = source.YAxis.ChannelName, Minimum = source.YAxis.Minimum, Maximum = source.YAxis.Maximum, Scale = source.YAxis.Scale.Clone() }
+        };
+        foreach (var point in source.Vertices) preset.Vertices.Add(point);
+        selected_group.SpilloverCompensation.GatePresets.Add(preset); SpilloverGatePresets.Add(preset); SelectedSpilloverGatePreset = preset;
+    }
+
     private void refresh_spillover_choices()
     {
         SpilloverParameterChoices.Clear();
@@ -6147,10 +6262,13 @@ public sealed partial class MainWindowViewModel : NotifyBase
 
     private void refresh_spillover_rows()
     {
+        foreach (var previous_row in SpilloverRows)
+            previous_row.PropertyChanged -= spillover_row_changed;
         SpilloverRows.Clear();
         if (selected_group is null)
         {
             invalidate_spillover_scatter_cache();
+            OnPropertyChanged(nameof(HasSpilloverControls));
             return;
         }
 
@@ -6169,6 +6287,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
             SpilloverRows.Add(view_row);
         }
         invalidate_spillover_scatter_cache();
+        OnPropertyChanged(nameof(HasSpilloverControls));
     }
 
     private void invalidate_spillover_scatter_cache()
@@ -6178,49 +6297,165 @@ public sealed partial class MainWindowViewModel : NotifyBase
         OnPropertyChanged(nameof(SpilloverScatterSample));
     }
 
+    private void invalidate_spillover_gate_cache(Guid? gate_preset_id)
+    {
+        if (gate_preset_id is null)
+        {
+            spillover_primary_index_cache.Clear();
+            spillover_gated_channel_cache.Clear();
+            return;
+        }
+
+        string marker = $"{gate_preset_id.Value:N}\u001f";
+        foreach (string key in spillover_primary_index_cache.Keys.Where(key => key.StartsWith(marker, StringComparison.Ordinal)).ToArray())
+            spillover_primary_index_cache.Remove(key);
+        foreach (string key in spillover_gated_channel_cache.Keys.Where(key => key.StartsWith(marker, StringComparison.Ordinal)).ToArray())
+            spillover_gated_channel_cache.Remove(key);
+    }
+
+    private static string spillover_primary_cache_key(ControlSample sample, ControlGatePreset preset)
+    {
+        return $"{preset.Id:N}\u001f{sample.Id:N}";
+    }
+
+    private static string spillover_channel_cache_key(ControlSample sample, ControlGatePreset preset, string channel_name)
+    {
+        return $"{preset.Id:N}\u001f{sample.Id:N}\u001f{channel_name}";
+    }
+
+    private static int[] compute_primary_indices(ControlSample sample, SpilloverGateSnapshot gate)
+    {
+        if (gate.Vertices.Length < 3)
+            return Enumerable.Range(0, sample.EventCount).ToArray();
+
+        var x_values = sample.GetChannelValues(gate.XChannel);
+        var y_values = sample.GetChannelValues(gate.YChannel);
+        var selected = new List<int>();
+        for (int index = 0; index < sample.EventCount && index < x_values.Length && index < y_values.Length; index++)
+            if (contains_polygon(gate.Vertices, x_values[index], y_values[index]))
+                selected.Add(index);
+        return selected.ToArray();
+    }
+
+    private static SpilloverGatedChannelCache build_gated_channel_cache(ControlSample sample, int[] primary, string channel_name)
+    {
+        var source = sample.GetChannelValues(channel_name);
+        var pairs = new List<(double Value, int Index)>(Math.Min(primary.Length, source.Length));
+        foreach (int index in primary)
+        {
+            if (index < 0 || index >= source.Length)
+                continue;
+            double value = source[index];
+            if (double.IsFinite(value))
+                pairs.Add((value, index));
+        }
+        pairs.Sort(static (left, right) => left.Value.CompareTo(right.Value));
+
+        var sorted_values = new double[pairs.Count];
+        var sorted_indices = new int[pairs.Count];
+        for (int index = 0; index < pairs.Count; index++)
+        {
+            sorted_values[index] = pairs[index].Value;
+            sorted_indices[index] = pairs[index].Index;
+        }
+
+        var values = new double[sorted_values.Length];
+        Array.Copy(sorted_values, values, sorted_values.Length);
+        return new SpilloverGatedChannelCache(values, sorted_values, sorted_indices);
+    }
+
+    private static SpilloverScatterPreparation build_spillover_scatter_sample(
+        IReadOnlyList<ChannelDefinition> group_channels,
+        IReadOnlyList<ControlSample> existing_samples,
+        ControlSample appended_sample,
+        ControlSample? existing_scatter,
+        string existing_key)
+    {
+        var samples = existing_samples.Concat(new[] { appended_sample }).DistinctBy(sample => sample.Id).ToArray();
+        string key = spillover_scatter_key(samples, group_channels);
+
+        var channels = group_channels
+            .Select((channel, index) => new ChannelDefinition(index, channel.Name, channel.Label, channel.Maximum, channel.Gain))
+            .ToArray();
+        int channel_count = channels.Length;
+        if (channel_count == 0)
+            return new SpilloverScatterPreparation(null, key);
+
+        var appended_raw = sampled_control_rows(appended_sample, channels);
+        if (existing_scatter is not null &&
+            string.Equals(existing_key, spillover_scatter_key(existing_samples, group_channels), StringComparison.Ordinal) &&
+            existing_scatter.Channels.Select(channel => channel.Name).SequenceEqual(channels.Select(channel => channel.Name)))
+        {
+            var raw = new float[existing_scatter.EventCount + appended_raw.GetLength(0), channel_count];
+            for (int row = 0; row < existing_scatter.EventCount; row++)
+            for (int column = 0; column < channel_count; column++)
+                raw[row, column] = existing_scatter.RawEvents[row, column];
+            for (int row = 0; row < appended_raw.GetLength(0); row++)
+            for (int column = 0; column < channel_count; column++)
+                raw[existing_scatter.EventCount + row, column] = appended_raw[row, column];
+            return new SpilloverScatterPreparation(new ControlSample("Spillover control gate source", channels, raw), key);
+        }
+
+        var matrices = samples.Select(sample => sampled_control_rows(sample, channels)).Where(matrix => matrix.GetLength(0) > 0).ToArray();
+        int event_count = matrices.Sum(matrix => matrix.GetLength(0));
+        if (event_count <= 0)
+            return new SpilloverScatterPreparation(null, key);
+
+        var combined = new float[event_count, channel_count];
+        int target_row = 0;
+        foreach (var matrix in matrices)
+        {
+            for (int row = 0; row < matrix.GetLength(0); row++, target_row++)
+            for (int column = 0; column < channel_count; column++)
+                combined[target_row, column] = matrix[row, column];
+        }
+        return new SpilloverScatterPreparation(new ControlSample("Spillover control gate source", channels, combined), key);
+    }
+
+    private static string spillover_scatter_key(IReadOnlyList<ControlSample> samples, IReadOnlyList<ChannelDefinition> channels) =>
+        string.Join("|", samples.Select(sample => $"{sample.Id:N}:{sample.EventCount}")) +
+        "::" + string.Join("|", channels.Select(channel => channel.Name));
+
+    private static float[,] sampled_control_rows(ControlSample sample, IReadOnlyList<ChannelDefinition> channels)
+    {
+        const int maximum_scatter_events_per_control = 12000;
+        var source_columns = channels.Select(channel => sample.GetChannelIndex(channel.Name)).ToArray();
+        if (source_columns.All(index => index < 0) || sample.EventCount <= 0)
+            return new float[0, channels.Count];
+
+        int count = Math.Min(maximum_scatter_events_per_control, sample.EventCount);
+        var raw = new float[count, channels.Count];
+        for (int row = 0; row < count; row++)
+        {
+            int source_row = count == sample.EventCount
+                ? row
+                : count <= 1
+                    ? 0
+                : (int)Math.Round(row * ( (sample.EventCount - 1.0) / (double)(count - 1.0) ));
+            for (int column = 0; column < channels.Count; column++)
+                raw[row, column] = source_columns[column] >= 0
+                    ? sample.RawEvents[source_row, source_columns[column]]
+                    : float.NaN;
+        }
+        return raw;
+    }
+
     private ControlSample? spillover_scatter_sample()
     {
         if (selected_group is null || selected_group.Channels.Count == 0 || SpilloverRows.Count == 0)
             return null;
 
-        string key = string.Join("|", SpilloverRows.Select(row => $"{row.Sample.Id:N}:{row.Sample.EventCount}")) +
-            "::" + selected_group.ChannelProfile;
+        var samples = SpilloverRows.Select(row => row.Sample).DistinctBy(sample => sample.Id).ToArray();
+        string key = spillover_scatter_key(samples, selected_group.Channels);
         if (spillover_scatter_sample_cache is not null &&
             string.Equals(spillover_scatter_sample_cache_key, key, StringComparison.Ordinal))
             return spillover_scatter_sample_cache;
 
-        var channels = selected_group.Channels
-            .Select((channel, index) => new ChannelDefinition(index, channel.Name, channel.Label, channel.Maximum, channel.Gain))
-            .ToArray();
-        var samples = SpilloverRows.Select(row => row.Sample).DistinctBy(sample => sample.Id).ToArray();
-        int channel_count = channels.Length;
-        int event_count = samples.Sum(sample => sample.EventCount);
-        if (event_count <= 0)
+        if (samples.Length == 0)
             return null;
 
-        var raw = new float[event_count, channel_count];
-        int target_row = 0;
-        foreach (var sample in samples)
-        {
-            var indices = channels.Select(channel => sample.GetChannelIndex(channel.Name)).ToArray();
-            if (indices.Any(index => index < 0))
-                continue;
-
-            for (int row = 0; row < sample.EventCount; row++, target_row++)
-            for (int column = 0; column < channel_count; column++)
-                raw[target_row, column] = sample.RawEvents[row, indices[column]];
-        }
-
-        if (target_row != event_count)
-        {
-            var trimmed = new float[target_row, channel_count];
-            for (int row = 0; row < target_row; row++)
-            for (int column = 0; column < channel_count; column++)
-                trimmed[row, column] = raw[row, column];
-            raw = trimmed;
-        }
-
-        spillover_scatter_sample_cache = new ControlSample("Spillover control gate source", channels, raw);
+        var preparation = build_spillover_scatter_sample(selected_group.Channels, samples.SkipLast(1).ToArray(), samples[^1], null, "");
+        spillover_scatter_sample_cache = preparation.Sample;
         spillover_scatter_sample_cache_key = key;
         return spillover_scatter_sample_cache;
     }
@@ -6264,18 +6499,33 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 continue;
             }
 
-            int primary_count = primary_indices(row.Sample).Length;
-            int positive_count = positive_indices(row).Length;
-            row.SetPositiveFraction(primary_count > 0 ? positive_count / (double)primary_count : null);
+            int primary_count = primary_indices(row).Length;
+            int selected_count = positive_count(row);
+            row.SetPositiveFraction(primary_count > 0 ? selected_count / (double)primary_count : null);
         }
+    }
+
+    private void spillover_gate_committed()
+    {
+        if (SelectedSpilloverGatePreset is { } preset)
+            invalidate_spillover_gate_cache(preset.Id);
+        else
+            invalidate_spillover_gate_cache(null);
+
+        mark_spillover_preview_outdated();
+        refresh_spillover_histogram();
+        refresh_spillover_population_text();
+        raise_command_states();
     }
 
     private bool can_drop_spillover_control(object? parameter) =>
         selected_group is not null &&
+        !is_spillover_preparing_row_caches &&
         parameter is ProjectNode { Kind: ProjectNodeKind.ControlSample, ControlSample: not null, Group: not null } node &&
-        ReferenceEquals(node.Group, selected_group);
+        node.Group.Id == selected_group.Id &&
+        selected_group.ControlSamples.Any(sample => sample.Id == node.ControlSample.Id);
 
-    private void drop_spillover_control(ProjectNode? node)
+    private async Task drop_spillover_control_async(ProjectNode? node)
     {
         if (!can_drop_spillover_control(node) || selected_group is null || node?.ControlSample is not { } sample)
             return;
@@ -6283,16 +6533,66 @@ public sealed partial class MainWindowViewModel : NotifyBase
         if (selected_group.SpilloverCompensation.Rows.Any(row => row.ControlSampleId == sample.Id))
             return;
 
+        var group = selected_group;
+        var gate = group.SpilloverCompensation.DefaultGatePreset;
+        var gate_snapshot = new SpilloverGateSnapshot(gate.XChannel, gate.YChannel, gate.Vertices.ToArray());
+        var channels = group.Channels.ToArray();
+        var compensable = compensable_channels(group).ToArray();
+        var occupied = group.SpilloverCompensation.Rows
+            .Select(row => row.ParameterName)
+            .Where(name => !string.Equals(name, SpilloverControlRowViewModel.BlankParameterName, StringComparison.Ordinal))
+            .ToHashSet(StringComparer.Ordinal);
+        var existing_scatter = spillover_scatter_sample_cache;
+        string existing_scatter_key = spillover_scatter_sample_cache_key;
+        var existing_samples = SpilloverRows.Select(row => row.Sample).DistinctBy(item => item.Id).ToArray();
+
+        IsSpilloverPreparingRowCaches = true;
+        raise_command_states();
+        SpilloverAppendPreparation preparation;
+        try
+        {
+            preparation = await Task.Run(() =>
+            {
+                string parameter = guess_spillover_parameter(sample, compensable, occupied);
+                var primary = compute_primary_indices(sample, gate_snapshot);
+                var channel_cache = build_gated_channel_cache(sample, primary, parameter);
+                var scatter = build_spillover_scatter_sample(channels, existing_samples, sample, existing_scatter, existing_scatter_key);
+                return new SpilloverAppendPreparation(parameter, primary, channel_cache, scatter);
+            });
+        }
+        finally
+        {
+            IsSpilloverPreparingRowCaches = false;
+            raise_command_states();
+        }
+
+        if (!ReferenceEquals(selected_group, group) || group.SpilloverCompensation.Rows.Any(row => row.ControlSampleId == sample.Id))
+            return;
+
         var row = new SpilloverControlRow
         {
             ControlSampleId = sample.Id,
-            ParameterName = guess_spillover_parameter(sample)
+            ParameterName = preparation.ParameterName,
+            GatePresetId = gate.Id
         };
-        selected_group.SpilloverCompensation.Rows.Add(row);
+        group.SpilloverCompensation.Rows.Add(row);
+        var view_row = new SpilloverControlRowViewModel(sample, row, SpilloverParameterChoices, RemoveSpilloverControlCommand);
+        view_row.PropertyChanged += spillover_row_changed;
+        SpilloverRows.Add(view_row);
+        OnPropertyChanged(nameof(HasSpilloverControls));
+
+        spillover_primary_index_cache[spillover_primary_cache_key(sample, gate)] = preparation.PrimaryIndices;
+        spillover_gated_channel_cache[spillover_channel_cache_key(sample, gate, preparation.ParameterName)] = preparation.ChannelCache;
+        spillover_scatter_sample_cache = preparation.Scatter.Sample;
+        spillover_scatter_sample_cache_key = preparation.Scatter.Key;
+
         mark_spillover_preview_outdated();
-        invalidate_spillover_scatter_cache();
-        refresh_spillover_workspace();
-        SelectedSpilloverRow = SpilloverRows.FirstOrDefault(item => item.Sample.Id == sample.Id);
+        SelectedSpilloverRow = view_row;
+        OnPropertyChanged(nameof(SpilloverScatterSample));
+        refresh_spillover_configured_choices();
+        refresh_spillover_population_text();
+        refresh_spillover_histogram();
+        raise_command_states();
         refresh_project_tree();
     }
 
@@ -6321,9 +6621,14 @@ public sealed partial class MainWindowViewModel : NotifyBase
             .Where(name => !string.Equals(name, SpilloverControlRowViewModel.BlankParameterName, StringComparison.Ordinal))
             .ToHashSet(StringComparer.Ordinal);
 
-        var candidates = compensable_channels(selected_group)
+        return guess_spillover_parameter(sample, compensable_channels(selected_group), occupied);
+    }
+
+    private static string guess_spillover_parameter(ControlSample sample, IEnumerable<ChannelDefinition> channels, ISet<string> occupied)
+    {
+        var candidates = channels
             .Where(channel => !occupied.Contains(channel.Name))
-            .Select(channel => (channel.Name, Score: median(sample.GetChannelValues(channel.Name))))
+            .Select(channel => (channel.Name, Score: stratified_mean(sample.GetChannelValues(channel.Name), 5000)))
             .Where(item => double.IsFinite(item.Score))
             .OrderByDescending(item => item.Score)
             .ToArray();
@@ -6351,20 +6656,17 @@ public sealed partial class MainWindowViewModel : NotifyBase
             return;
         }
 
-        var indices = primary_indices(selected_spillover_row.Sample);
-        var values = selected_spillover_row.Sample.GetChannelValues(channel_name, indices).Select(value => (double)value).ToArray();
-        var range = spillover_channel_range(channel, values);
-        SpilloverHistogramMinimum = range.Minimum;
-        SpilloverHistogramMaximum = range.Maximum;
-        SpilloverHistogramLogicleT = Math.Max(channel.Maximum, range.Maximum);
-        SpilloverHistogramAxisScale = Configuration.DefaultCoordinateScaleForChannel(channel_name) == CoordinateScaleKind.Linear
-            ? HistogramAxisScaleKind.Linear
-            : HistogramAxisScaleKind.Logicle;
+        var histogram_cache = spillover_histogram_cache(selected_spillover_row, channel);
+        SpilloverHistogramMinimum = 0;
+        SpilloverHistogramMaximum = new LogicleParameters().T;
+        SpilloverHistogramLogicleT = new LogicleParameters().T;
+        SpilloverHistogramAxisScale = HistogramAxisScaleKind.Logicle;
         SpilloverHistogramSeries.Add(new HistogramSeries
         {
-            Name = selected_spillover_row.SampleName,
-            Values = values,
-            BinCount = 400,
+            Name = channel_name,
+            Values = histogram_cache.Values,
+            SortedValues = histogram_cache.SortedValues,
+            BinCount = 256,
             Color = Color.FromRgb(120, 160, 255)
         });
         notify_spillover_histogram_properties();
@@ -6373,12 +6675,22 @@ public sealed partial class MainWindowViewModel : NotifyBase
     private static (double Minimum, double Maximum) spillover_channel_range(ChannelDefinition channel, IReadOnlyList<double> values)
     {
         double maximum = Math.Max(1, channel.Maximum);
-        var finite = values.Where(double.IsFinite).ToArray();
-        if (finite.Length > 0)
-            maximum = Math.Max(maximum, finite.Max());
+        for (int index = values.Count - 1; index >= 0; index--)
+        {
+            if (!double.IsFinite(values[index]))
+                continue;
+            maximum = Math.Max(maximum, values[index]);
+            break;
+        }
         return Configuration.DefaultCoordinateScaleForChannel(channel.Name) == CoordinateScaleKind.Linear
             ? (-0.1 * maximum, 1.1 * maximum)
             : (-0.01 * maximum, 1.1 * maximum);
+    }
+
+    private SpilloverHistogramCache spillover_histogram_cache(SpilloverControlRowViewModel row, ChannelDefinition channel)
+    {
+        var channel_cache = spillover_gated_channel_values(row, channel.Name);
+        return new SpilloverHistogramCache(channel.Name, channel_cache.Values, channel_cache.SortedValues);
     }
 
     private (double Minimum, double Maximum) spillover_axis_range(string channel_name, bool x_axis)
@@ -6455,14 +6767,30 @@ public sealed partial class MainWindowViewModel : NotifyBase
 
     private bool can_calculate_spillover_compensation()
     {
-        if (selected_group is null)
+        if (selected_group is null || is_spillover_calculating)
             return false;
         bool has_blank = SpilloverRows.Any(row => row.IsBlank);
         bool has_positive = SpilloverRows.Any(row => !row.IsBlank && row.PositiveSelection is not null);
         return has_blank && has_positive;
     }
 
-    private void calculate_spillover_compensation()
+    private SpilloverCalculationRow? spillover_calculation_row(SpilloverControlRowViewModel row)
+    {
+        if (selected_group is null)
+            return null;
+        var preset = selected_group.SpilloverCompensation.GatePresets.FirstOrDefault(item => item.Id == row.State.GatePresetId) ??
+            selected_group.SpilloverCompensation.DefaultGatePreset;
+        return new SpilloverCalculationRow(
+            row.Sample,
+            row.SampleName,
+            row.ParameterName,
+            row.PositiveSelection,
+            preset.XChannel,
+            preset.YChannel,
+            preset.Vertices.ToArray());
+    }
+
+    private async Task calculate_spillover_compensation_async()
     {
         if (selected_group is null)
             return;
@@ -6486,8 +6814,36 @@ public sealed partial class MainWindowViewModel : NotifyBase
             return;
         }
 
-        var matrix = calculate_regression_spillover_matrix(channel_names);
-        if (matrix is null)
+        var rows = SpilloverRows
+            .Where(row => !row.IsBlank && row.PositiveSelection is not null && channel_names.Contains(row.ParameterName, StringComparer.Ordinal))
+            .Select(spillover_calculation_row)
+            .Where(row => row is not null)
+            .Cast<SpilloverCalculationRow>()
+            .ToArray();
+        string matrix_name = selected_group.SpilloverCompensation.MatrixName;
+
+        StatusText = "Calculating auto-compensation...";
+        is_spillover_calculating = true;
+        raise_command_states();
+
+        SpilloverCalculationResult result;
+        try
+        {
+            result = await Task.Run(() => calculate_regression_spillover_matrix(matrix_name, channel_names, rows));
+        }
+        finally
+        {
+            is_spillover_calculating = false;
+            raise_command_states();
+        }
+        if (result.Error is { } error)
+        {
+            StatusText = error;
+            raise_command_states();
+            return;
+        }
+
+        if (result.Matrix is not { } matrix)
             return;
 
         spillover_preview_matrix = matrix;
@@ -6496,22 +6852,16 @@ public sealed partial class MainWindowViewModel : NotifyBase
         raise_command_states();
     }
 
-    private CompensationMatrix? calculate_regression_spillover_matrix(IReadOnlyList<string> channel_names)
+    private SpilloverCalculationResult calculate_regression_spillover_matrix(string matrix_name, IReadOnlyList<string> channel_names, IReadOnlyList<SpilloverCalculationRow> rows)
     {
-        if (selected_group is null)
-            return null;
-
         var values = new float[channel_names.Count, channel_names.Count];
         for (int index = 0; index < channel_names.Count; index++)
             values[index, index] = 1.0f;
 
-        foreach (var primary_row in SpilloverRows.Where(row => !row.IsBlank && channel_names.Contains(row.ParameterName, StringComparer.Ordinal)))
+        foreach (var primary_row in rows.Where(row => channel_names.Contains(row.ParameterName, StringComparer.Ordinal)))
         {
             if (primary_row.PositiveSelection is null)
-            {
-                StatusText = $"Positive range is missing for {primary_row.SampleName}.";
-                return null;
-            }
+                return SpilloverCalculationResult.Failed($"Positive range is missing for {primary_row.SampleName}.");
 
             int primary_index = index_of_channel(channel_names, primary_row.ParameterName);
             if (primary_index < 0)
@@ -6526,16 +6876,13 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 var points = regression_points(primary_row, primary_row.ParameterName, detector_name);
                 var fit = fit_line(points);
                 if (fit is null)
-                {
-                    StatusText = $"Unable to fit {primary_row.ParameterName} leakage into {detector_name}.";
-                    return null;
-                }
+                    return SpilloverCalculationResult.Failed($"Unable to fit {primary_row.ParameterName} leakage into {detector_name}.");
 
                 values[detector_index, primary_index] = Convert.ToSingle(fit.Slope);
             }
         }
 
-        return CompensationMatrix.Create(selected_group.SpilloverCompensation.MatrixName, channel_names, values);
+        return SpilloverCalculationResult.Succeeded(CompensationMatrix.Create(matrix_name, channel_names, values));
     }
 
     private bool can_apply_spillover_compensation() =>
@@ -6740,6 +7087,19 @@ public sealed partial class MainWindowViewModel : NotifyBase
         return points;
     }
 
+    private static IReadOnlyList<Point> regression_points(SpilloverCalculationRow row, string primary_channel, string detector_channel)
+    {
+        var indices = positive_indices(row);
+        var x_values = row.Sample.GetChannelValues(primary_channel, indices);
+        var y_values = row.Sample.GetChannelValues(detector_channel, indices);
+        int step = Math.Max(1, Math.Min(x_values.Length, y_values.Length) / 2500);
+        var points = new List<Point>();
+        for (int index = 0; index < x_values.Length && index < y_values.Length; index += step)
+            if (double.IsFinite(x_values[index]) && double.IsFinite(y_values[index]))
+                points.Add(new Point(x_values[index], y_values[index]));
+        return points;
+    }
+
     private AxisSettings preview_axis_settings(string channel_name)
     {
         var channel = selected_group?.Channels.FirstOrDefault(item => item.Name == channel_name);
@@ -6779,35 +7139,162 @@ public sealed partial class MainWindowViewModel : NotifyBase
             : null;
     }
 
-    private int[] primary_indices(ControlSample sample)
+    private int[] primary_indices(SpilloverControlRowViewModel row)
     {
-        if (selected_group?.SpilloverCompensation.PrimaryVertices.Count is null or < 3)
+        var sample = row.Sample;
+        if (selected_group is null)
             return Enumerable.Range(0, sample.EventCount).ToArray();
 
-        string x_channel = SpilloverFscChannel;
-        string y_channel = SpilloverSscChannel;
+        var preset = selected_group.SpilloverCompensation.GatePresets.FirstOrDefault(item => item.Id == row.State.GatePresetId) ??
+            selected_group.SpilloverCompensation.DefaultGatePreset;
+        string key = spillover_primary_cache_key(sample, preset);
+        if (spillover_primary_index_cache.TryGetValue(key, out var cached))
+            return cached;
+
+        if (preset.Vertices.Count < 3)
+            return spillover_primary_index_cache[key] = Enumerable.Range(0, sample.EventCount).ToArray();
+
+        string x_channel = preset.XChannel;
+        string y_channel = preset.YChannel;
         var x_values = sample.GetChannelValues(x_channel);
         var y_values = sample.GetChannelValues(y_channel);
         var selected = new List<int>();
         for (int index = 0; index < sample.EventCount && index < x_values.Length && index < y_values.Length; index++)
-            if (contains_polygon(selected_group.SpilloverCompensation.PrimaryVertices, x_values[index], y_values[index]))
+            if (contains_polygon(preset.Vertices, x_values[index], y_values[index]))
+                selected.Add(index);
+        return spillover_primary_index_cache[key] = selected.ToArray();
+    }
+
+    private static int[] primary_indices(SpilloverCalculationRow row)
+    {
+        var sample = row.Sample;
+        if (row.GateVertices.Length < 3)
+            return Enumerable.Range(0, sample.EventCount).ToArray();
+
+        var x_values = sample.GetChannelValues(row.GateXChannel);
+        var y_values = sample.GetChannelValues(row.GateYChannel);
+        var selected = new List<int>();
+        for (int index = 0; index < sample.EventCount && index < x_values.Length && index < y_values.Length; index++)
+            if (contains_polygon(row.GateVertices, x_values[index], y_values[index]))
                 selected.Add(index);
         return selected.ToArray();
     }
 
     private int[] positive_indices(SpilloverControlRowViewModel row)
     {
-        var primary = primary_indices(row.Sample);
         if (row.PositiveSelection is not { } selection)
             return [];
 
         var normalized = selection.Minimum <= selection.Maximum
             ? selection
             : new SpilloverRangeSelection(selection.Maximum, selection.Minimum);
+        var cache = spillover_gated_channel_values(row, row.ParameterName);
+        int lower = lower_bound(cache.SortedValues, normalized.Minimum);
+        int upper = upper_bound(cache.SortedValues, normalized.Maximum);
+        if (upper <= lower)
+            return [];
+
+        var indices = new int[upper - lower];
+        Array.Copy(cache.SortedIndices, lower, indices, 0, indices.Length);
+        return indices;
+    }
+
+    private int positive_count(SpilloverControlRowViewModel row)
+    {
+        if (row.PositiveSelection is not { } selection)
+            return 0;
+
+        var normalized = selection.Minimum <= selection.Maximum
+            ? selection
+            : new SpilloverRangeSelection(selection.Maximum, selection.Minimum);
+        var cache = spillover_gated_channel_values(row, row.ParameterName);
+        int lower = lower_bound(cache.SortedValues, normalized.Minimum);
+        int upper = upper_bound(cache.SortedValues, normalized.Maximum);
+        return Math.Max(0, upper - lower);
+    }
+
+    private static int[] positive_indices(SpilloverCalculationRow row)
+    {
+        if (row.PositiveSelection is not { } selection)
+            return [];
+
+        var normalized = selection.Minimum <= selection.Maximum
+            ? selection
+            : new SpilloverRangeSelection(selection.Maximum, selection.Minimum);
+        var primary = primary_indices(row);
         var values = row.Sample.GetChannelValues(row.ParameterName);
-        return primary
-            .Where(index => index >= 0 && index < values.Length && values[index] >= normalized.Minimum && values[index] <= normalized.Maximum)
-            .ToArray();
+        var selected = new List<int>();
+        foreach (int index in primary)
+            if (index >= 0 && index < values.Length && values[index] >= normalized.Minimum && values[index] <= normalized.Maximum)
+                selected.Add(index);
+        return selected.ToArray();
+    }
+
+    private SpilloverGatedChannelCache spillover_gated_channel_values(SpilloverControlRowViewModel row, string channel_name)
+    {
+        var sample = row.Sample;
+        var preset = selected_group?.SpilloverCompensation.GatePresets.FirstOrDefault(item => item.Id == row.State.GatePresetId) ??
+            selected_group?.SpilloverCompensation.DefaultGatePreset;
+        string key = preset is null
+            ? $"00000000000000000000000000000000\u001f{sample.Id:N}\u001f{channel_name}"
+            : spillover_channel_cache_key(sample, preset, channel_name);
+        if (spillover_gated_channel_cache.TryGetValue(key, out var cached))
+            return cached;
+
+        var primary = primary_indices(row);
+        var source = sample.GetChannelValues(channel_name);
+        var pairs = new List<(double Value, int Index)>(Math.Min(primary.Length, source.Length));
+        foreach (int index in primary)
+        {
+            if (index < 0 || index >= source.Length)
+                continue;
+            double value = source[index];
+            if (double.IsFinite(value))
+                pairs.Add((value, index));
+        }
+        pairs.Sort(static (left, right) => left.Value.CompareTo(right.Value));
+
+        var sorted_values = new double[pairs.Count];
+        var sorted_indices = new int[pairs.Count];
+        for (int index = 0; index < pairs.Count; index++)
+        {
+            sorted_values[index] = pairs[index].Value;
+            sorted_indices[index] = pairs[index].Index;
+        }
+
+        var values = new double[sorted_values.Length];
+        Array.Copy(sorted_values, values, sorted_values.Length);
+        return spillover_gated_channel_cache[key] = new SpilloverGatedChannelCache(values, sorted_values, sorted_indices);
+    }
+
+    private static int lower_bound(IReadOnlyList<double> values, double target)
+    {
+        int low = 0;
+        int high = values.Count;
+        while (low < high)
+        {
+            int mid = low + (high - low) / 2;
+            if (values[mid] < target)
+                low = mid + 1;
+            else
+                high = mid;
+        }
+        return low;
+    }
+
+    private static int upper_bound(IReadOnlyList<double> values, double target)
+    {
+        int low = 0;
+        int high = values.Count;
+        while (low < high)
+        {
+            int mid = low + (high - low) / 2;
+            if (values[mid] <= target)
+                low = mid + 1;
+            else
+                high = mid;
+        }
+        return low;
     }
 
     private static double[] medians_for_indices(ControlSample sample, int[] indices, IReadOnlyList<string> channel_names)
@@ -6823,6 +7310,31 @@ public sealed partial class MainWindowViewModel : NotifyBase
             result[channel] = values.Length == 0 ? double.NaN : gated.Reduction.MatrixUtilities.PercentileInSorted(values, 0.5);
         }
         return result;
+    }
+
+    private static double stratified_mean(IReadOnlyList<float> values, int maximum_count)
+    {
+        if (values.Count == 0 || maximum_count <= 0)
+            return double.NaN;
+
+        int count = Math.Min(maximum_count, values.Count);
+        double sum = 0;
+        int finite_count = 0;
+        for (int index = 0; index < count; index++)
+        {
+            int source_index = count == values.Count
+                ? index
+                : count <= 1
+                    ? 0
+                    : (int)Math.Round(index * (values.Count - 1) / (double)(count - 1));
+            double value = values[source_index];
+            if (!double.IsFinite(value))
+                continue;
+            sum += value;
+            finite_count++;
+        }
+
+        return finite_count == 0 ? double.NaN : sum / finite_count;
     }
 
     private static double median(IReadOnlyList<float> values)
@@ -7027,6 +7539,35 @@ public sealed record EquivalentSampleChoice(FlowSample Sample, PopulationResult?
 
 public sealed record PlatformParameterRow(string Parameter, string Value);
 
+internal sealed record SpilloverHistogramCache(string ChannelName, double[] Values, double[] SortedValues);
+
+internal sealed record SpilloverGatedChannelCache(double[] Values, double[] SortedValues, int[] SortedIndices);
+
+internal sealed record SpilloverGateSnapshot(string XChannel, string YChannel, Point[] Vertices);
+
+internal sealed record SpilloverScatterPreparation(ControlSample? Sample, string Key);
+
+internal sealed record SpilloverAppendPreparation(
+    string ParameterName,
+    int[] PrimaryIndices,
+    SpilloverGatedChannelCache ChannelCache,
+    SpilloverScatterPreparation Scatter);
+
+internal sealed record SpilloverCalculationRow(
+    ControlSample Sample,
+    string SampleName,
+    string ParameterName,
+    SpilloverRangeSelection? PositiveSelection,
+    string GateXChannel,
+    string GateYChannel,
+    Point[] GateVertices);
+
+internal sealed record SpilloverCalculationResult(CompensationMatrix? Matrix, string? Error)
+{
+    public static SpilloverCalculationResult Succeeded(CompensationMatrix matrix) => new(matrix, null);
+    public static SpilloverCalculationResult Failed(string error) => new(null, error);
+}
+
 public sealed class SpilloverControlRowViewModel : NotifyBase
 {
     public const string BlankParameterName = "Blank";
@@ -7053,6 +7594,7 @@ public sealed class SpilloverControlRowViewModel : NotifyBase
     }
 
     public ControlSample Sample { get; }
+    internal SpilloverControlRow State => state;
     public string SampleName => Sample.Name;
     public int EventCount => Sample.EventCount;
     public ObservableCollection<string> ParameterChoices => parameter_choices;
@@ -7218,6 +7760,7 @@ public enum ProjectNodeKind
     StatisticDefinition,
     ControlFolder,
     SpilloverCompensation,
+    SpectralUnmixing,
     ControlSample,
     CompensationFolder,
     Compensation,
@@ -7333,6 +7876,7 @@ public sealed class ProjectNode : NotifyBase
         ProjectNodeKind.StatisticDefinition => "avares://gated/Resources/statistics.svg",
         ProjectNodeKind.ControlFolder => "avares://gated/Resources/controls.svg",
         ProjectNodeKind.SpilloverCompensation => "avares://gated/Resources/matrix.svg",
+        ProjectNodeKind.SpectralUnmixing => "avares://gated/Resources/embedding.svg",
         ProjectNodeKind.ControlSample => "avares://gated/Resources/tube.svg",
         ProjectNodeKind.CompensationFolder => "avares://gated/Resources/matrix.svg",
         ProjectNodeKind.Compensation => IsAppliedCompensation ? "avares://gated/Resources/ok.svg" : "avares://gated/Resources/matrix.svg",
@@ -7366,6 +7910,7 @@ public sealed class ProjectNode : NotifyBase
         ProjectNodeKind.StatisticDefinition => "D",
         ProjectNodeKind.ControlFolder => "C",
         ProjectNodeKind.SpilloverCompensation => "M",
+        ProjectNodeKind.SpectralUnmixing => "U",
         ProjectNodeKind.ControlSample => "S",
         ProjectNodeKind.CompensationFolder => "C",
         ProjectNodeKind.Compensation => IsAppliedCompensation ? "*" : "M",

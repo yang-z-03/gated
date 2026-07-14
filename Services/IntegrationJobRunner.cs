@@ -359,11 +359,19 @@ public sealed class IntegrationJobRunner
             return result;
         }
 
+        if (job.Axis.Transform == PlatformTransformationKind.Arcsinh)
+        {
+            for (int row = 0; row < source.GetLength(0); row++)
+            for (int column = 0; column < source.GetLength(1); column++)
+                result[row, column] = (float)Math.Asinh(source[row, column] / 5.0);
+            return result;
+        }
+
         for (int row = 0; row < source.GetLength(0); row++)
         for (int column = 0; column < source.GetLength(1); column++)
         {
             double value = source[row, column];
-            result[row, column] = value > 0 && double.IsFinite(value) ? (float)Math.Log10(value) : float.NaN;
+            result[row, column] = double.IsFinite(value) ? (float)(Math.Sign(value) * Math.Log10(1.0 + Math.Abs(value))) : float.NaN;
         }
         return result;
     }
@@ -423,7 +431,8 @@ public sealed class IntegrationJobRunner
         return job.Axis.Transform switch
         {
             PlatformTransformationKind.Logicle => new LogicleTransform(job.Axis.Logicle).Transform(value),
-            PlatformTransformationKind.Logarithm => value > 0 ? Math.Log10(value) : 0,
+            PlatformTransformationKind.Logarithm => Math.Sign(value) * Math.Log10(1.0 + Math.Abs(value)),
+            PlatformTransformationKind.Arcsinh => Math.Asinh(value / 5.0),
             _ => value
         };
     }

@@ -647,6 +647,7 @@ public sealed class FlowPlotView : Control
             XAxis?.LogicleDecades,
             XAxis?.LogicleLinearizationWidth,
             XAxis?.LogicleNegativeDecades,
+            XAxis?.ArcsinhCofactor,
             YAxis?.ChannelName,
             YAxis?.Minimum,
             YAxis?.Maximum,
@@ -655,6 +656,7 @@ public sealed class FlowPlotView : Control
             YAxis?.LogicleDecades,
             YAxis?.LogicleLinearizationWidth,
             YAxis?.LogicleNegativeDecades,
+            YAxis?.ArcsinhCofactor,
             Sample?.Id,
             Gate?.Id,
             Population?.Region);

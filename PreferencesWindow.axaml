@@ -2,7 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="gated.PreferencesWindow"
         x:CompileBindings="False"
-        Width="820"
+        Width="1120"
         Height="560"
         MinWidth="720"
         MinHeight="460"
@@ -45,7 +45,7 @@
                       GridLinesVisibility="Horizontal"
                       HeadersVisibility="Column">
                 <DataGrid.Columns>
-                    <DataGridTextColumn Header="Channel pattern" Binding="{Binding Pattern}" Width="*" />
+                    <DataGridTextColumn Header="Channel" Binding="{Binding ChannelName}" Width="*" />
                     <DataGridTemplateColumn Header="Kind" Width="120">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
@@ -65,6 +65,17 @@
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
                     <DataGridCheckBoxColumn Header="Observed range" Binding="{Binding UseObservedRange}" Width="120" />
+                    <DataGridCheckBoxColumn Header="Spectral" Binding="{Binding IsSpectral}" Width="80" />
+                    <DataGridTemplateColumn Header="Excitation" Width="110">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <ComboBox Classes="Small" Margin="6 2 0 0"
+                                          ItemsSource="{Binding $parent[Window].Tag.ExcitationChoices}"
+                                          SelectedItem="{Binding ExcitationLight}" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="Plot order" Binding="{Binding PlotOrder}" Width="90" />
                 </DataGrid.Columns>
             </DataGrid>
         </Grid>

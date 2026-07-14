@@ -199,6 +199,7 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
             or ProjectNodeKind.Compensation
             or ProjectNodeKind.ControlFolder
             or ProjectNodeKind.SpilloverCompensation
+            or ProjectNodeKind.SpectralUnmixing
             or ProjectNodeKind.ControlSample
             or ProjectNodeKind.Embedding;
 
@@ -390,6 +391,9 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
 
             case ProjectNodeKind.SpilloverCompensation:
                 icon.Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri("avares://gated/Resources/matrix.svg")));
+                break;
+            case ProjectNodeKind.SpectralUnmixing:
+                icon.Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri("avares://gated/Resources/embedding.svg")));
                 break;
 
             case ProjectNodeKind.ControlSample:

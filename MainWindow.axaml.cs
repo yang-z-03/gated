@@ -98,6 +98,9 @@ public partial class MainWindow : Window
         DragDrop.SetAllowDrop(spillover_control_table, true);
         DragDrop.AddDragOverHandler(spillover_control_table, spillover_control_table_drag_over);
         DragDrop.AddDropHandler(spillover_control_table, spillover_control_table_drop);
+        DragDrop.SetAllowDrop(spectral_control_table, true);
+        DragDrop.AddDragOverHandler(spectral_control_table, spectral_control_table_drag_over);
+        DragDrop.AddDropHandler(spectral_control_table, spectral_control_table_drop);
 
         this.PropertyChanged += (s, e) => {
             if (e.Property == Window.WindowStateProperty)
@@ -144,7 +147,8 @@ public partial class MainWindow : Window
         mainModeAnalysisText.Foreground = view_model.ViewState is MainWindowViewState.Analysis
             or MainWindowViewState.Metadata
             or MainWindowViewState.Platform
-            or MainWindowViewState.SpilloverCompensation ? active : inactive;
+            or MainWindowViewState.SpilloverCompensation
+            or MainWindowViewState.SpectralUnmixing ? active : inactive;
         mainModeLayoutText.Foreground = view_model.ViewState == MainWindowViewState.Layout ? active : inactive;
         mainModeCodeText.Foreground = view_model.ViewState == MainWindowViewState.Code ? active : inactive;
     }
@@ -1881,6 +1885,14 @@ public partial class MainWindow : Window
                     command_menu_item("Collapse all", view_model.CollapseProjectTreeCommand));
                 break;
 
+            case ProjectNodeKind.SpectralUnmixing:
+                add_menu_items(menu,
+                    click_menu_item("Add control samples ...", add_control_samples_menu_item_click),
+                    new Separator(),
+                    command_menu_item("Expand all", view_model.ExpandProjectTreeCommand),
+                    command_menu_item("Collapse all", view_model.CollapseProjectTreeCommand));
+                break;
+
             case ProjectNodeKind.ControlSample:
                 add_menu_items(menu,
                     command_menu_item("Rename control sample ...", view_model.RenameSelectedNodeCommand),
@@ -2362,6 +2374,23 @@ public partial class MainWindow : Window
         var node = PageEditorView.ResolveDraggedProjectNode(e.DataTransfer);
         if (node is not null && view_model.DropSpilloverControlCommand.CanExecute(node))
             view_model.DropSpilloverControlCommand.Execute(node);
+        PageEditorView.DraggedProjectNode = null;
+        e.Handled = true;
+    }
+
+    private void spectral_control_table_drag_over(object? sender, DragEventArgs e)
+    {
+        var node = PageEditorView.ResolveDraggedProjectNode(e.DataTransfer);
+        e.DragEffects = node is not null && view_model.SpectralPanel.DropControlCommand.CanExecute(node)
+            ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void spectral_control_table_drop(object? sender, DragEventArgs e)
+    {
+        var node = PageEditorView.ResolveDraggedProjectNode(e.DataTransfer);
+        if (node is not null && view_model.SpectralPanel.DropControlCommand.CanExecute(node))
+            view_model.SpectralPanel.DropControlCommand.Execute(node);
         PageEditorView.DraggedProjectNode = null;
         e.Handled = true;
     }

@@ -4,12 +4,15 @@ using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.Globalization;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Windows.Input;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Input;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using gated.Models;
 
 namespace gated.Controls;
@@ -53,6 +56,7 @@ public sealed class ScatterGateView : Control
     private ObservableCollection<Point>? subscribed_vertices;
     private List<Point>? draft_vertices;
     private int dragged_vertex = -1;
+    private WriteableBitmap? cached_event_bitmap;
 
     static ScatterGateView()
     {
@@ -140,6 +144,12 @@ public sealed class ScatterGateView : Control
         base.OnPropertyChanged(change);
         if (change.Property == VerticesProperty)
             resubscribe_vertices();
+        if (change.Property == SampleProperty || change.Property == XChannelProperty ||
+            change.Property == YChannelProperty || change.Property == XMinimumProperty ||
+            change.Property == XMaximumProperty || change.Property == XScaleProperty ||
+            change.Property == YMinimumProperty || change.Property == YMaximumProperty ||
+            change.Property == YScaleProperty)
+            cached_event_bitmap = null;
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
@@ -253,8 +263,15 @@ public sealed class ScatterGateView : Control
         if (x_values.Length == 0 || y_values.Length == 0)
             return;
 
+        if (cached_event_bitmap is not null)
+        {
+            context.DrawImage(cached_event_bitmap, plot_rect);
+            return;
+        }
+
+        const int size = 192;
         int step = Math.Max(1, x_values.Length / 12000);
-        var bins = new int[96, 96];
+        var bins = new int[size, size];
         for (int index = 0; index < x_values.Length && index < y_values.Length; index += step)
         {
             if (!try_normalize(x_values[index], x_axis(), out double nx) ||
@@ -266,22 +283,26 @@ public sealed class ScatterGateView : Control
         }
         int max_count = bins.Cast<int>().DefaultIfEmpty(0).Max();
 
-        for (int index = 0; index < x_values.Length && index < y_values.Length; index += step)
+        var pixels = new byte[size * size * 4];
+        for (int bx = 0; bx < size; bx++)
+        for (int by = 0; by < size; by++)
         {
-            double x = data_to_screen_x(x_values[index]);
-            double y = data_to_screen_y(y_values[index]);
-            if (!plot_rect.Contains(new Point(x, y)))
-                continue;
-            int bx = Math.Clamp((int)(((x - plot_rect.Left) / plot_rect.Width) * bins.GetLength(0)), 0, bins.GetLength(0) - 1);
-            int by = Math.Clamp((int)(((plot_rect.Bottom - y) / plot_rect.Height) * bins.GetLength(1)), 0, bins.GetLength(1) - 1);
-            double density = max_count <= 0 ? 0 : bins[bx, by] / (double)max_count;
-            var color = density > 0.35
-                ? Color.FromArgb(170, 25, 210, 215)
-                : density > 0.12
-                    ? Color.FromArgb(140, 0, 70, 220)
-                    : Color.FromArgb(125, 25, 65, 190);
-            context.FillRectangle(new SolidColorBrush(color), new Rect(x, y, density > 0.35 ? 1.8 : 1.2, density > 0.35 ? 1.8 : 1.2));
+            int count = bins[bx, by];
+            if (count == 0) continue;
+            double density = max_count <= 0 ? 0 : count / (double)max_count;
+            Color color = density > 0.35 ? Color.FromArgb(190, 25, 210, 215) :
+                density > 0.12 ? Color.FromArgb(165, 0, 70, 220) : Color.FromArgb(145, 25, 65, 190);
+            int offset = ((size - 1 - by) * size + bx) * 4;
+            pixels[offset] = color.B; pixels[offset + 1] = color.G; pixels[offset + 2] = color.R; pixels[offset + 3] = color.A;
         }
+        cached_event_bitmap = new WriteableBitmap(new PixelSize(size, size), new Vector(96, 96), PixelFormat.Bgra8888, AlphaFormat.Premul);
+        using (var frame = cached_event_bitmap.Lock())
+        {
+            int row_bytes = size * 4;
+            for (int row = 0; row < size; row++)
+                Marshal.Copy(pixels, row * row_bytes, IntPtr.Add(frame.Address, row * frame.RowBytes), row_bytes);
+        }
+        context.DrawImage(cached_event_bitmap, plot_rect);
     }
 
     private void draw_polygon(DrawingContext context)
@@ -342,7 +363,7 @@ public sealed class ScatterGateView : Control
         {
             double x = data_to_screen_x(value);
             context.DrawLine(pen, new Point(x, plot_rect.Bottom), new Point(x, plot_rect.Bottom + 5));
-            draw_centered_text(context, Configuration.FormatAxisValue(value), new Point(x, plot_rect.Bottom + 15), 10, color);
+            draw_centered_text(context, Configuration.FormatAxisValue(value), new Point(x, plot_rect.Bottom + 15), 11, color);
         }
         foreach (double value in minor_axis_ticks(y_axis()))
         {
@@ -353,7 +374,7 @@ public sealed class ScatterGateView : Control
         {
             double y = data_to_screen_y(value);
             context.DrawLine(pen, new Point(plot_rect.Left - 5, y), new Point(plot_rect.Left, y));
-            var formatted = create_formatted_text(Configuration.FormatAxisValue(value), 10, color);
+            var formatted = create_formatted_text(Configuration.FormatAxisValue(value), 11, color);
             context.DrawText(formatted, new Point(plot_rect.Left - formatted.Width - 10, y - formatted.Height / 2));
         }
     }

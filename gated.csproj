@@ -20,17 +20,25 @@
         <Message Importance="High" Text="DISABLE_UPDATER is enabled for $(MSBuildProjectName)." />
     </Target>
     <ItemGroup>
+      <AvaloniaXaml Remove=".github\**" />
       <AvaloniaXaml Remove="artifacts\**" />
       <AvaloniaXaml Remove="Msix\**" />
+      <AvaloniaXaml Remove="Pixels\**" />
       <AvaloniaXaml Remove="Updater\**" />
+      <Compile Remove=".github\**" />
       <Compile Remove="artifacts\**" />
       <Compile Remove="Msix\**" />
+      <Compile Remove="Pixels\**" />
       <Compile Remove="Updater\**" />
+      <EmbeddedResource Remove=".github\**" />
       <EmbeddedResource Remove="artifacts\**" />
       <EmbeddedResource Remove="Msix\**" />
+      <EmbeddedResource Remove="Pixels\**" />
       <EmbeddedResource Remove="Updater\**" />
+      <None Remove=".github\**" />
       <None Remove="artifacts\**" />
       <None Remove="Msix\**" />
+      <None Remove="Pixels\**" />
       <None Remove="Updater\**" />
 
       <AvaloniaXaml Remove="Installer\**" />
@@ -72,9 +80,6 @@
       <None Remove="gated.ico" />
       <AvaloniaResource Include="gated-32.png" />
       <AvaloniaResource Include="gated.ico" />
-
-	  <None Include=".github/versions" />
-	  <None Include=".github/updater" />
     </ItemGroup>
 
     <ItemGroup Condition="'$(MSIX)' == 'true' Or '$(MSIX)' == 'True' Or '$(MSIX)' == '1'">

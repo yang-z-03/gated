@@ -584,6 +584,7 @@ public class Platform
         {
             PlatformTransformationKind.Logarithm => "logarithm",
             PlatformTransformationKind.Logicle => "logicle",
+            PlatformTransformationKind.Arcsinh => "arcsinh",
             _ => "linear"
         };
 

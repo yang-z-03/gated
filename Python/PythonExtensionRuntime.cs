@@ -299,6 +299,61 @@ public static class PythonExtensionRuntime
         });
     }
 
+    public static SpectralPythonFitResult FitSpectralUnmixing(
+        IReadOnlyList<float[,]> positive_matrices,
+        float[,] unstained_matrix,
+        IReadOnlyList<int> peak_indices)
+    {
+        if (positive_matrices.Count == 0 || positive_matrices.Count != peak_indices.Count)
+            throw new ArgumentException("Spectral positives and peak indices must have equal non-zero length.");
+
+        report_status("Fitting spectral signatures ...", null, true, true);
+        try
+        {
+            return caller_thread.InvokeWithGil(() =>
+            {
+                using var globals = new PyDict();
+                globals.SetItem("__builtins__", Py.Import("builtins"));
+                globals.SetItem("np", (numpy_module ?? Py.Import("numpy")));
+                using var positives = new PyList();
+                foreach (var matrix in positive_matrices)
+                {
+                    using var array = PythonArrayConverter.ToNumpy(matrix);
+                    positives.Append(array);
+                }
+                globals.SetItem("_positive_matrices", positives);
+                using var unstained = PythonArrayConverter.ToNumpy(unstained_matrix);
+                globals.SetItem("_unstained_matrix", unstained);
+                using var peaks = peak_indices.ToArray().ToPython();
+                globals.SetItem("_peak_indices", peaks);
+                string code = new StreamReader(AssetLoader.Open(new Uri("avares://gated/Python/spectral-unmixing.py"))).ReadToEnd();
+                try_execute(code, globals);
+                string json = globals.GetItem("_spectral_result_json").As<string>();
+                var payload = JsonSerializer.Deserialize<SpectralPythonPayload>(json) ?? throw new InvalidOperationException("Python returned no spectral fit.");
+                return new SpectralPythonFitResult(
+                    jagged_to_matrix(payload.Signatures),
+                    jagged_to_matrix(payload.Similarity),
+                    jagged_to_matrix(payload.Coefficients),
+                    payload.Rank,
+                    payload.Warning ?? "");
+            });
+        }
+        finally { report_ready(); }
+    }
+
+    private static float[,] jagged_to_matrix(float[][]? source)
+    {
+        if (source is null || source.Length == 0) return new float[0, 0];
+        int columns = source[0].Length;
+        var result = new float[source.Length, columns];
+        for (int row = 0; row < source.Length; row++)
+        {
+            if (source[row].Length != columns) throw new InvalidOperationException("Python returned a ragged spectral matrix.");
+            for (int column = 0; column < columns; column++) result[row, column] = source[row][column];
+        }
+        return result;
+    }
+
     public static IReadOnlyList<PythonStatisticRequirement> GetStatisticRequirements(string source)
     {
         if (string.IsNullOrWhiteSpace(source))
@@ -969,6 +1024,17 @@ public static class PythonExtensionRuntime
 public sealed record PythonStatisticEvaluation(PyObject? Value, string DisplayValue);
 
 public sealed record PythonExecutionStatus(string Description, double? Progress, bool IsIndeterminate, bool IsVisible);
+
+public sealed record SpectralPythonFitResult(float[,] Signatures, float[,] Similarity, float[,] Coefficients, int Rank, string Warning);
+
+internal sealed class SpectralPythonPayload
+{
+    public float[][]? Signatures { get; set; }
+    public float[][]? Similarity { get; set; }
+    public float[][]? Coefficients { get; set; }
+    public int Rank { get; set; }
+    public string? Warning { get; set; }
+}
 
 public enum PythonLogLevel
 {

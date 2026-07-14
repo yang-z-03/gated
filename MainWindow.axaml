@@ -158,6 +158,11 @@
             <Setter Property="Padding" Value="4,0" />
             <Setter Property="CornerRadius" Value="4" />
         </Style>
+        <Style Selector="ListBox#spectral_control_table ListBoxItem">
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="CornerRadius" Value="4" />
+        </Style>
     </Window.Styles>
 
     <DockPanel x:Name="window">
@@ -331,10 +336,14 @@
                 <MenuItem Header="X axis scale">
                     <MenuItem Header="Linear" ToggleType="Radio" IsChecked="{Binding IsEditorXAxisLinearScale, Mode=TwoWay}" />
                     <MenuItem Header="Logicle" ToggleType="Radio" IsChecked="{Binding IsEditorXAxisLogicleScale, Mode=TwoWay}" />
+                    <MenuItem Header="Signed log" ToggleType="Radio" IsChecked="{Binding IsEditorXAxisLogScale, Mode=TwoWay}" />
+                    <MenuItem Header="Arcsinh" ToggleType="Radio" IsChecked="{Binding IsEditorXAxisArcsinhScale, Mode=TwoWay}" />
                 </MenuItem>
                 <MenuItem Header="Y axis scale">
                     <MenuItem Header="Linear" ToggleType="Radio" IsChecked="{Binding IsEditorYAxisLinearScale, Mode=TwoWay}" />
                     <MenuItem Header="Logicle" ToggleType="Radio" IsChecked="{Binding IsEditorYAxisLogicleScale, Mode=TwoWay}" />
+                    <MenuItem Header="Signed log" ToggleType="Radio" IsChecked="{Binding IsEditorYAxisLogScale, Mode=TwoWay}" />
+                    <MenuItem Header="Arcsinh" ToggleType="Radio" IsChecked="{Binding IsEditorYAxisArcsinhScale, Mode=TwoWay}" />
                 </MenuItem>
             </MenuItem>
             <MenuItem Header="_Layouts" IsEnabled="{Binding IsPageEditorMode}">
@@ -367,10 +376,14 @@
                 <MenuItem Header="X axis scale" IsEnabled="{Binding HasSelectedPageElement}">
                     <MenuItem Header="Linear" ToggleType="Radio" IsChecked="{Binding IsLayoutXAxisLinearScale, Mode=TwoWay}" />
                     <MenuItem Header="Logicle" ToggleType="Radio" IsChecked="{Binding IsLayoutXAxisLogicleScale, Mode=TwoWay}" />
+                    <MenuItem Header="Signed log" ToggleType="Radio" IsChecked="{Binding IsLayoutXAxisLogScale, Mode=TwoWay}" />
+                    <MenuItem Header="Arcsinh" ToggleType="Radio" IsChecked="{Binding IsLayoutXAxisArcsinhScale, Mode=TwoWay}" />
                 </MenuItem>
                 <MenuItem Header="Y axis scale" IsEnabled="{Binding HasSelectedPageElement}">
                     <MenuItem Header="Linear" ToggleType="Radio" IsChecked="{Binding IsLayoutYAxisLinearScale, Mode=TwoWay}" />
                     <MenuItem Header="Logicle" ToggleType="Radio" IsChecked="{Binding IsLayoutYAxisLogicleScale, Mode=TwoWay}" />
+                    <MenuItem Header="Signed log" ToggleType="Radio" IsChecked="{Binding IsLayoutYAxisLogScale, Mode=TwoWay}" />
+                    <MenuItem Header="Arcsinh" ToggleType="Radio" IsChecked="{Binding IsLayoutYAxisArcsinhScale, Mode=TwoWay}" />
                 </MenuItem>
             </MenuItem>
             <MenuItem Header="_Gating" IsEnabled="{Binding IsDefaultAnalysisMode}">
@@ -836,6 +849,10 @@
                                                 <TextBox Text="{Binding XAxis.LogicleNegativeDecades, UpdateSourceTrigger=PropertyChanged}" />
                                             </StackPanel>
                                         </Grid>
+                                        <StackPanel IsVisible="{Binding XAxis.IsArcsinh}">
+                                            <TextBlock Margin="0,4" Foreground="{DynamicResource SemiColorText2}" Text="Arcsinh cofactor" />
+                                            <TextBox Text="{Binding XAxis.ArcsinhCofactor, UpdateSourceTrigger=PropertyChanged}" />
+                                        </StackPanel>
                                     </StackPanel>
                                 </Expander>
 
@@ -891,6 +908,10 @@
                                                 <TextBox IsEnabled="{Binding IsYAxisEnabled}" Text="{Binding YAxis.LogicleNegativeDecades, UpdateSourceTrigger=PropertyChanged}" />
                                             </StackPanel>
                                         </Grid>
+                                        <StackPanel IsVisible="{Binding YAxis.IsArcsinh}">
+                                            <TextBlock Margin="0,4" Foreground="{DynamicResource SemiColorText2}" Text="Arcsinh cofactor" />
+                                            <TextBox Text="{Binding YAxis.ArcsinhCofactor, UpdateSourceTrigger=PropertyChanged}" />
+                                        </StackPanel>
                                     </StackPanel>
                                 </Expander>
 
@@ -1294,6 +1315,10 @@
                                             <TextBox Text="{Binding SelectedPageElement.XAxis.LogicleNegativeDecades, UpdateSourceTrigger=PropertyChanged}" />
                                         </StackPanel>
                                     </Grid>
+                                    <StackPanel IsVisible="{Binding SelectedPageElement.XAxis.IsArcsinh}">
+                                        <TextBlock Margin="0,4" Foreground="{DynamicResource SemiColorText2}" Text="Arcsinh cofactor" />
+                                        <TextBox Text="{Binding SelectedPageElement.XAxis.ArcsinhCofactor, UpdateSourceTrigger=PropertyChanged}" />
+                                    </StackPanel>
                                 </StackPanel>
                             </Expander>
 
@@ -1346,6 +1371,10 @@
                                             <TextBox Text="{Binding SelectedPageElement.YAxis.LogicleNegativeDecades, UpdateSourceTrigger=PropertyChanged}" />
                                         </StackPanel>
                                     </Grid>
+                                    <StackPanel IsVisible="{Binding SelectedPageElement.YAxis.IsArcsinh}">
+                                        <TextBlock Margin="0,4" Foreground="{DynamicResource SemiColorText2}" Text="Arcsinh cofactor" />
+                                        <TextBox Text="{Binding SelectedPageElement.YAxis.ArcsinhCofactor, UpdateSourceTrigger=PropertyChanged}" />
+                                    </StackPanel>
                                 </StackPanel>
                             </Expander>
 
@@ -1362,35 +1391,64 @@
                     <StackPanel Margin="24"
                                 Spacing="14"
                                 MaxWidth="750"
-                                MinWidth="700"
+                                MinWidth="750"
                                 HorizontalAlignment="Center">
-                        <StackPanel Margin="0 12 0 0">
-                            <TextBlock Foreground="{DynamicResource SemiColorText1}" Text="Traditional spillover compensation" />
+                        
+                        <StackPanel Margin="0 12 0 12" Spacing="8">
+                            <TextBlock Foreground="White" FontWeight="Bold" Text="Conventional Spillover Compensation" />
+                            <TextBlock Foreground="{DynamicResource SemiColorText1}" Text="Drag control samples to the control table to begin compensation." />
                         </StackPanel>
 
-                        <Grid ColumnDefinitions="280,*" ColumnSpacing="5">
-                            <Grid RowDefinitions="250, 28">
-                                <controls:ScatterGateView Grid.Row="0"
-                                                          Grid.Column="0"
-                                                          Height="250"
-                                                          Sample="{Binding SpilloverScatterSample}"
-                                                          XChannel="{Binding SpilloverFscChannel}"
-                                                          YChannel="{Binding SpilloverSscChannel}"
-                                                          XMinimum="{Binding SpilloverScatterXMinimum}"
-                                                          XMaximum="{Binding SpilloverScatterXMaximum}"
-                                                          XScale="{Binding SpilloverScatterXScale}"
-                                                          YMinimum="{Binding SpilloverScatterYMinimum}"
-                                                          YMaximum="{Binding SpilloverScatterYMaximum}"
-                                                          YScale="{Binding SpilloverScatterYScale}"
-                                                          Vertices="{Binding SpilloverPrimaryVertices}"
-                                                          VerticesCommittedCommand="{Binding MarkSpilloverPreviewOutdatedCommand}" />
+                        <Grid ColumnDefinitions="280,*" ColumnSpacing="5" IsVisible="{Binding HasSpilloverControls}">
+                            <Grid RowDefinitions="28, 250">
+                                <Grid Grid.Row="1"
+                                      Grid.Column="0"
+                                      Height="250"
+                                      Margin="0">
+                                    <controls:ScatterGateView Sample="{Binding SpilloverScatterSample}"
+                                                              XChannel="{Binding SpilloverFscChannel}"
+                                                              YChannel="{Binding SpilloverSscChannel}"
+                                                              XMinimum="{Binding SpilloverScatterXMinimum}"
+                                                              XMaximum="{Binding SpilloverScatterXMaximum}"
+                                                              XScale="{Binding SpilloverScatterXScale}"
+                                                              YMinimum="{Binding SpilloverScatterYMinimum}"
+                                                              YMaximum="{Binding SpilloverScatterYMaximum}"
+                                                              YScale="{Binding SpilloverScatterYScale}"
+                                                              Vertices="{Binding SpilloverPrimaryVertices}"
+                                                              VerticesCommittedCommand="{Binding MarkSpilloverPreviewOutdatedCommand}" />
+                                    <Border IsVisible="{Binding IsSpilloverPreparingRowCaches}"
+                                            IsHitTestVisible="False"
+                                            Width="96"
+                                            Height="96"
+                                            HorizontalAlignment="Center"
+                                            VerticalAlignment="Center"
+                                            CornerRadius="10"
+                                            Background="#303030"
+                                            BorderBrush="#101010"
+                                            BorderThickness="1"
+                                            Opacity="0.6"
+                                            Margin="72 10 18 42">
+                                        <Grid HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              Width="48" Height="48">
+                                            <controls:SpinnerView Width="48"
+                                                                  Height="48"/>
+                                        </Grid>
+                                    </Border>
+                                </Grid>
+                                
+                                <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="6" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                    <ComboBox Classes="Small" Width="120" Margin="52 0 0 0" ItemsSource="{Binding SpilloverGatePresets}" SelectedItem="{Binding SelectedSpilloverGatePreset}" />
+                                    <Button Grid.Column="1" Classes="Small" Command="{Binding NewSpilloverGatePresetCommand}">
+                                        <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/gate.svg}" />
+                                    </Button>
+                                </Grid>
                             </Grid>
-                            <Grid Grid.Column="1" RowDefinitions="250, 28">
-                                <controls:HistogramView Grid.Row="0"
+                            <Grid Grid.Column="1" RowDefinitions="28, 250">
+                                <controls:HistogramView Grid.Row="1"
                                                         Height="250"
+                                                        Margin="0 -14 0 14"
                                                         Series="{Binding SpilloverHistogramSeries}"
-                                                        Minimum="{Binding SpilloverHistogramMinimum}"
-                                                        Maximum="{Binding SpilloverHistogramMaximum}"
                                                         AxisScale="{Binding SpilloverHistogramAxisScale}"
                                                         LogicleTopOfScale="{Binding SpilloverHistogramLogicleT}"
                                                         LogicleLinearizationWidth="{Binding SpilloverHistogramLogicleW}"
@@ -1401,7 +1459,7 @@
                                                         IsGatingEnabled="True"
                                                         Selection="{Binding SpilloverSelection, Mode=TwoWay}" />
                                 
-                                <Grid ColumnDefinitions="Auto,150,Auto" Grid.Row="1" ColumnSpacing="8" VerticalAlignment="Center" HorizontalAlignment="Center" Height="32">
+                                <Grid ColumnDefinitions="Auto,150,Auto" Grid.Row="0" ColumnSpacing="8" VerticalAlignment="Center" HorizontalAlignment="Center" Height="32">
                                     <Button Classes="Small" Width="30" Command="{Binding SelectPreviousSpilloverChannelCommand}">
                                         <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/left.svg}" />
                                     </Button>
@@ -1419,10 +1477,9 @@
                             </Grid>
                         </Grid>
 
-                        <StackPanel Margin="0 12 0 0">
-                            <TextBlock Foreground="{DynamicResource SemiColorText1}" 
-                                       Text="Drag samples to the area for blank control and single-staining samples" />
-                        </StackPanel>
+                        <TextBlock Foreground="{DynamicResource SemiColorText1}" 
+                                   Text="Drag samples to the area for blank control and single-staining samples" />
+                        
 
                         <Border Height="300"
                                 BorderBrush="#505050"
@@ -1489,12 +1546,12 @@
                             </Grid>
                         </Border>
 
-                        <StackPanel Margin="0 12 0 4">
+                        <StackPanel Margin="0 12 0 4" IsVisible="{Binding HasSpilloverControls}">
                             <TextBlock Foreground="{DynamicResource SemiColorText1}" TextWrapping="Wrap" LineHeight="18"
                                        Text="Calculate auto-compensation will overwrite matrix. You may calculate once and manually edit the table before applying it to the group. Once generated, the preview matrix plot will update real-time as you edit." />
                         </StackPanel>
 
-                        <Grid Margin="0 4 0 6" ColumnDefinitions="Auto,220,*,Auto,Auto" ColumnSpacing="10">
+                        <Grid Margin="0 4 0 6" ColumnDefinitions="Auto,220,*,Auto,Auto" ColumnSpacing="10" IsVisible="{Binding HasSpilloverControls}">
                             <TextBlock Text="Compensation Matrix"
                                        Foreground="{DynamicResource SemiColorText2}"
                                        VerticalAlignment="Center" />
@@ -1673,6 +1730,187 @@
                                 </Border>
                             </StackPanel>
                             </ScrollViewer>
+                        </Expander>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+
+            <Grid Grid.Column="2"
+                  IsVisible="{Binding IsSpectralUnmixingMode}"
+                  Background="{DynamicResource SemiColorBackground1}">
+                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="24"
+                                Spacing="14"
+                                MaxWidth="750"
+                                MinWidth="750"
+                                HorizontalAlignment="Center">
+                        
+                        <StackPanel Margin="0 12 0 12" Spacing="8">
+                            <TextBlock Foreground="White" FontWeight="Bold" Text="Spectral Unmixing" />
+                            <TextBlock Foreground="{DynamicResource SemiColorText1}" Text="Drag control samples to the control table to begin spectral unmixing." />
+                        </StackPanel>
+
+                        <Grid ColumnDefinitions="280,*" ColumnSpacing="5" IsVisible="{Binding SpectralPanel.HasControls}">
+                            <Grid RowDefinitions="28, 250">
+                                <Grid Grid.Row="1">
+                                    <controls:ScatterGateView Sample="{Binding SpectralPanel.ScatterSample}"
+                                                              XChannel="{Binding SpectralPanel.GateXChannel}" YChannel="{Binding SpectralPanel.GateYChannel}"
+                                                              XMinimum="{Binding SpectralPanel.GateXMinimum}" XMaximum="{Binding SpectralPanel.GateXMaximum}" XScale="{Binding SpectralPanel.GateXScale}"
+                                                              YMinimum="{Binding SpectralPanel.GateYMinimum}" YMaximum="{Binding SpectralPanel.GateYMaximum}" YScale="{Binding SpectralPanel.GateYScale}"
+                                                              Vertices="{Binding SpectralPanel.GateVertices}"
+                                                              VerticesCommittedCommand="{Binding SpectralPanel.GateCommittedCommand}" />
+                                    <Border IsVisible="{Binding SpectralPanel.IsPreparingRowCaches}"
+                                            IsHitTestVisible="False"
+                                            Width="96"
+                                            Height="96"
+                                            HorizontalAlignment="Center"
+                                            VerticalAlignment="Center"
+                                            CornerRadius="10"
+                                            Background="#303030"
+                                            BorderBrush="#101010"
+                                            BorderThickness="1"
+                                            Opacity="0.6"
+                                            Margin="72 10 18 42">
+                                        <Grid HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"
+                                          Width="48" Height="48">
+                                            <controls:SpinnerView Width="48"
+                                                                  Height="48"/>
+                                        </Grid>
+                                    </Border>
+                                </Grid>
+                                <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="6" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                    <ComboBox Classes="Small" Width="120" Margin="52 0 0 0" ItemsSource="{Binding SpectralPanel.GatePresets}" SelectedItem="{Binding SpectralPanel.SelectedGatePreset}" />
+                                    <Button Grid.Column="1" Classes="Small" Command="{Binding SpectralPanel.NewGatePresetCommand}" >
+                                        <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/gate.svg}" />
+                                    </Button>
+                                </Grid>
+                            </Grid>
+                            <Grid Grid.Column="1" RowDefinitions="12, 250">
+                                <controls:HistogramView Grid.Row="1" Height="250" Series="{Binding SpectralPanel.HistogramSeries}"
+                                                        AxisScale="Logicle" IsGatingEnabled="True"
+                                                        Selection="{Binding SpectralPanel.HistogramSelection, Mode=TwoWay}" />
+                            </Grid>
+                        </Grid>
+                        
+                        <controls:SpectralPlotView Height="220" IsVisible="{Binding SpectralPanel.HasControls}" Data="{Binding SpectralPanel.SelectedPlotData}"
+                                                   Signature="{Binding SpectralPanel.SelectedSignature}" 
+                                                   SignatureAmplitude="{Binding SpectralPanel.SelectedSignatureAmplitude}"
+                                                   PlotBackground="Red" 
+                                                   PlotForeground="{DynamicResource SemiColorText0}" />
+                        
+                        <TextBlock Foreground="{DynamicResource SemiColorText1}" Text="Drag blank and single-staining control samples into the table" />
+                        <Border Height="300" BorderBrush="#505050" BorderThickness="1" CornerRadius="6" Background="#1e1e1e">
+                            <Grid RowDefinitions="29,*">
+                                <Border Background="#1e1e1e" CornerRadius="6 6 0 0" Padding="10,0">
+                                    <Grid ColumnDefinitions="8,165,155,150,175,24" Margin="8 0" ColumnSpacing="4">
+                                        <TextBlock Grid.Column="1" Text="Control sample" FontSize="13" Foreground="{DynamicResource SemiColorText1}" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="2" Text="Unmixing molecule" FontSize="13" Foreground="{DynamicResource SemiColorText1}" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="3" Text="Maximum channel" FontSize="13" Foreground="{DynamicResource SemiColorText1}" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="4" Text="Population" FontSize="13" Foreground="{DynamicResource SemiColorText1}" VerticalAlignment="Center" />
+                                    </Grid>
+                                </Border>
+                                <ListBox x:Name="spectral_control_table" Grid.Row="1" SelectionMode="Single" Margin="8 0 8 8"
+                                         ItemsSource="{Binding SpectralPanel.Rows}" 
+                                         SelectedItem="{Binding SpectralPanel.SelectedRow, Mode=TwoWay}"
+                                         Background="Transparent"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled" 
+                                         ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Height="28" Padding="3,0" CornerRadius="4" ClipToBounds="True">
+                                                <Grid ColumnDefinitions="183,155,150,175,24" ColumnSpacing="4" ClipToBounds="True" VerticalAlignment="Center">
+                                                    <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center" ClipToBounds="True">
+                                                        <Image Width="15" Height="15" Source="{Binding SampleIcon}" />
+                                                        <TextBlock Text="{Binding SampleName}" FontSize="13" Foreground="{DynamicResource SemiColorText0}" TextTrimming="CharacterEllipsis" />
+                                                    </StackPanel>
+                                                    <TextBox Grid.Column="1" Classes="Small" Margin="0,0" Text="{Binding MoleculeName, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" ClipToBounds="True" />
+                                                    <ComboBox Grid.Column="2" Classes="Small" Margin="0,0" ItemsSource="{Binding MaximumChannelChoices}" SelectedItem="{Binding MaximumChannel, Mode=TwoWay}" IsEnabled="{Binding !IsBackground}" />
+                                                    <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center" ClipToBounds="True">
+                                                        <Image Width="15" Height="15" Source="{Binding PopulationIcon}" />
+                                                        <TextBlock Text="{Binding PositivePercentText}" FontSize="13" Foreground="{DynamicResource SemiColorText1}" TextTrimming="CharacterEllipsis" />
+                                                    </StackPanel>
+                                                    <Button Grid.Column="4" Classes="Quiet ChannelIconButton" Command="{Binding RemoveCommand}" CommandParameter="{Binding}" ToolTip.Tip="Remove control">
+                                                        <Image Width="15" Height="15" Source="{Binding RemoveIcon}" />
+                                                    </Button>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </Grid>
+                        </Border>
+                        
+                        <Grid ColumnDefinitions="Auto,220,Auto,*,Auto" ColumnSpacing="8" IsVisible="{Binding SpectralPanel.HasControls}">
+                            <TextBlock Text="Output grouping"
+                                       Foreground="{DynamicResource SemiColorText2}"
+                                       VerticalAlignment="Center" />
+                            <ComboBox Grid.Column="1"
+                                      Width="220"
+                                      Classes="Small"
+                                      ItemsSource="{Binding SpectralPanel.OutputGroupChoices}"
+                                      SelectedItem="{Binding SpectralPanel.SelectedOutputGroupChoice, Mode=TwoWay}">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal" Spacing="7">
+                                            <Image Width="15" Height="15" Source="{SvgImage avares://gated/Resources/group.svg}" />
+                                            <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                            <Button Grid.Column="2" Classes="Small" Content="Apply to grouping" Command="{Binding SpectralPanel.ApplyCommand}" />
+                            <Button Grid.Column="4" Classes="Small" Content="Fit model" Command="{Binding SpectralPanel.FitCommand}" HorizontalAlignment="Right" />
+                        </Grid>
+                        
+                        <Expander Header="Spectrum cosine similarity" IsExpanded="True" IsVisible="{Binding SpectralPanel.HasFitResults}">
+                            <StackPanel Spacing="6">
+                                <CheckBox x:Name="similarity_matrix_annotate" Content="Annotate" IsChecked="True" Foreground="{DynamicResource SemiColorText1}" />
+                                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" MaxHeight="360">
+                                    <controls:SpectralMatrixView Rows="{Binding SpectralPanel.SimilarityRows}"
+                                                                 ColumnLabels="{Binding SpectralPanel.SimilarityColumnLabels}"
+                                                                 XAxisTitle="Spectrum"
+                                                                 YAxisTitle="Spectrum"
+                                                                 StressAbove="0.95"
+                                                                 ShowAnnotations="{Binding IsChecked, ElementName=similarity_matrix_annotate}"
+                                                                 Palette="Auto"
+                                                                 TextBrush="{DynamicResource SemiColorText0}"
+                                                                 GridBrush="{DynamicResource SemiColorBorder}" />
+                                </ScrollViewer>
+                            </StackPanel>
+                        </Expander>
+
+                        <Expander Header="Normalized spectrum signature" IsExpanded="True" IsVisible="{Binding SpectralPanel.HasFitResults}">
+                            <StackPanel Spacing="6">
+                                <CheckBox x:Name="signature_matrix_annotate" Content="Annotate" IsChecked="False" Foreground="{DynamicResource SemiColorText1}" />
+                                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" MaxHeight="360">
+                                    <controls:SpectralMatrixView Rows="{Binding SpectralPanel.SignatureRows}"
+                                                                 ColumnLabels="{Binding SpectralPanel.DetectorColumnLabels}"
+                                                                 XAxisTitle="Laser detector"
+                                                                 YAxisTitle="Dye / AF"
+                                                                 ShowAnnotations="{Binding IsChecked, ElementName=signature_matrix_annotate}"
+                                                                 Palette="Auto"
+                                                                 TextBrush="{DynamicResource SemiColorText0}"
+                                                                 GridBrush="{DynamicResource SemiColorBorder}" />
+                                </ScrollViewer>
+                            </StackPanel>
+                        </Expander>
+
+                        <Expander Header="Fitted weights of transform matrix" IsExpanded="True" IsVisible="{Binding SpectralPanel.HasFitResults}">
+                            <StackPanel Spacing="6">
+                                <CheckBox x:Name="coefficient_matrix_annotate" Content="Annotate" IsChecked="False" Foreground="{DynamicResource SemiColorText1}" />
+                                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" MaxHeight="360">
+                                    <controls:SpectralMatrixView Rows="{Binding SpectralPanel.CoefficientRows}"
+                                                                 ColumnLabels="{Binding SpectralPanel.DetectorColumnLabels}"
+                                                                 XAxisTitle="Raw detector"
+                                                                 YAxisTitle="Unmixed output / AF"
+                                                                 IsEditMode="{Binding IsChecked, ElementName=coefficient_matrix_annotate}"
+                                                                 ShowAnnotations="{Binding IsChecked, ElementName=coefficient_matrix_annotate}"
+                                                                 Palette="Auto"
+                                                                 TextBrush="{DynamicResource SemiColorText0}"
+                                                                 GridBrush="{DynamicResource SemiColorBorder}" />
+                                </ScrollViewer>
+                            </StackPanel>
                         </Expander>
                     </StackPanel>
                 </ScrollViewer>
