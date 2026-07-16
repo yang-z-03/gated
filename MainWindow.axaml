@@ -1825,7 +1825,13 @@
                                                         <TextBlock Text="{Binding SampleName}" FontSize="13" Foreground="{DynamicResource SemiColorText0}" TextTrimming="CharacterEllipsis" />
                                                     </StackPanel>
                                                     <TextBox Grid.Column="1" Classes="Small" Margin="0,0" Text="{Binding MoleculeName, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" ClipToBounds="True" />
-                                                    <ComboBox Grid.Column="2" Classes="Small" Margin="0,0" ItemsSource="{Binding MaximumChannelChoices}" SelectedItem="{Binding MaximumChannel, Mode=TwoWay}" IsEnabled="{Binding !IsBackground}" />
+                                                    <ComboBox Grid.Column="2" Classes="Small" Margin="0,0" ItemsSource="{Binding MaximumChannelChoices}" SelectedItem="{Binding MaximumChannel, Mode=TwoWay}" IsEnabled="{Binding !IsBackground}">
+                                                        <ComboBox.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
+                                                            </DataTemplate>
+                                                        </ComboBox.ItemTemplate>
+                                                    </ComboBox>
                                                     <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center" ClipToBounds="True">
                                                         <Image Width="15" Height="15" Source="{Binding PopulationIcon}" />
                                                         <TextBlock Text="{Binding PositivePercentText}" FontSize="13" Foreground="{DynamicResource SemiColorText1}" TextTrimming="CharacterEllipsis" />
@@ -1862,11 +1868,22 @@
                             <Button Grid.Column="2" Classes="Small" Content="Apply to grouping" Command="{Binding SpectralPanel.ApplyCommand}" />
                             <Button Grid.Column="4" Classes="Small" Content="Fit model" Command="{Binding SpectralPanel.FitCommand}" HorizontalAlignment="Right" />
                         </Grid>
+
+                        <Border IsVisible="{Binding SpectralPanel.HasWarning}"
+                                BorderBrush="#B7791F"
+                                BorderThickness="1"
+                                CornerRadius="6"
+                                Padding="10"
+                                Background="#2A2112">
+                            <TextBlock Foreground="#F6C56B"
+                                       TextWrapping="Wrap"
+                                       Text="{Binding SpectralPanel.WarningText}" />
+                        </Border>
                         
                         <Expander Header="Spectrum cosine similarity" IsExpanded="True" IsVisible="{Binding SpectralPanel.HasFitResults}">
                             <StackPanel Spacing="6">
-                                <CheckBox x:Name="similarity_matrix_annotate" Content="Annotate" IsChecked="True" Foreground="{DynamicResource SemiColorText1}" />
-                                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" MaxHeight="360">
+                                <CheckBox x:Name="similarity_matrix_annotate" Content="Annotate" IsChecked="False" Foreground="{DynamicResource SemiColorText1}" />
+                                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
                                     <controls:SpectralMatrixView Rows="{Binding SpectralPanel.SimilarityRows}"
                                                                  ColumnLabels="{Binding SpectralPanel.SimilarityColumnLabels}"
                                                                  XAxisTitle="Spectrum"
@@ -1883,7 +1900,7 @@
                         <Expander Header="Normalized spectrum signature" IsExpanded="True" IsVisible="{Binding SpectralPanel.HasFitResults}">
                             <StackPanel Spacing="6">
                                 <CheckBox x:Name="signature_matrix_annotate" Content="Annotate" IsChecked="False" Foreground="{DynamicResource SemiColorText1}" />
-                                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" MaxHeight="360">
+                                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
                                     <controls:SpectralMatrixView Rows="{Binding SpectralPanel.SignatureRows}"
                                                                  ColumnLabels="{Binding SpectralPanel.DetectorColumnLabels}"
                                                                  XAxisTitle="Laser detector"
@@ -1899,7 +1916,7 @@
                         <Expander Header="Fitted weights of transform matrix" IsExpanded="True" IsVisible="{Binding SpectralPanel.HasFitResults}">
                             <StackPanel Spacing="6">
                                 <CheckBox x:Name="coefficient_matrix_annotate" Content="Annotate" IsChecked="False" Foreground="{DynamicResource SemiColorText1}" />
-                                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" MaxHeight="360">
+                                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
                                     <controls:SpectralMatrixView Rows="{Binding SpectralPanel.CoefficientRows}"
                                                                  ColumnLabels="{Binding SpectralPanel.DetectorColumnLabels}"
                                                                  XAxisTitle="Raw detector"

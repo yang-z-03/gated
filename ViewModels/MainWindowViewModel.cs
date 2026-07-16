@@ -4954,9 +4954,18 @@ public sealed partial class MainWindowViewModel : NotifyBase
     {
         return new ProjectNode(kind, name, key, group, sample, gate, population, statistic_definition, statistic_result, compensation, control_sample, layout, integration_job, embedding_name, population_region, count, is_applied_compensation, depth)
         {
-            IsExpanded = project_expansion_state.TryGetValue(key, out bool is_expanded) ? is_expanded : true
+            IsExpanded = project_expansion_state.TryGetValue(key, out bool is_expanded) ? is_expanded : default_project_node_expanded(kind)
         };
     }
+
+    private static bool default_project_node_expanded(ProjectNodeKind kind) => kind switch
+    {
+        ProjectNodeKind.ControlFolder or
+        ProjectNodeKind.CompensationFolder or
+        ProjectNodeKind.Sample or
+        ProjectNodeKind.ControlSample => false,
+        _ => true
+    };
 
     internal void RefreshProjectTreeForSpectral() => refresh_project_tree();
 
@@ -6208,7 +6217,9 @@ public sealed partial class MainWindowViewModel : NotifyBase
             foreach (var preset in selected_group.SpilloverCompensation.GatePresets)
             {
                 if (selected_group.Channels.All(channel => channel.Name != preset.XChannel)) preset.XChannel = fsc;
-                if (selected_group.Channels.All(channel => channel.Name != preset.YChannel)) preset.YChannel = ssc;
+                if (selected_group.Channels.All(channel => channel.Name != preset.YChannel) ||
+                    string.Equals(preset.YChannel, preset.XChannel, StringComparison.Ordinal))
+                    preset.YChannel = distinct_channel(selected_group, ssc, preset.XChannel);
             }
             foreach (var preset in selected_group.SpilloverCompensation.GatePresets) SpilloverGatePresets.Add(preset);
         }
@@ -6516,6 +6527,13 @@ public sealed partial class MainWindowViewModel : NotifyBase
         refresh_spillover_histogram();
         refresh_spillover_population_text();
         raise_command_states();
+    }
+
+    private static string distinct_channel(FlowGroup group, string preferred, string other)
+    {
+        if (!string.Equals(preferred, other, StringComparison.Ordinal))
+            return preferred;
+        return group.Channels.FirstOrDefault(channel => !string.Equals(channel.Name, other, StringComparison.Ordinal))?.Name ?? preferred;
     }
 
     private bool can_drop_spillover_control(object? parameter) =>

@@ -55,6 +55,7 @@ public sealed class SpectralPlotView : Control
         int peak_index = string.IsNullOrWhiteSpace(data.PeakChannel)
             ? -1
             : data.DetectorNames.ToList().FindIndex(name => string.Equals(name, data.PeakChannel, StringComparison.Ordinal));
+        int label_stride = detector_label_stride(data.DetectorNames, slot, 11);
         for (int detector = 0; detector < detector_count; detector++)
         {
             for (int bin = 0; bin < bins; bin++)
@@ -66,7 +67,7 @@ public sealed class SpectralPlotView : Control
                 double y = plot.Bottom - (bin + 1) * plot.Height / bins;
                 context.FillRectangle(new SolidColorBrush(color), new Rect(plot.Left + detector * slot, y, Math.Max(1, slot + .5), plot.Height / bins + .5));
             }
-            bool draw_label = slot >= 14 || detector % 2 == 0;
+            bool draw_label = detector % label_stride == 0 || detector == peak_index;
             if (draw_label)
                 draw_vertical_text(context, data.DetectorNames[detector], new Point(plot.Left + (detector + .5) * slot, plot.Bottom + 10), 11, stresstext);
             if (detector > 0 && data.ExcitationLights[detector - 1] != data.ExcitationLights[detector])
@@ -178,6 +179,13 @@ public sealed class SpectralPlotView : Control
     }
 
     private FormattedText text(string value, double size, IBrush brush) => new(value, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface(TextElement.GetFontFamily(this)), size, brush);
+    private int detector_label_stride(IReadOnlyList<string> labels, double slot, double size)
+    {
+        if (slot <= 0)
+            return Math.Max(1, labels.Count);
+        double required = labels.Select(label => text(label, size, Brushes.White).Height + 4).DefaultIfEmpty(size + 4).Max();
+        return Math.Max(1, (int)Math.Ceiling(required / slot));
+    }
     private void draw_right_text(DrawingContext context, string value, Point point, double size, IBrush brush)
     {
         var formatted = text(value, size, brush);

@@ -46,7 +46,10 @@ public sealed class SpectralUnmixingService
             int[] indices = gated_indices(item.Sample, gate_for(group.SpectralUnmixing, item.Row));
             if (indices.Length < 3) throw new InvalidOperationException($"The gate for {item.Row.MoleculeName} contains fewer than three events.");
             string peak = resolve_peak(item.Row, item.Sample, indices, background.Sample, background_indices, detectors);
-            item.Row.PeakChannel = peak;
+            if (item.Row.UseAutomaticPeak)
+                item.Row.CachedPeakChannel = peak;
+            else
+                item.Row.PeakChannel = peak;
             int detector_index = Array.IndexOf(detectors, peak);
             var background_values = background.Sample.GetChannelValues(peak, background_indices).Where(float.IsFinite).Select(value => (double)value).OrderBy(value => value).ToArray();
             if (background_values.Length == 0) throw new InvalidOperationException($"The Unstained control has no finite {peak} values.");
@@ -167,7 +170,9 @@ public sealed class SpectralUnmixingService
     private static string resolve_peak(SpectralControlRow row, ControlSample stained, int[] stained_indices, ControlSample background, int[] background_indices, string[] detectors)
     {
         if (!row.UseAutomaticPeak && detectors.Contains(row.PeakChannel, StringComparer.Ordinal)) return row.PeakChannel;
-        return detectors.OrderByDescending(detector => median(stained.GetChannelValues(detector, stained_indices)) - median(background.GetChannelValues(detector, background_indices))).First();
+        if (detectors.Contains(row.CachedPeakChannel, StringComparer.Ordinal)) return row.CachedPeakChannel;
+        int[] sampled = deterministic_sample(stained_indices, 5000);
+        return detectors.OrderByDescending(detector => mean(stained.GetChannelValues(detector, sampled))).First();
     }
 
     private static double median(IEnumerable<float> source)
@@ -175,6 +180,19 @@ public sealed class SpectralUnmixingService
         var values = source.Where(float.IsFinite).Select(value => (double)value).OrderBy(value => value).ToArray();
         if (values.Length == 0) return double.NegativeInfinity;
         int middle = values.Length / 2; return values.Length % 2 == 0 ? (values[middle - 1] + values[middle]) / 2 : values[middle];
+    }
+
+    private static double mean(IEnumerable<float> source)
+    {
+        double sum = 0;
+        int count = 0;
+        foreach (float value in source)
+        {
+            if (!float.IsFinite(value)) continue;
+            sum += value;
+            count++;
+        }
+        return count == 0 ? double.NegativeInfinity : sum / count;
     }
 
     private static double quantile(double[] sorted, double q)

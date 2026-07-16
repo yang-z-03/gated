@@ -43,7 +43,10 @@ def _fit():
         x = combined[:, peak]
         signature = np.empty(detector_count, dtype=float)
         for detector in range(detector_count):
-            signature[detector] = 1.0 if detector == peak else _robust_line(x, combined[:, detector])
+            if detector == peak:
+                signature[detector] = 1.0
+            else:
+                signature[detector] = max(0.0, _robust_line(x, combined[:, detector]))
         maximum = np.max(signature)
         if not np.isfinite(maximum) or maximum <= np.finfo(float).eps:
             raise ValueError("A fluorophore signature is degenerate")
@@ -53,7 +56,7 @@ def _fit():
     valid = np.isfinite(norms) & (norms > np.finfo(float).eps)
     if np.count_nonzero(valid) < 3:
         raise ValueError("Unstained/AF events do not contain a measurable spectrum")
-    af = np.mean(unstained[valid] / norms[valid, None], axis=0)
+    af = np.maximum(0.0, np.mean(unstained[valid] / norms[valid, None], axis=0))
     af_norm = np.max(np.abs(af))
     if not np.isfinite(af_norm) or af_norm <= np.finfo(float).eps:
         raise ValueError("The mean AF signature is degenerate")

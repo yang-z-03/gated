@@ -24,6 +24,7 @@ public sealed class SpectralUnmixingViewModel : NotifyBase
     private FlowGroup? group;
     private SpectralControlRowViewModel? selected_row;
     private string status = "Drop spectral controls to begin.";
+    private string warning_text = "";
     private bool is_busy;
     private int active_cache_updates;
     private bool is_preparing_row_caches;
@@ -64,6 +65,8 @@ public sealed class SpectralUnmixingViewModel : NotifyBase
     public bool IsBusy { get => is_busy; private set { if (SetField(ref is_busy, value)) raise_commands(); } }
     public bool IsPreparingRowCaches { get => is_preparing_row_caches; private set => SetField(ref is_preparing_row_caches, value); }
     public string Status { get => status; private set => SetField(ref status, value); }
+    public string WarningText { get => warning_text; private set { if (SetField(ref warning_text, value ?? "")) OnPropertyChanged(nameof(HasWarning)); } }
+    public bool HasWarning => !string.IsNullOrWhiteSpace(WarningText);
     public SpectralControlRowViewModel? SelectedRow
     {
         get => selected_row;
@@ -144,7 +147,7 @@ public sealed class SpectralUnmixingViewModel : NotifyBase
 
     public void SetGroup(FlowGroup? value)
     {
-        group = value; selected_output_group = null; selected_output_group_choice = null; Rows.Clear(); GatePresets.Clear(); Detectors.Clear(); SimilarityRows.Clear(); SignatureRows.Clear(); CoefficientRows.Clear(); SimilarityColumnLabels.Clear(); DetectorColumnLabels.Clear(); HistogramSeries.Clear(); OutputGroups.Clear(); OutputGroupChoices.Clear();
+        group = value; selected_output_group = null; selected_output_group_choice = null; Rows.Clear(); GatePresets.Clear(); Detectors.Clear(); SimilarityRows.Clear(); SignatureRows.Clear(); CoefficientRows.Clear(); SimilarityColumnLabels.Clear(); DetectorColumnLabels.Clear(); HistogramSeries.Clear(); OutputGroups.Clear(); OutputGroupChoices.Clear(); WarningText = "";
         invalidate_scatter_sample();
         if (group is null) { SelectedRow = null; notify_visibility_state(); return; }
         var state = group.SpectralUnmixing; _ = state.DefaultGatePreset;
@@ -163,6 +166,7 @@ public sealed class SpectralUnmixingViewModel : NotifyBase
             : OutputGroupChoices.FirstOrDefault(choice => choice.Group is null);
         SelectedRow = Rows.FirstOrDefault(); rebuild_matrices();
         Status = Rows.Count == 0 ? "Drop spectral controls to begin." : state.IsStale ? "Spectral model requires fitting." : "Spectral model ready.";
+        WarningText = "";
         raise_commands();
         notify_visibility_state();
         foreach (var row in Rows.Where(item => item.State.PlotCache is null)) _ = rebuild_row_cache_async(row);
@@ -196,28 +200,27 @@ public sealed class SpectralUnmixingViewModel : NotifyBase
 
     private async Task fit_async()
     {
-        if (group is null) return; IsBusy = true; Status = "Fitting spectral signatures ...";
+        if (group is null) return; IsBusy = true; Status = "Fitting spectral signatures ..."; WarningText = "";
         try
         {
             var outcome = await Task.Run(() => service.Fit(group));
             string target_name = group.SpectralUnmixing.LinkedOutputGroupId is { } linked
                 ? owner.Workspace.Groups.FirstOrDefault(candidate => candidate.Id == linked)?.Name ?? $"{group.Name} unmixed"
                 : $"{group.Name} unmixed";
-            Status = string.IsNullOrWhiteSpace(outcome.Warning)
-                ? $"Fit complete (rank {outcome.Rank}). Apply will create or update {target_name}."
-                : $"{outcome.Warning} Apply will create or update {target_name}.";
+            Status = $"Fit complete (rank {outcome.Rank}). Apply will create or update {target_name}.";
+            WarningText = outcome.Warning;
             rebuild_output_group_choices();
             foreach (var row in Rows) row.Refresh(); rebuild_matrices(); refresh_selected_plots(); OnPropertyChanged(nameof(HasFit)); OnPropertyChanged(nameof(HasFitResults)); owner.RefreshProjectTreeForSpectral();
         }
-        catch (Exception exception) { Status = exception.Message; }
+        catch (Exception exception) { Status = exception.Message; WarningText = exception.Message; }
         finally { IsBusy = false; raise_commands(); }
     }
 
     private void apply()
     {
         if (group is null) return;
-        try { var target = service.Apply(owner.Workspace, group); if (!OutputGroups.Contains(target)) OutputGroups.Add(target); rebuild_output_group_choices(); SelectedOutputGroupChoice = OutputGroupChoices.FirstOrDefault(choice => choice.Group?.Id == target.Id); Status = $"Unmixed samples written to {target.Name}."; owner.RefreshProjectTreeForSpectral(); }
-        catch (Exception exception) { Status = exception.Message; }
+        try { var target = service.Apply(owner.Workspace, group); if (!OutputGroups.Contains(target)) OutputGroups.Add(target); rebuild_output_group_choices(); SelectedOutputGroupChoice = OutputGroupChoices.FirstOrDefault(choice => choice.Group?.Id == target.Id); Status = $"Unmixed samples written to {target.Name}."; WarningText = ""; owner.RefreshProjectTreeForSpectral(); }
+        catch (Exception exception) { Status = exception.Message; WarningText = exception.Message; }
     }
 
     private void gate_committed()
@@ -237,7 +240,7 @@ public sealed class SpectralUnmixingViewModel : NotifyBase
         group.SpectralUnmixing.GatePresets.Add(preset); GatePresets.Add(preset); SelectedGatePreset = preset; mark_stale();
     }
 
-    private void mark_stale() { if (group is null) return; group.SpectralUnmixing.IsStale = true; Status = "Spectral model requires fitting."; OnPropertyChanged(nameof(HasFitResults)); raise_commands(); }
+    private void mark_stale() { if (group is null) return; group.SpectralUnmixing.IsStale = true; Status = "Spectral model requires fitting."; WarningText = ""; OnPropertyChanged(nameof(HasFitResults)); raise_commands(); }
     private void refresh_selected_plots()
     {
         HistogramSeries.Clear(); SpectralEventIndices = []; SelectedSignature = []; SelectedSignatureAmplitude = 1.0;
@@ -295,6 +298,7 @@ public sealed class SpectralUnmixingViewModel : NotifyBase
             {
                 row.FailCacheUpdate(generation);
                 Status = $"Could not prepare {row.SampleName}: {exception.Message}";
+                WarningText = Status;
             }
         }
         finally
@@ -626,12 +630,20 @@ public sealed class SpectralUnmixingViewModel : NotifyBase
             if (string.Equals(preset.Name, "default", StringComparison.Ordinal))
                 preset.Name = "Default";
             if (group.Channels.All(channel => channel.Name != preset.XChannel)) preset.XChannel = fsc;
-            if (group.Channels.All(channel => channel.Name != preset.YChannel)) preset.YChannel = ssc;
+            if (group.Channels.All(channel => channel.Name != preset.YChannel) ||
+                string.Equals(preset.YChannel, preset.XChannel, StringComparison.Ordinal))
+                preset.YChannel = distinct_channel(group, ssc, preset.XChannel);
             preset.XAxis.ChannelName = preset.XChannel; preset.YAxis.ChannelName = preset.YChannel;
             preset.XAxis.ScaleKind = Configuration.DefaultCoordinateScaleForChannel(preset.XChannel); preset.YAxis.ScaleKind = Configuration.DefaultCoordinateScaleForChannel(preset.YChannel);
             preset.XAxis.Maximum = Math.Max(1, group.Channels.FirstOrDefault(channel => channel.Name == preset.XChannel)?.Maximum ?? 262144);
             preset.YAxis.Maximum = Math.Max(1, group.Channels.FirstOrDefault(channel => channel.Name == preset.YChannel)?.Maximum ?? 262144);
         }
+    }
+    private static string distinct_channel(FlowGroup group, string preferred, string other)
+    {
+        if (!string.Equals(preferred, other, StringComparison.Ordinal))
+            return preferred;
+        return group.Channels.FirstOrDefault(channel => !string.Equals(channel.Name, other, StringComparison.Ordinal))?.Name ?? preferred;
     }
     private static bool is_background_name(string value) => value.Equals("unstained", StringComparison.OrdinalIgnoreCase) || value.Equals("blank", StringComparison.OrdinalIgnoreCase) || value.Equals("af", StringComparison.OrdinalIgnoreCase);
     private static double median_value(IEnumerable<float> source) { var values = source.Where(float.IsFinite).Select(value => (double)value).OrderBy(value => value).ToArray(); return values.Length == 0 ? 0 : values[values.Length / 2]; }
@@ -755,9 +767,14 @@ public sealed class SpectralControlRowViewModel : NotifyBase
     private readonly SpectralUnmixingViewModel owner;
     private int cache_generation;
     private bool updating_from_cache;
+    private readonly ObservableCollection<SpectralPeakChoiceViewModel> maximum_channel_choices = new();
     public SpectralControlRow State { get; }
     public ControlSample Sample { get; }
-    public SpectralControlRowViewModel(SpectralUnmixingViewModel owner, SpectralControlRow state, ControlSample sample) { this.owner = owner; State = state; Sample = sample; SelectCommand = new RelayCommand(_ => owner.SelectedRow = this); }
+    public SpectralControlRowViewModel(SpectralUnmixingViewModel owner, SpectralControlRow state, ControlSample sample)
+    {
+        this.owner = owner; State = state; Sample = sample; SelectCommand = new RelayCommand(_ => owner.SelectedRow = this);
+        rebuild_maximum_channel_choices();
+    }
     public ICommand SelectCommand { get; }
     public ICommand RemoveCommand => owner.RemoveControlCommand;
     public string SampleName => Sample.Name;
@@ -780,7 +797,7 @@ public sealed class SpectralControlRowViewModel : NotifyBase
             State.MoleculeName = molecule;
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsBackground));
-            OnPropertyChanged(nameof(MaximumChannelChoices));
+            rebuild_maximum_channel_choices();
             OnPropertyChanged(nameof(MaximumChannel));
             NotifyPopulationChanged();
             owner.RowChanged(this);
@@ -818,18 +835,25 @@ public sealed class SpectralControlRowViewModel : NotifyBase
             owner.RowChanged(this);
         }
     }
-    public string ResolvedPeakChannel => IsBackground ? "" : !string.IsNullOrWhiteSpace(State.PeakChannel) ? State.PeakChannel : owner.InferPeakForDisplay(this);
-    public IReadOnlyList<string> MaximumChannelChoices => IsBackground ? ["—"] : [$"Auto ({owner.InferPeakForDisplay(this)})", .. owner.Detectors.Select(item => item.ChannelName)];
-    public string? MaximumChannel
+    public string ResolvedPeakChannel => IsBackground ? "" : State.UseAutomaticPeak ? (!string.IsNullOrWhiteSpace(State.CachedPeakChannel) ? State.CachedPeakChannel : owner.InferPeakForDisplay(this)) : State.PeakChannel;
+    public ObservableCollection<SpectralPeakChoiceViewModel> MaximumChannelChoices => maximum_channel_choices;
+    public SpectralPeakChoiceViewModel? MaximumChannel
     {
-        get => IsBackground ? "—" : State.UseAutomaticPeak ? $"Auto ({owner.InferPeakForDisplay(this)})" : State.PeakChannel;
+        get
+        {
+            if (IsBackground)
+                return maximum_channel_choices.FirstOrDefault();
+            if (State.UseAutomaticPeak)
+                return maximum_channel_choices.FirstOrDefault(choice => choice.IsAutomatic);
+            return maximum_channel_choices.FirstOrDefault(choice => string.Equals(choice.ChannelName, State.PeakChannel, StringComparison.Ordinal));
+        }
         set
         {
-            if (updating_from_cache || IsBackground || string.IsNullOrWhiteSpace(value))
+            if (updating_from_cache || IsBackground || value is null)
                 return;
 
-            bool automatic = value.StartsWith("Auto (", StringComparison.Ordinal);
-            string peak = automatic ? "" : value;
+            bool automatic = value.IsAutomatic;
+            string peak = automatic ? "" : value.ChannelName;
             if (!automatic && !owner.Detectors.Any(detector => string.Equals(detector.ChannelName, peak, StringComparison.Ordinal)))
                 return;
             if (State.UseAutomaticPeak == automatic && string.Equals(State.PeakChannel, peak, StringComparison.Ordinal))
@@ -854,7 +878,7 @@ public sealed class SpectralControlRowViewModel : NotifyBase
         }
     }
     public bool IsCacheUpdating { get; private set; }
-    public void Refresh() { OnPropertyChanged(nameof(PeakChannel)); OnPropertyChanged(nameof(ResolvedPeakChannel)); OnPropertyChanged(nameof(MaximumChannelChoices)); OnPropertyChanged(nameof(MaximumChannel)); OnPropertyChanged(nameof(IsBackground)); NotifyPopulationChanged(); }
+    public void Refresh() { rebuild_maximum_channel_choices(); OnPropertyChanged(nameof(PeakChannel)); OnPropertyChanged(nameof(ResolvedPeakChannel)); OnPropertyChanged(nameof(MaximumChannel)); OnPropertyChanged(nameof(IsBackground)); NotifyPopulationChanged(); }
     public void NotifyPopulationChanged() { OnPropertyChanged(nameof(PositivePercentText)); OnPropertyChanged(nameof(PopulationIcon)); }
     internal int BeginCacheUpdate() { IsCacheUpdating = true; OnPropertyChanged(nameof(IsCacheUpdating)); NotifyPopulationChanged(); return ++cache_generation; }
     internal bool IsCurrentCacheUpdate(int generation) => generation == cache_generation;
@@ -883,7 +907,7 @@ public sealed class SpectralControlRowViewModel : NotifyBase
         updating_from_cache = true;
         try
         {
-            OnPropertyChanged(nameof(MaximumChannelChoices));
+            rebuild_maximum_channel_choices();
             OnPropertyChanged(nameof(MaximumChannel));
             OnPropertyChanged(nameof(ResolvedPeakChannel));
         }
@@ -904,6 +928,48 @@ public sealed class SpectralControlRowViewModel : NotifyBase
     }
     private static bool is_background(string value) => value.Equals("unstained", StringComparison.OrdinalIgnoreCase) || value.Equals("blank", StringComparison.OrdinalIgnoreCase) || value.Equals("af", StringComparison.OrdinalIgnoreCase);
     private static SvgImage load_svg(string uri) => new() { Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri(uri))) };
+    private void rebuild_maximum_channel_choices()
+    {
+        if (maximum_channel_choices.Count == 0)
+            maximum_channel_choices.Add(new SpectralPeakChoiceViewModel(true, "", ""));
+
+        if (IsBackground)
+        {
+            maximum_channel_choices[0].DisplayName = "—";
+            while (maximum_channel_choices.Count > 1)
+                maximum_channel_choices.RemoveAt(maximum_channel_choices.Count - 1);
+            OnPropertyChanged(nameof(MaximumChannelChoices));
+            return;
+        }
+
+        maximum_channel_choices[0].DisplayName = $"Auto ({ResolvedPeakChannel})";
+        foreach (var detector in owner.Detectors)
+        {
+            if (!maximum_channel_choices.Any(choice => !choice.IsAutomatic && string.Equals(choice.ChannelName, detector.ChannelName, StringComparison.Ordinal)))
+                maximum_channel_choices.Add(new SpectralPeakChoiceViewModel(false, detector.ChannelName, detector.ChannelName));
+        }
+        for (int index = maximum_channel_choices.Count - 1; index >= 1; index--)
+        {
+            if (!owner.Detectors.Any(detector => string.Equals(detector.ChannelName, maximum_channel_choices[index].ChannelName, StringComparison.Ordinal)))
+                maximum_channel_choices.RemoveAt(index);
+        }
+        OnPropertyChanged(nameof(MaximumChannelChoices));
+    }
+}
+
+public sealed class SpectralPeakChoiceViewModel : NotifyBase
+{
+    private string display_name;
+    public SpectralPeakChoiceViewModel(bool is_automatic, string channel_name, string display_name)
+    {
+        IsAutomatic = is_automatic;
+        ChannelName = channel_name;
+        this.display_name = display_name;
+    }
+    public bool IsAutomatic { get; }
+    public string ChannelName { get; }
+    public string DisplayName { get => display_name; set => SetField(ref display_name, value ?? ""); }
+    public override string ToString() => DisplayName;
 }
 
 public sealed record SpectralMatrixRowViewModel(string Name, IReadOnlyList<SpectralMatrixCellViewModel> Cells);

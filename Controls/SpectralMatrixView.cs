@@ -172,8 +172,8 @@ public sealed class SpectralMatrixView : Decorator
         var metrics = calculate_cell_metrics(rows, columns, availableSize);
         double desired_width = metrics.Left + Math.Max(1, columns) * metrics.CellWidth + 18;
         double desired_height = metrics.Top + Math.Max(1, rows) * metrics.CellHeight + 30;
-        if (!ShowAnnotations && !double.IsFinite(availableSize.Width))
-            desired_width = Math.Max(700, desired_width);
+        if (!ShowAnnotations && double.IsFinite(availableSize.Width))
+            desired_width = availableSize.Width;
         Child?.Measure(availableSize);
         return new Size(desired_width, desired_height);
     }
@@ -201,9 +201,11 @@ public sealed class SpectralMatrixView : Decorator
         var labels = ColumnLabels ?? [];
         var text_brush = TextBrush ?? new SolidColorBrush(Color.FromRgb(226, 231, 241));
         var muted_brush = new SolidColorBrush(Color.FromRgb(142, 148, 160));
-        var grid_brush = GridBrush ?? new SolidColorBrush(Color.FromArgb(50, 128, 128, 128));
-        var grid_pen = new Pen(grid_brush, 2);
+        var grid_brush = GridBrush ?? new SolidColorBrush(Color.FromArgb(72, 128, 138, 152));
+        var grid_pen = new Pen(grid_brush, 1);
         var stress_pen = new Pen(new SolidColorBrush(Color.FromRgb(255, 92, 92)), 2.4);
+        var highlight_brush = new SolidColorBrush(Color.FromArgb(70, 180, 180, 180));
+        var mask_brush = new SolidColorBrush(Color.FromRgb(32, 32, 34));
 
         var layout = calculate_layout(row_count, column_count);
         draw_titles(context, layout, text_brush);
@@ -218,13 +220,18 @@ public sealed class SpectralMatrixView : Decorator
 
         var values = rows.SelectMany(row => row.Cells.Select(cell => (double)cell.Value)).Where(double.IsFinite).ToArray();
         var norm = calculate_norm(values);
+        int label_stride = column_label_stride(labels, column_count, layout.CellWidth);
+        bool draw_column_grid = ShowAnnotations || layout.CellWidth >= 3.0;
 
-        for (int column = 0; column < column_count; column++)
+        if (draw_column_grid)
         {
-            double x = layout.Matrix.Left + column * layout.CellWidth;
-            context.DrawLine(grid_pen, new Point(x, layout.Matrix.Top), new Point(x, layout.Matrix.Bottom));
+            for (int column = 0; column < column_count; column++)
+            {
+                double x = layout.Matrix.Left + column * layout.CellWidth;
+                context.DrawLine(grid_pen, new Point(x, layout.Matrix.Top), new Point(x, layout.Matrix.Bottom));
+            }
+            context.DrawLine(grid_pen, new Point(layout.Matrix.Right, layout.Matrix.Top), new Point(layout.Matrix.Right, layout.Matrix.Bottom));
         }
-        context.DrawLine(grid_pen, new Point(layout.Matrix.Right, layout.Matrix.Top), new Point(layout.Matrix.Right, layout.Matrix.Bottom));
 
         for (int row = 0; row < row_count; row++)
         {
@@ -239,7 +246,9 @@ public sealed class SpectralMatrixView : Decorator
                     continue;
 
                 double value = rows[row].Cells[column].Value;
-                context.FillRectangle(new SolidColorBrush(color_for(value, norm)), rect.Deflate(0.5));
+                double row_limit = norm.Diverging ? row_diverging_limit(rows[row]) : 1.0;
+                var fill_rect = layout.CellWidth <= 1.2 || layout.CellHeight <= 1.2 ? rect : rect.Deflate(0.5);
+                context.FillRectangle(new SolidColorBrush(color_for(value, norm, row_limit)), fill_rect);
                 if (ShowAnnotations)
                 {
                     bool highlighted = row == highlighted_row || column == highlighted_column;
@@ -257,22 +266,27 @@ public sealed class SpectralMatrixView : Decorator
         {
             double x = layout.Matrix.Left + column * layout.CellWidth;
             string label = labels.ElementAtOrDefault(column) ?? (column + 1).ToString(CultureInfo.InvariantCulture);
-            bool draw_label = ShowAnnotations || layout.CellWidth >= 14 || column % 2 == 0;
+            bool draw_label = column % label_stride == 0;
             context.DrawLine(grid_pen, new Point(x + layout.CellWidth / 2, layout.Matrix.Top - 5), new Point(x + layout.CellWidth / 2, layout.Matrix.Top));
             if (!draw_label)
                 continue;
-            draw_top_vertical_label(context, label, new Point(x + layout.CellWidth / 2, layout.Matrix.Top - 8), column == highlighted_column, text_brush, muted_brush);
+            draw_top_vertical_label(context, label, new Point(x + layout.CellWidth / 2, layout.Matrix.Top - 8), column == highlighted_column, text_brush, muted_brush, null);
         }
 
         if (highlighted_row >= 0)
         {
             var y = layout.Matrix.Top + highlighted_row * layout.CellHeight;
-            context.DrawRectangle(null, new Pen(text_brush, 1.4), new Rect(layout.Matrix.Left, y, layout.Matrix.Width, layout.CellHeight).Deflate(0.7));
+            context.DrawRectangle(null, new Pen(highlight_brush, 2), new Rect(layout.Matrix.Left, y, layout.Matrix.Width, layout.CellHeight).Deflate(0.7));
         }
         if (highlighted_column >= 0)
         {
             var x = layout.Matrix.Left + highlighted_column * layout.CellWidth;
-            context.DrawRectangle(null, new Pen(text_brush, 1.4), new Rect(x, layout.Matrix.Top, layout.CellWidth, layout.Matrix.Height).Deflate(0.7));
+            context.DrawRectangle(null, new Pen(highlight_brush, 2), new Rect(x, layout.Matrix.Top, layout.CellWidth, layout.Matrix.Height).Deflate(0.7));
+            if (highlighted_column < column_count && highlighted_column % label_stride != 0)
+            {
+                string label = labels.ElementAtOrDefault(highlighted_column) ?? (highlighted_column + 1).ToString(CultureInfo.InvariantCulture);
+                draw_top_vertical_label(context, label, new Point(x + layout.CellWidth / 2, layout.Matrix.Top - 8), true, text_brush, muted_brush, mask_brush);
+            }
         }
     }
 
@@ -329,19 +343,19 @@ public sealed class SpectralMatrixView : Decorator
         double bottom = 36;
         int columns = Math.Max(1, column_count);
         int rows = Math.Max(1, row_count);
-        double value_width = ShowAnnotations ? Math.Max(42, maximum_annotation_width() + 12) : 6;
+        double value_width = ShowAnnotations ? Math.Max(42, maximum_annotation_width() + 12) : 1.0;
         double value_height = text("100", 13, Brushes.White, FontWeight.Bold).Height + 4;
-        double finite_width = double.IsFinite(available.Width) && available.Width > left + right
-            ? Math.Max(2, (available.Width - left - right) / columns)
-            : value_width;
         double finite_height = double.IsFinite(available.Height) && available.Height > top + bottom
             ? Math.Max(10, (available.Height - top - bottom) / rows)
             : value_height;
+        double cell_height = Math.Max(value_height, Math.Min(28, finite_height));
+        double finite_width = double.IsFinite(available.Width) && available.Width > left + right
+            ? Math.Max(0.01, (available.Width - left - right) / columns)
+            : value_width;
 
         double cell_width = ShowAnnotations
             ? value_width
-            : Math.Max(3, finite_width);
-        double cell_height = Math.Max(value_height, Math.Min(28, finite_height));
+            : Math.Min(cell_height, finite_width);
         return new MatrixMetrics(left, top, cell_width, cell_height);
     }
 
@@ -383,12 +397,16 @@ public sealed class SpectralMatrixView : Decorator
         }
     }
 
-    private void draw_top_vertical_label(DrawingContext context, string label, Point anchor, bool highlighted, IBrush text_brush, IBrush muted_brush)
+    private void draw_top_vertical_label(DrawingContext context, string label, Point anchor, bool highlighted, IBrush text_brush, IBrush muted_brush, IBrush? background)
     {
         var formatted = text(label, 13, highlighted ? text_brush : muted_brush, highlighted ? FontWeight.Bold : FontWeight.Normal);
         using (context.PushTransform(Matrix.CreateRotation(-Math.PI / 2) *
                                      Matrix.CreateTranslation(anchor.X - formatted.Height / 2, anchor.Y)))
+        {
+            if (background is not null)
+                context.FillRectangle(background, new Rect(-3, -2, formatted.Width + 6, formatted.Height + 4));
             context.DrawText(formatted, new Point());
+        }
     }
 
     private void draw_row_label(DrawingContext context, string label, Point anchor, bool highlighted, IBrush text_brush, IBrush muted_brush)
@@ -490,17 +508,39 @@ public sealed class SpectralMatrixView : Decorator
         return new MatrixNorm(minimum, maximum, false);
     }
 
-    private Color color_for(double value, MatrixNorm norm)
+    private int column_label_stride(IReadOnlyList<string> labels, int column_count, double cell_width)
+    {
+        if (cell_width <= 0)
+            return Math.Max(1, column_count);
+        double required = labels.Take(column_count)
+            .Select(label => text(label, 13, Brushes.White).Height + 4)
+            .DefaultIfEmpty(text("0", 13, Brushes.White).Height + 4)
+            .Max();
+        return Math.Max(1, (int)Math.Ceiling(required / cell_width));
+    }
+
+    private static double row_diverging_limit(SpectralMatrixRowViewModel row)
+    {
+        double limit = row.Cells
+            .Select(cell => Math.Abs(Math.Clamp((double)cell.Value, -1.0, 1.0)))
+            .Where(double.IsFinite)
+            .DefaultIfEmpty(0)
+            .Max();
+        return limit <= 1e-12 ? 1.0 : limit;
+    }
+
+    private Color color_for(double value, MatrixNorm norm, double row_diverging_limit)
     {
         if (!double.IsFinite(value))
             return Color.FromRgb(64, 64, 64);
 
         if (norm.Diverging)
         {
-            double magnitude = Math.Clamp(Math.Abs(value) / Math.Max(Math.Abs(norm.Maximum), 1e-12), 0, 1);
+            double clipped = Math.Clamp(value, -1.0, 1.0);
+            double magnitude = Math.Clamp(Math.Abs(clipped) / Math.Max(row_diverging_limit, 1e-12), 0, 1);
             var neutral = Color.FromRgb(54, 54, 58);
-            return value < 0 ? ramp(neutral, Color.FromRgb(56, 132, 255), magnitude)
-                             : ramp(neutral, Color.FromRgb(255, 74, 70), magnitude);
+            return clipped < 0 ? ramp(neutral, Color.FromRgb(56, 132, 255), magnitude)
+                               : ramp(neutral, Color.FromRgb(255, 74, 70), magnitude);
         }
 
         double t = Math.Clamp((value - norm.Minimum) / Math.Max(norm.Maximum - norm.Minimum, 1e-12), 0, 1);

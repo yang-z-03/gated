@@ -64,8 +64,8 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
-                    <DataGridCheckBoxColumn Header="Observed range" Binding="{Binding UseObservedRange}" Width="120" />
-                    <DataGridCheckBoxColumn Header="Spectral" Binding="{Binding IsSpectral}" Width="80" />
+                    <DataGridCheckBoxColumn Header="Observed range" Binding="{Binding UseObservedRange}" Width="130" />
+                    <DataGridCheckBoxColumn Header="Spectral" Binding="{Binding IsSpectral}" Width="90" />
                     <DataGridTemplateColumn Header="Excitation" Width="110">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
@@ -75,7 +75,7 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
-                    <DataGridTextColumn Header="Plot order" Binding="{Binding PlotOrder}" Width="90" />
+                    <DataGridTextColumn Header="Plot order" Binding="{Binding PlotOrder}" Width="100" />
                 </DataGrid.Columns>
             </DataGrid>
         </Grid>
