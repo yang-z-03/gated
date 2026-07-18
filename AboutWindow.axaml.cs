@@ -138,7 +138,7 @@ public partial class AboutWindow : Window
             panel.Children.Add(new TextBlock
             {
                 Text = path.Name,
-                Foreground = new SolidColorBrush(Color.FromRgb(224, 226, 232)),
+                Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text3")),
                 FontWeight = FontWeight.SemiBold,
                 FontSize = 12
             });
@@ -166,7 +166,7 @@ public partial class AboutWindow : Window
         {
             Text = title,
             FontWeight = FontWeight.Bold,
-            Foreground = Brushes.White,
+            Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text2")),
             FontSize = 13,
             Margin = new Avalonia.Thickness(0, 8, 0, 0)
         };
@@ -179,7 +179,7 @@ public partial class AboutWindow : Window
             FontFamily = FontFamily.Parse("avares://gated/Fonts#IBM Plex Mono"),
             FontSize = 12,
             LineHeight = 17,
-            Foreground = new SolidColorBrush(Color.FromRgb(180, 186, 198))
+            Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text4"))
         };
 
     private async void about_icon_pointer_pressed(object? sender, PointerPressedEventArgs e)
@@ -214,7 +214,7 @@ public partial class AboutWindow : Window
 
         PixelCanvas.IsVisible = true;
         PixelCanvas.Opacity = 0;
-        _ = tint_async(HeaderRack, Color.FromRgb(21, 21, 21), Colors.Black, milliseconds: 450);
+        _ = tint_async(HeaderRack, gated.Shared.ThemeResources.AppColor("Background2"), Colors.Black, milliseconds: 450);
 
         render_pixel_frame(Ledger[0]);
         await fade_async(PixelCanvas, from: 0, to: 1, milliseconds: 220);

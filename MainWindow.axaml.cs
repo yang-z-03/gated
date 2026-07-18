@@ -19,6 +19,7 @@ using Avalonia.Threading;
 using gated.Models;
 using gated.ViewModels;
 using gated.Controls;
+using gated.Shared;
 using Avalonia.Interactivity;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -142,8 +143,8 @@ public partial class MainWindow : Window
                 ? new Thickness(75, 3, 0, 3)
                 : new Thickness(3, 3, 0, 3);
 
-        var active = new SolidColorBrush(Color.FromRgb(32, 35, 44));
-        var inactive = new SolidColorBrush(Color.FromRgb(185, 189, 202));
+        var active = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Background4"));
+        var inactive = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text4"));
         mainModeAnalysisText.Foreground = view_model.ViewState is MainWindowViewState.Analysis
             or MainWindowViewState.Metadata
             or MainWindowViewState.Platform
@@ -784,13 +785,14 @@ public partial class MainWindow : Window
             var field_panel = new StackPanel { Spacing = 6 };
             if (!is_checkbox_requirement(requirement))
             {
-                field_panel.Children.Add(new TextBlock
+                var label = new TextBlock
                 {
                     Text = requirement.Name,
-                    Foreground = new SolidColorBrush(Color.FromRgb(150, 150, 158)),
                     FontWeight = FontWeight.SemiBold,
                     Margin = new Thickness(0, 2, 0, 0)
-                });
+                };
+                ThemeResources.BindAppBrush(label, TextBlock.ForegroundProperty, "Text5");
+                field_panel.Children.Add(label);
             }
 
             var field = create_statistic_requirement_field(requirement, field_width);
@@ -814,17 +816,19 @@ public partial class MainWindow : Window
         buttons.Children.Add(ok);
         panel.Children.Add(buttons);
 
+        var dialog_content = new Border
+        {
+            Child = panel
+        };
+        ThemeResources.BindAppBrush(dialog_content, Border.BackgroundProperty, "Background3");
+
         var dialog = new Window
         {
             Title = statistic_name,
             SizeToContent = SizeToContent.WidthAndHeight,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             CanResize = false,
-            Content = new Border
-            {
-                Background = new SolidColorBrush(Color.FromRgb(30, 30, 30)),
-                Child = panel
-            }
+            Content = dialog_content
         };
 
         cancel.Click += (_, _) => dialog.Close(null);
@@ -869,13 +873,17 @@ public partial class MainWindow : Window
             case "channel" when requirement.Multiple:
             {
                 var defaults = json_string_array(requirement.Default).ToHashSet(StringComparer.Ordinal);
-                var checks = channels.Select(channel => new CheckBox
+                var checks = channels.Select(channel =>
                 {
-                    Content = channel_content(channel),
-                    Tag = channel.Name,
-                    IsChecked = defaults.Count == 0 ? false : defaults.Contains(channel.Name),
-                    Foreground = Brushes.White,
-                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left
+                    var check = new CheckBox
+                    {
+                        Content = channel_content(channel),
+                        Tag = channel.Name,
+                        IsChecked = defaults.Count == 0 ? false : defaults.Contains(channel.Name),
+                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left
+                    };
+                    ThemeResources.BindAppBrush(check, CheckBox.ForegroundProperty, "Text2");
+                    return check;
                 }).ToArray();
                 var stack = new StackPanel { Spacing = 6, Width = field_width - 16 };
                 foreach (var check in checks)
@@ -892,11 +900,11 @@ public partial class MainWindow : Window
                 var border = new Border
                 {
                     BorderThickness = new Thickness(1),
-                    BorderBrush = new SolidColorBrush(Color.FromRgb(50, 50, 50)),
                     CornerRadius = new CornerRadius(6),
-                    Background = new SolidColorBrush(Color.FromRgb(22, 22, 24)),
                     Child = scroller
                 };
+                ThemeResources.BindAppBrush(border, Border.BorderBrushProperty, "Border2");
+                ThemeResources.BindAppBrush(border, Border.BackgroundProperty, "Background2");
                 return new StatisticRequirementField(border, () => checks
                     .Where(check => check.IsChecked == true)
                     .Select(check => check.Tag?.ToString() ?? "")
@@ -957,9 +965,9 @@ public partial class MainWindow : Window
                 {
                     Content = requirement.Name,
                     IsChecked = json_bool(requirement.Default),
-                    Foreground = Brushes.White,
                     Width = field_width
                 };
+                ThemeResources.BindAppBrush(check, CheckBox.ForegroundProperty, "Text2");
                 return new StatisticRequirementField(check, () => check.IsChecked == true);
             }
             default:
@@ -988,18 +996,20 @@ public partial class MainWindow : Window
             return panel;
         if (choice.HasLabel)
         {
-            panel.Children.Add(new TextBlock
+            var label = new TextBlock
             {
                 Text = choice.Label,
-                Foreground = new SolidColorBrush(Color.FromRgb(238, 240, 245)),
                 FontWeight = FontWeight.SemiBold
-            });
+            };
+            ThemeResources.BindAppBrush(label, TextBlock.ForegroundProperty, "Text2");
+            panel.Children.Add(label);
         }
-        panel.Children.Add(new TextBlock
+        var name = new TextBlock
         {
-            Text = choice.Name,
-            Foreground = new SolidColorBrush(Color.FromRgb(164, 168, 178))
-        });
+            Text = choice.Name
+        };
+        ThemeResources.BindAppBrush(name, TextBlock.ForegroundProperty, "Text4");
+        panel.Children.Add(name);
         return panel;
     }
 
@@ -1168,7 +1178,7 @@ public partial class MainWindow : Window
         {
             Text = string.IsNullOrWhiteSpace(changelog) ? "No changelog is available for this version." : changelog,
             TextWrapping = TextWrapping.Wrap,
-            Foreground = new SolidColorBrush(Color.FromRgb(218, 221, 228)),
+            Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text3")),
             FontSize = 13,
             LineHeight = 19
         };
@@ -1179,15 +1189,15 @@ public partial class MainWindow : Window
             Content = changelog_text,
             MinHeight = 180,
             MaxHeight = 200,
-            Background = new SolidColorBrush(Color.FromRgb(15, 15, 15)),
+            Background = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Background1")),
             HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
             VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto
         };
 
         var border = new Border
         {
-            Background = new SolidColorBrush(Color.FromRgb(15, 15, 15)),
-            BorderBrush = new SolidColorBrush(Color.FromRgb(50, 50, 50)),
+            Background = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Background1")),
+            BorderBrush = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Border2")),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(6),
             Padding = new Thickness(8),
@@ -1211,13 +1221,13 @@ public partial class MainWindow : Window
                 {
                     Text = "Update available",
                     FontWeight = FontWeight.SemiBold,
-                    Foreground = Brushes.White
+                    Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text2"))
                 },
                 new TextBlock
                 {
                     Text = $"Gated {update.Latest.Version} is available.",
                     TextWrapping = TextWrapping.Wrap,
-                    Foreground = new SolidColorBrush(Color.FromRgb(218, 221, 228))
+                    Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text3"))
                 },
                 new TextBlock
                 {
@@ -1225,13 +1235,13 @@ public partial class MainWindow : Window
                     TextWrapping = TextWrapping.Wrap,
                     FontSize = 12,
                     LineHeight = 18,
-                    Foreground = new SolidColorBrush(Color.FromRgb(180, 180, 180))
+                    Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text4"))
                 },
                 new TextBlock
                 {
                     Text = "Changelog",
                     FontWeight = FontWeight.SemiBold,
-                    Foreground = Brushes.White,
+                    Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text2")),
                     Margin = new Thickness(0, 12, 0, 4)
                 },
                 border,
@@ -1340,14 +1350,14 @@ public partial class MainWindow : Window
                     {
                         Text = title,
                         FontWeight = FontWeight.SemiBold,
-                        Foreground = Brushes.White
+                        Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text2"))
                     },
                     new TextBlock
                     {
                         Text = message,
                         TextWrapping = TextWrapping.Wrap,
                         LineHeight = 18,
-                        Foreground = new SolidColorBrush(Color.FromRgb(218, 221, 228))
+                        Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text3"))
                     },
                     new StackPanel
                     {
@@ -1389,14 +1399,14 @@ public partial class MainWindow : Window
                     {
                         Text = title,
                         FontWeight = FontWeight.SemiBold,
-                        Foreground = Brushes.White
+                        Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text2"))
                     },
                     new TextBlock
                     {
                         Text = message,
                         TextWrapping = TextWrapping.Wrap,
                         LineHeight = 18,
-                        Foreground = new SolidColorBrush(Color.FromRgb(218, 221, 228))
+                        Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text3"))
                     },
                     new StackPanel
                     {
@@ -1522,19 +1532,21 @@ public partial class MainWindow : Window
             Orientation = Avalonia.Layout.Orientation.Horizontal,
             Spacing = 8
         };
-        panel.Children.Add(new TextBlock
+        var file_name_text = new TextBlock
         {
             Text = string.IsNullOrWhiteSpace(file_name) ? path : file_name,
-            FontWeight = is_workspace ? FontWeight.SemiBold : FontWeight.Normal,
-            Foreground = Brushes.White
-        });
+            FontWeight = is_workspace ? FontWeight.SemiBold : FontWeight.Normal
+        };
+        ThemeResources.BindAppBrush(file_name_text, TextBlock.ForegroundProperty, "Text2");
+        panel.Children.Add(file_name_text);
         if (!string.IsNullOrWhiteSpace(folder_name))
         {
-            panel.Children.Add(new TextBlock
+            var folder_name_text = new TextBlock
             {
-                Text = folder_name,
-                Foreground = new SolidColorBrush(Color.FromRgb(150, 156, 170))
-            });
+                Text = folder_name
+            };
+            ThemeResources.BindAppBrush(folder_name_text, TextBlock.ForegroundProperty, "Text5");
+            panel.Children.Add(folder_name_text);
         }
 
         return panel;
@@ -2302,19 +2314,21 @@ public partial class MainWindow : Window
 
         if (choice.HasLabel)
         {
-            panel.Children.Add(new TextBlock
+            var label = new TextBlock
             {
                 Text = choice.Label,
-                FontWeight = FontWeight.SemiBold,
-                Foreground = Brushes.White
-            });
+                FontWeight = FontWeight.SemiBold
+            };
+            ThemeResources.BindAppBrush(label, TextBlock.ForegroundProperty, "Text2");
+            panel.Children.Add(label);
         }
 
-        panel.Children.Add(new TextBlock
+        var name = new TextBlock
         {
-            Text = choice.Name,
-            Foreground = new SolidColorBrush(Color.FromRgb(164, 168, 178))
-        });
+            Text = choice.Name
+        };
+        ThemeResources.BindAppBrush(name, TextBlock.ForegroundProperty, "Text4");
+        panel.Children.Add(name);
 
         return panel;
     }
@@ -2713,12 +2727,12 @@ public partial class MainWindow : Window
                     {
                         Text = "Subsample sample",
                         FontWeight = FontWeight.SemiBold,
-                        Foreground = Brushes.White
+                        Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text2"))
                     },
                     new TextBlock
                     {
                         Text = $"{sample.Name} ({sample.EventCount:N0} events)",
-                        Foreground = new SolidColorBrush(Color.FromRgb(164, 168, 178))
+                        Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text4"))
                     },
                     labeled_control("Subsample name", name_input),
                     new Grid
@@ -2778,7 +2792,7 @@ public partial class MainWindow : Window
                 new TextBlock
                 {
                     Text = label,
-                    Foreground = new SolidColorBrush(Color.FromRgb(150, 150, 158)),
+                    Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text5")),
                     FontWeight = FontWeight.SemiBold
                 },
                 control
@@ -2936,7 +2950,7 @@ public partial class MainWindow : Window
             await show_message_dialog("Export failed", exception.Message);
         }
     }
-    
+
     private void title_bar_pressed(object? sender, PointerPressedEventArgs e)
     {
         if (e.ClickCount == 2)
@@ -2950,7 +2964,7 @@ public partial class MainWindow : Window
         if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
             BeginMoveDrag(e);
     }
-    
+
     private void window_minimize(object? sender, RoutedEventArgs e)
     {
         if (this.WindowState == WindowState.Maximized)
@@ -3037,14 +3051,14 @@ public partial class MainWindow : Window
                     {
                         Text = heading,
                         FontWeight = FontWeight.SemiBold,
-                        Foreground = Brushes.White
+                        Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text2"))
                     },
                     new TextBlock
                     {
                         Text = message,
                         TextWrapping = TextWrapping.Wrap,
                         LineHeight = 18,
-                        Foreground = new SolidColorBrush(Color.FromRgb(218, 221, 228))
+                        Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text3"))
                     },
                     new StackPanel
                     {
@@ -3090,14 +3104,14 @@ public partial class MainWindow : Window
                     {
                         Text = title,
                         FontWeight = FontWeight.SemiBold,
-                        Foreground = Brushes.White
+                        Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text2"))
                     },
                     new TextBlock
                     {
                         Text = message,
                         TextWrapping = TextWrapping.Wrap,
                         LineHeight = 18,
-                        Foreground = new SolidColorBrush(Color.FromRgb(218, 221, 228))
+                        Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text3"))
                     },
                     new StackPanel
                     {
@@ -3199,14 +3213,14 @@ public partial class MainWindow : Window
                     {
                         Text = choice.Label,
                         FontWeight = FontWeight.SemiBold,
-                        Foreground = Brushes.White
+                        Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text2"))
                     });
                 }
 
                 panel.Children.Add(new TextBlock
                 {
                     Text = choice.Name,
-                    Foreground = new SolidColorBrush(Color.FromRgb(164, 168, 178))
+                    Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text4"))
                 });
                 return panel;
             })
@@ -3258,7 +3272,7 @@ public partial class MainWindow : Window
             Content = channel_content(new StatisticChannelChoice(choice.Name, choice.Label)),
             Tag = choice.Name,
             IsChecked = true,
-            Foreground = Brushes.White,
+            Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text2")),
             HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left
         }).ToArray();
         var stack = new StackPanel { Spacing = 6 };
@@ -3283,9 +3297,9 @@ public partial class MainWindow : Window
                     new Border
                     {
                         BorderThickness = new Thickness(1),
-                        BorderBrush = new SolidColorBrush(Color.FromRgb(50, 50, 50)),
+                        BorderBrush = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Border2")),
                         CornerRadius = new CornerRadius(6),
-                        Background = new SolidColorBrush(Color.FromRgb(22, 22, 24)),
+                        Background = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Background2")),
                         Child = new ScrollViewer
                         {
                             MaxHeight = 240,
@@ -3335,7 +3349,7 @@ public partial class MainWindow : Window
             ItemTemplate = new FuncDataTemplate<BooleanPopulationChoice>((choice, _) => new TextBlock
             {
                 Text = choice?.DisplayName ?? "",
-                Foreground = Brushes.White
+                Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text2"))
             })
         };
 
@@ -3359,9 +3373,9 @@ public partial class MainWindow : Window
                 Children =
                 {
                     new TextBlock { Text = title },
-                    new TextBlock { Text = "First population", Foreground = new SolidColorBrush(Color.FromRgb(164, 168, 178)) },
+                    new TextBlock { Text = "First population", Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text4")) },
                     first_input,
-                    new TextBlock { Text = "Second population", Foreground = new SolidColorBrush(Color.FromRgb(164, 168, 178)) },
+                    new TextBlock { Text = "Second population", Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text4")) },
                     second_input,
                     new StackPanel
                     {

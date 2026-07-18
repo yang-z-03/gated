@@ -5027,7 +5027,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
 
             case StatisticKind.NumberOfEvents:
                 return $"Number of Events";
-            
+
             case StatisticKind.FrequencyOfParent:
                 return $"Frequency of Parent (%)";
             case StatisticKind.FrequencyOfAll:
@@ -5036,7 +5036,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 return python_statistic_name(statistic);
 
             default: return $"{statistic.Kind}";
-        }  
+        }
     }
 
     private void append_population_node(ProjectNode parent, FlowSample sample, PopulationResult population, FlowGroup group, string key, int depth)
@@ -6685,7 +6685,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
             Values = histogram_cache.Values,
             SortedValues = histogram_cache.SortedValues,
             BinCount = 256,
-            Color = Color.FromRgb(120, 160, 255)
+            Color = gated.Shared.ThemeResources.AppColor("Theme5")
         });
         notify_spillover_histogram_properties();
     }

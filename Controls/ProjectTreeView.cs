@@ -228,7 +228,7 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
         var nodes = ProjectNodes;
         if (nodes.Length == 0)
         {
-            draw_text(context, "No workspace nodes", new Point(10, 6), font_size, Color.FromRgb(130, 136, 148));
+            draw_text(context, "No workspace nodes", new Point(10, 6), font_size, app_color("Text5"));
             return;
         }
 
@@ -287,17 +287,20 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
     {
         double top = top_padding + index * row_height;
         var row_rect = new Rect(4, top + 1, Math.Max(0, width - 8), row_height - 2);
-        Color row_background = Color.FromRgb(30, 30, 30);
+        Color row_background = gated.Shared.ThemeResources.Color(
+            this,
+            "SemiBackground0Color",
+            app_color("Background3"));
         if (node.IsSelected)
         {
-            row_background = Color.FromRgb(52, 58, 70);
+            row_background = app_color("Background5");
             context.DrawRectangle(
-                new Pen(new SolidColorBrush(Color.FromRgb(29, 117, 219)), 1.5),
+                new Pen(new SolidColorBrush(app_color("Theme3")), 1.5),
                 new Rect(row_rect.Left - 1, row_rect.Top - 1, row_rect.Width + 2, row_rect.Height + 2), 6);
 
             context.FillRectangle(
-                new SolidColorBrush(Color.FromRgb(52, 58, 70)),
-                // new SolidColorBrush(Color.FromRgb(29, 117, 219)),
+                new SolidColorBrush(row_background),
+                // new SolidColorBrush(app_color("Theme3")),
                 new Rect(row_rect.Left + 1, row_rect.Top + 1, row_rect.Width - 2, row_rect.Height - 2), 4);
         }
 
@@ -312,12 +315,12 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
         double count_left = Math.Max(x + 72, width - count_width + 8);
         double text_left = x + 4;
         var text_rect = new Rect(text_left, top + 3, Math.Max(0, count_left - text_left - 10), row_height - 5);
-        draw_fading_text(context, node.Name, text_rect, font_size, Color.FromRgb(218, 221, 228), row_background);
+        draw_fading_text(context, node.Name, text_rect, font_size, app_color("Text3"), row_background);
         if (!string.IsNullOrWhiteSpace(node.CountText))
-            draw_text(context, node.CountText, new Point(count_left, top + 4), font_size, Color.FromRgb(164, 168, 178));
+            draw_text(context, node.CountText, new Point(count_left, top + 4), font_size, app_color("Text4"));
     }
 
-    private static void draw_chevron(DrawingContext context, Rect rect, bool expanded)
+    private void draw_chevron(DrawingContext context, Rect rect, bool expanded)
     {
         SvgImage chev_down = new SvgImage();
         chev_down.Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri("avares://gated/Resources/chevron-down.svg")));
@@ -325,7 +328,7 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
         SvgImage chev_right = new SvgImage();
         chev_right.Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri("avares://gated/Resources/chevron-right.svg")));
 
-        var pen = new Pen(new SolidColorBrush(Color.FromRgb(180, 184, 191)), 1.5);
+        var pen = new Pen(new SolidColorBrush(app_color("Text3")), 1.5);
         if (expanded)
         {
             context.DrawImage(chev_down, rect);
@@ -411,7 +414,7 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
             case ProjectNodeKind.StatisticValue:
                 icon.Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri("avares://gated/Resources/statistics.svg")));
                 break;
-            
+
             default:
                 icon.Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri("avares://gated/Resources/unk.svg")));
                 break;
@@ -435,7 +438,7 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
             context.DrawText(create_formatted_text(text, size, color), bounds.Position);
 
         var end_rect = new Rect(Math.Max(bounds.Left, bounds.Right - 28), bounds.Top, Math.Min(28, bounds.Width), bounds.Height);
-        var fade_color = row_background.A == 0 ? Color.FromRgb(25, 25, 25) : row_background;
+        var fade_color = row_background.A == 0 ? app_color("Background2") : row_background;
         var brush = new LinearGradientBrush
         {
             StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
@@ -461,6 +464,9 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
                 TextElement.GetFontStretch(this)),
             size,
             new SolidColorBrush(color));
+
+    private Color app_color(string semantic_name) =>
+        gated.Shared.ThemeResources.AppColor(this, semantic_name);
 
     private void resubscribe_nodes()
     {

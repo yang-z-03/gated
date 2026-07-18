@@ -10,7 +10,7 @@
         CanResize="True"
         WindowStartupLocation="CenterOwner"
         Title="Concatenate samples"
-        Background="#252525">
+        Background="{DynamicResource AppBrushBackground4}">
     <Grid Margin="18" RowDefinitions="Auto,Auto,*,Auto" RowSpacing="12">
         <StackPanel Spacing="5">
             <TextBlock Foreground="{DynamicResource SemiColorText0}" FontWeight="SemiBold" Text="Concatenate events into a new sample" />
@@ -28,14 +28,14 @@
             </ComboBox>
         </Grid>
 
-        <Border Grid.Row="2" BorderBrush="#505050" BorderThickness="1" CornerRadius="6" Background="#1e1e1e" ClipToBounds="True">
+        <Border Grid.Row="2" BorderBrush="{DynamicResource AppBrushBorder3}" BorderThickness="1" CornerRadius="6" Background="{DynamicResource AppBrushBackground3}" ClipToBounds="True">
             <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Margin="8">
                 <controls:IntegrationJobPopulationTreeView x:Name="populationTree" />
             </ScrollViewer>
         </Border>
 
         <DockPanel Grid.Row="3">
-            <TextBlock x:Name="statusText" DockPanel.Dock="Left" Foreground="#E07A7A" VerticalAlignment="Center" />
+            <TextBlock x:Name="statusText" DockPanel.Dock="Left" Foreground="{DynamicResource AppBrushErrorText}" VerticalAlignment="Center" />
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
                 <Button x:Name="cancelButton" Classes="Small" Content="Cancel" MinWidth="84" />
                 <Button x:Name="okButton" Classes="Small" Content="Create" MinWidth="84" />

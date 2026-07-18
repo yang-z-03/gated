@@ -1,4 +1,4 @@
-﻿<ResourceDictionary
+<ResourceDictionary
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <MenuFlyout x:Key="DefaultTextBoxContextFlyout" Placement="Bottom">
@@ -131,7 +131,7 @@
                 </DataValidationErrors>
             </ControlTemplate>
         </Setter>
-        
+
         <Style Selector="^:pointerover /template/ Border#PART_ContentPresenterBorder">
             <Setter Property="Background" Value="{DynamicResource TextBoxPointeroverBackground}" />
             <Setter Property="BorderBrush" Value="{DynamicResource TextBoxPointeroverBorderBrush}" />
@@ -162,22 +162,22 @@
         </Style>
 
         <Style Selector="^:error">
-            <Setter Property="Foreground" Value="#FFD7DD" />
+            <Setter Property="Foreground" Value="{DynamicResource AppBrushDangerTextOnFill}" />
             <Style Selector="^ /template/ Border#PART_ContentPresenterBorder">
-                <Setter Property="Background" Value="#3A1D22" />
-                <Setter Property="BorderBrush" Value="#D84F5F" />
+                <Setter Property="Background" Value="{DynamicResource AppBrushDangerBackground1}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource AppBrushDangerBorder3}" />
             </Style>
             <Style Selector="^:pointerover /template/ Border#PART_ContentPresenterBorder">
-                <Setter Property="Background" Value="#46242A" />
-                <Setter Property="BorderBrush" Value="#E66573" />
+                <Setter Property="Background" Value="{DynamicResource AppBrushDangerBackground2}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource AppBrushDangerBorder4}" />
             </Style>
             <Style Selector="^:pressed /template/ Border#PART_ContentPresenterBorder">
-                <Setter Property="Background" Value="#46242A" />
-                <Setter Property="BorderBrush" Value="#E66573" />
+                <Setter Property="Background" Value="{DynamicResource AppBrushDangerBackground2}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource AppBrushDangerBorder4}" />
             </Style>
             <Style Selector="^:focus /template/ Border#PART_ContentPresenterBorder">
-                <Setter Property="Background" Value="#4E252D" />
-                <Setter Property="BorderBrush" Value="#FF7F8D" />
+                <Setter Property="Background" Value="{DynamicResource AppBrushDangerBackground3}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource AppBrushDangerFocusBorder}" />
             </Style>
         </Style>
 
@@ -204,18 +204,18 @@
             <Setter Property="MinHeight" Value="{DynamicResource TextBoxSmallHeight}" />
         </Style>
         <Style Selector="^.Invalid, ^.Danger, ^.SpilloverMatrixInvalid">
-            <Setter Property="Foreground" Value="#FFD7DD" />
+            <Setter Property="Foreground" Value="{DynamicResource AppBrushDangerTextOnFill}" />
             <Style Selector="^ /template/ Border#PART_ContentPresenterBorder">
-                <Setter Property="Background" Value="#3A1D22" />
-                <Setter Property="BorderBrush" Value="#D84F5F" />
+                <Setter Property="Background" Value="{DynamicResource AppBrushDangerBackground1}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource AppBrushDangerBorder3}" />
             </Style>
             <Style Selector="^:pointerover /template/ Border#PART_ContentPresenterBorder">
-                <Setter Property="Background" Value="#46242A" />
-                <Setter Property="BorderBrush" Value="#E66573" />
+                <Setter Property="Background" Value="{DynamicResource AppBrushDangerBackground2}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource AppBrushDangerBorder4}" />
             </Style>
             <Style Selector="^:focus /template/ Border#PART_ContentPresenterBorder">
-                <Setter Property="Background" Value="#4E252D" />
-                <Setter Property="BorderBrush" Value="#FF7F8D" />
+                <Setter Property="Background" Value="{DynamicResource AppBrushDangerBackground3}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource AppBrushDangerFocusBorder}" />
             </Style>
         </Style>
 
@@ -235,18 +235,18 @@
                 <Setter Property="BorderBrush" Value="{DynamicResource TextBoxDisabledBorderBrush}" />
             </Style>
             <Style Selector="^.Invalid, ^.Danger, ^.SpilloverMatrixInvalid">
-                <Setter Property="Foreground" Value="#FFD7DD" />
+                <Setter Property="Foreground" Value="{DynamicResource AppBrushDangerTextOnFill}" />
                 <Style Selector="^ /template/ Border#PART_ContentPresenterBorder">
-                    <Setter Property="Background" Value="#3A1D22" />
-                    <Setter Property="BorderBrush" Value="#D84F5F" />
+                    <Setter Property="Background" Value="{DynamicResource AppBrushDangerBackground1}" />
+                    <Setter Property="BorderBrush" Value="{DynamicResource AppBrushDangerBorder3}" />
                 </Style>
                 <Style Selector="^:pointerover /template/ Border#PART_ContentPresenterBorder">
-                    <Setter Property="Background" Value="#46242A" />
-                    <Setter Property="BorderBrush" Value="#E66573" />
+                    <Setter Property="Background" Value="{DynamicResource AppBrushDangerBackground2}" />
+                    <Setter Property="BorderBrush" Value="{DynamicResource AppBrushDangerBorder4}" />
                 </Style>
                 <Style Selector="^:focus /template/ Border#PART_ContentPresenterBorder">
-                    <Setter Property="Background" Value="#4E252D" />
-                    <Setter Property="BorderBrush" Value="#FF7F8D" />
+                    <Setter Property="Background" Value="{DynamicResource AppBrushDangerBackground3}" />
+                    <Setter Property="BorderBrush" Value="{DynamicResource AppBrushDangerFocusBorder}" />
                 </Style>
             </Style>
 
@@ -424,22 +424,22 @@
         </Style>
 
         <Style Selector="^:error">
-            <Setter Property="Foreground" Value="#FFD7DD" />
+            <Setter Property="Foreground" Value="{DynamicResource AppBrushDangerTextOnFill}" />
             <Style Selector="^ /template/ Border#PART_ContentPresenterBorder">
-                <Setter Property="Background" Value="#3A1D22" />
-                <Setter Property="BorderBrush" Value="#D84F5F" />
+                <Setter Property="Background" Value="{DynamicResource AppBrushDangerBackground1}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource AppBrushDangerBorder3}" />
             </Style>
             <Style Selector="^:pointerover /template/ Border#PART_ContentPresenterBorder">
-                <Setter Property="Background" Value="#46242A" />
-                <Setter Property="BorderBrush" Value="#E66573" />
+                <Setter Property="Background" Value="{DynamicResource AppBrushDangerBackground2}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource AppBrushDangerBorder4}" />
             </Style>
             <Style Selector="^:pressed /template/ Border#PART_ContentPresenterBorder">
-                <Setter Property="Background" Value="#46242A" />
-                <Setter Property="BorderBrush" Value="#E66573" />
+                <Setter Property="Background" Value="{DynamicResource AppBrushDangerBackground2}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource AppBrushDangerBorder4}" />
             </Style>
             <Style Selector="^:focus /template/ Border#PART_ContentPresenterBorder">
-                <Setter Property="Background" Value="#4E252D" />
-                <Setter Property="BorderBrush" Value="#FF7F8D" />
+                <Setter Property="Background" Value="{DynamicResource AppBrushDangerBackground3}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource AppBrushDangerFocusBorder}" />
             </Style>
         </Style>
 

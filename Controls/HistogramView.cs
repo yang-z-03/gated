@@ -28,7 +28,7 @@ public sealed class HistogramSeries : NotifyBase
     private IReadOnlyList<double> values = [];
     private IReadOnlyList<double>? sorted_values;
     private int bin_count = 256;
-    private Color color = Color.FromRgb(20, 133, 255);
+    private Color color = gated.Shared.ThemeResources.AppColor("Theme4");
     private string name = "";
 
     public IReadOnlyList<double> Values
@@ -290,7 +290,7 @@ public sealed class HistogramView : Control
     {
         base.Render(context);
         var bounds = Bounds;
-        context.FillRectangle(new SolidColorBrush(Color.FromRgb(37, 37, 37)), bounds);
+        context.FillRectangle(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Background3")), bounds);
 
         const double left_axis_space = 72;
         const double right_space = 18;
@@ -302,7 +302,7 @@ public sealed class HistogramView : Control
             Math.Max(1, bounds.Width - left_axis_space - right_space),
             Math.Max(1, bounds.Height - top_space - bottom_axis_space));
 
-        context.FillRectangle(new SolidColorBrush(Color.FromRgb(37, 37, 37)), plot_rect);
+        context.FillRectangle(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Background4")), plot_rect);
         draw_grid(context);
         draw_series(context);
         draw_selection(context);
@@ -398,8 +398,8 @@ public sealed class HistogramView : Control
         var normalized = normalized_selection(selection);
         double left = data_to_screen(normalized.Minimum);
         double right = data_to_screen(normalized.Maximum);
-        var fill = new SolidColorBrush(Color.FromArgb(34, 120, 160, 255));
-        var pen = new Pen(new SolidColorBrush(Color.FromRgb(190, 200, 230)), 1.4, DashStyle.Dash);
+        var fill = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("OverlayThemeSelection"));
+        var pen = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Theme6")), 1.4, DashStyle.Dash);
         context.FillRectangle(fill, new Rect(left, plot_rect.Top, Math.Max(0, right - left), plot_rect.Height));
         context.DrawLine(pen, new Point(left, plot_rect.Top), new Point(left, plot_rect.Bottom));
         context.DrawLine(pen, new Point(right, plot_rect.Top), new Point(right, plot_rect.Bottom));
@@ -408,7 +408,7 @@ public sealed class HistogramView : Control
             return;
 
         var center_y = plot_rect.Top + plot_rect.Height / 2;
-        var handle_pen = new Pen(new SolidColorBrush(Color.FromRgb(210, 218, 244)), 1.6);
+        var handle_pen = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Theme6")), 1.6);
         context.DrawLine(handle_pen, new Point(left, center_y), new Point(right, center_y));
         draw_selection_handle(context, left, center_y, handle_pen);
         draw_selection_handle(context, right, center_y, handle_pen);
@@ -423,8 +423,8 @@ public sealed class HistogramView : Control
 
     private void draw_grid(DrawingContext context)
     {
-        var major_grid_pen = new Pen(new SolidColorBrush(Color.FromArgb(28, 255, 255, 255)), 1);
-        var minor_grid_pen = new Pen(new SolidColorBrush(Color.FromArgb(16, 255, 255, 255)), 1);
+        var major_grid_pen = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("OverlayGridMajor")), 1);
+        var minor_grid_pen = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("OverlayGridMinor")), 1);
         for (int index = 1; index < 5; index++)
         {
             double y = plot_rect.Bottom - plot_rect.Height * index / 5.0;
@@ -446,9 +446,9 @@ public sealed class HistogramView : Control
 
     private void draw_axes(DrawingContext context)
     {
-        var axis_color = Color.FromRgb(142, 148, 160);
-        var text_color = Color.FromRgb(230, 235, 245);
-        var tick_text = Color.FromRgb(140, 148, 162);
+        var axis_color = gated.Shared.ThemeResources.AppColor("Text5");
+        var text_color = gated.Shared.ThemeResources.AppColor("Text1");
+        var tick_text = gated.Shared.ThemeResources.AppColor("Text5");
         var axis_pen = new Pen(new SolidColorBrush(axis_color), 1);
         var tick_pen = new Pen(new SolidColorBrush(axis_color), 1);
         context.DrawLine(axis_pen, new Point(plot_rect.Left, plot_rect.Bottom), new Point(plot_rect.Right, plot_rect.Bottom));
@@ -484,7 +484,7 @@ public sealed class HistogramView : Control
             Maximum = prepared.Maximum,
             ScaleKind = coordinate_scale_kind()
         };
-        
+
         axis.Scale.Logicle = new LogicleParameters(
             LogicleTopOfScale,
             LogicleLinearizationWidth,

@@ -110,7 +110,7 @@ public sealed class IntegrationJobFeatureListView : Control
     {
         double top = header_height + index * row_height;
         var row_rect = new Rect(4, top + 1, System.Math.Max(0, Bounds.Width - 8), row_height - 2);
-        var background = row.IsEnabled ? Color.FromRgb(30, 30, 30) : Color.FromRgb(24, 24, 24);
+        var background = row.IsEnabled ? gated.Shared.ThemeResources.AppColor("Background3") : gated.Shared.ThemeResources.AppColor("Background2");
         context.FillRectangle(new SolidColorBrush(background), row_rect, 4);
 
         double x = 6 + row.Depth * indent_width;
@@ -124,21 +124,21 @@ public sealed class IntegrationJobFeatureListView : Control
 
         if (!row.IsChannel)
         {
-            draw_text(context, row.DisplayName, new Point(x, top + 4), 13, row.IsEnabled ? Color.FromRgb(218, 221, 228) : Color.FromRgb(115, 120, 130), false);
+            draw_text(context, row.DisplayName, new Point(x, top + 4), 13, row.IsEnabled ? gated.Shared.ThemeResources.AppColor("Text3") : gated.Shared.ThemeResources.AppColor("Text5"), false);
             return;
         }
 
         if (!string.IsNullOrWhiteSpace(row.Label))
         {
-            var label = create_text(row.Label, 13, row.IsEnabled ? Color.FromRgb(238, 240, 245) : Color.FromRgb(135, 140, 150), true);
+            var label = create_text(row.Label, 13, row.IsEnabled ? gated.Shared.ThemeResources.AppColor("Text2") : gated.Shared.ThemeResources.AppColor("Text5"), true);
             context.DrawText(label, new Point(x, top + 4));
             x += label.Width + 8;
         }
-        draw_text(context, row.ChannelName, new Point(x, top + 4), 13, row.IsEnabled ? Color.FromRgb(164, 168, 178) : Color.FromRgb(105, 110, 120), false);
+        draw_text(context, row.ChannelName, new Point(x, top + 4), 13, row.IsEnabled ? gated.Shared.ThemeResources.AppColor("Text4") : gated.Shared.ThemeResources.AppColor("Text5"), false);
     }
 
     private void draw_header(DrawingContext context) =>
-        draw_text(context, "Feature channels", new Point(10, 6), 13, Color.FromRgb(164, 168, 178), false);
+        draw_text(context, "Feature channels", new Point(10, 6), 13, gated.Shared.ThemeResources.AppColor("Text4"), false);
 
     private static void draw_icon(DrawingContext context, Rect rect, string uri)
     {
@@ -155,9 +155,9 @@ public sealed class IntegrationJobFeatureListView : Control
     private static void draw_checkbox(DrawingContext context, Rect rect, bool is_checked, bool is_indeterminate, bool is_enabled)
     {
         IBrush fill = is_checked || is_indeterminate
-            ? new SolidColorBrush(is_enabled ? Color.FromRgb(76, 132, 255) : Color.FromRgb(72, 82, 104))
+            ? new SolidColorBrush(is_enabled ? gated.Shared.ThemeResources.AppColor("Theme4") : gated.Shared.ThemeResources.AppColor("Border3"))
             : Brushes.Transparent;
-        context.DrawRectangle(fill, new Pen(new SolidColorBrush(is_enabled ? Color.FromRgb(120, 126, 138) : Color.FromRgb(74, 78, 88)), 1), rect, 4);
+        context.DrawRectangle(fill, new Pen(new SolidColorBrush(is_enabled ? gated.Shared.ThemeResources.AppColor("Text5") : gated.Shared.ThemeResources.AppColor("Border3")), 1), rect, 4);
         if (is_indeterminate)
         {
             context.DrawLine(new Pen(Brushes.White, 1.7), new Point(rect.Left + 3, rect.Top + 7), new Point(rect.Right - 3, rect.Top + 7));

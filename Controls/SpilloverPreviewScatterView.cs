@@ -57,12 +57,12 @@ public sealed class SpilloverPreviewScatterView : Control
 
         if (Cell is not { } cell)
         {
-            context.FillRectangle(new SolidColorBrush(Color.FromRgb(37, 37, 37)), plot_rect);
+            context.FillRectangle(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Background4")), plot_rect);
             draw_axes(context, null);
             return;
         }
 
-        context.FillRectangle(new SolidColorBrush(Color.FromRgb(50, 50, 50)), plot_rect);
+        context.FillRectangle(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Border2")), plot_rect);
         draw_grid(context, cell);
         draw_points(context, cell);
         draw_fit(context, cell);
@@ -71,8 +71,8 @@ public sealed class SpilloverPreviewScatterView : Control
 
     private void draw_grid(DrawingContext context, SpilloverPreviewCell cell)
     {
-        var major = new Pen(new SolidColorBrush(Color.FromArgb(34, 0, 0, 0)), 1);
-        var minor = new Pen(new SolidColorBrush(Color.FromArgb(18, 0, 0, 0)), 1);
+        var major = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("OverlayGridMajor")), 1);
+        var minor = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("OverlayGridMinor")), 1);
         foreach (double value in minor_axis_ticks(x_axis(cell)))
         {
             double x = data_to_screen_x(cell, value);
@@ -101,7 +101,7 @@ public sealed class SpilloverPreviewScatterView : Control
             return;
 
         int step = Math.Max(1, cell.Points.Count / 2200);
-        var brush = new SolidColorBrush(Color.FromArgb(105, 250, 250, 250));
+        var brush = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("OverlayStrong"));
         for (int index = 0; index < cell.Points.Count; index += step)
         {
             var point = data_to_screen(cell, cell.Points[index].X, cell.Points[index].Y);
@@ -139,18 +139,18 @@ public sealed class SpilloverPreviewScatterView : Control
         }
 
         if (has_started)
-            context.DrawGeometry(null, new Pen(new SolidColorBrush(Color.FromArgb(190, 255, 0, 0)), 2.2), geometry);
+            context.DrawGeometry(null, new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("OverlayDanger")), 2.2), geometry);
     }
 
     private void draw_axes(DrawingContext context, SpilloverPreviewCell? cell)
     {
-        var pen = new Pen(new SolidColorBrush(Color.FromRgb(142, 148, 160)), 1);
+        var pen = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text5")), 1);
         context.DrawLine(pen, new Point(plot_rect.Left, plot_rect.Bottom), new Point(plot_rect.Right, plot_rect.Bottom));
         context.DrawLine(pen, new Point(plot_rect.Left, plot_rect.Top), new Point(plot_rect.Left, plot_rect.Bottom));
         if (cell is null)
             return;
 
-        var text = Color.FromRgb(140, 148, 162);
+        var text = gated.Shared.ThemeResources.AppColor("Text5");
         foreach (double value in minor_axis_ticks(x_axis(cell)))
         {
             double x = data_to_screen_x(cell, value);

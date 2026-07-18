@@ -419,13 +419,13 @@ public sealed class PageEditorView : Control
     private static void draw_selection_border(DrawingContext context, PagePlotElement element)
     {
         var bounds = element.Bounds;
-        var selection_pen = new Pen(new SolidColorBrush(Color.FromRgb(0, 120, 215)), 1.5);
+        var selection_pen = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("PlotTheme4")), 1.5);
         context.DrawRectangle(null, selection_pen, bounds);
     }
 
     private static void draw_resize_grips(DrawingContext context, PagePlotElement element)
     {
-        var grip_brush = new SolidColorBrush(Color.FromRgb(0, 120, 215));
+        var grip_brush = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("PlotTheme4"));
         foreach (var handle in resize_handle_rects(element))
             context.FillRectangle(grip_brush, handle);
     }
@@ -580,9 +580,9 @@ public sealed class PageEditorView : Control
         int column_count = Math.Max(1, columns.Count);
         double row_height = 20;
         var column_widths = table_column_widths(columns, rows, table.Width);
-        var border_pen = new Pen(new SolidColorBrush(Color.FromRgb(186, 186, 186)), 0.8);
-        var header_brush = new SolidColorBrush(Color.FromRgb(236, 236, 236));
-        var alternate_brush = new SolidColorBrush(Color.FromRgb(248, 248, 248));
+        var border_pen = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("PlotText4")), 0.8);
+        var header_brush = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("PlotText2"));
+        var alternate_brush = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("PlotText1"));
         var table_width = column_widths.Sum();
         context.DrawRectangle(null, border_pen, new Rect(table.Left, table.Top, table_width, Math.Min(table.Height, row_height * (rows.Count + 1))));
         double left = table.Left;
@@ -627,9 +627,9 @@ public sealed class PageEditorView : Control
     {
         var spine_pen = new Pen(Brushes.Black, 1);
         var major_pen = new Pen(Brushes.Black, 1);
-        var minor_pen = new Pen(new SolidColorBrush(Color.FromRgb(90, 90, 90)), 0.8);
-        var major_grid_pen = new Pen(new SolidColorBrush(Color.FromRgb(225, 225, 225)), 0.8);
-        var minor_grid_pen = new Pen(new SolidColorBrush(Color.FromRgb(238, 238, 238)), 0.6);
+        var minor_pen = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("PlotBorder3")), 0.8);
+        var major_grid_pen = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("PlotText3")), 0.8);
+        var minor_grid_pen = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("PlotText1")), 0.6);
 
         foreach (double tick in platform_y_ticks(min_y, max_y, major: false))
         {
@@ -1245,7 +1245,7 @@ public sealed class PageEditorView : Control
     {
         var spine_pen = new Pen(Brushes.Black, 1);
         var major_pen = new Pen(Brushes.Black, 1);
-        var minor_pen = new Pen(new SolidColorBrush(Color.FromRgb(90, 90, 90)), 0.8);
+        var minor_pen = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("PlotBorder3")), 0.8);
         context.DrawRectangle(null, spine_pen, plot_rect);
         foreach (double value in minor_axis_ticks(element.XAxis))
         {
@@ -1304,7 +1304,7 @@ public sealed class PageEditorView : Control
 
     private void draw_grid(DrawingContext context, PagePlotElement element, Rect plot_rect)
     {
-        var pen = new Pen(new SolidColorBrush(Color.FromRgb(225, 225, 225)), 0.8);
+        var pen = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("PlotText3")), 0.8);
         foreach (double value in major_axis_ticks(element.XAxis))
         {
             double x = data_to_screen(new Point(value, element.YAxis.Minimum), element, plot_rect).X;
@@ -1395,12 +1395,12 @@ public sealed class PageEditorView : Control
         var origin = gate_annotation_origin(element, gate, region, plot_rect, text.Width + 6, text.Height + 4);
         if (gate.Kind == GateKind.Polygon || gate.Kind == GateKind.Rectangle)
         {
-            context.FillRectangle(new SolidColorBrush(Color.FromArgb(220, 255, 255, 255)), new Rect(origin.X + 2, origin.Y + 2, text.Width + 6, text.Height + 4));
+            context.FillRectangle(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("PlotOverlayLabelBackground")), new Rect(origin.X + 2, origin.Y + 2, text.Width + 6, text.Height + 4));
             context.DrawText(text, new Point(origin.X + 5, origin.Y + 4));
         }
         else
         {
-            context.FillRectangle(new SolidColorBrush(Color.FromArgb(220, 255, 255, 255)), new Rect(origin.X - 3, origin.Y - 2, text.Width + 6, text.Height + 4));
+            context.FillRectangle(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("PlotOverlayLabelBackground")), new Rect(origin.X - 3, origin.Y - 2, text.Width + 6, text.Height + 4));
             context.DrawText(text, origin);
         }
     }
@@ -2040,8 +2040,8 @@ public sealed class PageEditorView : Control
     private void draw_manual_scrollbars(DrawingContext context, Rect bounds)
     {
         var bars = scrollbar_geometry();
-        var track_brush = new SolidColorBrush(Color.FromArgb(72, 80, 80, 80));
-        var thumb_brush = new SolidColorBrush(Color.FromArgb(150, 76, 84, 96));
+        var track_brush = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("PlotOverlayTrack"));
+        var thumb_brush = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("PlotOverlayThemeThumb"));
         if (bars.HorizontalTrack.Width > 0 && bars.HorizontalTrack.Height > 0)
         {
             // context.DrawRectangle(track_brush, null, bars.HorizontalTrack, 4, 4);
@@ -2056,8 +2056,8 @@ public sealed class PageEditorView : Control
 
     private void draw_a4_grid(DrawingContext context, Size extent)
     {
-        var pen = new Pen(new SolidColorBrush(Color.FromArgb(130, 92, 128, 172)), 0.8, DashStyle.Dash);
-        var text_brush = new SolidColorBrush(Color.FromArgb(130, 70, 91, 122));
+        var pen = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("PlotOverlayThemeGuide")), 0.8, DashStyle.Dash);
+        var text_brush = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("PlotOverlayThemeLabelBackground"));
         for (double x = a4_width; x < extent.Width; x += a4_width)
             context.DrawLine(pen, new Point(x, 0), new Point(x, extent.Height));
         for (double y = a4_height; y < extent.Height; y += a4_height)
@@ -2294,10 +2294,10 @@ public sealed class PageEditorView : Control
         {
             Color[] cycle =
             [
-                Color.FromRgb(220, 220, 220),
-                Color.FromRgb(150, 150, 150),
-                Color.FromRgb(85, 85, 85),
-                Color.FromRgb(35, 35, 35),
+                gated.Shared.ThemeResources.AppColor("PlotText3"),
+                gated.Shared.ThemeResources.AppColor("PlotText5"),
+                gated.Shared.ThemeResources.AppColor("PlotBorder3"),
+                gated.Shared.ThemeResources.AppColor("PlotBackground4"),
                 Colors.Black
             ];
             int bands = Math.Clamp(element.ContourLevelCount * 5, 10, 400);
@@ -2403,7 +2403,7 @@ public sealed class PageEditorView : Control
         if (active_vertical_snap_guide is null && active_horizontal_snap_guide is null)
             return;
 
-        var pen = new Pen(new SolidColorBrush(Color.FromRgb(0, 120, 215)), 0.8, DashStyle.Dash);
+        var pen = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("PlotTheme4")), 0.8, DashStyle.Dash);
         if (active_vertical_snap_guide is { } x)
             context.DrawLine(pen, new Point(x, bounds.Top), new Point(x, bounds.Bottom));
         if (active_horizontal_snap_guide is { } y)
@@ -2650,10 +2650,10 @@ public sealed class PageEditorView : Control
         private readonly bool apply_rasterization_resolution;
 
         public ExportPageVisual(
-            IReadOnlyList<PagePlotElement> elements, 
-            bool transparent_background, 
-            Size export_size, 
-            PageEditorView source, 
+            IReadOnlyList<PagePlotElement> elements,
+            bool transparent_background,
+            Size export_size,
+            PageEditorView source,
             double scale,
             bool apply_rasterization_resolution)
         {

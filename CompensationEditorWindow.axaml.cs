@@ -44,7 +44,7 @@ public partial class CompensationEditorWindow : Window
             var header = new TextBlock
             {
                 Text = channels[column],
-                Foreground = Brushes.White,
+                Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text2")),
                 FontWeight = FontWeight.SemiBold,
                 TextAlignment = TextAlignment.Center
             };
@@ -57,7 +57,7 @@ public partial class CompensationEditorWindow : Window
             var row_header = new TextBlock
             {
                 Text = channels[row],
-                Foreground = new SolidColorBrush(Color.FromRgb(164, 168, 178)),
+                Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text4")),
                 VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
                 TextAlignment = TextAlignment.Right,
                 Margin = new Avalonia.Thickness(0, 0, 4, 0)

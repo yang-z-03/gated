@@ -14,10 +14,11 @@ using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using gated.Models;
+using gated.Shared;
 
 namespace gated.Controls;
 
-public sealed class ScatterGateView : Control
+public sealed class ScatterGateView : Control, IThemeResourceAware
 {
     public static readonly StyledProperty<ControlSample?> SampleProperty =
         AvaloniaProperty.Register<ScatterGateView, ControlSample?>(nameof(Sample));
@@ -160,6 +161,12 @@ public sealed class ScatterGateView : Control
         subscribed_vertices = null;
     }
 
+    public void RefreshThemeResources()
+    {
+        cached_event_bitmap = null;
+        InvalidateVisual();
+    }
+
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
@@ -220,7 +227,7 @@ public sealed class ScatterGateView : Control
     {
         base.Render(context);
         var bounds = Bounds;
-        context.FillRectangle(new SolidColorBrush(Color.FromRgb(37, 37, 37)), bounds);
+        context.FillRectangle(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Background3")), bounds);
 
         const double left_axis_space = 72;
         const double right_space = 18;
@@ -232,7 +239,7 @@ public sealed class ScatterGateView : Control
             Math.Max(1, bounds.Width - left_axis_space - right_space),
             Math.Max(1, bounds.Height - top_space - bottom_axis_space));
 
-        context.FillRectangle(Brushes.White, plot_rect);
+        context.FillRectangle(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Background3")), plot_rect);
         draw_grid(context);
         draw_events(context);
         draw_polygon(context);
@@ -241,8 +248,8 @@ public sealed class ScatterGateView : Control
 
     private void draw_grid(DrawingContext context)
     {
-        var major = new Pen(new SolidColorBrush(Color.FromArgb(34, 0, 0, 0)), 1);
-        var minor = new Pen(new SolidColorBrush(Color.FromArgb(18, 0, 0, 0)), 1);
+        var major = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("OverlayGridMajor")), 1);
+        var minor = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("OverlayGridMinor")), 1);
         foreach (double value in minor_axis_ticks(x_axis()))
             draw_vertical_grid_line(context, value, minor);
         foreach (double value in major_axis_ticks(x_axis()))
@@ -290,8 +297,8 @@ public sealed class ScatterGateView : Control
             int count = bins[bx, by];
             if (count == 0) continue;
             double density = max_count <= 0 ? 0 : count / (double)max_count;
-            Color color = density > 0.35 ? Color.FromArgb(190, 25, 210, 215) :
-                density > 0.12 ? Color.FromArgb(165, 0, 70, 220) : Color.FromArgb(145, 25, 65, 190);
+            Color color = density > 0.35 ? gated.Shared.ThemeResources.AppColor("OverlayDensityHigh") :
+                density > 0.12 ? gated.Shared.ThemeResources.AppColor("OverlayDensityMedium") : gated.Shared.ThemeResources.AppColor("OverlayDensityLow");
             int offset = ((size - 1 - by) * size + bx) * 4;
             pixels[offset] = color.B; pixels[offset + 1] = color.G; pixels[offset + 2] = color.R; pixels[offset + 3] = color.A;
         }
@@ -312,8 +319,8 @@ public sealed class ScatterGateView : Control
             return;
 
         var points = vertices.Select(data_to_screen).ToArray();
-        var line_pen = new Pen(Brushes.Black, 2.0);
-        var fill = new SolidColorBrush(Color.FromArgb(20, 20, 20, 20));
+        var line_pen = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Theme4")), 2.0);
+        var fill = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("OverlayScrim"));
         if (points.Length > 2)
         {
             var geometry = new StreamGeometry();
@@ -334,16 +341,16 @@ public sealed class ScatterGateView : Control
         foreach (var point in points)
         {
             var rect = new Rect(point.X - 4, point.Y - 4, 8, 8);
-            context.FillRectangle(Brushes.White, rect);
+            context.FillRectangle(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Background1")), rect);
             context.DrawRectangle(null, line_pen, rect);
         }
     }
 
     private void draw_axes(DrawingContext context)
     {
-        var axis_color = Color.FromRgb(142, 148, 160);
-        var text_color = Color.FromRgb(230, 235, 245);
-        var tick_text = Color.FromRgb(140, 148, 162);
+        var axis_color = gated.Shared.ThemeResources.AppColor("Text5");
+        var text_color = gated.Shared.ThemeResources.AppColor("Text1");
+        var tick_text = gated.Shared.ThemeResources.AppColor("Text5");
         var pen = new Pen(new SolidColorBrush(axis_color), 1);
         context.DrawLine(pen, new Point(plot_rect.Left, plot_rect.Bottom), new Point(plot_rect.Right, plot_rect.Bottom));
         context.DrawLine(pen, new Point(plot_rect.Left, plot_rect.Top), new Point(plot_rect.Left, plot_rect.Bottom));

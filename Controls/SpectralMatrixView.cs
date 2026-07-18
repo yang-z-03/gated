@@ -199,13 +199,13 @@ public sealed class SpectralMatrixView : Decorator
         int row_count = rows.Count;
         int column_count = maximum_column_count();
         var labels = ColumnLabels ?? [];
-        var text_brush = TextBrush ?? new SolidColorBrush(Color.FromRgb(226, 231, 241));
-        var muted_brush = new SolidColorBrush(Color.FromRgb(142, 148, 160));
-        var grid_brush = GridBrush ?? new SolidColorBrush(Color.FromArgb(72, 128, 138, 152));
+        var text_brush = TextBrush ?? new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text2"));
+        var muted_brush = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text5"));
+        var grid_brush = GridBrush ?? new SolidColorBrush(gated.Shared.ThemeResources.AppColor("OverlayThemeGridMajor"));
         var grid_pen = new Pen(grid_brush, 1);
-        var stress_pen = new Pen(new SolidColorBrush(Color.FromRgb(255, 92, 92)), 2.4);
-        var highlight_brush = new SolidColorBrush(Color.FromArgb(70, 180, 180, 180));
-        var mask_brush = new SolidColorBrush(Color.FromRgb(32, 32, 34));
+        var stress_pen = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("DangerTextStrong")), 2.4);
+        var highlight_brush = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("OverlayHighlight"));
+        var mask_brush = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Background3"));
 
         var layout = calculate_layout(row_count, column_count);
         draw_titles(context, layout, text_brush);
@@ -252,7 +252,7 @@ public sealed class SpectralMatrixView : Decorator
                 if (ShowAnnotations)
                 {
                     bool highlighted = row == highlighted_row || column == highlighted_column;
-                    IBrush value_brush = value > 0.75 ? new SolidColorBrush(Color.FromRgb(34, 34, 34)) : Brushes.White;
+                    IBrush value_brush = value > 0.75 ? new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Background4")) : Brushes.White;
                     var value_text = text(format_value(value), 13, value_brush, highlighted ? FontWeight.Bold : FontWeight.Normal);
                     context.DrawText(value_text, new Point(rect.Center.X - value_text.Width / 2, rect.Center.Y - value_text.Height / 2));
                 }
@@ -532,15 +532,15 @@ public sealed class SpectralMatrixView : Decorator
     private Color color_for(double value, MatrixNorm norm, double row_diverging_limit)
     {
         if (!double.IsFinite(value))
-            return Color.FromRgb(64, 64, 64);
+            return gated.Shared.ThemeResources.AppColor("Background6");
 
         if (norm.Diverging)
         {
             double clipped = Math.Clamp(value, -1.0, 1.0);
             double magnitude = Math.Clamp(Math.Abs(clipped) / Math.Max(row_diverging_limit, 1e-12), 0, 1);
-            var neutral = Color.FromRgb(54, 54, 58);
-            return clipped < 0 ? ramp(neutral, Color.FromRgb(56, 132, 255), magnitude)
-                               : ramp(neutral, Color.FromRgb(255, 74, 70), magnitude);
+            var neutral = gated.Shared.ThemeResources.AppColor("Background6");
+            return clipped < 0 ? ramp(neutral, gated.Shared.ThemeResources.AppColor("Theme4"), magnitude)
+                               : ramp(neutral, gated.Shared.ThemeResources.AppColor("DangerText"), magnitude);
         }
 
         double t = Math.Clamp((value - norm.Minimum) / Math.Max(norm.Maximum - norm.Minimum, 1e-12), 0, 1);

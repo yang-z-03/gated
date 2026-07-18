@@ -43,10 +43,10 @@ public sealed class PlatformResultPlotView : Control
         base.Render(context);
         var bounds = Bounds;
         var plot = new Rect(bounds.Left + 68, bounds.Top + 18, Math.Max(1, bounds.Width - 88), Math.Max(1, bounds.Height - 66));
-        var axis_pen = new Pen(new SolidColorBrush(Color.FromRgb(166, 172, 184)), 1);
-        var major_grid_pen = new Pen(new SolidColorBrush(Color.FromArgb(46, 124, 132, 148)), 1);
-        var minor_grid_pen = new Pen(new SolidColorBrush(Color.FromArgb(26, 124, 132, 148)), 1);
-        var tick_pen = new Pen(new SolidColorBrush(Color.FromRgb(146, 152, 164)), 1);
+        var axis_pen = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text4")), 1);
+        var major_grid_pen = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("OverlayThemeGridMajor")), 1);
+        var minor_grid_pen = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("OverlayThemeGridMinor")), 1);
+        var tick_pen = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text4")), 1);
         context.DrawLine(axis_pen, new Point(plot.Left, plot.Bottom), new Point(plot.Right, plot.Bottom));
         context.DrawLine(axis_pen, new Point(plot.Left, plot.Top), new Point(plot.Left, plot.Bottom));
 
@@ -87,7 +87,7 @@ public sealed class PlatformResultPlotView : Control
             double y = plot.Bottom - (tick - min_y) / (max_y - min_y) * plot.Height;
             context.DrawLine(major_grid_pen, new Point(plot.Left, y), new Point(plot.Right, y));
             context.DrawLine(tick_pen, new Point(plot.Left - 8, y), new Point(plot.Left, y));
-            draw_right_aligned_text(context, tick.ToString("0.###", CultureInfo.InvariantCulture), new Point(plot.Left - 12, y - 8), 11, Color.FromRgb(176, 182, 192), false);
+            draw_right_aligned_text(context, tick.ToString("0.###", CultureInfo.InvariantCulture), new Point(plot.Left - 12, y - 8), 11, gated.Shared.ThemeResources.AppColor("Text3"), false);
         }
 
         foreach (var tick in x_ticks(Platform, min_x, max_x, major: false))
@@ -101,7 +101,7 @@ public sealed class PlatformResultPlotView : Control
             double x = plot.Left + (tick.Position - min_x) / (max_x - min_x) * plot.Width;
             context.DrawLine(major_grid_pen, new Point(x, plot.Top), new Point(x, plot.Bottom));
             context.DrawLine(tick_pen, new Point(x, plot.Bottom), new Point(x, plot.Bottom + 8));
-            draw_centered_text(context, tick.Label, new Point(x, plot.Bottom + 11), 11, Color.FromRgb(176, 182, 192), false);
+            draw_centered_text(context, tick.Label, new Point(x, plot.Bottom + 11), 11, gated.Shared.ThemeResources.AppColor("Text3"), false);
         }
 
         for (int series_index = 0; series_index < series.Length; series_index++)
@@ -125,8 +125,8 @@ public sealed class PlatformResultPlotView : Control
             }
         }
 
-        draw_centered_text(context, series[0].XLabel, new Point(plot.Left + plot.Width / 2, bounds.Bottom - 18), 13, Color.FromRgb(218, 222, 230), false);
-        draw_vertical_centered_text(context, Platform?.Kind == PlatformKind.Kinetics ? series[0].YLabel : "Frequency", new Point(bounds.Left + 18, plot.Top + plot.Height / 2), 13, Color.FromRgb(218, 222, 230), false);
+        draw_centered_text(context, series[0].XLabel, new Point(plot.Left + plot.Width / 2, bounds.Bottom - 18), 13, gated.Shared.ThemeResources.AppColor("Text2"), false);
+        draw_vertical_centered_text(context, Platform?.Kind == PlatformKind.Kinetics ? series[0].YLabel : "Frequency", new Point(bounds.Left + 18, plot.Top + plot.Height / 2), 13, gated.Shared.ThemeResources.AppColor("Text2"), false);
     }
 
     public static PlatformPlotSeries[] CreateDisplaySeries(Platform? platform)

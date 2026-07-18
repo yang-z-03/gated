@@ -4,12 +4,18 @@
         xmlns:semi="https://irihi.tech/semi">
     <Styles.Resources>
         <ResourceDictionary>
+
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceInclude x:Key="Default" Source="avares://gated/Styles/Themes/Light.axaml" />
+                <ResourceInclude x:Key="Dark" Source="avares://gated/Styles/Themes/Dark.axaml" /> <!-- themes -->
+                <ResourceInclude x:Key="Light" Source="avares://gated/Styles/Themes/Light.axaml" />
+            </ResourceDictionary.ThemeDictionaries>
+
             <ResourceDictionary.MergedDictionaries>
                 <!-- shared components -->
                 <ResourceInclude Source="avares://gated/Styles/Icons/Icons.axaml" /> <!-- icons -->
-                <ResourceInclude Source="avares://gated/Styles/Themes/Dark.axaml" /> <!-- themes -->
                 <ResourceInclude Source="avares://gated/Styles/Locales/English.axaml" /> <!-- locales -->
-                
+
                 <!-- core styling components based on the tokens included above -->
                 <ResourceInclude Source="avares://gated/Styles/TextBlock.axaml" />
                 <ResourceInclude Source="avares://gated/Styles/Window.axaml" />

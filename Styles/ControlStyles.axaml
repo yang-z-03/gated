@@ -5,7 +5,7 @@
 
   <Style Selector="CheckBox">
     <Setter Property="FontSize" Value="11"/>
-    <Setter Property="Foreground" Value="#d0d0d8"/>
+    <Setter Property="Foreground" Value="{DynamicResource AppBrushText3}"/>
     <Setter Property="Padding" Value="6,0,0,0"/>
     <Setter Property="VerticalContentAlignment" Value="Center"/>
     <Setter Property="MinHeight" Value="0"/>
@@ -13,16 +13,16 @@
   </Style>
 
   <Style Selector="CheckBox /template/ Border#NormalRectangle">
-    <Setter Property="BorderBrush" Value="#3a3a4a"/>
-    <Setter Property="Background" Value="#141418"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource AppBrushBorder2}"/>
+    <Setter Property="Background" Value="{DynamicResource AppBrushBackground2}"/>
     <Setter Property="CornerRadius" Value="2"/>
     <Setter Property="Width" Value="14"/>
     <Setter Property="Height" Value="14"/>
   </Style>
 
   <Style Selector="CheckBox:checked /template/ Border#NormalRectangle">
-    <Setter Property="Background" Value="#3d5a9a"/>
-    <Setter Property="BorderBrush" Value="#5b80c4"/>
+    <Setter Property="Background" Value="{DynamicResource AppBrushTheme2}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource AppBrushTheme4}"/>
   </Style>
 
   <!-- ───────────────────── SLIDER ───────────────────── -->
@@ -30,16 +30,16 @@
   <Style Selector="Slider">
     <Setter Property="MinHeight" Value="0"/>
     <Setter Property="Height" Value="20"/>
-    <Setter Property="Foreground" Value="#5b80c4"/>
-    <Setter Property="Background" Value="#2c2c3a"/>
+    <Setter Property="Foreground" Value="{DynamicResource AppBrushTheme4}"/>
+    <Setter Property="Background" Value="{DynamicResource AppBrushBackground5}"/>
   </Style>
 
   <Style Selector="Slider /template/ Track > Thumb">
     <Setter Property="Width" Value="10"/>
     <Setter Property="Height" Value="16"/>
     <Setter Property="CornerRadius" Value="2"/>
-    <Setter Property="Background" Value="#8090b8"/>
-    <Setter Property="BorderBrush" Value="#5b80c4"/>
+    <Setter Property="Background" Value="{DynamicResource AppBrushTheme5}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource AppBrushTheme4}"/>
     <Setter Property="BorderThickness" Value="1"/>
   </Style>
 
@@ -50,9 +50,9 @@
     <Setter Property="MinHeight" Value="0"/>
     <Setter Property="FontSize" Value="11"/>
     <Setter Property="CornerRadius" Value="3"/>
-    <Setter Property="Background" Value="#141418"/>
-    <Setter Property="Foreground" Value="#d0d0d8"/>
-    <Setter Property="BorderBrush" Value="#3a3a4a"/>
+    <Setter Property="Background" Value="{DynamicResource AppBrushBackground2}"/>
+    <Setter Property="Foreground" Value="{DynamicResource AppBrushText3}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource AppBrushBorder2}"/>
     <Setter Property="BorderThickness" Value="1"/>
   </Style>
 
@@ -75,21 +75,21 @@
 
   <Style Selector="TextBlock">
     <Setter Property="FontSize" Value="11"/>
-    <Setter Property="Foreground" Value="#d0d0d8"/>
+    <Setter Property="Foreground" Value="{DynamicResource AppBrushText3}"/>
     <Setter Property="VerticalAlignment" Value="Center"/>
   </Style>
 
   <Style Selector="TextBlock.dim">
-    <Setter Property="Foreground" Value="#888896"/>
+    <Setter Property="Foreground" Value="{DynamicResource AppBrushText5}"/>
   </Style>
 
   <Style Selector="TextBlock.accent">
-    <Setter Property="Foreground" Value="#5b80c4"/>
+    <Setter Property="Foreground" Value="{DynamicResource AppBrushTheme4}"/>
   </Style>
 
   <Style Selector="TextBlock.section-header">
     <Setter Property="FontSize" Value="10"/>
-    <Setter Property="Foreground" Value="#888896"/>
+    <Setter Property="Foreground" Value="{DynamicResource AppBrushText5}"/>
     <Setter Property="FontWeight" Value="SemiBold"/>
     <Setter Property="Margin" Value="0,6,0,2"/>
   </Style>
@@ -109,29 +109,29 @@
   </Style>
 
   <Style Selector="ScrollBar /template/ Thumb">
-    <Setter Property="Background" Value="#3a3a4a"/>
+    <Setter Property="Background" Value="{DynamicResource AppBrushBorder2}"/>
     <Setter Property="CornerRadius" Value="4"/>
     <Setter Property="Margin" Value="1"/>
   </Style>
 
   <Style Selector="ScrollBar /template/ Thumb:pointerover">
-    <Setter Property="Background" Value="#4a4a60"/>
+    <Setter Property="Background" Value="{DynamicResource AppBrushBorder3}"/>
   </Style>
 
   <!-- ───────────────────── SEPARATOR ───────────────────── -->
 
   <Style Selector="Separator">
-    <Setter Property="Background" Value="#3a3a4a"/>
+    <Setter Property="Background" Value="{DynamicResource AppBrushBorder2}"/>
   </Style>
 
   <!-- ───────────────────── EXPANDER ───────────────────── -->
 
   <Style Selector="Expander">
     <Setter Property="Background" Value="Transparent"/>
-    <Setter Property="BorderBrush" Value="#3a3a4a"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource AppBrushBorder2}"/>
     <Setter Property="BorderThickness" Value="0,0,0,1"/>
     <Setter Property="FontSize" Value="11"/>
-    <Setter Property="Foreground" Value="#d0d0d8"/>
+    <Setter Property="Foreground" Value="{DynamicResource AppBrushText3}"/>
     <Setter Property="Padding" Value="6,4"/>
   </Style>
 
@@ -139,7 +139,7 @@
     <Setter Property="Height" Value="26"/>
     <Setter Property="MinHeight" Value="0"/>
     <Setter Property="Background" Value="Transparent"/>
-    <Setter Property="Foreground" Value="#d0d0d8"/>
+    <Setter Property="Foreground" Value="{DynamicResource AppBrushText3}"/>
     <Setter Property="Padding" Value="6,0"/>
     <Setter Property="FontSize" Value="11"/>
   </Style>

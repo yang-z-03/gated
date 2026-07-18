@@ -58,12 +58,12 @@
             <Setter Property="BorderBrush" Value="{DynamicResource SemiColorBorder}" />
         </Style>
         <Style Selector="RadioButton.GateToolButton:checked">
-            <Setter Property="Background" Value="#2D5FA8" />
-            <Setter Property="BorderBrush" Value="#6EA8FE" />
+            <Setter Property="Background" Value="{DynamicResource AppBrushTheme2}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AppBrushTheme5}" />
         </Style>
         <Style Selector="RadioButton.GateToolButton:checked:pointerover">
-            <Setter Property="Background" Value="#356DBD" />
-            <Setter Property="BorderBrush" Value="#9DC4FF" />
+            <Setter Property="Background" Value="{DynamicResource AppBrushTheme3}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AppBrushTheme6}" />
         </Style>
         <Style Selector="RadioButton.GateToolButton:disabled">
             <Setter Property="Opacity" Value="0.32" />
@@ -108,50 +108,50 @@
             </Setter>
         </Style>
         <Style Selector="Border.PageModeSwitchHit:pointerover Border.PageModeSwitchHitVisual">
-            <Setter Property="Background" Value="#1AFFFFFF" />
+            <Setter Property="Background" Value="{DynamicResource AppBrushOverlayHighlightSoft}" />
         </Style>
         <Style Selector="Border.PageModeSwitchHit:pressed Border.PageModeSwitchHitVisual">
-            <Setter Property="Background" Value="#2AFFFFFF" />
+            <Setter Property="Background" Value="{DynamicResource AppBrushOverlayHighlight}" />
         </Style>
         <Style Selector="Border#mainModeSwitch:pointerover">
-            <Setter Property="Background" Value="#20222B" />
-            <Setter Property="BorderBrush" Value="#656A78" />
+            <Setter Property="Background" Value="{DynamicResource AppBrushBackground3}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AppBrushBorder4}" />
         </Style>
         <Style Selector="Border#mainModeSwitch:pointerover Border#mainModeSwitchThumb">
-            <Setter Property="Background" Value="#FFFFFF" />
+            <Setter Property="Background" Value="{DynamicResource AppBrushText1}" />
         </Style>
         <Style Selector="ToggleButton.LogLevelToggle /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="#242833" />
-            <Setter Property="BorderBrush" Value="#4A4F60" />
+            <Setter Property="Background" Value="{DynamicResource AppBrushBackground3}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AppBrushBorder3}" />
         </Style>
         <Style Selector="ToggleButton.LogLevelToggle">
             <Setter Property="Opacity" Value="0.62" />
         </Style>
         <Style Selector="ToggleButton.LogLevelToggle:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="#2E3545" />
-            <Setter Property="BorderBrush" Value="#626A80" />
+            <Setter Property="Background" Value="{DynamicResource AppBrushBorder2}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AppBrushBorder4}" />
         </Style>
         <Style Selector="ToggleButton.LogLevelToggle:focus /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="#242833" />
-            <Setter Property="BorderBrush" Value="#4A4F60" />
+            <Setter Property="Background" Value="{DynamicResource AppBrushBackground3}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AppBrushBorder3}" />
         </Style>
         <Style Selector="ToggleButton.LogLevelToggle:pointerover">
             <Setter Property="Opacity" Value="0.84" />
         </Style>
         <Style Selector="ToggleButton.LogLevelToggle:checked /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="#263E66" />
-            <Setter Property="BorderBrush" Value="#41669D" />
+            <Setter Property="Background" Value="{DynamicResource AppBrushTheme1}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AppBrushTheme2}" />
         </Style>
         <Style Selector="ToggleButton.LogLevelToggle:checked:focus /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="#263E66" />
-            <Setter Property="BorderBrush" Value="#41669D" />
+            <Setter Property="Background" Value="{DynamicResource AppBrushTheme1}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AppBrushTheme2}" />
         </Style>
         <Style Selector="ToggleButton.LogLevelToggle:checked">
             <Setter Property="Opacity" Value="1" />
         </Style>
         <Style Selector="ToggleButton.LogLevelToggle:checked:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="#2B4774" />
-            <Setter Property="BorderBrush" Value="#5079B6" />
+            <Setter Property="Background" Value="{DynamicResource AppBrushTheme1}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AppBrushTheme3}" />
         </Style>
         <Style Selector="ListBox#spillover_control_table ListBoxItem">
             <Setter Property="Margin" Value="0,0" />
@@ -166,12 +166,12 @@
     </Window.Styles>
 
     <DockPanel x:Name="window">
-        <Border x:Name="titleBar" DockPanel.Dock="Top" Background="#252530" BorderThickness="0,0,0,0" BorderBrush="#505050">
+        <Border x:Name="titleBar" DockPanel.Dock="Top" Background="{DynamicResource AppBrushBackground4}" BorderThickness="0,0,0,0" BorderBrush="{DynamicResource AppBrushBorder3}">
           <Grid Height="40">
-            <Rectangle Fill="#252530" PointerPressed="title_bar_pressed"/>
+            <Rectangle Fill="{DynamicResource AppBrushBackground4}" PointerPressed="title_bar_pressed"/>
             <DockPanel>
-              <Border BorderBrush="#252530" BorderThickness="0 0 0 0"/>
-              
+              <Border BorderBrush="{DynamicResource AppBrushBackground4}" BorderThickness="0 0 0 0"/>
+
               <!-- Page mode switch -->
               <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                 <Border x:Name="mainModeSwitch"
@@ -179,8 +179,8 @@
                         Width="220"
                         Height="28"
                         CornerRadius="7"
-                        Background="#1A1B22"
-                        BorderBrush="#4A4D58"
+                        Background="{DynamicResource AppBrushBackground2}"
+                        BorderBrush="{DynamicResource AppBrushBorder3}"
                         BorderThickness="1"
                         ClipToBounds="True">
                   <Border.Transitions>
@@ -197,7 +197,7 @@
                             Margin="3,3,3,3"
                             HorizontalAlignment="Left"
                             CornerRadius="5"
-                            Background="#ECEEF5"
+                            Background="{DynamicResource AppBrushText2}"
                             BoxShadow="0 1 5 0 #80000000">
                         <Border.Transitions>
                             <Transitions>
@@ -211,7 +211,7 @@
                                Text="Analysis"
                                FontSize="12"
                                FontWeight="Bold"
-                               Foreground="#20232C"
+                               Foreground="{DynamicResource AppBrushBackground4}"
                                HorizontalAlignment="Center"
                                VerticalAlignment="Center"
                                IsHitTestVisible="False">
@@ -226,7 +226,7 @@
                                Text="Layout"
                                FontSize="12"
                                FontWeight="Bold"
-                               Foreground="#B9BDCA"
+                               Foreground="{DynamicResource AppBrushText4}"
                                HorizontalAlignment="Center"
                                VerticalAlignment="Center"
                                IsHitTestVisible="False">
@@ -241,7 +241,7 @@
                                Text="Code"
                                FontSize="12"
                                FontWeight="Bold"
-                               Foreground="#B9BDCA"
+                               Foreground="{DynamicResource AppBrushText4}"
                                HorizontalAlignment="Center"
                                VerticalAlignment="Center"
                                IsHitTestVisible="False">
@@ -264,28 +264,28 @@
                 </Border>
 
                 <Button x:Name="minimizeButton" Width="30" Height="30" Margin="5 5 0 5" Click="window_minimize" Classes="Title">
-                  <TextBlock IsHitTestVisible="False" FontFamily="{DynamicResource SemiFontFamilyIcon}" Text="&#xe1d8;" 
+                  <TextBlock IsHitTestVisible="False" FontFamily="{DynamicResource SemiFontFamilyIcon}" Text="&#xe1d8;"
                              HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="14"/>
                 </Button>
                 <Button Width="30" Height="30" Margin="5 5 5 5" Click="window_close" Classes="Close">
-                  <TextBlock IsHitTestVisible="False" FontFamily="{DynamicResource SemiFontFamilyIcon}" Text="&#xe10a;" 
+                  <TextBlock IsHitTestVisible="False" FontFamily="{DynamicResource SemiFontFamilyIcon}" Text="&#xe10a;"
                              HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="14"/>
                 </Button>
               </StackPanel>
               <Grid>
-                <StackPanel IsHitTestVisible="False" Margin="2 5 2 2" Orientation="Horizontal" 
+                <StackPanel IsHitTestVisible="False" Margin="2 5 2 2" Orientation="Horizontal"
                             HorizontalAlignment="Center" VerticalAlignment="Stretch">
                   <Image Width="16" Height="16" Source="avares://gated/gated-32.png"/>
                   <Grid Width="10"/>
                   <TextBlock Text="{Binding Title, RelativeSource={RelativeSource FindAncestor, AncestorType=Window}}" VerticalAlignment="Center"
-                             FontWeight="Bold" Foreground="White" FontSize="13"/>
+                             FontWeight="Bold" Foreground="{DynamicResource AppBrushText2}" FontSize="13"/>
                 </StackPanel>
               </Grid>
             </DockPanel>
           </Grid>
         </Border>
 
-        <Menu x:Name="main_menu" DockPanel.Dock="Top" Background="#252530">
+        <Menu x:Name="main_menu" DockPanel.Dock="Top" Background="{DynamicResource AppBrushBackground4}">
             <MenuItem Header="_File">
                 <MenuItem Header="Open workspace ..." InputGesture="Ctrl + Shift + O" Click="open_workspace_menu_item_click" />
                 <MenuItem Header="Open FCS ..." InputGesture="Ctrl + O" Click="open_fcs_menu_item_click" />
@@ -449,7 +449,7 @@
 
         <Border DockPanel.Dock="Bottom"
                 Height="28"
-                BorderBrush="#505050"
+                BorderBrush="{DynamicResource AppBrushBorder3}"
                 BorderThickness="0,1,0,0"
                 Background="{DynamicResource SemiColorBackground2}">
             <Grid ColumnDefinitions="*,Auto"
@@ -769,8 +769,8 @@
                                         HorizontalAlignment="Center"
                                         VerticalAlignment="Center"
                                         CornerRadius="10"
-                                        Background="#262830"
-                                        BorderBrush="#101010"
+                                        Background="{DynamicResource AppBrushBackground3}"
+                                        BorderBrush="{DynamicResource AppBrushBorder1}"
                                         BorderThickness="1"
                                         Opacity="0.5"
                                         Padding="24">
@@ -1103,7 +1103,7 @@
                                     <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/delete.svg}" />
                                 </Button>
                             </StackPanel>
-                            
+
                             <CheckBox Content="Rasterization resolution for density scatter" Margin="0 8 0 0"
                                       IsChecked="{Binding ExportBitmapApplyRasterizationResolution}" />
                             <CheckBox Content="Background transparency"
@@ -1393,9 +1393,9 @@
                                 MaxWidth="750"
                                 MinWidth="750"
                                 HorizontalAlignment="Center">
-                        
+
                         <StackPanel Margin="0 12 0 12" Spacing="8">
-                            <TextBlock Foreground="White" FontWeight="Bold" Text="Conventional Spillover Compensation" />
+                            <TextBlock Foreground="{DynamicResource AppBrushText2}" FontWeight="Bold" Text="Conventional Spillover Compensation" />
                             <TextBlock Foreground="{DynamicResource SemiColorText1}" Text="Drag control samples to the control table to begin compensation." />
                         </StackPanel>
 
@@ -1423,8 +1423,8 @@
                                             HorizontalAlignment="Center"
                                             VerticalAlignment="Center"
                                             CornerRadius="10"
-                                            Background="#303030"
-                                            BorderBrush="#101010"
+                                            Background="{DynamicResource AppBrushBackground5}"
+                                            BorderBrush="{DynamicResource AppBrushBorder1}"
                                             BorderThickness="1"
                                             Opacity="0.6"
                                             Margin="72 10 18 42">
@@ -1436,7 +1436,7 @@
                                         </Grid>
                                     </Border>
                                 </Grid>
-                                
+
                                 <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="6" HorizontalAlignment="Center" VerticalAlignment="Center">
                                     <ComboBox Classes="Small" Width="120" Margin="52 0 0 0" ItemsSource="{Binding SpilloverGatePresets}" SelectedItem="{Binding SelectedSpilloverGatePreset}" />
                                     <Button Grid.Column="1" Classes="Small" Command="{Binding NewSpilloverGatePresetCommand}">
@@ -1458,7 +1458,7 @@
                                                         YMaximumFactor="1.1"
                                                         IsGatingEnabled="True"
                                                         Selection="{Binding SpilloverSelection, Mode=TwoWay}" />
-                                
+
                                 <Grid ColumnDefinitions="Auto,150,Auto" Grid.Row="0" ColumnSpacing="8" VerticalAlignment="Center" HorizontalAlignment="Center" Height="32">
                                     <Button Classes="Small" Width="30" Command="{Binding SelectPreviousSpilloverChannelCommand}">
                                         <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/left.svg}" />
@@ -1477,18 +1477,18 @@
                             </Grid>
                         </Grid>
 
-                        <TextBlock Foreground="{DynamicResource SemiColorText1}" 
+                        <TextBlock Foreground="{DynamicResource SemiColorText1}"
                                    Text="Drag samples to the area for blank control and single-staining samples" />
-                        
+
 
                         <Border Height="300"
-                                BorderBrush="#505050"
+                                BorderBrush="{DynamicResource AppBrushBorder3}"
                                 BorderThickness="1"
                                 CornerRadius="6"
-                                Background="#1e1e1e"
+                                Background="{DynamicResource AppBrushBackground3}"
                                 ClipToBounds="True">
                             <Grid RowDefinitions="29,*">
-                                <Border Background="#1e1e1e" CornerRadius="6 6 0 0" Padding="10,0">
+                                <Border Background="{DynamicResource AppBrushBackground3}" CornerRadius="6 6 0 0" Padding="10,0">
                                     <Grid ColumnDefinitions="*,150,190,34" Margin="8 0 8 0" ColumnSpacing="12">
                                         <TextBlock Text="Control sample" Padding="15 0 0 0" FontSize="13" Foreground="{DynamicResource SemiColorText1}" VerticalAlignment="Center" />
                                         <TextBlock Grid.Column="1" Padding="3 0 0 0" Text="Parameter" FontSize="13" Foreground="{DynamicResource SemiColorText1}" VerticalAlignment="Center" />
@@ -1577,10 +1577,10 @@
                         </Grid>
 
                         <Border IsVisible="{Binding HasSpilloverPreviewMatrix}"
-                                BorderBrush="#505050"
+                                BorderBrush="{DynamicResource AppBrushBorder3}"
                                 BorderThickness="1"
                                 CornerRadius="6"
-                                Background="#1e1e1e"
+                                Background="{DynamicResource AppBrushBackground3}"
                                 Padding="8"
                                 Margin="0,0,0,10">
                             <StackPanel Spacing="4">
@@ -1653,19 +1653,19 @@
                                           VerticalScrollBarVisibility="Auto">
                             <StackPanel Spacing="10" Margin="0,8,0,0">
                                 <Border IsVisible="{Binding IsSpilloverPreviewOutdated}"
-                                        Background="#3A2D18"
-                                        BorderBrush="#8A6A2A"
+                                        Background="{DynamicResource AppBrushWarningBackground}"
+                                        BorderBrush="{DynamicResource AppBrushWarningBorderMuted}"
                                         BorderThickness="1"
                                         CornerRadius="6"
                                         Padding="10,7">
                                     <TextBlock Text="Preview is outdated. Recalculate to update the matrix and plots."
                                                FontSize="13"
-                                               Foreground="#FFD98A" />
+                                               Foreground="{DynamicResource AppBrushWarningTextStrong}" />
                                 </Border>
-                                <Border BorderBrush="#505050"
+                                <Border BorderBrush="{DynamicResource AppBrushBorder3}"
                                         BorderThickness="1"
                                         CornerRadius="6"
-                                        Background="#1e1e1e"
+                                        Background="{DynamicResource AppBrushBackground3}"
                                         Padding="8">
                                     <StackPanel Spacing="6">
                                         <Grid ColumnDefinitions="30,*">
@@ -1706,7 +1706,7 @@
                                                                    TextAlignment="Center"
                                                                    TextTrimming="CharacterEllipsis" />
                                                         </LayoutTransformControl>
-                                                        
+
                                                         <ItemsControl Grid.Column="1" ItemsSource="{Binding Cells}">
                                                             <ItemsControl.ItemsPanel>
                                                                 <ItemsPanelTemplate>
@@ -1744,9 +1744,9 @@
                                 MaxWidth="750"
                                 MinWidth="750"
                                 HorizontalAlignment="Center">
-                        
+
                         <StackPanel Margin="0 12 0 12" Spacing="8">
-                            <TextBlock Foreground="White" FontWeight="Bold" Text="Spectral Unmixing" />
+                            <TextBlock Foreground="{DynamicResource AppBrushText2}" FontWeight="Bold" Text="Spectral Unmixing" />
                             <TextBlock Foreground="{DynamicResource SemiColorText1}" Text="Drag control samples to the control table to begin spectral unmixing." />
                         </StackPanel>
 
@@ -1766,8 +1766,8 @@
                                             HorizontalAlignment="Center"
                                             VerticalAlignment="Center"
                                             CornerRadius="10"
-                                            Background="#303030"
-                                            BorderBrush="#101010"
+                                            Background="{DynamicResource AppBrushBackground5}"
+                                            BorderBrush="{DynamicResource AppBrushBorder1}"
                                             BorderThickness="1"
                                             Opacity="0.6"
                                             Margin="72 10 18 42">
@@ -1792,17 +1792,17 @@
                                                         Selection="{Binding SpectralPanel.HistogramSelection, Mode=TwoWay}" />
                             </Grid>
                         </Grid>
-                        
+
                         <controls:SpectralPlotView Height="220" IsVisible="{Binding SpectralPanel.HasControls}" Data="{Binding SpectralPanel.SelectedPlotData}"
-                                                   Signature="{Binding SpectralPanel.SelectedSignature}" 
+                                                   Signature="{Binding SpectralPanel.SelectedSignature}"
                                                    SignatureAmplitude="{Binding SpectralPanel.SelectedSignatureAmplitude}"
-                                                   PlotBackground="Red" 
+                                                   PlotBackground="Red"
                                                    PlotForeground="{DynamicResource SemiColorText0}" />
-                        
+
                         <TextBlock Foreground="{DynamicResource SemiColorText1}" Text="Drag blank and single-staining control samples into the table" />
-                        <Border Height="300" BorderBrush="#505050" BorderThickness="1" CornerRadius="6" Background="#1e1e1e">
+                        <Border Height="300" BorderBrush="{DynamicResource AppBrushBorder3}" BorderThickness="1" CornerRadius="6" Background="{DynamicResource AppBrushBackground3}">
                             <Grid RowDefinitions="29,*">
-                                <Border Background="#1e1e1e" CornerRadius="6 6 0 0" Padding="10,0">
+                                <Border Background="{DynamicResource AppBrushBackground3}" CornerRadius="6 6 0 0" Padding="10,0">
                                     <Grid ColumnDefinitions="8,165,155,150,175,24" Margin="8 0" ColumnSpacing="4">
                                         <TextBlock Grid.Column="1" Text="Control sample" FontSize="13" Foreground="{DynamicResource SemiColorText1}" VerticalAlignment="Center" />
                                         <TextBlock Grid.Column="2" Text="Unmixing molecule" FontSize="13" Foreground="{DynamicResource SemiColorText1}" VerticalAlignment="Center" />
@@ -1811,10 +1811,10 @@
                                     </Grid>
                                 </Border>
                                 <ListBox x:Name="spectral_control_table" Grid.Row="1" SelectionMode="Single" Margin="8 0 8 8"
-                                         ItemsSource="{Binding SpectralPanel.Rows}" 
+                                         ItemsSource="{Binding SpectralPanel.Rows}"
                                          SelectedItem="{Binding SpectralPanel.SelectedRow, Mode=TwoWay}"
                                          Background="Transparent"
-                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled" 
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                          ScrollViewer.VerticalScrollBarVisibility="Auto">
                                     <ListBox.ItemTemplate>
                                         <DataTemplate>
@@ -1846,7 +1846,7 @@
                                 </ListBox>
                             </Grid>
                         </Border>
-                        
+
                         <Grid ColumnDefinitions="Auto,220,Auto,*,Auto" ColumnSpacing="8" IsVisible="{Binding SpectralPanel.HasControls}">
                             <TextBlock Text="Output grouping"
                                        Foreground="{DynamicResource SemiColorText2}"
@@ -1870,16 +1870,16 @@
                         </Grid>
 
                         <Border IsVisible="{Binding SpectralPanel.HasWarning}"
-                                BorderBrush="#B7791F"
+                                BorderBrush="{DynamicResource AppBrushWarningBorder}"
                                 BorderThickness="1"
                                 CornerRadius="6"
                                 Padding="10"
-                                Background="#2A2112">
-                            <TextBlock Foreground="#F6C56B"
+                                Background="{DynamicResource AppBrushWarningBackground}">
+                            <TextBlock Foreground="{DynamicResource AppBrushWarningText}"
                                        TextWrapping="Wrap"
                                        Text="{Binding SpectralPanel.WarningText}" />
                         </Border>
-                        
+
                         <Expander Header="Spectrum cosine similarity" IsExpanded="True" IsVisible="{Binding SpectralPanel.HasFitResults}">
                             <StackPanel Spacing="6">
                                 <CheckBox x:Name="similarity_matrix_annotate" Content="Annotate" IsChecked="False" Foreground="{DynamicResource SemiColorText1}" />
@@ -1977,10 +1977,10 @@
                         </WrapPanel>
 
                         <Border Height="430"
-                                BorderBrush="#505050"
+                                BorderBrush="{DynamicResource AppBrushBorder3}"
                                 BorderThickness="1"
                                 CornerRadius="8"
-                                Background="#1e1e1e"
+                                Background="{DynamicResource AppBrushBackground3}"
                                 Padding="8"
                                 ClipToBounds="True">
                             <DataGrid x:Name="workspace_metadata_grid"
@@ -1990,7 +1990,7 @@
                                       CanUserSortColumns="True"
                                       GridLinesVisibility="Horizontal"
                                       HeadersVisibility="Column"
-                                      Background="#1e1e1e"
+                                      Background="{DynamicResource AppBrushBackground3}"
                                       HorizontalAlignment="Stretch"
                                       VerticalAlignment="Stretch"
                                       HorizontalScrollBarVisibility="Auto"
@@ -2024,10 +2024,10 @@
                         </StackPanel>
 
                         <Border Height="510"
-                                BorderBrush="#505050"
+                                BorderBrush="{DynamicResource AppBrushBorder3}"
                                 BorderThickness="1"
                                 CornerRadius="8"
-                                Background="#1e1e1e"
+                                Background="{DynamicResource AppBrushBackground3}"
                                 Padding="8"
                                 ClipToBounds="True">
                             <DataGrid AutoGenerateColumns="False"
@@ -2036,7 +2036,7 @@
                                       CanUserSortColumns="False"
                                       GridLinesVisibility="Horizontal"
                                       HeadersVisibility="Column"
-                                      Background="#1e1e1e"
+                                      Background="{DynamicResource AppBrushBackground3}"
                                       HorizontalAlignment="Stretch"
                                       VerticalAlignment="Stretch"
                                       HorizontalScrollBarVisibility="Auto"

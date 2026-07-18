@@ -2,94 +2,172 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="gated.PreferencesWindow"
         x:CompileBindings="False"
-        Width="1120"
-        Height="560"
-        MinWidth="720"
-        MinHeight="460"
+        Width="850"
+        Height="575"
+        MinWidth="820"
+        MinHeight="560"
         CanResize="True"
         WindowStartupLocation="CenterOwner"
         Title="Preferences"
-        Background="#252525">
+        Background="{DynamicResource AppBrushBackground4}">
 
     <Window.Styles>
-        <Style Selector="ListBox#cytometerList ListBoxItem">
+        <Style Selector="ListBox ListBoxItem">
             <Setter Property="Margin" Value="0,2" />
         </Style>
     </Window.Styles>
 
-    <Grid Margin="18" ColumnDefinitions="220,*" RowDefinitions="*,Auto" ColumnSpacing="14" RowSpacing="12">
-        <Border BorderBrush="#505050" BorderThickness="1" CornerRadius="6" Background="#1e1e1e" Padding="8">
-            <DockPanel>
-                <TextBlock DockPanel.Dock="Top" Foreground="{DynamicResource SemiColorText2}" Margin="4,0,0,8" Text="Cytometers" />
-                <ListBox x:Name="cytometerList">
-                    <ListBox.Resources>
-                        <Thickness x:Key="ListBoxItemDefaultPadding">0</Thickness>
-                        <CornerRadius x:Key="ListBoxItemCornerRadius">6</CornerRadius>
-                    </ListBox.Resources>
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <Border CornerRadius="6" Padding="8,5">
-                                <TextBlock Foreground="{DynamicResource SemiColorText0}" Text="{Binding Name}" />
-                            </Border>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
-            </DockPanel>
+    <Grid Margin="18" ColumnDefinitions="170,*" RowDefinitions="*,Auto" ColumnSpacing="24" RowSpacing="18">
+        <Border BorderBrush="{DynamicResource AppBrushBorder3}" BorderThickness="1" CornerRadius="6" Background="{DynamicResource AppBrushBackground3}" Padding="8">
+            <ListBox x:Name="preferencePageList">
+                <ListBox.Resources>
+                    <Thickness x:Key="ListBoxItemDefaultPadding">0</Thickness>
+                    <CornerRadius x:Key="ListBoxItemCornerRadius">6</CornerRadius>
+                </ListBox.Resources>
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <Border CornerRadius="6" Padding="8,3">
+                            <TextBlock Foreground="{DynamicResource SemiColorText0}" Text="{Binding}" />
+                        </Border>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
         </Border>
 
-        <Grid Grid.Column="1" RowDefinitions="*" RowSpacing="10">
-            <DataGrid x:Name="channelGrid"
-                      Grid.Row="1"
-                      AutoGenerateColumns="False"
-                      CanUserResizeColumns="True"
-                      GridLinesVisibility="Horizontal"
-                      HeadersVisibility="Column">
-                <DataGrid.Columns>
-                    <DataGridTextColumn Header="Channel" Binding="{Binding ChannelName}" Width="*" />
-                    <DataGridTemplateColumn Header="Kind" Width="120">
-                        <DataGridTemplateColumn.CellTemplate>
-                            <DataTemplate>
-                                <ComboBox Classes="Small" Margin="6 2 0 0"
-                                          ItemsSource="{Binding $parent[Window].Tag.KindChoices}"
-                                          SelectedItem="{Binding Kind}" />
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellTemplate>
-                    </DataGridTemplateColumn>
-                    <DataGridTemplateColumn Header="Scale" Width="120">
-                        <DataGridTemplateColumn.CellTemplate>
-                            <DataTemplate>
-                                <ComboBox Classes="Small" Margin="6 2 0 0"
-                                          ItemsSource="{Binding $parent[Window].Tag.ScaleChoices}"
-                                          SelectedItem="{Binding Scale}" />
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellTemplate>
-                    </DataGridTemplateColumn>
-                    <DataGridCheckBoxColumn Header="Observed range" Binding="{Binding UseObservedRange}" Width="130" />
-                    <DataGridCheckBoxColumn Header="Spectral" Binding="{Binding IsSpectral}" Width="90" />
-                    <DataGridTemplateColumn Header="Excitation" Width="110">
-                        <DataGridTemplateColumn.CellTemplate>
-                            <DataTemplate>
-                                <ComboBox Classes="Small" Margin="6 2 0 0"
-                                          ItemsSource="{Binding $parent[Window].Tag.ExcitationChoices}"
-                                          SelectedItem="{Binding ExcitationLight}" />
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellTemplate>
-                    </DataGridTemplateColumn>
-                    <DataGridTextColumn Header="Plot order" Binding="{Binding PlotOrder}" Width="100" />
-                </DataGrid.Columns>
-            </DataGrid>
+        <Grid Grid.Column="1">
+            <Grid x:Name="cytometryPage" RowDefinitions="Auto,*" RowSpacing="10">
+
+                <TextBlock Foreground="{DynamicResource SemiColorText0}" TextWrapping="Wrap" LineHeight="18"
+                           Text="Define and modify channel default dimension setups for indicated cytometer platforms. Cytometer settings are automatically matched from FCS files experienced." />
+
+                <Grid Grid.Row="1" RowDefinitions="Auto,*" RowSpacing="10">
+                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8" VerticalAlignment="Bottom">
+                    <StackPanel Grid.Column="0" Orientation="Vertical" Spacing="6">
+                        <TextBlock VerticalAlignment="Center"
+                                   Foreground="{DynamicResource SemiColorText2}"
+                                   Text="Cytometer" />
+                        <ComboBox x:Name="cytometerCombo"
+                                  Grid.Column="1"
+                                  Classes="Small"
+                                  MinWidth="240">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Spacing="5" Orientation="Horizontal">
+                                        <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/controls.svg}" />
+                                        <TextBlock Text="{Binding Name}" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Bottom">
+                        <Button x:Name="addCytometerButton" Classes="Small" Width="30" ToolTip.Tip="Add cytometer preset">
+                            <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/add-file.svg}" />
+                        </Button>
+                        <Button x:Name="resetButton" Classes="Small" Width="30" ToolTip.Tip="Reset cytometer presets">
+                            <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/refresh.svg}" />
+                        </Button>
+                        <Button x:Name="addChannelButton" Classes="Small" Width="30" ToolTip.Tip="Add channel preset">
+                            <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/channel.svg}" />
+                        </Button>
+                        <Button x:Name="removeChannelButton" Classes="Small" Width="30" ToolTip.Tip="Remove selected channel preset">
+                            <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/delete.svg}" />
+                        </Button>
+                    </StackPanel>
+                    </Grid>
+                    <Border Grid.Row="1"
+                            BorderBrush="{DynamicResource AppBrushBorder3}"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Background="{DynamicResource AppBrushBackground2}"
+                            Padding="8"
+                            ClipToBounds="True">
+                        <DataGrid x:Name="channelGrid"
+                                  AutoGenerateColumns="False"
+                                  CanUserResizeColumns="True"
+                                  GridLinesVisibility="Horizontal"
+                                  HeadersVisibility="Column">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Channel" Binding="{Binding ChannelName}" Width="*" />
+                                <DataGridTemplateColumn Header="Kind" Width="125">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <ComboBox Classes="Small" Margin="6 2 0 0"
+                                                      ItemsSource="{Binding $parent[Window].Tag.KindChoices}"
+                                                      SelectedItem="{Binding Kind}" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Header="Scale" Width="120">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <ComboBox Classes="Small" Margin="6 2 0 0"
+                                                      ItemsSource="{Binding $parent[Window].Tag.ScaleChoices}"
+                                                      SelectedItem="{Binding Scale}" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Header="Excitation" Width="110">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <ComboBox Classes="Small" Margin="6 2 0 0"
+                                                      ItemsSource="{Binding $parent[Window].Tag.ExcitationChoices}"
+                                                      SelectedItem="{Binding ExcitationLight}" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTextColumn Header="Plot order" Binding="{Binding PlotOrder}" Width="100" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Border>
+                </Grid>
+            </Grid>
+
+            <StackPanel x:Name="appearancePage"
+                        IsVisible="False"
+                        Spacing="18">
+                <StackPanel Spacing="8">
+                    <TextBlock Foreground="{DynamicResource SemiColorText0}" FontSize="18" Text="Appearance" />
+                    <TextBlock Foreground="{DynamicResource SemiColorText2}" TextWrapping="Wrap"
+                               Text="Adjust application-wide appearance settings." />
+                </StackPanel>
+
+                <Grid ColumnDefinitions="170,*" RowDefinitions="Auto,Auto" ColumnSpacing="18" RowSpacing="8">
+                    <TextBlock Grid.Row="0"
+                               Grid.Column="0"
+                               Foreground="{DynamicResource SemiColorText0}"
+                               Text="Theme" />
+                    <StackPanel Grid.Row="0"
+                                Grid.Column="1"
+                                Orientation="Horizontal"
+                                Spacing="14">
+                        <RadioButton x:Name="lightThemeRadio"
+                                     GroupName="ApplicationTheme"
+                                     Content="Light" />
+                        <RadioButton x:Name="darkThemeRadio"
+                                     GroupName="ApplicationTheme"
+                                     Content="Dark" />
+                    </StackPanel>
+                    <TextBlock Grid.Row="1"
+                               Grid.Column="1"
+                               Foreground="{DynamicResource SemiColorText2}"
+                               TextWrapping="Wrap"
+                               Text="Theme changes are previewed immediately. Save to keep them." />
+                </Grid>
+            </StackPanel>
         </Grid>
 
         <DockPanel Grid.Row="1" Grid.ColumnSpan="2">
-            <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Spacing="8">
-                <Button x:Name="addCytometerButton" Classes="Small" Content="Add cytometer" />
-                <Button x:Name="resetButton" Classes="Small" Content="Reset defaults" />
-                <Button x:Name="addChannelButton" Classes="Small" Content="Add channel" />
-                <Button x:Name="removeChannelButton" Classes="Small" Content="Remove selected" />
-            </StackPanel>
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
-                <Button x:Name="cancelButton" Classes="Small" Content="Cancel" MinWidth="84" />
-                <Button x:Name="saveButton" Classes="Small" Content="Save" MinWidth="84" />
+                <Button x:Name="cancelButton" Classes="Small" MinWidth="84">
+                    Cancel
+                </Button>
+                <Button x:Name="saveButton" Classes="Small" MinWidth="84">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/save.svg}" />
+                        <TextBlock Text="Save" />
+                    </StackPanel>
+                </Button>
             </StackPanel>
         </DockPanel>
     </Grid>

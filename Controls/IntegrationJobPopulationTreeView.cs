@@ -113,7 +113,7 @@ public sealed class IntegrationJobPopulationTreeView : Control
     {
         double top = header_height + index * row_height;
         var row_rect = new Rect(4, top + 1, Math.Max(0, Bounds.Width - 8), row_height - 2);
-        var background = row.IsEnabled ? Color.FromRgb(30, 30, 30) : Color.FromRgb(24, 24, 24);
+        var background = row.IsEnabled ? gated.Shared.ThemeResources.AppColor("Background3") : gated.Shared.ThemeResources.AppColor("Background2");
         context.FillRectangle(new SolidColorBrush(background), row_rect, 4);
 
         double x = 6 + row.Depth * indent_width;
@@ -125,12 +125,12 @@ public sealed class IntegrationJobPopulationTreeView : Control
         x += icon_width + 7;
         draw_checkbox(context, new Rect(x, top + 5, 14, 14), row.IsSelected, row.IsIndeterminate, row.IsEnabled);
         x += 23;
-        draw_text(context, row.DisplayName, new Point(x, top + 4), 13, row.IsEnabled ? Color.FromRgb(218, 221, 228) : Color.FromRgb(115, 120, 130));
+        draw_text(context, row.DisplayName, new Point(x, top + 4), 13, row.IsEnabled ? gated.Shared.ThemeResources.AppColor("Text3") : gated.Shared.ThemeResources.AppColor("Text5"));
     }
 
     private void draw_header(DrawingContext context)
     {
-        draw_text(context, "Samples and populations", new Point(10, 6), 13, Color.FromRgb(164, 168, 178));
+        draw_text(context, "Samples and populations", new Point(10, 6), 13, gated.Shared.ThemeResources.AppColor("Text4"));
     }
 
     private static void draw_icon(DrawingContext context, Rect rect, string uri)
@@ -147,9 +147,9 @@ public sealed class IntegrationJobPopulationTreeView : Control
 
     private static void draw_checkbox(DrawingContext context, Rect rect, bool is_checked, bool is_indeterminate, bool is_enabled)
     {
-        var border = new Pen(new SolidColorBrush(is_enabled ? Color.FromRgb(120, 126, 138) : Color.FromRgb(74, 78, 88)), 1);
+        var border = new Pen(new SolidColorBrush(is_enabled ? gated.Shared.ThemeResources.AppColor("Text5") : gated.Shared.ThemeResources.AppColor("Border3")), 1);
         IBrush fill = is_checked || is_indeterminate
-            ? new SolidColorBrush(is_enabled ? Color.FromRgb(76, 132, 255) : Color.FromRgb(72, 82, 104))
+            ? new SolidColorBrush(is_enabled ? gated.Shared.ThemeResources.AppColor("Theme4") : gated.Shared.ThemeResources.AppColor("Border3"))
             : Brushes.Transparent;
         context.DrawRectangle(fill, border, rect, 4);
         if (is_indeterminate)

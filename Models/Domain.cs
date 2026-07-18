@@ -829,7 +829,7 @@ public sealed class StatisticResult
 
                 case StatisticKind.NumberOfEvents:
                     return $"Number of Events";
-                
+
                 case StatisticKind.FrequencyOfParent:
                     return $"Frequency of Parent (%)";
                 case StatisticKind.FrequencyOfAll:
@@ -838,7 +838,7 @@ public sealed class StatisticResult
                     return string.IsNullOrWhiteSpace(PythonDisplayName) ? "Python statistic" : PythonDisplayName;
 
                 default: return $"{Kind}";
-            }  
+            }
         }
     }
 
@@ -859,7 +859,7 @@ public sealed class StatisticResult
 
                 case StatisticKind.NumberOfEvents:
                     return Value.ToString("N0");
-                
+
                 case StatisticKind.FrequencyOfParent:
                 case StatisticKind.FrequencyOfAll:
                     return $"{Value:0.##}%";
@@ -868,7 +868,7 @@ public sealed class StatisticResult
 
                 default:
                     return Value.ToString("N2");
-            }  
+            }
         }
     }
 }
@@ -2122,7 +2122,8 @@ public sealed class FlowGroup : NotifyBase
             };
         }
 
-        bool use_linear = is_embedding || Configuration.DefaultCoordinateScaleForChannel(channel_name) == CoordinateScaleKind.Linear;
+        var default_scale = Configuration.DefaultCoordinateScaleForChannel(channel_name);
+        bool use_linear = is_embedding || default_scale == CoordinateScaleKind.Linear;
         double implied_maximum = Math.Max(maximum, 1e-6);
         if (use_linear)
         {
@@ -2145,7 +2146,7 @@ public sealed class FlowGroup : NotifyBase
             ChannelName = channel_name,
             Minimum = Math.Max(logicle_minimum, hundred_floor(range.Minimum)),
             Maximum = logicle_maximum,
-            ScaleKind = CoordinateScaleKind.Logicle
+            ScaleKind = default_scale
         };
     }
 

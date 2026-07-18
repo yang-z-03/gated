@@ -110,14 +110,14 @@ public sealed class PlatformPopulationFitTableView : Control
     public override void Render(DrawingContext context)
     {
         base.Render(context);
-        context.FillRectangle(new SolidColorBrush(Color.FromRgb(30, 30, 30)), Bounds);
+        context.FillRectangle(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Background3")), Bounds);
         var rows = visible_rows();
         var parameter_columns = fit_columns();
         draw_header(context, parameter_columns);
         if (rows.Length == 0)
         {
-            draw_text(context, "Drop population nodes here", new Point(14, 43), 13, Color.FromRgb(230, 232, 238), true);
-            draw_text(context, "Each checked population is modeled independently per sample.", new Point(14, 67), 11, Color.FromRgb(164, 168, 178), false);
+            draw_text(context, "Drop population nodes here", new Point(14, 43), 13, gated.Shared.ThemeResources.AppColor("Text2"), true);
+            draw_text(context, "Each checked population is modeled independently per sample.", new Point(14, 67), 11, gated.Shared.ThemeResources.AppColor("Text4"), false);
             return;
         }
 
@@ -161,13 +161,13 @@ public sealed class PlatformPopulationFitTableView : Control
 
     private void draw_header(DrawingContext context, IReadOnlyList<string> parameter_columns)
     {
-        context.FillRectangle(new SolidColorBrush(Color.FromRgb(24, 24, 24)), new Rect(0, 0, Bounds.Width, header_height));
-        draw_text(context, "Sample", new Point(62, 6), 13, Color.FromRgb(164, 168, 178), true);
-        draw_text(context, "Population", new Point(210, 6), 13, Color.FromRgb(164, 168, 178), true);
+        context.FillRectangle(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Background2")), new Rect(0, 0, Bounds.Width, header_height));
+        draw_text(context, "Sample", new Point(62, 6), 13, gated.Shared.ThemeResources.AppColor("Text4"), true);
+        draw_text(context, "Population", new Point(210, 6), 13, gated.Shared.ThemeResources.AppColor("Text4"), true);
         double x = 370;
         foreach (string column in parameter_columns)
         {
-            draw_text(context, column, new Point(x, 6), 13, Color.FromRgb(164, 168, 178), true);
+            draw_text(context, column, new Point(x, 6), 13, gated.Shared.ThemeResources.AppColor("Text4"), true);
             x += 112;
         }
     }
@@ -180,20 +180,20 @@ public sealed class PlatformPopulationFitTableView : Control
         IReadOnlyDictionary<(string Sample, string Population), Dictionary<string, string>> values)
     {
         double top = header_height + index * row_height;
-        var background = index % 2 == 0 ? Color.FromRgb(34, 34, 34) : Color.FromRgb(29, 29, 29);
+        var background = index % 2 == 0 ? gated.Shared.ThemeResources.AppColor("Background4") : gated.Shared.ThemeResources.AppColor("Background3");
         context.FillRectangle(new SolidColorBrush(background), new Rect(0, top, Bounds.Width, row_height));
         draw_checkbox(context, new Rect(14, top + 6, checkbox_size, checkbox_size), row.IsSelected);
         draw_icon(context, new Rect(40, top + 6, 15, 15), "avares://gated/Resources/subset.svg");
         draw_swatch(context, new Rect(60, top + 8, 16, 10), PlatformPalette.ColorForIndex(source_index(row)));
-        draw_text(context, row.SampleName, new Point(84, top + 5), 13, Color.FromRgb(236, 238, 244), false);
-        draw_text(context, row.PopulationName, new Point(210, top + 5), 13, Color.FromRgb(214, 218, 226), false);
+        draw_text(context, row.SampleName, new Point(84, top + 5), 13, gated.Shared.ThemeResources.AppColor("Text2"), false);
+        draw_text(context, row.PopulationName, new Point(210, top + 5), 13, gated.Shared.ThemeResources.AppColor("Text3"), false);
 
         values.TryGetValue((row.SampleName, row.PopulationName), out var row_values);
         double x = 370;
         foreach (string column in parameter_columns)
         {
             string value = row_values is not null && row_values.TryGetValue(column, out string? text) ? text : "";
-            draw_text(context, value, new Point(x, top + 5), 13, Color.FromRgb(214, 218, 226), false);
+            draw_text(context, value, new Point(x, top + 5), 13, gated.Shared.ThemeResources.AppColor("Text3"), false);
             x += 112;
         }
     }
@@ -225,8 +225,8 @@ public sealed class PlatformPopulationFitTableView : Control
 
     private static void draw_checkbox(DrawingContext context, Rect rect, bool is_checked)
     {
-        IBrush fill = is_checked ? new SolidColorBrush(Color.FromRgb(76, 132, 255)) : Brushes.Transparent;
-        context.DrawRectangle(fill, new Pen(new SolidColorBrush(Color.FromRgb(120, 126, 138)), 1), rect, 4);
+        IBrush fill = is_checked ? new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Theme4")) : Brushes.Transparent;
+        context.DrawRectangle(fill, new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text5")), 1), rect, 4);
         if (!is_checked)
             return;
         var check = new StreamGeometry();

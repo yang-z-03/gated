@@ -1,10 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using Avalonia.Platform;
 using gated.Services;
 
@@ -12,11 +15,13 @@ namespace gated.Models;
 
 public enum ChannelSemanticKind
 {
-    Other,
-    FSC,
-    SSC,
-    Time,
-    Spectral
+    Time = 3,
+    Scatter = 2,
+    Optical = 0,
+    Spectrum = 4,
+    Mass = 5,
+    Background = 6,
+    Model = 7
 }
 
 public enum ExcitationLightKind
@@ -38,12 +43,36 @@ public sealed class CytometerPreference
     public ObservableCollection<ChannelAssumption> Channels { get; set; } = new();
 }
 
-public sealed class SpectralDetectorPreference
+public sealed class SpectralDetectorPreference : INotifyPropertyChanged
 {
+    private ChannelSemanticKind kind = ChannelSemanticKind.Optical;
+    private CoordinateScaleKind scale = CoordinateScaleKind.Logicle;
+    public event PropertyChangedEventHandler? PropertyChanged;
     public string ChannelName { get; set; } = "";
-    public ChannelSemanticKind Kind { get; set; }
-    public CoordinateScaleKind Scale { get; set; } = CoordinateScaleKind.Logicle;
+    public ChannelSemanticKind Kind
+    {
+        get => kind;
+        set
+        {
+            if (kind == value) return;
+            kind = value;
+            scale = Configuration.DefaultScaleForKind(value);
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Kind)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Scale)));
+        }
+    }
+    public CoordinateScaleKind Scale
+    {
+        get => scale;
+        set
+        {
+            if (scale == value) return;
+            scale = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Scale)));
+        }
+    }
     public bool UseObservedRange { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool IsSpectral { get; set; }
     public ExcitationLightKind ExcitationLight { get; set; }
     public int PlotOrder { get; set; }
@@ -51,15 +80,27 @@ public sealed class SpectralDetectorPreference
 
 public sealed class ChannelAssumption
 {
+    private ChannelSemanticKind kind = ChannelSemanticKind.Optical;
+    private CoordinateScaleKind scale = CoordinateScaleKind.Logicle;
     public string Pattern { get; set; } = "";
-    public ChannelSemanticKind Kind { get; set; }
-    public CoordinateScaleKind Scale { get; set; } = CoordinateScaleKind.Logicle;
+    public ChannelSemanticKind Kind
+    {
+        get => kind;
+        set
+        {
+            if (kind == value) return;
+            kind = value;
+            scale = Configuration.DefaultScaleForKind(value);
+        }
+    }
+    public CoordinateScaleKind Scale { get => scale; set => scale = value; }
     public bool UseObservedRange { get; set; }
 }
 
 public sealed class CytometerPreferenceStore
 {
     public string SelectedCytometerName { get; set; } = Configuration.DefaultCytometerName;
+    public string ThemeName { get; set; } = "Light";
     public ObservableCollection<CytometerPreference> Cytometers { get; set; } = new();
 }
 
@@ -71,6 +112,7 @@ public static class Configuration
     private static readonly JsonSerializerOptions json_options = new() { WriteIndented = true };
     private static CytometerPreferenceStore store = load_store();
     private static readonly Lazy<IReadOnlyList<string[]>> spectral_database = new(load_spectral_database);
+    private static readonly Regex mass_channel_pattern = new(@"^(?:[A-Z][a-z]?\d{2,3}(?:Di|Dd)?|\d{2,3}[A-Z][a-z]?(?:Di|Dd)?)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     public static CytometerPreferenceStore Preferences => store;
 
@@ -102,7 +144,7 @@ public static class Configuration
             if (preference.Channels.Any(item => pattern_matches(item.Pattern, channel.Name)))
                 continue;
             var inferred = infer_channel(channel.Name);
-            if (inferred.Kind == ChannelSemanticKind.Other)
+            if (inferred.Kind == ChannelSemanticKind.Optical)
                 continue;
             preference.Channels.Add(inferred);
         }
@@ -125,6 +167,7 @@ public static class Configuration
     {
         try
         {
+            normalize_preferences(store);
             Directory.CreateDirectory(WindowPlacementStore.ConfigDirectory);
             File.WriteAllText(store_path(), JsonSerializer.Serialize(store, json_options));
         }
@@ -145,14 +188,14 @@ public static class Configuration
         ChannelKind(channel_name) == ChannelSemanticKind.Time;
 
     public static bool IsFscChannel(string channel_name) =>
-        ChannelKind(channel_name) == ChannelSemanticKind.FSC;
+        !string.IsNullOrWhiteSpace(channel_name) && channel_name.Contains("FSC", StringComparison.OrdinalIgnoreCase);
 
     public static bool IsSscChannel(string channel_name) =>
-        ChannelKind(channel_name) == ChannelSemanticKind.SSC;
+        !string.IsNullOrWhiteSpace(channel_name) && channel_name.Contains("SSC", StringComparison.OrdinalIgnoreCase);
 
     public static ChannelSemanticKind ChannelKind(string channel_name, string? cytometer_name = null) =>
         detector_for_channel(channel_name, cytometer_name) is { } detector
-            ? detector.IsSpectral ? ChannelSemanticKind.Spectral : detector.Kind
+            ? normalize_kind(detector.Kind, detector.IsSpectral)
             : assumption_for_channel(channel_name, cytometer_name)?.Kind ?? infer_channel(channel_name).Kind;
 
     public static PlatformTransformationKind DefaultPlatformTransformationForChannel(string channel_name) =>
@@ -168,10 +211,18 @@ public static class Configuration
         detector_for_channel(channel_name, cytometer_name)?.Scale ??
         assumption_for_channel(channel_name, cytometer_name)?.Scale ?? infer_channel(channel_name).Scale;
 
+    public static CoordinateScaleKind DefaultScaleForKind(ChannelSemanticKind kind) =>
+        normalize_kind(kind, false) switch
+        {
+            ChannelSemanticKind.Time or ChannelSemanticKind.Scatter or ChannelSemanticKind.Model => CoordinateScaleKind.Linear,
+            ChannelSemanticKind.Mass or ChannelSemanticKind.Background => CoordinateScaleKind.Arcsinh,
+            _ => CoordinateScaleKind.Logicle
+        };
+
     public static IReadOnlyList<SpectralDetectorPreference> SpectralDetectors(string? cytometer_name = null) =>
         ordered_preferences(cytometer_name)
             .SelectMany(item => item.Detectors)
-            .Where(item => item.IsSpectral || item.Kind == ChannelSemanticKind.Spectral)
+            .Where(item => normalize_kind(item.Kind, item.IsSpectral) == ChannelSemanticKind.Spectrum)
             .GroupBy(item => item.ChannelName, StringComparer.OrdinalIgnoreCase)
             .Select(group => group.First())
             .OrderBy(item => item.PlotOrder)
@@ -297,16 +348,33 @@ public static class Configuration
 
     private static CytometerPreferenceStore ensure_defaults(CytometerPreferenceStore loaded)
     {
-        foreach (var preference in loaded.Cytometers)
-        {
-            preference.Detectors ??= new ObservableCollection<SpectralDetectorPreference>();
-            preference.Channels ??= new ObservableCollection<ChannelAssumption>();
-        }
+        normalize_preferences(loaded);
         if (loaded.Cytometers.All(item => item.Name != DefaultCytometerName))
             loaded.Cytometers.Insert(0, create_default_preference());
         if (string.IsNullOrWhiteSpace(loaded.SelectedCytometerName))
             loaded.SelectedCytometerName = DefaultCytometerName;
+        loaded.ThemeName = string.Equals(loaded.ThemeName, "Dark", StringComparison.OrdinalIgnoreCase) ? "Dark" : "Light";
         return loaded;
+    }
+
+    private static void normalize_preferences(CytometerPreferenceStore loaded)
+    {
+        foreach (var preference in loaded.Cytometers)
+        {
+            preference.Detectors ??= new ObservableCollection<SpectralDetectorPreference>();
+            preference.Channels ??= new ObservableCollection<ChannelAssumption>();
+            foreach (var detector in preference.Detectors)
+            {
+                detector.Kind = normalize_kind(detector.Kind, detector.IsSpectral);
+                detector.IsSpectral = false;
+                detector.UseObservedRange = detector.Kind == ChannelSemanticKind.Time;
+            }
+            foreach (var channel in preference.Channels)
+            {
+                channel.Kind = normalize_kind(channel.Kind, false);
+                channel.UseObservedRange = channel.Kind == ChannelSemanticKind.Time;
+            }
+        }
     }
 
     private static CytometerPreference create_default_preference() =>
@@ -315,33 +383,38 @@ public static class Configuration
             Name = DefaultCytometerName,
             Channels =
             {
-                new ChannelAssumption { Pattern = "FSC-A", Kind = ChannelSemanticKind.FSC, Scale = CoordinateScaleKind.Linear },
-                new ChannelAssumption { Pattern = "FSC-H", Kind = ChannelSemanticKind.FSC, Scale = CoordinateScaleKind.Linear },
-                new ChannelAssumption { Pattern = "FSC-W", Kind = ChannelSemanticKind.FSC, Scale = CoordinateScaleKind.Linear },
-                new ChannelAssumption { Pattern = "SSC-A", Kind = ChannelSemanticKind.SSC, Scale = CoordinateScaleKind.Linear },
-                new ChannelAssumption { Pattern = "SSC-H", Kind = ChannelSemanticKind.SSC, Scale = CoordinateScaleKind.Linear },
-                new ChannelAssumption { Pattern = "SSC-W", Kind = ChannelSemanticKind.SSC, Scale = CoordinateScaleKind.Linear },
-                new ChannelAssumption { Pattern = "Time", Kind = ChannelSemanticKind.Time, Scale = CoordinateScaleKind.Linear, UseObservedRange = true }
+                new ChannelAssumption { Pattern = "FSC", Kind = ChannelSemanticKind.Scatter, Scale = CoordinateScaleKind.Linear },
+                new ChannelAssumption { Pattern = "SSC", Kind = ChannelSemanticKind.Scatter, Scale = CoordinateScaleKind.Linear },
+                new ChannelAssumption { Pattern = "Time", Kind = ChannelSemanticKind.Time, Scale = CoordinateScaleKind.Linear, UseObservedRange = true },
+                new ChannelAssumption { Pattern = "BCKG", Kind = ChannelSemanticKind.Background, Scale = CoordinateScaleKind.Arcsinh },
+                new ChannelAssumption { Pattern = "Width", Kind = ChannelSemanticKind.Model, Scale = CoordinateScaleKind.Linear },
+                new ChannelAssumption { Pattern = "Center", Kind = ChannelSemanticKind.Model, Scale = CoordinateScaleKind.Linear },
+                new ChannelAssumption { Pattern = "Offset", Kind = ChannelSemanticKind.Model, Scale = CoordinateScaleKind.Linear },
+                new ChannelAssumption { Pattern = "Residual", Kind = ChannelSemanticKind.Model, Scale = CoordinateScaleKind.Linear }
             }
         };
 
     private static ChannelAssumption infer_channel(string channel_name)
     {
         if (string.IsNullOrWhiteSpace(channel_name))
-            return new ChannelAssumption { Pattern = channel_name, Kind = ChannelSemanticKind.Other };
-        if (channel_name.Contains("TIME", StringComparison.OrdinalIgnoreCase))
+            return new ChannelAssumption { Pattern = channel_name, Kind = ChannelSemanticKind.Optical, Scale = CoordinateScaleKind.Logicle };
+        if (is_time_channel_name(channel_name))
             return new ChannelAssumption { Pattern = channel_name, Kind = ChannelSemanticKind.Time, Scale = CoordinateScaleKind.Linear, UseObservedRange = true };
-        if (channel_name.Contains("FSC", StringComparison.OrdinalIgnoreCase))
-            return new ChannelAssumption { Pattern = channel_name, Kind = ChannelSemanticKind.FSC, Scale = CoordinateScaleKind.Linear };
-        if (channel_name.Contains("SSC", StringComparison.OrdinalIgnoreCase))
-            return new ChannelAssumption { Pattern = channel_name, Kind = ChannelSemanticKind.SSC, Scale = CoordinateScaleKind.Linear };
-        return new ChannelAssumption { Pattern = channel_name, Kind = ChannelSemanticKind.Other, Scale = CoordinateScaleKind.Logicle };
+        if (is_scatter_channel_name(channel_name))
+            return new ChannelAssumption { Pattern = channel_name, Kind = ChannelSemanticKind.Scatter, Scale = CoordinateScaleKind.Linear };
+        if (is_background_channel_name(channel_name))
+            return new ChannelAssumption { Pattern = channel_name, Kind = ChannelSemanticKind.Background, Scale = CoordinateScaleKind.Arcsinh };
+        if (is_model_channel_name(channel_name))
+            return new ChannelAssumption { Pattern = channel_name, Kind = ChannelSemanticKind.Model, Scale = CoordinateScaleKind.Linear };
+        if (is_mass_channel_name(channel_name))
+            return new ChannelAssumption { Pattern = channel_name, Kind = ChannelSemanticKind.Mass, Scale = CoordinateScaleKind.Arcsinh };
+        return new ChannelAssumption { Pattern = channel_name, Kind = ChannelSemanticKind.Optical, Scale = CoordinateScaleKind.Logicle };
     }
 
     private static SpectralDetectorPreference infer_detector(string channel_name, string cytometer_name, int order)
     {
         var inferred = infer_channel(channel_name);
-        if (inferred.Kind != ChannelSemanticKind.Other)
+        if (inferred.Kind is ChannelSemanticKind.Time or ChannelSemanticKind.Scatter or ChannelSemanticKind.Mass or ChannelSemanticKind.Background or ChannelSemanticKind.Model)
             return new SpectralDetectorPreference { ChannelName = channel_name, Kind = inferred.Kind, Scale = inferred.Scale, UseObservedRange = inferred.UseObservedRange, PlotOrder = order };
 
         bool area = channel_name.EndsWith("-A", StringComparison.OrdinalIgnoreCase);
@@ -356,9 +429,8 @@ public static class Configuration
         return new SpectralDetectorPreference
         {
             ChannelName = channel_name,
-            Kind = spectral ? ChannelSemanticKind.Spectral : ChannelSemanticKind.Other,
+            Kind = spectral ? ChannelSemanticKind.Spectrum : ChannelSemanticKind.Optical,
             Scale = CoordinateScaleKind.Logicle,
-            IsSpectral = spectral,
             ExcitationLight = light,
             PlotOrder = known ? known_order : order
         };
@@ -478,7 +550,7 @@ public static class Configuration
                 Kind = detector.Kind,
                 Scale = detector.Scale,
                 UseObservedRange = detector.UseObservedRange,
-                IsSpectral = detector.IsSpectral,
+                IsSpectral = false,
                 ExcitationLight = detector.ExcitationLight,
                 PlotOrder = detector.PlotOrder
             });
@@ -498,6 +570,45 @@ public static class Configuration
         (pattern.StartsWith("regex:", StringComparison.OrdinalIgnoreCase)
             ? System.Text.RegularExpressions.Regex.IsMatch(channel_name, pattern[6..], System.Text.RegularExpressions.RegexOptions.IgnoreCase)
             : channel_name.Contains(pattern, StringComparison.OrdinalIgnoreCase));
+
+    private static ChannelSemanticKind normalize_kind(ChannelSemanticKind kind, bool legacy_is_spectral) =>
+        legacy_is_spectral ? ChannelSemanticKind.Spectrum :
+        (int)kind switch
+        {
+            1 or 2 => ChannelSemanticKind.Scatter,
+            3 => ChannelSemanticKind.Time,
+            4 => ChannelSemanticKind.Spectrum,
+            5 => ChannelSemanticKind.Mass,
+            6 => ChannelSemanticKind.Background,
+            7 => ChannelSemanticKind.Model,
+            _ => ChannelSemanticKind.Optical
+        };
+
+    private static bool is_time_channel_name(string channel_name) =>
+        string.Equals(channel_name.Trim(), "Time", StringComparison.OrdinalIgnoreCase) ||
+        channel_name.Contains("TIME", StringComparison.OrdinalIgnoreCase);
+
+    private static bool is_scatter_channel_name(string channel_name) =>
+        channel_name.Contains("FSC", StringComparison.OrdinalIgnoreCase) ||
+        channel_name.Contains("SSC", StringComparison.OrdinalIgnoreCase);
+
+    private static bool is_background_channel_name(string channel_name) =>
+        channel_name.StartsWith("BCKG", StringComparison.OrdinalIgnoreCase);
+
+    private static bool is_model_channel_name(string channel_name)
+    {
+        string name = channel_name.Trim();
+        return string.Equals(name, "Width", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(name, "Center", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(name, "Offset", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(name, "Residual", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(name, "Event_length", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(name, "Event length", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(name, "EventLength", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool is_mass_channel_name(string channel_name) =>
+        mass_channel_pattern.IsMatch(channel_name.Trim());
 
     private static IEnumerable<double> signed_log_ticks(double minimum, double maximum, bool major)
     {

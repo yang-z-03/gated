@@ -47,8 +47,8 @@ public sealed class PlatformPopulationDropView : Control
     {
         base.Render(context);
         var bounds = Bounds;
-        var background = new SolidColorBrush(Color.FromRgb(30, 30, 30));
-        var border = new Pen(new SolidColorBrush(Color.FromRgb(95, 102, 120)), 1);
+        var background = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Background3"));
+        var border = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Border4")), 1);
         context.FillRectangle(background, bounds);
         context.DrawRectangle(null, border, bounds);
 
@@ -62,14 +62,14 @@ public sealed class PlatformPopulationDropView : Control
 
         if (rows.Length == 0)
         {
-            draw_text(context, "Drop population nodes here", new Point(16, 18), 14, Color.FromRgb(230, 232, 238), bold: true);
-            draw_text(context, "Modeling platforms use compensated event values from dropped populations.", new Point(16, 42), 11, Color.FromRgb(160, 166, 178), bold: false);
+            draw_text(context, "Drop population nodes here", new Point(16, 18), 14, gated.Shared.ThemeResources.AppColor("Text2"), bold: true);
+            draw_text(context, "Modeling platforms use compensated event values from dropped populations.", new Point(16, 42), 11, gated.Shared.ThemeResources.AppColor("Text4"), bold: false);
             return;
         }
 
-        draw_text(context, "Dropped populations", new Point(16, 12), 12, Color.FromRgb(160, 166, 178), bold: true);
+        draw_text(context, "Dropped populations", new Point(16, 12), 12, gated.Shared.ThemeResources.AppColor("Text4"), bold: true);
         for (int index = 0; index < rows.Length; index++)
-            draw_text(context, rows[index], new Point(16, 36 + index * 22), 12, Color.FromRgb(236, 238, 244), bold: false);
+            draw_text(context, rows[index], new Point(16, 36 + index * 22), 12, gated.Shared.ThemeResources.AppColor("Text2"), bold: false);
     }
 
     private void drag_over(object? sender, DragEventArgs e)

@@ -29,13 +29,13 @@ public sealed class SpectralPlotView : Control
     public override void Render(DrawingContext context)
     {
         base.Render(context);
-        var axis_color = Color.FromRgb(142, 148, 160);
-        var text_color = Color.FromRgb(230, 235, 245);
-        var tick_text = Color.FromRgb(140, 148, 162);
+        var axis_color = gated.Shared.ThemeResources.AppColor("Text5");
+        var text_color = gated.Shared.ThemeResources.AppColor("Text1");
+        var tick_text = gated.Shared.ThemeResources.AppColor("Text5");
         var foreground = new SolidColorBrush(tick_text);
         var stresstext = new SolidColorBrush(text_color);
         var axis_pen = new Pen(new SolidColorBrush(axis_color), 1);
-        var splitter_pen = new Pen(new SolidColorBrush(Color.FromArgb(28, 255, 255, 255)), 1);
+        var splitter_pen = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("OverlayGridMajor")), 1);
 
         var plot = new Rect(72, 12, Math.Max(1, Bounds.Width - 74), Math.Max(1, Bounds.Height - 96));
         if (Data is not { } data || data.DetectorNames.Count == 0 || data.Density.Length == 0)

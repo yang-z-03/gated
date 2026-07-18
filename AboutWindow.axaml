@@ -6,46 +6,46 @@
         x:Class="gated.AboutWindow" WindowStartupLocation="CenterOwner"
         Title="About Gated" FontSize="{StaticResource SemiFontSizeRegular}"
         FontFamily="{StaticResource SemiFontFamilyRegular}"
-        Background="#151515">
+        Background="{DynamicResource AppBrushBackground2}">
     <StackPanel Orientation="Vertical">
-        <Grid x:Name="HeaderRack" Width="400" Height="94" Margin="0 0 0 10" Background="#151515">
+        <Grid x:Name="HeaderRack" Width="400" Height="94" Margin="0 0 0 10" Background="{DynamicResource AppBrushBackground2}">
             <Canvas x:Name="PixelCanvas" Width="400" Height="84" Margin="0 10 0 0" HorizontalAlignment="Center" VerticalAlignment="Center"
                     IsVisible="False" Opacity="0" IsHitTestVisible="False"/>
             <StackPanel x:Name="TitlePanel" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0 10 0 0">
                 <Image x:Name="AboutIcon" Width="64" Height="64" Source="avares://gated/gated.ico" PointerPressed="about_icon_pointer_pressed"/>
-                <Label HorizontalAlignment="Center" VerticalAlignment="Center" Margin="15 10 0 10" FontSize="30" 
-                       Foreground="#ffffff" FontWeight="Light">
+                <Label HorizontalAlignment="Center" VerticalAlignment="Center" Margin="15 10 0 10" FontSize="30"
+                       Foreground="{DynamicResource AppBrushText1}" FontWeight="Light">
                     Gated
                 </Label>
             </StackPanel>
         </Grid>
-        
-        <Label HorizontalAlignment="Center" Margin="0 5 0 0" FontSize="12" Foreground="#f0f0f0" FontWeight="Regular">
+
+        <Label HorizontalAlignment="Center" Margin="0 5 0 0" FontSize="12" Foreground="{DynamicResource AppBrushText2}" FontWeight="Regular">
             Copyright © Zheng Yang, 2025 - 2026
         </Label>
         <TextBlock HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center"
                    LineHeight="18"
-                   Margin="30 10" FontSize="12" Foreground="#909090" FontWeight="Regular">
+                   Margin="30 10" FontSize="12" Foreground="{DynamicResource AppBrushText6}" FontWeight="Regular">
             This program is free software: you can redistribute it and/or modify it under the terms
-            of the <Bold Foreground="#e0e0e0">GNU General Public License</Bold> as published by 
-            the Free Software Foundation, either <Bold Foreground="#e0e0e0">version 3</Bold> of 
+            of the <Bold Foreground="{DynamicResource AppBrushText3}">GNU General Public License</Bold> as published by
+            the Free Software Foundation, either <Bold Foreground="{DynamicResource AppBrushText3}">version 3</Bold> of
             the license, or (at your opinion) any later version.
         </TextBlock>
         <TextBlock HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center"
                    LineHeight="18"
-                   Margin="30 10" FontSize="12" Foreground="#909090" FontWeight="Regular">
-            This program is distributed in the hope that it will be useful, but 
-            <Bold Foreground="#e0e0e0">without any warranty</Bold>; without even the implied warranty
-            of <Bold Foreground="#e0e0e0">merchantability</Bold> or 
-            <Bold Foreground="#e0e0e0">fitness of a particular purpose</Bold>. See the 
+                   Margin="30 10" FontSize="12" Foreground="{DynamicResource AppBrushText6}" FontWeight="Regular">
+            This program is distributed in the hope that it will be useful, but
+            <Bold Foreground="{DynamicResource AppBrushText3}">without any warranty</Bold>; without even the implied warranty
+            of <Bold Foreground="{DynamicResource AppBrushText3}">merchantability</Bold> or
+            <Bold Foreground="{DynamicResource AppBrushText3}">fitness of a particular purpose</Bold>. See the
             GNU General Public License for details.
         </TextBlock>
         <TextBlock HorizontalAlignment="Center" Margin="30 5 30 10" LineHeight="18" TextWrapping="Wrap" TextAlignment="Center"
-               FontSize="12" Foreground="#909090" FontWeight="Regular">
+               FontSize="12" Foreground="{DynamicResource AppBrushText6}" FontWeight="Regular">
             The source code of this software is deposited at https://github.com/yang-z-03/gated.
         </TextBlock>
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0 5 0 5" Spacing="6">
-            <Label x:Name="version" Padding="0" VerticalAlignment="Center" FontSize="12" Foreground="#f0f0f0" FontWeight="Regular">
+            <Label x:Name="version" Padding="0" VerticalAlignment="Center" FontSize="12" Foreground="{DynamicResource AppBrushText2}" FontWeight="Regular">
                 Version
             </Label>
             <Button Width="24" Height="24" Padding="4" Background="Transparent" BorderBrush="Transparent"

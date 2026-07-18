@@ -1,0 +1,23 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ResourceDictionary.MergedDictionaries>
+        <ResourceInclude Source="avares://gated/Styles/Themes/Light/Palettes.axaml" />
+        <ResourceInclude Source="avares://gated/Styles/Themes/Light/TextBlock.axaml" />
+        <ResourceInclude Source="avares://gated/Styles/Themes/Light/Menu.axaml" />
+        <ResourceInclude Source="avares://gated/Styles/Themes/Light/ScrollViewer.axaml" />
+        <ResourceInclude Source="avares://gated/Styles/Themes/Light/Window.axaml" />
+        <ResourceInclude Source="avares://gated/Styles/Themes/Light/GridSplitter.axaml"/>
+        <ResourceInclude Source="avares://gated/Styles/Themes/Light/TreeDataGrid.axaml" />
+        <ResourceInclude Source="avares://gated/Styles/Themes/Light/Combo.axaml" />
+        <ResourceInclude Source="avares://gated/Styles/Themes/Light/Adorner.axaml" />
+        <ResourceInclude Source="avares://gated/Styles/Themes/Light/Button.axaml" />
+        <ResourceInclude Source="avares://gated/Styles/Themes/Light/Textbox.axaml" />
+        <ResourceInclude Source="avares://gated/Styles/Themes/Light/Radio.axaml" />
+        <ResourceInclude Source="avares://gated/Styles/Themes/Light/CheckBox.axaml" />
+        <ResourceInclude Source="avares://gated/Styles/Themes/Light/ToogleButton.axaml" />
+        <ResourceInclude Source="avares://gated/Styles/Themes/Light/Expander.axaml" />
+        <ResourceInclude Source="avares://gated/Styles/Themes/Light/DataGrid.axaml" />
+        <ResourceInclude Source="avares://gated/Styles/Themes/Light/ProgressBar.axaml" />
+        <ResourceInclude Source="avares://gated/Styles/Themes/Light/ButtonSpinner.axaml" />
+        <ResourceInclude Source="avares://gated/Styles/Themes/Light/Listbox.axaml" />
+    </ResourceDictionary.MergedDictionaries>
+</ResourceDictionary>

@@ -3,7 +3,7 @@
     <StaticResource x:Key="ButtonSpinnerRepeatButtonPointeroverBackground" ResourceKey="SemiColorFill0" />
     <SolidColorBrush x:Key="ButtonSpinnerRepeatButtonPointeroverBorderBrush" Color="Transparent" />
     <StaticResource x:Key="ButtonSpinnerRepeatButtonPressedBackground" ResourceKey="SemiColorFill1" />
-    <SolidColorBrush x:Key="ButtonSpinnerRepeatButtonDisabledBackground" Opacity="0.04" Color="#2E3238" />
+    <SolidColorBrush x:Key="ButtonSpinnerRepeatButtonDisabledBackground" Opacity="0.04" Color="{StaticResource AppColorBorder2}" />
     <StaticResource x:Key="ButtonSpinnerRepeatButtonForeground" ResourceKey="SemiColorText2" />
     <StaticResource x:Key="ButtonSpinnerRepeatButtonBorderBrush" ResourceKey="SemiColorBorder" />
 </ResourceDictionary>

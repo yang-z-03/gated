@@ -1,0 +1,21 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StaticResource x:Key="TextBoxTextCaretBrush" ResourceKey="SemiColorBlack" />
+    <SolidColorBrush x:Key="TextBoxDefaultBorderBrush" Color="Transparent" />
+    <StaticResource x:Key="TextBoxDefaultBackground" ResourceKey="SemiColorFill0" />
+    <StaticResource x:Key="TextBoxPointeroverBackground" ResourceKey="SemiColorFill1" />
+    <SolidColorBrush x:Key="TextBoxPointeroverBorderBrush" Color="Transparent" />
+    <StaticResource x:Key="TextBoxPressedBackground" ResourceKey="SemiColorFill2" />
+    <StaticResource x:Key="TextBoxFocusBorderBrush" ResourceKey="SemiColorPrimary" />
+    <StaticResource x:Key="TextBoxForeground" ResourceKey="SemiColorText0" />
+    <StaticResource x:Key="TextBoxPlaceholderForeground" ResourceKey="SemiColorText2" />
+    <StaticResource x:Key="TextBoxInnerForeground" ResourceKey="SemiColorText2" />
+    <StaticResource x:Key="TextBoxDisabledBackground" ResourceKey="SemiColorDisabledFill" />
+    <StaticResource x:Key="TextBoxDisabledForeground" ResourceKey="SemiColorDisabledText" />
+    <SolidColorBrush x:Key="TextBoxDisabledBorderBrush" Color="Transparent" />
+    <SolidColorBrush x:Key="TextBoxBorderedDefaultBackground" Color="Transparent" />
+    <StaticResource x:Key="TextBoxBorderedDefaultBorderBrush" ResourceKey="SemiColorFill0" />
+    <SolidColorBrush x:Key="TextBoxBorderedPointeroverBackground" Color="Transparent" />
+    <StaticResource x:Key="TextBoxBorderedPointeroverBorderBrush" ResourceKey="SemiColorPrimaryPointerover" />
+    <SolidColorBrush x:Key="TextBoxSelectionBackground" Opacity="0.8" Color="#0041C5" />
+    <StaticResource x:Key="TextBoxSelectionForeground" ResourceKey="SemiColorWhite" />
+</ResourceDictionary>

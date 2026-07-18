@@ -8,13 +8,13 @@
     <StackPanel Margin="24" Spacing="14" MaxWidth="650" Width="650" HorizontalAlignment="Center">
       <TextBlock Foreground="{DynamicResource SemiColorText1}" Text="{Binding KindName}" />
       <TextBox FontSize="20" Padding="6" FontWeight="Light" Text="{Binding Platform.Name}" />
-      <Border IsVisible="{Binding HasWarning}" BorderBrush="#B7791F" BorderThickness="1" CornerRadius="6" Padding="10" Background="#2A2112"><TextBlock Foreground="#F6C56B" TextWrapping="Wrap" Text="{Binding Platform.WarningText}" /></Border>
+      <Border IsVisible="{Binding HasWarning}" BorderBrush="{DynamicResource AppBrushWarningBorder}" BorderThickness="1" CornerRadius="6" Padding="10" Background="{DynamicResource AppBrushWarningBackground}"><TextBlock Foreground="{DynamicResource AppBrushWarningText}" TextWrapping="Wrap" Text="{Binding Platform.WarningText}" /></Border>
       <Border Height="360" Background="{DynamicResource SemiColorBackground1}" Margin="0 0 60 0" ClipToBounds="True"><controls:PlatformResultPlotView Platform="{Binding Platform}" /></Border>
       <Grid ColumnDefinitions="100,170,*" ColumnSpacing="8">
         <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Compare channel" VerticalAlignment="Center"/>
         <ComboBox Grid.Column="1" Classes="Small" ItemsSource="{Binding ChannelChoices}" SelectedItem="{Binding SelectedChannel}"><ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding DisplayLabel}" /></DataTemplate></ComboBox.ItemTemplate></ComboBox>
       </Grid>
-      <Border Height="210" BorderBrush="#505050" BorderThickness="1" CornerRadius="8" Background="#1e1e1e" ClipToBounds="True">
+      <Border Height="210" BorderBrush="{DynamicResource AppBrushBorder3}" BorderThickness="1" CornerRadius="8" Background="{DynamicResource AppBrushBackground3}" ClipToBounds="True">
         <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Margin="8">
           <controls:PlatformPopulationFitTableView Platform="{Binding Platform}" SelectionChangedCommand="{Binding SelectionChangedCommand}" DropCommand="{Binding DropPopulationCommand}" IsReadOnly="{Binding IsReadOnly}" />
         </ScrollViewer>

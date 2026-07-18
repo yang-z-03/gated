@@ -139,7 +139,7 @@ public partial class SplitSampleWindow : Window
         new()
         {
             Text = text,
-            Foreground = new SolidColorBrush(Color.FromRgb(164, 168, 178)),
+            Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text4")),
             FontWeight = FontWeight.SemiBold
         };
 
@@ -348,15 +348,15 @@ public partial class SplitSampleWindow : Window
                 double split = splits[split_index];
                 double x = rect.Left + rect.Width * ((split - minimum) / (maximum - minimum));
                 bool active = split_index == hover_index || split_index == dragging_index;
-                var color = active ? Color.FromRgb(76, 132, 255) : Color.FromRgb(194, 198, 208);
+                var color = active ? gated.Shared.ThemeResources.AppColor("Theme4") : gated.Shared.ThemeResources.AppColor("Text3");
                 double thickness = active ? 5 : 2;
                 context.DrawLine(new Pen(new SolidColorBrush(color), thickness), new Point(x, rect.Top), new Point(x, rect.Bottom));
                 if (active)
                     draw_handle_icon(context, x, rect);
             }
 
-            draw_label(context, minimum.ToString("N0", CultureInfo.CurrentCulture), new Point(rect.Left, 52), Color.FromRgb(164, 168, 178));
-            draw_label(context, maximum.ToString("N0", CultureInfo.CurrentCulture), new Point(Math.Max(rect.Left, rect.Right - 80), 52), Color.FromRgb(164, 168, 178));
+            draw_label(context, minimum.ToString("N0", CultureInfo.CurrentCulture), new Point(rect.Left, 52), gated.Shared.ThemeResources.AppColor("Text4"));
+            draw_label(context, maximum.ToString("N0", CultureInfo.CurrentCulture), new Point(Math.Max(rect.Left, rect.Right - 80), 52), gated.Shared.ThemeResources.AppColor("Text4"));
         }
 
         private Rect strip_rect() => new(10, 24, Math.Max(1, Bounds.Width - 20), 24);
@@ -376,7 +376,7 @@ public partial class SplitSampleWindow : Window
         {
             if (ssc_values is null || ssc_values.Length != time_values.Length || ssc_values.Length == 0)
             {
-                context.FillRectangle(new SolidColorBrush(Color.FromRgb(42, 47, 56)), rect, 4);
+                context.FillRectangle(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Background5")), rect, 4);
                 return;
             }
 
@@ -421,7 +421,7 @@ public partial class SplitSampleWindow : Window
         private static void draw_handle_icon(DrawingContext context, double center_x, Rect strip)
         {
             var rect = new Rect(center_x - 12, strip.Center.Y - 9, 24, 18);
-            context.FillRectangle(new SolidColorBrush(Color.FromRgb(76, 132, 255)), rect, 5);
+            context.FillRectangle(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Theme4")), rect, 5);
             var pen = new Pen(Brushes.White, 1.6);
             double cy = rect.Center.Y;
             context.DrawLine(pen, new Point(center_x - 4, cy - 4), new Point(center_x - 8, cy));

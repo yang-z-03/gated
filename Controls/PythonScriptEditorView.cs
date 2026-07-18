@@ -84,7 +84,7 @@ public sealed class PythonScriptEditorView : UserControl
         output = new TextBlock
         {
             TextWrapping = TextWrapping.Wrap,
-            Foreground = new SolidColorBrush(Color.FromRgb(164, 168, 178)),
+            Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text4")),
             MinHeight = 20
         };
         log_task_combo = new ComboBox
@@ -140,8 +140,8 @@ public sealed class PythonScriptEditorView : UserControl
             MaxHeight = 280,
             MinWidth = 250,
             Padding = new Thickness(4),
-            Background = new SolidColorBrush(Color.FromRgb(31, 33, 40)),
-            Foreground = Brushes.White,
+            Background = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Background3")),
+            Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text2")),
             ItemsPanel = new FuncTemplate<Panel?>(() => new StackPanel()),
             ItemTemplate = completion_item_template()
         };
@@ -159,14 +159,14 @@ public sealed class PythonScriptEditorView : UserControl
         {
             Setters =
             {
-                new Setter(BackgroundProperty, new SolidColorBrush(Color.FromRgb(47, 51, 62)))
+                new Setter(BackgroundProperty, new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Background5")))
             }
         });
         completion_list.Styles.Add(new Style(x => x.OfType<ListBoxItem>().Class(":selected"))
         {
             Setters =
             {
-                new Setter(BackgroundProperty, new SolidColorBrush(Color.FromRgb(55, 93, 153)))
+                new Setter(BackgroundProperty, new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Theme2")))
             }
         });
         completion_detail = new Border
@@ -175,15 +175,15 @@ public sealed class PythonScriptEditorView : UserControl
             MaxWidth = 420,
             MaxHeight = 280,
             Padding = new Thickness(8, 6, 6, 6),
-            BorderBrush = new SolidColorBrush(Color.FromRgb(55, 58, 66)),
+            BorderBrush = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Border2")),
             BorderThickness = new Thickness(1, 0, 0, 0),
             IsVisible = false
         };
         completion_popup = new Border
         {
             IsVisible = false,
-            Background = new SolidColorBrush(Color.FromRgb(31, 33, 40)),
-            BorderBrush = new SolidColorBrush(Color.FromRgb(83, 88, 104)),
+            Background = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Background3")),
+            BorderBrush = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Border3")),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(6),
             Padding = new Thickness(6),
@@ -207,8 +207,8 @@ public sealed class PythonScriptEditorView : UserControl
         hover_popup = new Border
         {
             IsVisible = false,
-            Background = new SolidColorBrush(Color.FromRgb(31, 33, 40)),
-            BorderBrush = new SolidColorBrush(Color.FromRgb(83, 88, 104)),
+            Background = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Background3")),
+            BorderBrush = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Border3")),
             BorderThickness = new Thickness(1),
             Padding = new Thickness(8),
             CornerRadius = new CornerRadius(6),
@@ -337,7 +337,7 @@ public sealed class PythonScriptEditorView : UserControl
             {
                 new Border
                 {
-                    BorderBrush = new SolidColorBrush(Color.FromRgb(70, 73, 84)),
+                    BorderBrush = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Border2")),
                     BorderThickness = new Thickness(1),
                     CornerRadius = new CornerRadius(6),
                     Child = editor
@@ -348,10 +348,10 @@ public sealed class PythonScriptEditorView : UserControl
 
         var log_panel = new Border
         {
-            BorderBrush = new SolidColorBrush(Color.FromRgb(70, 73, 84)),
+            BorderBrush = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Border2")),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(6),
-            Background = new SolidColorBrush(Color.FromRgb(30, 30, 30)),
+            Background = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Background3")),
             ClipToBounds = true,
             Child = new Grid
             {
@@ -364,7 +364,7 @@ public sealed class PythonScriptEditorView : UserControl
                 {
                     new Border
                     {
-                        BorderBrush = new SolidColorBrush(Color.FromRgb(55, 58, 66)),
+                        BorderBrush = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Border2")),
                         BorderThickness = new Thickness(0, 0, 0, 1),
                         Child = header
                     },
@@ -419,7 +419,7 @@ public sealed class PythonScriptEditorView : UserControl
             grid.Children.Add(new TextBlock
             {
                 Text = item?.Text ?? "",
-                Foreground = Brushes.White,
+                Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text2")),
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 Margin = new Thickness(0, 0, 0, 0)
             });
@@ -427,7 +427,7 @@ public sealed class PythonScriptEditorView : UserControl
             var type = new TextBlock
             {
                 Text = item?.Type ?? "",
-                Foreground = new SolidColorBrush(Color.FromRgb(166, 177, 198)),
+                Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text4")),
                 FontSize = 12,
                 HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
                 TextAlignment = TextAlignment.Right,
@@ -495,9 +495,9 @@ public sealed class PythonScriptEditorView : UserControl
         update_log_view(model);
         output.Text = model.PythonScriptOutput;
         output.Foreground = model.PythonScriptOutput.StartsWith("Completed", StringComparison.OrdinalIgnoreCase)
-            ? new SolidColorBrush(Color.FromRgb(99, 214, 141))
+            ? new SolidColorBrush(gated.Shared.ThemeResources.AppColor("SuccessText"))
             : model.PythonScriptOutput.StartsWith("Running", StringComparison.OrdinalIgnoreCase)
-                ? new SolidColorBrush(Color.FromRgb(164, 168, 178))
+                ? new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text4"))
                 : Brushes.IndianRed;
         run_button.IsEnabled = !model.IsPythonScriptRunning;
         save_button.IsEnabled = model.CanSavePythonScript;
@@ -572,21 +572,21 @@ public sealed class PythonScriptEditorView : UserControl
         grid.Children.Add(new Border
         {
             Height = 1,
-            Background = new SolidColorBrush(Color.FromRgb(70, 73, 84)),
+            Background = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Border2")),
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
         });
         var title = new TextBlock
         {
             Text = $"Run {run.Index}  {run.StartedAt:HH:mm:ss}",
             FontSize = 11,
-            Foreground = new SolidColorBrush(Color.FromRgb(164, 168, 178))
+            Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text4"))
         };
         Grid.SetColumn(title, 1);
         grid.Children.Add(title);
         var right = new Border
         {
             Height = 1,
-            Background = new SolidColorBrush(Color.FromRgb(70, 73, 84)),
+            Background = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Border2")),
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
         };
         Grid.SetColumn(right, 2);
@@ -598,10 +598,10 @@ public sealed class PythonScriptEditorView : UserControl
     {
         var color = message.Level switch
         {
-            PythonLogLevel.Warning => Color.FromRgb(232, 184, 91),
-            PythonLogLevel.Error => Color.FromRgb(244, 126, 126),
-            PythonLogLevel.Fatal => Color.FromRgb(255, 86, 86),
-            _ => Color.FromRgb(218, 221, 228)
+            PythonLogLevel.Warning => gated.Shared.ThemeResources.AppColor("WarningText"),
+            PythonLogLevel.Error => gated.Shared.ThemeResources.AppColor("DangerText"),
+            PythonLogLevel.Fatal => gated.Shared.ThemeResources.AppColor("DangerTextStrong"),
+            _ => gated.Shared.ThemeResources.AppColor("Text3")
         };
         var text = new TextBlock
         {
@@ -1279,7 +1279,7 @@ public sealed class PythonScriptEditorView : UserControl
             TextElement.GetFontStyle(control),
             TextElement.GetFontWeight(control),
             TextElement.GetFontStretch(control));
-    
+
     private static Typeface current_typeface_bolded(Control control) =>
         new(
             TextElement.GetFontFamily(control),
@@ -1299,11 +1299,11 @@ public sealed class PythonScriptEditorView : UserControl
             {
                 Text = title,
                 LineHeight = 18,
-                FontFamily = string.IsNullOrWhiteSpace(item.Signature) ? 
-                    current_typeface(parent).FontFamily : 
+                FontFamily = string.IsNullOrWhiteSpace(item.Signature) ?
+                    current_typeface(parent).FontFamily :
                     FontFamily.Parse("avares://gated/Fonts#IBM Plex Mono"),
                 FontWeight = FontWeight.SemiBold,
-                Foreground = Brushes.White,
+                Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text2")),
                 TextWrapping = TextWrapping.Wrap
             });
         }
@@ -1327,7 +1327,7 @@ public sealed class PythonScriptEditorView : UserControl
             Text = item.DisplayTitle,
             FontFamily = FontFamily.Parse("avares://gated/Fonts#IBM Plex Mono"),
             FontWeight = FontWeight.SemiBold,
-            Foreground = Brushes.White,
+            Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text2")),
             TextWrapping = TextWrapping.Wrap,
             LineHeight = 18
         });
@@ -1349,11 +1349,11 @@ public sealed class PythonScriptEditorView : UserControl
     private static Control build_hover_title_view(PythonHoverItem item, Control parent) => new TextBlock
     {
         Text = string.IsNullOrWhiteSpace(item.Title) ? item.Type : item.Title,
-        FontFamily = string.IsNullOrWhiteSpace(item.Signature) 
-            ? current_typeface(parent).FontFamily 
+        FontFamily = string.IsNullOrWhiteSpace(item.Signature)
+            ? current_typeface(parent).FontFamily
             : FontFamily.Parse("avares://gated/Fonts#IBM Plex Mono"),
         FontWeight = FontWeight.SemiBold,
-        Foreground = Brushes.White,
+        Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text2")),
         TextWrapping = TextWrapping.Wrap
     };
 
@@ -1756,7 +1756,7 @@ public sealed class PythonScriptEditorView : UserControl
 
     private static Control paragraph_block(string text) => new TextBlock
     {
-        Foreground = new SolidColorBrush(Color.FromRgb(220, 224, 232)),
+        Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text3")),
         TextWrapping = TextWrapping.Wrap,
         LineHeight = 19
     }.WithReStructuredTextInlines(text);
@@ -1769,13 +1769,13 @@ public sealed class PythonScriptEditorView : UserControl
             FontFamily = FontFamily.Parse("avares://gated/Fonts#IBM Plex Mono"),
             LineHeight = 17,
             FontSize = 12,
-            Foreground = new SolidColorBrush(Color.FromRgb(221, 231, 255)),
+            Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text2")),
             TextWrapping = TextWrapping.NoWrap
         };
         return new Border
         {
-            Background = new SolidColorBrush(Color.FromRgb(23, 25, 31)),
-            BorderBrush = new SolidColorBrush(Color.FromRgb(62, 66, 78)),
+            Background = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Background2")),
+            BorderBrush = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Border2")),
             BorderThickness = new Thickness(1),
             Padding = new Thickness(8, 6),
             Child = block
@@ -1808,12 +1808,12 @@ public sealed class PythonScriptEditorView : UserControl
             row.Children.Add(new TextBlock
             {
                 Text = "-",
-                Foreground = new SolidColorBrush(Color.FromRgb(143, 183, 255)),
+                Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Theme6")),
                 Margin = new Thickness(0, 0, 0, 0)
             });
             var content = new TextBlock
             {
-                Foreground = new SolidColorBrush(Color.FromRgb(220, 224, 232)),
+                Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text3")),
                 TextWrapping = TextWrapping.Wrap,
                 LineHeight = 19
             };
@@ -1848,7 +1848,7 @@ public sealed class PythonScriptEditorView : UserControl
                 Text = term,
                 FontFamily = FontFamily.Parse("avares://gated/Fonts#IBM Plex Mono"),
                 FontSize = 12,
-                Foreground = new SolidColorBrush(Color.FromRgb(221, 231, 255)),
+                Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text2")),
                 TextWrapping = TextWrapping.Wrap
             });
 
@@ -1870,7 +1870,7 @@ public sealed class PythonScriptEditorView : UserControl
     {
         Text = text,
         FontWeight = FontWeight.SemiBold,
-        Foreground = new SolidColorBrush(Color.FromRgb(143, 183, 255)),
+        Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Theme6")),
         Margin = new Thickness(0, 6, 0, 0)
     };
 
@@ -2057,7 +2057,7 @@ internal static class PythonScriptEditorGridExtensions
         block.Inlines?.Add(new Run(text[content_start..end])
         {
             FontFamily = FontFamily.Parse("avares://gated/Fonts#IBM Plex Mono"),
-            Foreground = new SolidColorBrush(Color.FromRgb(221, 231, 255))
+            Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text2"))
         });
         consumed = end - start + delimiter.Length;
         return true;
@@ -2078,7 +2078,7 @@ internal static class PythonScriptEditorGridExtensions
         block.Inlines?.Add(new Run(text[content_start..content_end])
         {
             FontFamily = FontFamily.Parse("avares://gated/Fonts#IBM Plex Mono"),
-            Foreground = new SolidColorBrush(Color.FromRgb(221, 231, 255))
+            Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text2"))
         });
         consumed = content_end - start + 1;
         return true;
@@ -2095,7 +2095,7 @@ internal static class PythonScriptEditorGridExtensions
 
         block.Inlines?.Add(new Run(text[(start + 1)..close])
         {
-            Foreground = new SolidColorBrush(Color.FromRgb(143, 183, 255)),
+            Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Theme6")),
             TextDecorations = TextDecorations.Underline
         });
         consumed = close - start + 2;
@@ -2141,7 +2141,7 @@ internal static class PythonScriptEditorGridExtensions
             return false;
         block.Inlines?.Add(new Run(text[(start + 1)..text_end])
         {
-            Foreground = new SolidColorBrush(Color.FromRgb(143, 183, 255)),
+            Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Theme6")),
             TextDecorations = TextDecorations.Underline
         });
         consumed = url_end - start + 1;

@@ -18,9 +18,9 @@ namespace gated;
 
 public partial class PythonPackageManagerWindow : Window
 {
-    private static readonly IBrush RequiredBrush = new SolidColorBrush(Color.FromRgb(238, 240, 246));
-    private static readonly IBrush OptionalBrush = new SolidColorBrush(Color.FromRgb(198, 203, 214));
-    private static readonly IBrush MissingRequiredBrush = new SolidColorBrush(Color.FromRgb(126, 132, 146));
+    private static readonly IBrush RequiredBrush = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text2"));
+    private static readonly IBrush OptionalBrush = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text3"));
+    private static readonly IBrush MissingRequiredBrush = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text5"));
     private static readonly SvgImage InstallIcon = load_svg("avares://gated/Resources/install.svg");
     private static readonly SvgImage UninstallIcon = load_svg("avares://gated/Resources/uninstall.svg");
 
@@ -334,7 +334,7 @@ public partial class PythonPackageManagerWindow : Window
                         Text = text,
                         FontSize = 13,
                         TextWrapping = TextWrapping.Wrap,
-                        Foreground = new SolidColorBrush(Color.FromRgb(220, 224, 232))
+                        Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text3"))
                     },
                     new Button
                     {
@@ -393,12 +393,12 @@ public partial class PythonPackageManagerWindow : Window
                     {
                         Text = "The following packages will be removed:",
                         FontSize = 13,
-                        Foreground = new SolidColorBrush(Color.FromRgb(220, 224, 232))
+                        Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text3"))
                     },
                     new Border
                     {
-                        Background = new SolidColorBrush(Color.FromRgb(30, 30, 30)),
-                        BorderBrush = new SolidColorBrush(Color.FromRgb(80, 80, 80)),
+                        Background = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Background3")),
+                        BorderBrush = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Border3")),
                         BorderThickness = new Avalonia.Thickness(1),
                         CornerRadius = new Avalonia.CornerRadius(4),
                         Padding = new Avalonia.Thickness(8),
@@ -407,7 +407,7 @@ public partial class PythonPackageManagerWindow : Window
                             Text = text,
                             FontSize = 13,
                             TextWrapping = TextWrapping.Wrap,
-                            Foreground = new SolidColorBrush(Color.FromRgb(220, 224, 232))
+                            Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text3"))
                         }
                     },
                     new StackPanel

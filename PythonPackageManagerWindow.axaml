@@ -9,7 +9,7 @@
         CanResize="True"
         WindowStartupLocation="CenterOwner"
         Title="Extension Packages"
-        Background="#252525">
+        Background="{DynamicResource AppBrushBackground4}">
 
     <Window.Styles>
         <Style Selector="Window">
@@ -40,13 +40,13 @@
             <Setter Property="Background" Value="Transparent" />
         </Style>
         <Style Selector="ListBox#packageList ListBoxItem:pressed /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="#343A46" />
+            <Setter Property="Background" Value="{DynamicResource AppBrushBackground5}" />
         </Style>
         <Style Selector="ListBox#packageList ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="#343A46" />
+            <Setter Property="Background" Value="{DynamicResource AppBrushBackground5}" />
         </Style>
         <Style Selector="ListBox#packageList ListBoxItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="#343A46" />
+            <Setter Property="Background" Value="{DynamicResource AppBrushBackground5}" />
         </Style>
     </Window.Styles>
 
@@ -70,13 +70,13 @@
         </Grid>
 
         <Border Grid.Row="1"
-                BorderBrush="#505050"
+                BorderBrush="{DynamicResource AppBrushBorder3}"
                 BorderThickness="1"
                 CornerRadius="6"
-                Background="#1e1e1e"
+                Background="{DynamicResource AppBrushBackground3}"
                 ClipToBounds="True">
             <Grid RowDefinitions="29,*">
-                <Border Background="#1e1e1e"
+                <Border Background="{DynamicResource AppBrushBackground3}"
                         CornerRadius="6 6 0 0"
                         Padding="10,0">
                     <Grid ColumnDefinitions="*,150,128"
@@ -162,10 +162,10 @@
                   Header="Pip output"
                   IsExpanded="False">
             <Border Height="150"
-                    BorderBrush="#505050"
+                    BorderBrush="{DynamicResource AppBrushBorder3}"
                     BorderThickness="1"
                     CornerRadius="6"
-                    Background="#1E1E1E"
+                    Background="{DynamicResource AppBrushBackground3}"
                     Padding="8 8 8 8"
                     Margin="-8 0 0 0">
                 <ScrollViewer x:Name="pipOutputScroll"

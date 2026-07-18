@@ -503,7 +503,7 @@ public sealed class FlowPlotView : Control
     {
         base.Render(context);
         var bounds = Bounds;
-        context.FillRectangle(new SolidColorBrush(Color.FromRgb(37, 37, 37)), bounds);
+        context.FillRectangle(new SolidColorBrush(gated.Shared.ThemeResources.AppColor(this, "Background3")), bounds);
 
         const double left_axis_space = 78;
         const double right_space = 20;
@@ -1054,9 +1054,9 @@ public sealed class FlowPlotView : Control
         if (gate.Vertices.Count == 0 || XAxis is null || YAxis is null)
             return;
 
-        var pen = new Pen(new SolidColorBrush(Color.FromRgb(0, 0, 0)), 2);
+        var pen = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("PlotBackground1")), 2);
         var handle_fill = Brushes.White;
-        var handle_stroke = new Pen(new SolidColorBrush(Color.FromRgb(0, 0, 0)), 1.2);
+        var handle_stroke = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("PlotBackground1")), 1.2);
 
         if (gate.Kind == GateKind.Rectangle && gate.Vertices.Count >= 2)
         {
@@ -1066,7 +1066,7 @@ public sealed class FlowPlotView : Control
         }
         else if (gate.Kind is GateKind.Threshold or GateKind.Range)
         {
-            draw_histogram_gate_indicator(context, gate.Vertices, Color.FromRgb(0, 0, 0), gate.Kind == GateKind.Range);
+            draw_histogram_gate_indicator(context, gate.Vertices, gated.Shared.ThemeResources.AppColor("PlotBackground1"), gate.Kind == GateKind.Range);
         }
         else if (gate.Kind is GateKind.Quadrant or GateKind.CurlyQuadrant or GateKind.OffsetQuadrant)
             draw_quadrant_gate(context, gate, pen);
@@ -1105,11 +1105,11 @@ public sealed class FlowPlotView : Control
             return;
 
         var pen = new Pen(
-            new SolidColorBrush(Color.FromRgb(20, 133, 255)),
+            new SolidColorBrush(gated.Shared.ThemeResources.AppColor("PlotTheme4")),
             1.2,
             pending_gate.Kind == GateKind.Polygon && pending_polygon_close_hover ? null : DashStyle.Dash);
         var handle_fill = Brushes.White;
-        var handle_stroke = new Pen(new SolidColorBrush(Color.FromRgb(20, 133, 255)), 1.2);
+        var handle_stroke = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("PlotTheme4")), 1.2);
 
         if (pending_gate.Kind == GateKind.Polygon)
         {
@@ -1135,11 +1135,11 @@ public sealed class FlowPlotView : Control
             var vertices = pending_gate.Vertices.ToList();
             if (has_pending_preview_point)
                 vertices.Add(pending_preview_point);
-            draw_histogram_gate_indicator(context, vertices, Color.FromRgb(20, 133, 255), true);
+            draw_histogram_gate_indicator(context, vertices, gated.Shared.ThemeResources.AppColor("PlotTheme4"), true);
         }
         else if (pending_gate.Kind is GateKind.Threshold)
         {
-            draw_histogram_gate_indicator(context, pending_gate.Vertices, Color.FromRgb(20, 133, 255), false);
+            draw_histogram_gate_indicator(context, pending_gate.Vertices, gated.Shared.ThemeResources.AppColor("PlotTheme4"), false);
         }
         else if (pending_gate.Kind is GateKind.Quadrant or GateKind.CurlyQuadrant or GateKind.OffsetQuadrant)
             draw_quadrant_gate(context, pending_gate, pen);
@@ -1171,10 +1171,10 @@ public sealed class FlowPlotView : Control
             gate.Vertices.Add(pending_preview_point);
         }
 
-        var pen = new Pen(new SolidColorBrush(Color.FromArgb(180, 20, 133, 255)), 1.2, DashStyle.Dash);
+        var pen = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("PlotOverlayGatePending")), 1.2, DashStyle.Dash);
         if (gate.Kind == GateKind.Threshold)
         {
-            draw_histogram_gate_indicator(context, gate.Vertices, Color.FromArgb(180, 20, 133, 255), false);
+            draw_histogram_gate_indicator(context, gate.Vertices, gated.Shared.ThemeResources.AppColor("PlotOverlayGatePending"), false);
         }
         else
             draw_quadrant_gate(context, gate, pen);
@@ -1355,7 +1355,7 @@ public sealed class FlowPlotView : Control
             Brushes.White);
         var origin = gate_annotation_origin(gate, region, text);
         var background = new Rect(origin.X - 6, origin.Y - 4, text.Width + 12, text.Height + 8);
-        context.FillRectangle(new SolidColorBrush(Color.FromArgb(210, 31, 111, 235)), background, 4);
+        context.FillRectangle(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("PlotOverlayGateActive")), background, 4);
         context.DrawText(text, origin);
     }
 
@@ -1435,8 +1435,8 @@ public sealed class FlowPlotView : Control
         if (XAxis is null || YAxis is null)
             return;
 
-        var major_pen = new Pen(new SolidColorBrush(Color.FromArgb(34, 0, 0, 0)), 1);
-        var minor_pen = new Pen(new SolidColorBrush(Color.FromArgb(18, 0, 0, 0)), 1);
+        var major_pen = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("PlotOverlayGridMajor")), 1);
+        var minor_pen = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("PlotOverlayGridMinor")), 1);
         foreach (double value in minor_axis_ticks(XAxis))
             draw_vertical_grid_line(context, value, minor_pen);
         foreach (double value in major_axis_ticks(XAxis))
@@ -1456,8 +1456,8 @@ public sealed class FlowPlotView : Control
         if (XAxis is null || YAxis is null)
             return;
 
-        var axis_pen = new Pen(new SolidColorBrush(Color.FromRgb(94, 94, 94)), 1);
-        var tick_pen = new Pen(new SolidColorBrush(Color.FromRgb(120, 120, 120)), 1);
+        var axis_pen = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("PlotBorder4")), 1);
+        var tick_pen = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("PlotText6")), 1);
         context.DrawLine(axis_pen, new Point(plot_rect.Left, plot_rect.Bottom), new Point(plot_rect.Right, plot_rect.Bottom));
         context.DrawLine(axis_pen, new Point(plot_rect.Left, plot_rect.Top), new Point(plot_rect.Left, plot_rect.Bottom));
 
@@ -1471,7 +1471,7 @@ public sealed class FlowPlotView : Control
         {
             double x = data_to_screen(new Point(value, YAxis.Minimum)).X;
             context.DrawLine(tick_pen, new Point(x, plot_rect.Bottom), new Point(x, plot_rect.Bottom + 5));
-            draw_centered_text(context, format_axis_value(value), new Point(x, plot_rect.Bottom + 8), 10, Color.FromRgb(128, 128, 128));
+            draw_centered_text(context, format_axis_value(value), new Point(x, plot_rect.Bottom + 8), 10, gated.Shared.ThemeResources.AppColor("PlotText6"));
         }
 
         if (!is_histogram_mode())
@@ -1486,7 +1486,7 @@ public sealed class FlowPlotView : Control
             {
                 double y = data_to_screen(new Point(XAxis.Minimum, value)).Y;
                 context.DrawLine(tick_pen, new Point(plot_rect.Left - 5, y), new Point(plot_rect.Left, y));
-                draw_right_aligned_text(context, format_axis_value(value), new Point(plot_rect.Left - 10, y - 7), 10, Color.FromRgb(128, 128, 128));
+                draw_right_aligned_text(context, format_axis_value(value), new Point(plot_rect.Left - 10, y - 7), 10, gated.Shared.ThemeResources.AppColor("PlotText6"));
             }
 
         }
@@ -1879,10 +1879,10 @@ public sealed class FlowPlotView : Control
         {
             Color[] cycle =
             [
-                Color.FromRgb(255, 255, 255),
-                Color.FromRgb(150, 150, 150),
-                Color.FromRgb(85, 85, 85),
-                Color.FromRgb(35, 35, 35),
+                gated.Shared.ThemeResources.AppColor("PlotText1"),
+                gated.Shared.ThemeResources.AppColor("PlotText5"),
+                gated.Shared.ThemeResources.AppColor("PlotBorder3"),
+                gated.Shared.ThemeResources.AppColor("PlotBackground4"),
                 Colors.Black
             ];
             int bands = Math.Clamp(level_count * 5, 10, 400);
@@ -1946,7 +1946,7 @@ public sealed class FlowPlotView : Control
             TextElement.GetFontStyle(this),
             TextElement.GetFontWeight(this),
             TextElement.GetFontStretch(this));
-    
+
     private Typeface current_typeface_bolded() =>
         new(
             TextElement.GetFontFamily(this),

@@ -1,4 +1,4 @@
-﻿<ResourceDictionary
+<ResourceDictionary
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <!--  Button Theme Key: Light, Solid, Outline, Borderless; Default is Light  -->
@@ -101,10 +101,10 @@
             <Setter Property="Background" Value="{DynamicResource ButtonDangerPressedBackground}" />
             <Setter Property="BorderBrush" Value="{DynamicResource ButtonDangerPressedBorderBrush}" />
         </Style>
-        
+
         <Style Selector="^.Title /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Foreground" Value="#c0c0c0" />
-            <Setter Property="Background" Value="#252530" />
+            <Setter Property="Foreground" Value="{DynamicResource AppBrushText4}" />
+            <Setter Property="Background" Value="{DynamicResource AppBrushBackground4}" />
             <Setter Property="BorderBrush" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Padding" Value="0" />
@@ -115,21 +115,21 @@
                 </Transitions>
             </Setter>
         </Style>
-        
+
         <Style Selector="^.Title:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Foreground" Value="#ffffff" />
-            <Setter Property="Background" Value="#333333" />
+            <Setter Property="Foreground" Value="{DynamicResource AppBrushText1}" />
+            <Setter Property="Background" Value="{DynamicResource AppBrushBackground6}" />
             <Setter Property="BorderBrush" Value="Transparent" />
         </Style>
         <Style Selector="^.Title:pressed /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Foreground" Value="#ffffff" />
-            <Setter Property="Background" Value="#2d2d35" />
+            <Setter Property="Foreground" Value="{DynamicResource AppBrushText1}" />
+            <Setter Property="Background" Value="{DynamicResource AppBrushBackground5}" />
             <Setter Property="BorderBrush" Value="Transparent" />
         </Style>
-        
+
         <Style Selector="^.Close /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Foreground" Value="#c0c0c0" />
-            <Setter Property="Background" Value="#252530" />
+            <Setter Property="Foreground" Value="{DynamicResource AppBrushText4}" />
+            <Setter Property="Background" Value="{DynamicResource AppBrushBackground4}" />
             <Setter Property="BorderBrush" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Padding" Value="0" />
@@ -140,15 +140,15 @@
                 </Transitions>
             </Setter>
         </Style>
-        
+
         <Style Selector="^.Close:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Foreground" Value="#ffffff" />
-            <Setter Property="Background" Value="#c00000" />
+            <Setter Property="Foreground" Value="{DynamicResource AppBrushText1}" />
+            <Setter Property="Background" Value="{DynamicResource AppBrushDangerBorder2}" />
             <Setter Property="BorderBrush" Value="Transparent" />
         </Style>
         <Style Selector="^.Close:pressed /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Foreground" Value="#ffffff" />
-            <Setter Property="Background" Value="#8f0000" />
+            <Setter Property="Foreground" Value="{DynamicResource AppBrushText1}" />
+            <Setter Property="Background" Value="{DynamicResource AppBrushDangerBorder1}" />
             <Setter Property="BorderBrush" Value="Transparent" />
         </Style>
 
