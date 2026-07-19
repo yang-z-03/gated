@@ -1,0 +1,49 @@
+Version 0.31.0
+
+- Automatic compensation
+- Preview of integration
+
+Patch 3
+
+- Thread exit waiting when closing the application
+- Source code editor now memorize last opened files
+- Application titles
+
+Patch 6
+
+- Separate write locations in user application data
+
+Patch 8
+
+- Layout editor now respects display DPI
+- Layout elements have a right context menu
+- Fix macOS drag drop failures
+- Add a fallback add-to-layout in applicable node's context menu
+
+Patch 13
+
+- Color maps
+
+Patch 20
+
+- Specific update-disabled distribution for MSIX
+- MSIX packaging
+- Command bars for X and Y axis titles
+- Automatic inference of X and Y range on default
+- Full colormap support
+- Numerous bug fixes
+
+Patch 23
+
+- Layout positioning fix
+
+Patch 31
+
+- MIFlowCyt metadata
+- Spectral unmixing
+- Light mode and preference management
+
+Patch 32
+
+- Mass cytometry normalization by beads
+- Updater now prefers MSI install
