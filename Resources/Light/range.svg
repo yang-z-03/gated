@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
+
+<svg
+   fill="#303030"
+   width="800px"
+   height="800px"
+   viewBox="0 0 256 256"
+   id="Flat"
+   version="1.1"
+   sodipodi:docname="range.svg"
+   inkscape:version="1.4.2 (f4327f4, 2025-05-13)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <path
+     style="fill:none;stroke:#303030;stroke-width:21.7701;stroke-linecap:round;stroke-dasharray:none;stroke-opacity:1"
+     d="M 102.39736,230.78949 V 24.640366"
+     id="path2-8" />
+  <path
+     style="fill:none;stroke:#303030;stroke-width:21.7701;stroke-linecap:round;stroke-dasharray:none;stroke-opacity:1"
+     d="M 157.17401,230.78936 V 24.64025"
+     id="path2-8-8" />
+  <path
+     style="fill:none;stroke:#303030;stroke-width:21.7702;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-opacity:1;paint-order:stroke fill markers"
+     d="M 61.240612,75.482614 31.332407,105.39082 61.062588,135.8331"
+     id="path1"
+     sodipodi:nodetypes="ccc" />
+  <path
+     style="fill:none;stroke:#303030;stroke-width:21.7702;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-opacity:1;paint-order:stroke fill markers"
+     d="m 195.39603,135.8331 29.9082,-29.90821 -29.73018,-30.44228"
+     id="path1-1"
+     sodipodi:nodetypes="ccc" />
+</svg>

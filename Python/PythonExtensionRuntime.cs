@@ -299,13 +299,10 @@ public static class PythonExtensionRuntime
         });
     }
 
-    public static SpectralPythonFitResult FitSpectralUnmixing(
-        IReadOnlyList<float[,]> positive_matrices,
-        float[,] unstained_matrix,
-        IReadOnlyList<int> peak_indices)
+    public static SpectralPythonFitResult FitSpectralUnmixing(float[,] signatures)
     {
-        if (positive_matrices.Count == 0 || positive_matrices.Count != peak_indices.Count)
-            throw new ArgumentException("Spectral positives and peak indices must have equal non-zero length.");
+        if (signatures.GetLength(0) < 2 || signatures.GetLength(1) < 2)
+            throw new ArgumentException("At least one fluorophore, one AF signature, and two detectors are required.");
 
         report_status("Fitting spectral signatures ...", null, true, true);
         try
@@ -315,17 +312,8 @@ public static class PythonExtensionRuntime
                 using var globals = new PyDict();
                 globals.SetItem("__builtins__", Py.Import("builtins"));
                 globals.SetItem("np", (numpy_module ?? Py.Import("numpy")));
-                using var positives = new PyList();
-                foreach (var matrix in positive_matrices)
-                {
-                    using var array = PythonArrayConverter.ToNumpy(matrix);
-                    positives.Append(array);
-                }
-                globals.SetItem("_positive_matrices", positives);
-                using var unstained = PythonArrayConverter.ToNumpy(unstained_matrix);
-                globals.SetItem("_unstained_matrix", unstained);
-                using var peaks = peak_indices.ToArray().ToPython();
-                globals.SetItem("_peak_indices", peaks);
+                using var signature_matrix = PythonArrayConverter.ToNumpy(signatures);
+                globals.SetItem("_signature_matrix", signature_matrix);
                 string code = new StreamReader(AssetLoader.Open(new Uri("avares://gated/Python/spectral-unmixing.py"))).ReadToEnd();
                 try_execute(code, globals);
                 string json = globals.GetItem("_spectral_result_json").As<string>();
@@ -493,7 +481,8 @@ public static class PythonExtensionRuntime
                 Title = title,
                 Width = 420,
                 SizeToContent = SizeToContent.Height,
-                WindowStartupLocation = WindowStartupLocation.CenterOwner
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Background = new SolidColorBrush(ThemeResources.AppColor(owner, "WindowBackground"))
             };
             var panel = new StackPanel
             {

@@ -229,6 +229,70 @@ public static class Configuration
             .ThenBy(item => item.ChannelName, NaturalChannelNameComparer.Instance)
             .ToArray();
 
+    public static IReadOnlyList<SpectralDetectorPreference> SnapshotSpectralDetectors(
+        string? cytometer_name,
+        IEnumerable<ChannelDefinition> available_channels)
+    {
+        string name = normalize_cytometer_name(cytometer_name);
+        var candidates = new List<SpectralDetectorPreference>();
+        int source_order = 0;
+        foreach (var channel in available_channels)
+        {
+            var configured = detector_for_channel(channel.Name, name);
+            bool known = try_known_detector(channel.Name, name, out var known_light, out int known_order);
+            bool configured_spectral = configured is not null &&
+                normalize_kind(configured.Kind, configured.IsSpectral) == ChannelSemanticKind.Spectrum;
+            if (!known && !configured_spectral)
+            {
+                source_order++;
+                continue;
+            }
+
+            candidates.Add(new SpectralDetectorPreference
+            {
+                ChannelName = channel.Name,
+                Kind = ChannelSemanticKind.Spectrum,
+                Scale = configured?.Scale ?? CoordinateScaleKind.Logicle,
+                ExcitationLight = known ? known_light : configured?.ExcitationLight ?? infer_excitation(channel.Name, name),
+                PlotOrder = known ? known_order : configured?.PlotOrder ?? source_order
+            });
+            source_order++;
+        }
+
+        return candidates
+            .GroupBy(detector => detector.ChannelName, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .OrderBy(detector => detector.PlotOrder)
+            .ThenBy(detector => detector.ChannelName, NaturalChannelNameComparer.Instance)
+            .Select((detector, index) => new SpectralDetectorPreference
+            {
+                ChannelName = detector.ChannelName,
+                Kind = ChannelSemanticKind.Spectrum,
+                Scale = detector.Scale,
+                ExcitationLight = detector.ExcitationLight,
+                PlotOrder = index
+            })
+            .ToArray();
+    }
+
+    public static SpectralDetectorPreference DescribeSpectralDetector(
+        string channel_name,
+        string? cytometer_name,
+        int plot_order)
+    {
+        string name = normalize_cytometer_name(cytometer_name);
+        var configured = detector_for_channel(channel_name, name);
+        bool known = try_known_detector(channel_name, name, out var known_light, out _);
+        return new SpectralDetectorPreference
+        {
+            ChannelName = channel_name,
+            Kind = ChannelSemanticKind.Spectrum,
+            Scale = configured?.Scale ?? CoordinateScaleKind.Logicle,
+            ExcitationLight = known ? known_light : configured?.ExcitationLight ?? infer_excitation(channel_name, name),
+            PlotOrder = plot_order
+        };
+    }
+
     public static string? ValidateSpectralDetectors(string? cytometer_name = null)
     {
         var detectors = SpectralDetectors(cytometer_name);

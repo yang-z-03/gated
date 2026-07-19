@@ -4,6 +4,7 @@ using System.Data;
 using System.Linq;
 using System.Threading.Tasks;
 using gated.Models;
+using gated.Services;
 
 namespace gated.ViewModels;
 
@@ -84,6 +85,7 @@ public sealed partial class MainWindowViewModel
     private void ensure_metadata_schema()
     {
         sync_identity_metadata();
+        migrate_fcs_metadata_names();
         Workspace.MetadataColumns["Group"] = MetadataColumnKind.String;
         Workspace.MetadataColumns["Sample"] = MetadataColumnKind.String;
         Workspace.MetadataColumns[Configuration.CytometerMetadataKey] = MetadataColumnKind.String;
@@ -95,6 +97,31 @@ public sealed partial class MainWindowViewModel
         {
             if (!Workspace.MetadataColumns.ContainsKey(key))
                 Workspace.MetadataColumns[key] = infer_metadata_kind(key);
+        }
+    }
+
+    private void migrate_fcs_metadata_names()
+    {
+        foreach (var sample in Workspace.Groups.SelectMany(group => group.Samples))
+        {
+            foreach (string old_name in sample.Metadata.Keys.Where(key => key.StartsWith('$')).ToArray())
+            {
+                string display_name = FcsReader.MetadataColumnName(old_name);
+                if (!sample.Metadata.ContainsKey(display_name))
+                    sample.Metadata[display_name] = sample.Metadata[old_name];
+                sample.Metadata.Remove(old_name);
+            }
+        }
+
+        foreach (string old_name in Workspace.MetadataColumns.Keys.Where(key => key.StartsWith('$')).ToArray())
+        {
+            string display_name = FcsReader.MetadataColumnName(old_name);
+            if (!Workspace.MetadataColumns.ContainsKey(display_name))
+                Workspace.MetadataColumns[display_name] = Workspace.MetadataColumns[old_name];
+            Workspace.MetadataColumns.Remove(old_name);
+            foreach (var integration in Workspace.IntegrationJobs.OfType<IntegrationPlatform>()
+                         .Where(integration => integration.BatchColumnName == old_name))
+                integration.BatchColumnName = display_name;
         }
     }
 

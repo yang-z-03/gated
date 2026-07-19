@@ -289,7 +289,7 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
         var row_rect = new Rect(4, top + 1, Math.Max(0, width - 8), row_height - 2);
         Color row_background = gated.Shared.ThemeResources.Color(
             this,
-            "SemiBackground0Color",
+            "AppColorBackground1",
             app_color("Background3"));
         if (node.IsSelected)
         {
@@ -322,105 +322,41 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
 
     private void draw_chevron(DrawingContext context, Rect rect, bool expanded)
     {
-        SvgImage chev_down = new SvgImage();
-        chev_down.Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri("avares://gated/Resources/chevron-down.svg")));
-
-        SvgImage chev_right = new SvgImage();
-        chev_right.Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri("avares://gated/Resources/chevron-right.svg")));
-
         var pen = new Pen(new SolidColorBrush(app_color("Text3")), 1.5);
         if (expanded)
         {
-            context.DrawImage(chev_down, rect);
+            context.DrawImage(gated.Shared.ThemeResources.Icon(this, "chevron-down.svg"), rect);
             return;
         }
 
-        context.DrawImage(chev_right, rect);
+        context.DrawImage(gated.Shared.ThemeResources.Icon(this, "chevron-right.svg"), rect);
     }
 
-    private static void draw_icon(DrawingContext context, Rect rect, ProjectNode node)
+    private void draw_icon(DrawingContext context, Rect rect, ProjectNode node)
     {
-        SvgImage icon = new SvgImage();
-        switch (node.Kind)
+        string icon = node.Kind switch
         {
-            case ProjectNodeKind.Workspace:
-                icon.Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri("avares://gated/Resources/workspace.svg")));
-                break;
-
-            case ProjectNodeKind.Metadata:
-                icon.Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri("avares://gated/Resources/table-edit.svg")));
-                break;
-
-            case ProjectNodeKind.Group:
-                icon.Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri("avares://gated/Resources/group.svg")));
-                break;
-
-            case ProjectNodeKind.LayoutFolder:
-            case ProjectNodeKind.Layout:
-                icon.Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri("avares://gated/Resources/table-edit.svg")));
-                break;
-
-            case ProjectNodeKind.IntegrationJobFolder:
-            case ProjectNodeKind.Platform:
-            case ProjectNodeKind.Embedding:
-                icon.Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri("avares://gated/Resources/embedding.svg")));
-                break;
-
-            case ProjectNodeKind.GateFolder:
-                icon.Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri("avares://gated/Resources/gates.svg")));
-                break;
-
-            case ProjectNodeKind.Gate:
-                icon.Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri("avares://gated/Resources/gate.svg")));
-                break;
-
-            case ProjectNodeKind.StatisticDefinition:
-                icon.Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri("avares://gated/Resources/stats.svg")));
-                break;
-
-            case ProjectNodeKind.CompensationFolder:
-                icon.Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri("avares://gated/Resources/matrix.svg")));
-                break;
-
-            case ProjectNodeKind.Compensation:
-                icon.Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri(node.IsAppliedCompensation
-                    ? "avares://gated/Resources/ok.svg"
-                    : "avares://gated/Resources/matrix.svg")));
-                break;
-
-            case ProjectNodeKind.ControlFolder:
-                icon.Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri("avares://gated/Resources/controls.svg")));
-                break;
-
-            case ProjectNodeKind.SpilloverCompensation:
-                icon.Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri("avares://gated/Resources/matrix.svg")));
-                break;
-            case ProjectNodeKind.SpectralUnmixing:
-                icon.Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri("avares://gated/Resources/embedding.svg")));
-                break;
-
-            case ProjectNodeKind.ControlSample:
-                icon.Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri("avares://gated/Resources/tube.svg")));
-                break;
-
-            case ProjectNodeKind.Sample:
-                icon.Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri("avares://gated/Resources/tube.svg")));
-                break;
-
-            case ProjectNodeKind.Population:
-                icon.Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri("avares://gated/Resources/subset.svg")));
-                break;
-
-            case ProjectNodeKind.StatisticValue:
-                icon.Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri("avares://gated/Resources/statistics.svg")));
-                break;
-
-            default:
-                icon.Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri("avares://gated/Resources/unk.svg")));
-                break;
+            ProjectNodeKind.Workspace => "workspace.svg",
+            ProjectNodeKind.Metadata => "table-edit.svg",
+            ProjectNodeKind.Group => "group.svg",
+            ProjectNodeKind.LayoutFolder or ProjectNodeKind.Layout => "table-edit.svg",
+            ProjectNodeKind.IntegrationJobFolder or ProjectNodeKind.Platform or ProjectNodeKind.Embedding => "embedding.svg",
+            ProjectNodeKind.GateFolder => "gates.svg",
+            ProjectNodeKind.Gate => "gate.svg",
+            ProjectNodeKind.StatisticDefinition => "stats.svg",
+            ProjectNodeKind.CompensationFolder => "matrix.svg",
+            ProjectNodeKind.Compensation => node.IsAppliedCompensation ? "ok.svg" : "matrix.svg",
+            ProjectNodeKind.ControlFolder => "controls.svg",
+            ProjectNodeKind.SpilloverCompensation => "matrix.svg",
+            ProjectNodeKind.SpectralUnmixing => "embedding.svg",
+            ProjectNodeKind.ControlSample => "tube.svg",
+            ProjectNodeKind.Sample => "tube.svg",
+            ProjectNodeKind.Population => "subset.svg",
+            ProjectNodeKind.StatisticValue => "statistics.svg",
+            _ => "unk.svg"
         };
 
-        context.DrawImage(icon, rect);
+        context.DrawImage(gated.Shared.ThemeResources.Icon(this, icon), rect);
     }
 
     private void draw_text(DrawingContext context, string text, Point origin, double size, Color color)
@@ -438,7 +374,7 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
             context.DrawText(create_formatted_text(text, size, color), bounds.Position);
 
         var end_rect = new Rect(Math.Max(bounds.Left, bounds.Right - 28), bounds.Top, Math.Min(28, bounds.Width), bounds.Height);
-        var fade_color = row_background.A == 0 ? app_color("Background2") : row_background;
+        var fade_color = row_background.A == 0 ? app_color("Background1") : row_background;
         var brush = new LinearGradientBrush
         {
             StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),

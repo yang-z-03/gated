@@ -1,5 +1,5 @@
 <Window xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:shared="using:gated.Shared"
         x:Class="gated.PreferencesWindow"
         x:CompileBindings="False"
         Width="850"
@@ -9,7 +9,7 @@
         CanResize="True"
         WindowStartupLocation="CenterOwner"
         Title="Preferences"
-        Background="{DynamicResource AppBrushBackground4}">
+        Background="{DynamicResource AppBrushWindowBackground}">
 
     <Window.Styles>
         <Style Selector="ListBox ListBoxItem">
@@ -26,7 +26,7 @@
                 </ListBox.Resources>
                 <ListBox.ItemTemplate>
                     <DataTemplate>
-                        <Border CornerRadius="6" Padding="8,3">
+                        <Border CornerRadius="4" Padding="8,3">
                             <TextBlock Foreground="{DynamicResource SemiColorText0}" Text="{Binding}" />
                         </Border>
                     </DataTemplate>
@@ -35,7 +35,7 @@
         </Border>
 
         <Grid Grid.Column="1">
-            <Grid x:Name="cytometryPage" RowDefinitions="Auto,*" RowSpacing="10">
+            <Grid x:Name="cytometryPage" RowDefinitions="Auto,*" RowSpacing="10" IsVisible="False">
 
                 <TextBlock Foreground="{DynamicResource SemiColorText0}" TextWrapping="Wrap" LineHeight="18"
                            Text="Define and modify channel default dimension setups for indicated cytometer platforms. Cytometer settings are automatically matched from FCS files experienced." />
@@ -53,7 +53,7 @@
                             <ComboBox.ItemTemplate>
                                 <DataTemplate>
                                     <StackPanel Spacing="5" Orientation="Horizontal">
-                                        <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/controls.svg}" />
+                                        <shared:ThemeIcon Width="16" Height="16" Icon="controls.svg" />
                                         <TextBlock Text="{Binding Name}" />
                                     </StackPanel>
                                 </DataTemplate>
@@ -62,16 +62,16 @@
                     </StackPanel>
                     <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Bottom">
                         <Button x:Name="addCytometerButton" Classes="Small" Width="30" ToolTip.Tip="Add cytometer preset">
-                            <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/add-file.svg}" />
+                            <shared:ThemeIcon Width="16" Height="16" Icon="add-file.svg" />
                         </Button>
                         <Button x:Name="resetButton" Classes="Small" Width="30" ToolTip.Tip="Reset cytometer presets">
-                            <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/refresh.svg}" />
+                            <shared:ThemeIcon Width="16" Height="16" Icon="refresh.svg" />
                         </Button>
                         <Button x:Name="addChannelButton" Classes="Small" Width="30" ToolTip.Tip="Add channel preset">
-                            <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/channel.svg}" />
+                            <shared:ThemeIcon Width="16" Height="16" Icon="channel.svg" />
                         </Button>
                         <Button x:Name="removeChannelButton" Classes="Small" Width="30" ToolTip.Tip="Remove selected channel preset">
-                            <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/delete.svg}" />
+                            <shared:ThemeIcon Width="16" Height="16" Icon="delete.svg" />
                         </Button>
                     </StackPanel>
                     </Grid>
@@ -124,15 +124,11 @@
             </Grid>
 
             <StackPanel x:Name="appearancePage"
-                        IsVisible="False"
                         Spacing="18">
-                <StackPanel Spacing="8">
-                    <TextBlock Foreground="{DynamicResource SemiColorText0}" FontSize="18" Text="Appearance" />
-                    <TextBlock Foreground="{DynamicResource SemiColorText2}" TextWrapping="Wrap"
-                               Text="Adjust application-wide appearance settings." />
-                </StackPanel>
+                <TextBlock Foreground="{DynamicResource SemiColorText0}" TextWrapping="Wrap" LineHeight="18"
+                           Text="Global appearance of the application. Some settings requires restarting the application" />
 
-                <Grid ColumnDefinitions="170,*" RowDefinitions="Auto,Auto" ColumnSpacing="18" RowSpacing="8">
+                <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto" ColumnSpacing="18" RowSpacing="8">
                     <TextBlock Grid.Row="0"
                                Grid.Column="0"
                                Foreground="{DynamicResource SemiColorText0}"
@@ -152,7 +148,7 @@
                                Grid.Column="1"
                                Foreground="{DynamicResource SemiColorText2}"
                                TextWrapping="Wrap"
-                               Text="Theme changes are previewed immediately. Save to keep them." />
+                               Text="Requires restart" />
                 </Grid>
             </StackPanel>
         </Grid>
@@ -164,7 +160,7 @@
                 </Button>
                 <Button x:Name="saveButton" Classes="Small" MinWidth="84">
                     <StackPanel Orientation="Horizontal" Spacing="6">
-                        <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/save.svg}" />
+                        <shared:ThemeIcon Width="16" Height="16" Icon="save.svg" />
                         <TextBlock Text="Save" />
                     </StackPanel>
                 </Button>

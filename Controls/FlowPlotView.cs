@@ -503,7 +503,6 @@ public sealed class FlowPlotView : Control
     {
         base.Render(context);
         var bounds = Bounds;
-        context.FillRectangle(new SolidColorBrush(gated.Shared.ThemeResources.AppColor(this, "Background3")), bounds);
 
         const double left_axis_space = 78;
         const double right_space = 20;

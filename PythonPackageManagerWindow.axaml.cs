@@ -21,8 +21,6 @@ public partial class PythonPackageManagerWindow : Window
     private static readonly IBrush RequiredBrush = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text2"));
     private static readonly IBrush OptionalBrush = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text3"));
     private static readonly IBrush MissingRequiredBrush = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text5"));
-    private static readonly SvgImage InstallIcon = load_svg("avares://gated/Resources/install.svg");
-    private static readonly SvgImage UninstallIcon = load_svg("avares://gated/Resources/uninstall.svg");
 
     private readonly ObservableCollection<PythonPackageRow> packages = new();
     private readonly string python_executable;
@@ -317,7 +315,7 @@ public partial class PythonPackageManagerWindow : Window
             MinWidth = 300,
             SizeToContent = SizeToContent.Height,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Background = Background,
+            Background = new SolidColorBrush(gated.Shared.ThemeResources.AppColor(this, "WindowBackground")),
             Content = new Grid
             {
                 Margin = new Avalonia.Thickness(16),
@@ -376,7 +374,7 @@ public partial class PythonPackageManagerWindow : Window
             MinWidth = 340,
             SizeToContent = SizeToContent.Height,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Background = Background,
+            Background = new SolidColorBrush(gated.Shared.ThemeResources.AppColor(this, "WindowBackground")),
             Content = new Grid
             {
                 Margin = new Avalonia.Thickness(16),
@@ -480,9 +478,6 @@ public partial class PythonPackageManagerWindow : Window
         return result;
     }
 
-    private static SvgImage load_svg(string uri) =>
-        new() { Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri(uri))) };
-
     private sealed record PipPackage(string Name, string Version);
 
     private sealed record PipPackageDetails(string Name, string[] Requires);
@@ -521,7 +516,7 @@ public partial class PythonPackageManagerWindow : Window
             : IsRequired
                 ? RequiredBrush
                 : OptionalBrush;
-        public SvgImage InstallOrUninstallIcon => IsInstalled ? UninstallIcon : InstallIcon;
+        public string InstallOrUninstallIcon => IsInstalled ? "uninstall.svg" : "install.svg";
         public string InstallOrUninstallTip => IsInstalled ? "Uninstall package" : "Install package";
     }
 }

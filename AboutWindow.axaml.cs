@@ -10,6 +10,8 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Controls.Shapes;
 using gated.Shared;
+using Avalonia;
+using Avalonia.Styling;
 
 namespace gated;
 
@@ -38,11 +40,19 @@ public partial class AboutWindow : Window
     public AboutWindow()
     {
         InitializeComponent();
+        apply_header_theme_background();
         var ver = GetType().Assembly.GetName().Version;
         this.version.Content = $"Version {ver!.Major}.{ver!.Minor} " + (
             ver.Build > 0 ? $"Patch {ver.Build}" : ""
         );
 
+    }
+
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property == ActualThemeVariantProperty && !audit && HeaderRack != null)
+            apply_header_theme_background();
     }
 
     private void ok_button_click(object? sender, RoutedEventArgs e)
@@ -100,7 +110,7 @@ public partial class AboutWindow : Window
             MinWidth = 520,
             MinHeight = 360,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Background = Background,
+            Background = new SolidColorBrush(gated.Shared.ThemeResources.AppColor(this, "WindowBackground")),
             Content = new Grid
             {
                 RowDefinitions =
@@ -214,7 +224,10 @@ public partial class AboutWindow : Window
 
         PixelCanvas.IsVisible = true;
         PixelCanvas.Opacity = 0;
-        _ = tint_async(HeaderRack, gated.Shared.ThemeResources.AppColor("Background2"), Colors.Black, milliseconds: 450);
+        Color header_from = header_theme_background();
+        Color header_to = is_dark_theme() ? Colors.Black : Colors.White;
+        HeaderRack.Background = new SolidColorBrush(header_from);
+        _ = tint_async(HeaderRack, header_from, header_to, milliseconds: 450);
 
         render_pixel_frame(Ledger[0]);
         await fade_async(PixelCanvas, from: 0, to: 1, milliseconds: 220);
@@ -307,7 +320,7 @@ public partial class AboutWindow : Window
     private static async Task tint_async(Panel control, Color from, Color to, int milliseconds)
     {
         const int steps = 18;
-        var brush = control.Background as SolidColorBrush ?? new SolidColorBrush(from);
+        var brush = new SolidColorBrush(from);
         control.Background = brush;
 
         for (int i = 1; i <= steps; i++)
@@ -321,6 +334,26 @@ public partial class AboutWindow : Window
         }
 
         brush.Color = to;
+    }
+
+    private void apply_header_theme_background()
+    {
+        HeaderRack.Background = new SolidColorBrush(header_theme_background());
+    }
+
+    private Color header_theme_background()
+    {
+        return is_dark_theme()
+            ? gated.Shared.ThemeResources.AppColor(this, "Background2", Color.Parse("#151515"))
+            : gated.Shared.ThemeResources.AppColor(this, "Background2", Color.Parse("#EAEAEA"));
+    }
+
+    private bool is_dark_theme()
+    {
+        var variant = ActualThemeVariant;
+        if (variant == ThemeVariant.Default)
+            variant = Application.Current?.ActualThemeVariant ?? ThemeVariant.Light;
+        return variant == ThemeVariant.Dark;
     }
 
     private readonly record struct PixelCell(byte X, byte Y, byte Tone);

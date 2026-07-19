@@ -1,67 +1,13 @@
 import json
 import numpy as np
-from scipy import optimize
-
-
-def _robust_line(x, y):
-    x = np.asarray(x, dtype=float)
-    y = np.asarray(y, dtype=float)
-    good = np.isfinite(x) & np.isfinite(y)
-    x, y = x[good], y[good]
-    if x.size < 3 or np.ptp(x) <= np.finfo(float).eps:
-        raise ValueError("Insufficient variation for robust spectral regression")
-    design = np.column_stack((np.ones(x.size), x))
-    initial, *_ = np.linalg.lstsq(design, y, rcond=None)
-    try:
-        fit = optimize.least_squares(
-            lambda p: design @ p - y,
-            initial,
-            loss="huber",
-            max_nfev=100,
-        )
-        if fit.success and np.all(np.isfinite(fit.x)):
-            return float(fit.x[1])
-    except Exception:
-        pass
-    return float(initial[1])
 
 
 def _fit():
-    positives = [np.asarray(item, dtype=float) for item in _positive_matrices]
-    unstained = np.asarray(_unstained_matrix, dtype=float)
-    peaks = np.asarray(_peak_indices, dtype=int)
-    if unstained.ndim != 2 or unstained.shape[0] < 3:
-        raise ValueError("At least three gated Unstained/AF events are required")
-    detector_count = unstained.shape[1]
-    signatures = []
-    for positive, peak in zip(positives, peaks):
-        if positive.ndim != 2 or positive.shape[1] != detector_count or positive.shape[0] < 3:
-            raise ValueError("Every stained control requires at least three selected events")
-        if peak < 0 or peak >= detector_count:
-            raise ValueError("Peak detector index is outside the spectral detector set")
-        combined = np.vstack((unstained, positive))
-        x = combined[:, peak]
-        signature = np.empty(detector_count, dtype=float)
-        for detector in range(detector_count):
-            if detector == peak:
-                signature[detector] = 1.0
-            else:
-                signature[detector] = max(0.0, _robust_line(x, combined[:, detector]))
-        maximum = np.max(signature)
-        if not np.isfinite(maximum) or maximum <= np.finfo(float).eps:
-            raise ValueError("A fluorophore signature is degenerate")
-        signatures.append(signature / maximum)
-
-    norms = np.max(np.abs(unstained), axis=1)
-    valid = np.isfinite(norms) & (norms > np.finfo(float).eps)
-    if np.count_nonzero(valid) < 3:
-        raise ValueError("Unstained/AF events do not contain a measurable spectrum")
-    af = np.maximum(0.0, np.mean(unstained[valid] / norms[valid, None], axis=0))
-    af_norm = np.max(np.abs(af))
-    if not np.isfinite(af_norm) or af_norm <= np.finfo(float).eps:
-        raise ValueError("The mean AF signature is degenerate")
-    signatures.append(af / af_norm)
-    signatures = np.asarray(signatures, dtype=float)
+    signatures = np.asarray(_signature_matrix, dtype=float)
+    if signatures.ndim != 2 or signatures.shape[0] < 2 or signatures.shape[1] < 2:
+        raise ValueError("The spectral signature matrix must contain at least two signatures and two detectors")
+    if not np.all(np.isfinite(signatures)):
+        raise ValueError("The spectral signature matrix contains non-finite values")
 
     norm = np.sqrt(np.sum(signatures * signatures, axis=1) + 1e-9)
     similarity = (signatures @ signatures.T) / np.outer(norm, norm)

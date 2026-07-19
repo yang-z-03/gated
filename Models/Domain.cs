@@ -1182,6 +1182,13 @@ public sealed record SpectralPlotData(
     string PeakChannel,
     SpilloverRangeSelection? PositiveSelection);
 
+public sealed class SpectralDetectorSetting
+{
+    public string ChannelName { get; set; } = "";
+    public ExcitationLightKind ExcitationLight { get; set; }
+    public int PlotOrder { get; set; }
+}
+
 public sealed class SpectralUnmixingState : NotifyBase
 {
     private bool is_stale = true;
@@ -1190,6 +1197,7 @@ public sealed class SpectralUnmixingState : NotifyBase
     public ObservableCollection<ControlGatePreset> GatePresets { get; } = new();
     public ObservableCollection<SpectralControlRow> Rows { get; } = new();
     public List<string> DetectorNames { get; } = new();
+    public List<SpectralDetectorSetting> DetectorSettings { get; } = new();
     public List<string> SignatureNames { get; } = new();
     public float[,] Signatures { get; private set; } = new float[0, 0];
     public float[,] Similarity { get; private set; } = new float[0, 0];
@@ -1209,6 +1217,23 @@ public sealed class SpectralUnmixingState : NotifyBase
     public void SetFit(IReadOnlyList<string> detectors, IReadOnlyList<string> signatures, float[,] spectra, float[,] similarity, float[,] coefficients)
     {
         DetectorNames.Clear(); DetectorNames.AddRange(detectors);
+        if (!DetectorSettings.Select(setting => setting.ChannelName).SequenceEqual(detectors, StringComparer.Ordinal))
+        {
+            var existing = DetectorSettings
+                .Where(setting => !string.IsNullOrWhiteSpace(setting.ChannelName))
+                .GroupBy(setting => setting.ChannelName, StringComparer.Ordinal)
+                .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+            DetectorSettings.Clear();
+            for (int index = 0; index < detectors.Count; index++)
+                DetectorSettings.Add(new SpectralDetectorSetting
+                {
+                    ChannelName = detectors[index],
+                    ExcitationLight = existing.TryGetValue(detectors[index], out var setting)
+                        ? setting.ExcitationLight
+                        : ExcitationLightKind.Unknown,
+                    PlotOrder = index
+                });
+        }
         SignatureNames.Clear(); SignatureNames.AddRange(signatures);
         Signatures = (float[,])spectra.Clone();
         Similarity = (float[,])similarity.Clone();
@@ -1216,6 +1241,23 @@ public sealed class SpectralUnmixingState : NotifyBase
         IsStale = false;
         IsUserModified = false;
         OnPropertyChanged(nameof(Signatures)); OnPropertyChanged(nameof(Similarity)); OnPropertyChanged(nameof(Coefficients));
+    }
+    public void SetDetectorSettings(IEnumerable<SpectralDetectorSetting> settings)
+    {
+        DetectorSettings.Clear();
+        DetectorSettings.AddRange(settings
+            .Where(setting => !string.IsNullOrWhiteSpace(setting.ChannelName))
+            .OrderBy(setting => setting.PlotOrder)
+            .GroupBy(setting => setting.ChannelName, StringComparer.Ordinal)
+            .Select(group => group.First())
+            .Select((setting, index) => new SpectralDetectorSetting
+            {
+                ChannelName = setting.ChannelName,
+                ExcitationLight = setting.ExcitationLight,
+                PlotOrder = index
+            }));
+        DetectorNames.Clear();
+        DetectorNames.AddRange(DetectorSettings.Select(setting => setting.ChannelName));
     }
     public void ReplaceCoefficients(float[,] coefficients)
     {
@@ -2287,6 +2329,10 @@ internal readonly record struct NormalizedChannelCacheKey(
 public sealed class FlowWorkspace : NotifyBase
 {
     private string name = "Untitled Workspace";
+    private string purpose_and_hypothesis = "";
+    private string experiment_setup = "";
+    private string conclusions = "";
+    private string quality_control = "";
     private PyObject? python_storage;
 
     public string Name
@@ -2300,6 +2346,30 @@ public sealed class FlowWorkspace : NotifyBase
     public ObservableCollection<Platform> IntegrationJobs { get; } = new();
     public ObservableCollection<string> RecentFilePaths { get; } = new();
     public Dictionary<string, MetadataColumnKind> MetadataColumns { get; } = new(StringComparer.Ordinal);
+
+    public string PurposeAndHypothesis
+    {
+        get => purpose_and_hypothesis;
+        set => SetField(ref purpose_and_hypothesis, value);
+    }
+
+    public string ExperimentSetup
+    {
+        get => experiment_setup;
+        set => SetField(ref experiment_setup, value);
+    }
+
+    public string Conclusions
+    {
+        get => conclusions;
+        set => SetField(ref conclusions, value);
+    }
+
+    public string QualityControl
+    {
+        get => quality_control;
+        set => SetField(ref quality_control, value);
+    }
 
     internal bool HasPythonStorage => python_storage is not null;
 

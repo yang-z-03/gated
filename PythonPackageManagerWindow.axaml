@@ -1,5 +1,5 @@
 <Window xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:shared="using:gated.Shared"
         x:Class="gated.PythonPackageManagerWindow"
         x:CompileBindings="False"
         Width="700"
@@ -9,7 +9,7 @@
         CanResize="True"
         WindowStartupLocation="CenterOwner"
         Title="Extension Packages"
-        Background="{DynamicResource AppBrushBackground4}">
+        Background="{DynamicResource AppBrushWindowBackground}">
 
     <Window.Styles>
         <Style Selector="Window">
@@ -65,7 +65,7 @@
                            Text="View and modify Python packages installed in the managed environment platform. You are able to use these packages when writing macros, scripts and statittic definitions by importing. This is a separate environment owned by Gated, not related to the system installation of Python."/>
             </StackPanel>
             <Button x:Name="refreshButton" Classes="Small" Grid.Column="1">
-                <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/refresh.svg}" />
+                <shared:ThemeIcon Width="16" Height="16" Icon="refresh.svg" />
             </Button>
         </Grid>
 
@@ -129,25 +129,23 @@
                                             <Button Classes="Quiet PackageIconButton"
                                                     ToolTip.Tip="{Binding InstallOrUninstallTip}"
                                                     Click="install_or_uninstall_package_click">
-                                                <Image Width="15"
-                                                       Height="15"
-                                                       Source="{Binding InstallOrUninstallIcon}" />
+                                                <shared:ThemeIcon Width="15"
+                                                                  Height="15"
+                                                                  Icon="{Binding InstallOrUninstallIcon}" />
                                             </Button>
                                             <Button Classes="Quiet PackageIconButton"
                                                     ToolTip.Tip="Show dependencies"
                                                     IsEnabled="{Binding IsInstalled}"
                                                     Click="depends_package_click">
-                                                <Image Width="15"
-                                                       Height="15"
-                                                       Source="{SvgImage avares://gated/Resources/depends.svg}" />
+                                                <shared:ThemeIcon Width="15"
+                                                       Height="15" Icon="depends.svg" />
                                             </Button>
                                             <Button Classes="Quiet PackageIconButton"
                                                     ToolTip.Tip="Show required-by"
                                                     IsEnabled="{Binding IsInstalled}"
                                                     Click="required_by_package_click">
-                                                <Image Width="15"
-                                                       Height="15"
-                                                       Source="{SvgImage avares://gated/Resources/required-by.svg}" />
+                                                <shared:ThemeIcon Width="15"
+                                                       Height="15" Icon="required-by.svg" />
                                             </Button>
                                         </StackPanel>
                                     </Grid>

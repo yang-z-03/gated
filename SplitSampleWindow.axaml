@@ -9,7 +9,7 @@
         CanResize="True"
         WindowStartupLocation="CenterOwner"
         Title="Split sample"
-        Background="{DynamicResource AppBrushBackground4}">
+        Background="{DynamicResource AppBrushWindowBackground}">
     <Grid Margin="18" RowDefinitions="Auto,Auto,*,Auto" RowSpacing="12">
         <StackPanel Spacing="5">
             <TextBlock Foreground="{DynamicResource SemiColorText0}" FontWeight="SemiBold" Text="Split a sample by time" />

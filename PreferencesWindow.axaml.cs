@@ -14,7 +14,7 @@ public partial class PreferencesWindow : Window
         InitializeComponent();
         original_theme_name = App.NormalizeThemeName(Configuration.Preferences.ThemeName);
         Tag = new PreferenceChoices();
-        preferencePageList.ItemsSource = new[] { "Cytometry", "Appearance" };
+        preferencePageList.ItemsSource = new[] { "Appearance", "Cytometry" };
         preferencePageList.SelectionChanged += (_, _) => bind_page();
         preferencePageList.SelectedIndex = 0;
         cytometerCombo.SelectionChanged += (_, _) => bind_selected();

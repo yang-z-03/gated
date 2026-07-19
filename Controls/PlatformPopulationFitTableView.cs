@@ -217,10 +217,9 @@ public sealed class PlatformPopulationFitTableView : Control
         e.Handled = true;
     }
 
-    private static void draw_icon(DrawingContext context, Rect rect, string uri)
+    private void draw_icon(DrawingContext context, Rect rect, string uri)
     {
-        var icon = new SvgImage { Source = SvgSource.LoadFromStream(AssetLoader.Open(new System.Uri(uri))) };
-        context.DrawImage(icon, rect);
+        context.DrawImage(gated.Shared.ThemeResources.Icon(this, uri), rect);
     }
 
     private static void draw_checkbox(DrawingContext context, Rect rect, bool is_checked)

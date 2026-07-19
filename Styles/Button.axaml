@@ -142,12 +142,12 @@
         </Style>
 
         <Style Selector="^.Close:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Foreground" Value="{DynamicResource AppBrushText1}" />
+            <Setter Property="Foreground" Value="White" />
             <Setter Property="Background" Value="{DynamicResource AppBrushDangerBorder2}" />
             <Setter Property="BorderBrush" Value="Transparent" />
         </Style>
         <Style Selector="^.Close:pressed /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Foreground" Value="{DynamicResource AppBrushText1}" />
+            <Setter Property="Foreground" Value="White" />
             <Setter Property="Background" Value="{DynamicResource AppBrushDangerBorder1}" />
             <Setter Property="BorderBrush" Value="Transparent" />
         </Style>

@@ -110,21 +110,21 @@ public sealed class PythonScriptEditorView : UserControl
         error_toggle = log_level_toggle("Error logs", "avares://gated/Resources/error.svg");
         fatal_toggle = log_level_toggle("Fatal logs", "avares://gated/Resources/fail.svg");
 
-        Image run_icon = new Avalonia.Controls.Image
+        Image run_icon = new gated.Shared.ThemeIcon
         {
-            Source = new SvgImage() { Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri("avares://gated/Resources/script.svg"))) },
+            Icon = "script.svg",
             Width = 16, Height = 16
         };
 
-        Image save_icon = new Avalonia.Controls.Image
+        Image save_icon = new gated.Shared.ThemeIcon
         {
-            Source = new SvgImage() { Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri("avares://gated/Resources/save.svg"))) },
+            Icon = "save.svg",
             Width = 16, Height = 16
         };
 
-        Image close_icon = new Avalonia.Controls.Image
+        Image close_icon = new gated.Shared.ThemeIcon
         {
-            Source = new SvgImage() { Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri("avares://gated/Resources/delete.svg"))) },
+            Icon = "delete.svg",
             Width = 16, Height = 16
         };
 
@@ -269,9 +269,9 @@ public sealed class PythonScriptEditorView : UserControl
 
     private static ToggleButton log_level_toggle(string tooltip, string icon_uri)
     {
-        var icon = new Avalonia.Controls.Image
+        var icon = new gated.Shared.ThemeIcon
         {
-            Source = new SvgImage { Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri(icon_uri))) },
+            Icon = icon_uri,
             Width = 14,
             Height = 14
         };

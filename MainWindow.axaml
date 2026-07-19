@@ -58,12 +58,12 @@
             <Setter Property="BorderBrush" Value="{DynamicResource SemiColorBorder}" />
         </Style>
         <Style Selector="RadioButton.GateToolButton:checked">
-            <Setter Property="Background" Value="{DynamicResource AppBrushTheme2}" />
-            <Setter Property="BorderBrush" Value="{DynamicResource AppBrushTheme5}" />
+            <Setter Property="Background" Value="{DynamicResource AppBrushTheme1}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AppBrushTheme2}" />
         </Style>
         <Style Selector="RadioButton.GateToolButton:checked:pointerover">
-            <Setter Property="Background" Value="{DynamicResource AppBrushTheme3}" />
-            <Setter Property="BorderBrush" Value="{DynamicResource AppBrushTheme6}" />
+            <Setter Property="Background" Value="{DynamicResource AppBrushTheme2}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AppBrushTheme3}" />
         </Style>
         <Style Selector="RadioButton.GateToolButton:disabled">
             <Setter Property="Opacity" Value="0.32" />
@@ -451,7 +451,7 @@
                 Height="28"
                 BorderBrush="{DynamicResource AppBrushBorder3}"
                 BorderThickness="0,1,0,0"
-                Background="{DynamicResource SemiColorBackground2}">
+                Background="{DynamicResource AppBrushBackground4}">
             <Grid ColumnDefinitions="*,Auto"
                   Margin="10,0,10,2">
                 <TextBlock Grid.Column="0"
@@ -479,7 +479,7 @@
             <Border Grid.Column="0"
                     BorderBrush="{DynamicResource SemiColorSplits}"
                     BorderThickness="0,0,1,0"
-                    Background="{DynamicResource SemiColorBackground0}">
+                    Background="{DynamicResource AppBrushBackground1}">
                 <Grid RowDefinitions="30,*" Margin="8">
                     <Grid Grid.Row="0" ColumnDefinitions="*,100">
                         <TextBlock Text="Workspace"
@@ -516,7 +516,7 @@
                   Grid.Column="2"
                   IsVisible="{Binding IsDefaultAnalysisMode}"
                   RowDefinitions="*,5,250"
-                  Background="{DynamicResource SemiColorBackground1}">
+                  Background="{DynamicResource AppBrushBackground2}">
                 <Grid x:Name="analysis_plot_grid"
                       Grid.Row="0"
                       ColumnDefinitions="*,346">
@@ -529,28 +529,28 @@
                                 CornerRadius="8"
                                 BorderBrush="{DynamicResource SemiColorBorder}"
                                 BorderThickness="1"
-                                Background="{DynamicResource SemiColorBackground0}">
+                                Background="{DynamicResource AppBrushBackground3}">
                             <DockPanel LastChildFill="False">
                               <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Spacing="8">
                                 <RadioButton GroupName="GateTools" Classes="GateToolButton" IsChecked="{Binding IsViewTool, Mode=OneWay}" Click="view_tool_menu_item_click">
-                                    <Image Width="28" Height="28" Source="{SvgImage avares://gated/Resources/pointer.svg}" />
+                                    <shared:ThemeIcon Width="28" Height="28" Icon="pointer.svg" />
                                 </RadioButton>
                                 <RadioButton GroupName="GateTools" Classes="GateToolButton" IsChecked="{Binding IsPolygonTool, Mode=OneWay}" IsEnabled="{Binding CanCreateTwoDimensionalGate}" Click="polygon_tool_menu_item_click">
-                                    <Image Width="28" Height="28" Source="{SvgImage avares://gated/Resources/polygon.svg}" />
+                                    <shared:ThemeIcon Width="28" Height="28" Icon="polygon.svg" />
                                 </RadioButton>
                                 <RadioButton GroupName="GateTools" Classes="GateToolButton" IsChecked="{Binding IsQuadrantTool, Mode=OneWay}" IsEnabled="{Binding CanCreateTwoDimensionalGate}" Click="quadrant_tool_menu_item_click">
-                                    <Image Width="28" Height="28" Source="{SvgImage avares://gated/Resources/cross.svg}" />
+                                    <shared:ThemeIcon Width="28" Height="28" Icon="cross.svg" />
                                 </RadioButton>
                                 <RadioButton GroupName="GateTools" Classes="GateToolButton" IsChecked="{Binding IsThresholdTool, Mode=OneWay}" IsEnabled="{Binding CanCreateOneDimensionalGate}" Click="threshold_tool_menu_item_click">
-                                    <Image Width="28" Height="28" Source="{SvgImage avares://gated/Resources/threshold.svg}" />
+                                    <shared:ThemeIcon Width="28" Height="28" Icon="threshold.svg" />
                                 </RadioButton>
                                 <RadioButton GroupName="GateTools" Classes="GateToolButton" IsChecked="{Binding IsRangeTool, Mode=OneWay}" IsEnabled="{Binding CanCreateOneDimensionalGate}" Click="range_tool_menu_item_click">
-                                    <Image Width="28" Height="28" Source="{SvgImage avares://gated/Resources/range.svg}" />
+                                    <shared:ThemeIcon Width="28" Height="28" Icon="range.svg" />
                                 </RadioButton>
                               </StackPanel>
                               <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6" Margin="18,0,0,0" VerticalAlignment="Center">
                                 <Button Classes="Small" Width="32" Height="32" Padding="6" Command="{Binding SelectPreviousEquivalentSampleCommand}">
-                                    <Image Width="18" Height="18" Source="{SvgImage avares://gated/Resources/left.svg}" />
+                                    <shared:ThemeIcon Width="18" Height="18" Icon="left.svg" />
                                 </Button>
                                 <ComboBox Width="210"
                                           Classes="SampleSwitcher"
@@ -591,7 +591,7 @@
                                     </ComboBox.ItemTemplate>
                                 </ComboBox>
                                 <Button Classes="Small" Width="32" Height="32" Padding="6" Command="{Binding SelectNextEquivalentSampleCommand}">
-                                    <Image Width="18" Height="18" Source="{SvgImage avares://gated/Resources/right.svg}" />
+                                    <shared:ThemeIcon Width="18" Height="18" Icon="right.svg" />
                                 </Button>
                               </StackPanel>
                             </DockPanel>
@@ -627,7 +627,7 @@
                                     Canvas.Top="{Binding PlotAxisControlTop, ElementName=editor_plot}"
                                     Width="{Binding PlotAxisControlWidth, ElementName=editor_plot}"
                                     Padding="4"
-                                    Background="{DynamicResource SemiColorBackground0}"
+                                    Background="{DynamicResource AppBrushBackground3}"
                                     BorderBrush="{DynamicResource SemiColorBorder}"
                                     BorderThickness="1"
                                     CornerRadius="6"
@@ -689,7 +689,7 @@
                                     <RotateTransform Angle="-90" />
                                 </LayoutTransformControl.LayoutTransform>
                                 <Border Padding="4"
-                                        Background="{DynamicResource SemiColorBackground0}"
+                                        Background="{DynamicResource AppBrushBackground3}"
                                         BorderBrush="{DynamicResource SemiColorBorder}"
                                         BorderThickness="1"
                                         CornerRadius="6">
@@ -754,9 +754,8 @@
                                     IsEnabled="{Binding IsYAxisEnabled}"
                                     IsVisible="{Binding PlotAxisControlsVisible, ElementName=editor_plot}"
                                     ToolTip.Tip="Swap axes">
-                                <Image Width="18"
-                                       Height="18"
-                                       Source="{SvgImage avares://gated/Resources/swap.svg}" />
+                                <shared:ThemeIcon Width="18"
+                                       Height="18" Icon="swap.svg" />
                             </Button>
                             <Border Canvas.Left="{Binding PlotLeft, ElementName=editor_plot}"
                                     Canvas.Top="{Binding PlotTop, ElementName=editor_plot}"
@@ -789,7 +788,7 @@
                             Grid.Column="1"
                             BorderBrush="{DynamicResource SemiColorSplits}"
                             BorderThickness="1,0,0,0"
-                            Background="{DynamicResource SemiColorBackground0}"
+                            Background="{DynamicResource AppBrushBackground1}"
                             Padding="8">
                         <ScrollViewer HorizontalScrollBarVisibility="Disabled"
                                       VerticalScrollBarVisibility="Auto">
@@ -1033,7 +1032,7 @@
                 <Border Grid.Row="2"
                         BorderBrush="{DynamicResource SemiColorSplits}"
                         BorderThickness="0,1,0,0"
-                        Background="{DynamicResource SemiColorBackground0}"
+                        Background="{DynamicResource AppBrushBackground1}"
                         Padding="16">
                     <Grid RowDefinitions="Auto,Auto,*">
                         <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Gate statistics" />
@@ -1061,7 +1060,7 @@
                   Grid.Column="2"
                   IsVisible="{Binding IsPageEditorMode}"
                   ColumnDefinitions="*,346"
-                  Background="{DynamicResource SemiColorBackground1}">
+                  Background="{DynamicResource AppBrushBackground1}">
                 <controls:PageEditorView x:Name="page_editor"
                                          HorizontalAlignment="Stretch"
                                          VerticalAlignment="Stretch"
@@ -1074,7 +1073,7 @@
                         Grid.Column="1"
                         BorderBrush="{DynamicResource SemiColorSplits}"
                         BorderThickness="1,0,0,0"
-                        Background="{DynamicResource SemiColorBackground0}"
+                        Background="{DynamicResource AppBrushBackground1}"
                         Padding="8">
                     <ScrollViewer HorizontalScrollBarVisibility="Disabled"
                                   VerticalScrollBarVisibility="Auto">
@@ -1083,24 +1082,24 @@
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <Button Click="export_page_png_click" Classes="Small">
                                     <StackPanel Orientation="Horizontal" Spacing="5">
-                                    <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/export.svg}" />
+                                    <shared:ThemeIcon Width="16" Height="16" Icon="export.svg" />
                                     <TextBlock VerticalAlignment="Center" Text="PNG" />
                                     </StackPanel>
                                 </Button>
                                 <Button Click="export_page_jpg_click" Classes="Small">
                                     <StackPanel Orientation="Horizontal" Spacing="5">
-                                    <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/export.svg}" />
+                                    <shared:ThemeIcon Width="16" Height="16" Icon="export.svg" />
                                     <TextBlock VerticalAlignment="Center" Text="JPG" />
                                     </StackPanel>
                                 </Button>
                                 <Button Click="export_page_svg_click" Classes="Small">
                                     <StackPanel Orientation="Horizontal" Spacing="5">
-                                    <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/export.svg}" />
+                                    <shared:ThemeIcon Width="16" Height="16" Icon="export.svg" />
                                     <TextBlock VerticalAlignment="Center" Text="SVG" />
                                     </StackPanel>
                                 </Button>
                                 <Button Command="{Binding DeletePageElementCommand}" Classes="Small Danger">
-                                    <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/delete.svg}" />
+                                    <shared:ThemeIcon Width="16" Height="16" Icon="delete.svg" />
                                 </Button>
                             </StackPanel>
 
@@ -1385,7 +1384,7 @@
 
             <Grid Grid.Column="2"
                   IsVisible="{Binding IsSpilloverCompensationMode}"
-                  Background="{DynamicResource SemiColorBackground1}">
+                  Background="{DynamicResource AppBrushBackground1}">
                 <ScrollViewer HorizontalScrollBarVisibility="Disabled"
                               VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="24"
@@ -1396,7 +1395,8 @@
 
                         <StackPanel Margin="0 12 0 12" Spacing="8">
                             <TextBlock Foreground="{DynamicResource AppBrushText2}" FontWeight="Bold" Text="Conventional Spillover Compensation" />
-                            <TextBlock Foreground="{DynamicResource SemiColorText1}" Text="Drag control samples to the control table to begin compensation." />
+                            <TextBlock Foreground="{DynamicResource SemiColorText1}"  TextWrapping="Wrap" LineHeight="18"
+                                       Text="Spillover occurs when fluorophores emit light that bleeds into adjacent detection channels. Compensation mathematically corrects this by subtracting the spillover signal from each channel based on single stained control measurements." />
                         </StackPanel>
 
                         <Grid ColumnDefinitions="280,*" ColumnSpacing="5" IsVisible="{Binding HasSpilloverControls}">
@@ -1440,7 +1440,7 @@
                                 <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="6" HorizontalAlignment="Center" VerticalAlignment="Center">
                                     <ComboBox Classes="Small" Width="120" Margin="52 0 0 0" ItemsSource="{Binding SpilloverGatePresets}" SelectedItem="{Binding SelectedSpilloverGatePreset}" />
                                     <Button Grid.Column="1" Classes="Small" Command="{Binding NewSpilloverGatePresetCommand}">
-                                        <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/gate.svg}" />
+                                        <shared:ThemeIcon Width="16" Height="16" Icon="gate.svg" />
                                     </Button>
                                 </Grid>
                             </Grid>
@@ -1461,7 +1461,7 @@
 
                                 <Grid ColumnDefinitions="Auto,150,Auto" Grid.Row="0" ColumnSpacing="8" VerticalAlignment="Center" HorizontalAlignment="Center" Height="32">
                                     <Button Classes="Small" Width="30" Command="{Binding SelectPreviousSpilloverChannelCommand}">
-                                        <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/left.svg}" />
+                                        <shared:ThemeIcon Width="16" Height="16" Icon="left.svg" />
                                     </Button>
                                     <ComboBox Grid.Column="1"
                                               Width="150"
@@ -1471,7 +1471,7 @@
                                               ItemsSource="{Binding SpilloverConfiguredParameterChoices}"
                                               SelectedItem="{Binding SelectedSpilloverParameterChoice, Mode=TwoWay}" />
                                     <Button Grid.Column="2" Classes="Small" Width="30" Command="{Binding SelectNextSpilloverChannelCommand}">
-                                        <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/right.svg}" />
+                                        <shared:ThemeIcon Width="16" Height="16" Icon="right.svg" />
                                     </Button>
                                 </Grid>
                             </Grid>
@@ -1508,9 +1508,9 @@
                                     <ListBox.ItemTemplate>
                                         <DataTemplate>
                                             <Border Height="28" Padding="3,0" CornerRadius="4">
-                                                <Grid ColumnDefinitions="*,150,190,34" ColumnSpacing="12">
+                                                <Grid ColumnDefinitions="*,150,190,34" ColumnSpacing="12" VerticalAlignment="Center">
                                                     <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
-                                                        <Image Width="15" Height="15" Source="{Binding SampleIcon}" />
+                                                        <shared:ThemeIcon Width="15" Height="15" Icon="{Binding SampleIcon}" />
                                                         <TextBlock Text="{Binding SampleName}"
                                                                    FontSize="13"
                                                                    Foreground="{DynamicResource SemiColorText0}"
@@ -1518,13 +1518,12 @@
                                                                    TextTrimming="CharacterEllipsis" />
                                                     </StackPanel>
                                                     <ComboBox Grid.Column="1"
-                                                              Margin="0 1 0 -1"
                                                               Width="150"
                                                               Classes="Small"
                                                               ItemsSource="{Binding ParameterChoices}"
                                                               SelectedItem="{Binding ParameterName, Mode=TwoWay}" />
                                                     <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
-                                                        <Image Width="15" Height="15" Source="{Binding PopulationIcon}" />
+                                                        <shared:ThemeIcon Width="15" Height="15" Icon="{Binding PopulationIcon}" />
                                                         <TextBlock Text="{Binding PositivePercentText}"
                                                                    FontSize="13"
                                                                    Foreground="{DynamicResource SemiColorText1}"
@@ -1536,7 +1535,7 @@
                                                             Command="{Binding RemoveCommand}"
                                                             CommandParameter="{Binding}"
                                                             ToolTip.Tip="Remove from plot">
-                                                        <Image Width="15" Height="15" Source="{Binding RemoveIcon}" />
+                                                        <shared:ThemeIcon Width="15" Height="15" Icon="{Binding RemoveIcon}" />
                                                     </Button>
                                                 </Grid>
                                             </Border>
@@ -1562,7 +1561,7 @@
                                     Classes="Small"
                                     Command="{Binding CalculateSpilloverCompensationCommand}">
                                 <StackPanel Orientation="Horizontal" Spacing="6">
-                                    <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/ok.svg}" />
+                                    <shared:ThemeIcon Width="16" Height="16" Icon="ok.svg" />
                                     <TextBlock Text="Calculate Auto-compensation" />
                                 </StackPanel>
                             </Button>
@@ -1570,7 +1569,7 @@
                                     Classes="Small"
                                     Command="{Binding ApplySpilloverCompensationCommand}">
                                 <StackPanel Orientation="Horizontal" Spacing="6">
-                                    <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/ok.svg}" />
+                                    <shared:ThemeIcon Width="16" Height="16" Icon="ok.svg" />
                                     <TextBlock Text="Apply" />
                                 </StackPanel>
                             </Button>
@@ -1737,7 +1736,7 @@
 
             <Grid Grid.Column="2"
                   IsVisible="{Binding IsSpectralUnmixingMode}"
-                  Background="{DynamicResource SemiColorBackground1}">
+                  Background="{DynamicResource AppBrushBackground1}">
                 <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="24"
                                 Spacing="14"
@@ -1747,7 +1746,8 @@
 
                         <StackPanel Margin="0 12 0 12" Spacing="8">
                             <TextBlock Foreground="{DynamicResource AppBrushText2}" FontWeight="Bold" Text="Spectral Unmixing" />
-                            <TextBlock Foreground="{DynamicResource SemiColorText1}" Text="Drag control samples to the control table to begin spectral unmixing." />
+                            <TextBlock Foreground="{DynamicResource SemiColorText1}" TextWrapping="Wrap" LineHeight="18"
+                                       Text="Spectral unmixing derives fluroscence signature for each stained flurochrome, and then decomposite the spectral measurement of samples into fractions for real staining channels." />
                         </StackPanel>
 
                         <Grid ColumnDefinitions="280,*" ColumnSpacing="5" IsVisible="{Binding SpectralPanel.HasControls}">
@@ -1782,7 +1782,7 @@
                                 <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="6" HorizontalAlignment="Center" VerticalAlignment="Center">
                                     <ComboBox Classes="Small" Width="120" Margin="52 0 0 0" ItemsSource="{Binding SpectralPanel.GatePresets}" SelectedItem="{Binding SpectralPanel.SelectedGatePreset}" />
                                     <Button Grid.Column="1" Classes="Small" Command="{Binding SpectralPanel.NewGatePresetCommand}" >
-                                        <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/gate.svg}" />
+                                        <shared:ThemeIcon Width="16" Height="16" Icon="gate.svg" />
                                     </Button>
                                 </Grid>
                             </Grid>
@@ -1821,7 +1821,7 @@
                                             <Border Height="28" Padding="3,0" CornerRadius="4" ClipToBounds="True">
                                                 <Grid ColumnDefinitions="183,155,150,175,24" ColumnSpacing="4" ClipToBounds="True" VerticalAlignment="Center">
                                                     <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center" ClipToBounds="True">
-                                                        <Image Width="15" Height="15" Source="{Binding SampleIcon}" />
+                                                        <shared:ThemeIcon Width="15" Height="15" Icon="{Binding SampleIcon}" />
                                                         <TextBlock Text="{Binding SampleName}" FontSize="13" Foreground="{DynamicResource SemiColorText0}" TextTrimming="CharacterEllipsis" />
                                                     </StackPanel>
                                                     <TextBox Grid.Column="1" Classes="Small" Margin="0,0" Text="{Binding MoleculeName, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" ClipToBounds="True" />
@@ -1833,11 +1833,11 @@
                                                         </ComboBox.ItemTemplate>
                                                     </ComboBox>
                                                     <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center" ClipToBounds="True">
-                                                        <Image Width="15" Height="15" Source="{Binding PopulationIcon}" />
+                                                        <shared:ThemeIcon Width="15" Height="15" Icon="{Binding PopulationIcon}" />
                                                         <TextBlock Text="{Binding PositivePercentText}" FontSize="13" Foreground="{DynamicResource SemiColorText1}" TextTrimming="CharacterEllipsis" />
                                                     </StackPanel>
                                                     <Button Grid.Column="4" Classes="Quiet ChannelIconButton" Command="{Binding RemoveCommand}" CommandParameter="{Binding}" ToolTip.Tip="Remove control">
-                                                        <Image Width="15" Height="15" Source="{Binding RemoveIcon}" />
+                                                        <shared:ThemeIcon Width="15" Height="15" Icon="{Binding RemoveIcon}" />
                                                     </Button>
                                                 </Grid>
                                             </Border>
@@ -1859,7 +1859,7 @@
                                 <ComboBox.ItemTemplate>
                                     <DataTemplate>
                                         <StackPanel Orientation="Horizontal" Spacing="7">
-                                            <Image Width="15" Height="15" Source="{SvgImage avares://gated/Resources/group.svg}" />
+                                            <shared:ThemeIcon Width="15" Height="15" Icon="group.svg" />
                                             <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
                                         </StackPanel>
                                     </DataTemplate>
@@ -1867,6 +1867,22 @@
                             </ComboBox>
                             <Button Grid.Column="2" Classes="Small" Content="Apply to grouping" Command="{Binding SpectralPanel.ApplyCommand}" />
                             <Button Grid.Column="4" Classes="Small" Content="Fit model" Command="{Binding SpectralPanel.FitCommand}" HorizontalAlignment="Right" />
+                        </Grid>
+
+                        <Grid ColumnDefinitions="*,Auto"
+                              ColumnSpacing="12"
+                              IsVisible="{Binding SpectralPanel.IsApplying}">
+                            <ProgressBar Minimum="0"
+                                         Maximum="100"
+                                         Height="8"
+                                         VerticalAlignment="Center"
+                                         Value="{Binding SpectralPanel.ApplyProgress}" />
+                            <TextBlock Grid.Column="1"
+                                       MinWidth="250"
+                                       TextAlignment="Right"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource SemiColorText1}"
+                                       Text="{Binding SpectralPanel.ApplyProgressText}" />
                         </Grid>
 
                         <Border IsVisible="{Binding SpectralPanel.HasWarning}"
@@ -1935,22 +1951,21 @@
 
             <Grid Grid.Column="2"
                   IsVisible="{Binding IsIntegrationJobMode}"
-                  Background="{DynamicResource SemiColorBackground1}">
+                  Background="{DynamicResource AppBrushBackground1}">
                 <controls:PlatformEditorHost Workspace="{Binding Workspace}"
                                              Platform="{Binding SelectedIntegrationJob}" />
             </Grid>
 
             <Grid Grid.Column="2"
                   IsVisible="{Binding IsWorkspaceMetadataMode}"
-                  Background="{DynamicResource SemiColorBackground1}">
+                  Background="{DynamicResource AppBrushBackground1}">
                 <ScrollViewer HorizontalScrollBarVisibility="Disabled"
                               VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="24"
                                 Spacing="14"
                                 MaxWidth="650"
                                 MinWidth="650"
-                                HorizontalAlignment="Center"
-                                Background="{DynamicResource SemiColorBackground1}">
+                                HorizontalAlignment="Center">
                         <StackPanel Margin="0 12 0 0">
                             <TextBlock Foreground="{DynamicResource SemiColorText1}" Text="Workspace sample metadata" />
                         </StackPanel>
@@ -1958,19 +1973,19 @@
                         <WrapPanel Margin="0,0,0,2">
                             <Button Classes="Small" Margin="0,0,8,0" Command="{Binding AddStringMetadataColumnCommand}">
                                 <StackPanel Orientation="Horizontal" Spacing="6">
-                                    <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/table-edit.svg}" />
+                                    <shared:ThemeIcon Width="16" Height="16" Icon="table-edit.svg" />
                                     <TextBlock Text="String column" />
                                 </StackPanel>
                             </Button>
                             <Button Classes="Small" Margin="0,0,8,0" Command="{Binding AddIntegerMetadataColumnCommand}">
                                 <StackPanel Orientation="Horizontal" Spacing="6">
-                                    <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/table-edit.svg}" />
+                                    <shared:ThemeIcon Width="16" Height="16" Icon="table-edit.svg" />
                                     <TextBlock Text="Integer column" />
                                 </StackPanel>
                             </Button>
                             <Button Classes="Small" Margin="0,0,8,0" Command="{Binding AddFloatMetadataColumnCommand}">
                                 <StackPanel Orientation="Horizontal" Spacing="6">
-                                    <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/table-edit.svg}" />
+                                    <shared:ThemeIcon Width="16" Height="16" Icon="table-edit.svg" />
                                     <TextBlock Text="Floating point column" />
                                 </StackPanel>
                             </Button>
@@ -1998,27 +2013,78 @@
                                       ItemsSource="{Binding WorkspaceMetadataTableView}" />
                         </Border>
 
-                        <Button Classes="Small" HorizontalAlignment="Left" Margin="0,0,0,24" Command="{Binding ApplyWorkspaceMetadataCommand}">
+                        <Button Classes="Small" HorizontalAlignment="Left" Command="{Binding ApplyWorkspaceMetadataCommand}">
                             <StackPanel Orientation="Horizontal" Spacing="6">
-                                <Image Width="16" Height="16" Source="{SvgImage avares://gated/Resources/ok.svg}" />
+                                <shared:ThemeIcon Width="16" Height="16" Icon="ok.svg" />
                                 <TextBlock Text="Apply metadata" />
                             </StackPanel>
                         </Button>
+
+                        <TextBlock Margin="0,12,0,0"
+                                   Foreground="{DynamicResource SemiColorText1}"
+                                   Text="Experiment overview" />
+
+                        <StackPanel Spacing="6">
+                            <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Purpose and hypothesis" />
+                            <TextBox Height="112"
+                                     AcceptsReturn="True"
+                                     VerticalContentAlignment="Top"
+                                     TextWrapping="Wrap"
+                                     Padding="4 8" LineHeight="19"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                     Text="{Binding Workspace.PurposeAndHypothesis, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        </StackPanel>
+
+                        <StackPanel Spacing="6">
+                            <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Experiment setup" />
+                            <TextBox Height="112"
+                                     AcceptsReturn="True"
+                                     VerticalContentAlignment="Top"
+                                     TextWrapping="Wrap"
+                                     Padding="4 8" LineHeight="19"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                     Text="{Binding Workspace.ExperimentSetup, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        </StackPanel>
+
+                        <StackPanel Spacing="6">
+                            <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Conclusions" />
+                            <TextBox Height="112"
+                                     AcceptsReturn="True"
+                                     VerticalContentAlignment="Top"
+                                     TextWrapping="Wrap"
+                                     Padding="4 8" LineHeight="19"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                     Text="{Binding Workspace.Conclusions, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        </StackPanel>
+
+                        <StackPanel Margin="0,0,0,24" Spacing="6">
+                            <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Quality control" />
+                            <TextBox Height="112"
+                                     AcceptsReturn="True"
+                                     VerticalContentAlignment="Top"
+                                     TextWrapping="Wrap"
+                                     Padding="4 8" LineHeight="19"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                     Text="{Binding Workspace.QualityControl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
             </Grid>
 
             <Grid Grid.Column="2"
                   IsVisible="{Binding IsGroupMetadataMode}"
-                  Background="{DynamicResource SemiColorBackground1}">
+                  Background="{DynamicResource AppBrushBackground1}">
                 <ScrollViewer HorizontalScrollBarVisibility="Disabled"
                               VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="24"
                                 Spacing="14"
                                 MaxWidth="650"
                                 MinWidth="650"
-                                HorizontalAlignment="Center"
-                                Background="{DynamicResource SemiColorBackground1}">
+                                HorizontalAlignment="Center">
                         <StackPanel Margin="0 12 0 0">
                             <TextBlock Foreground="{DynamicResource SemiColorText1}" Text="Grouping channel metadata" />
                         </StackPanel>
@@ -2064,9 +2130,8 @@
                                                         CommandParameter="{Binding}"
                                                         IsEnabled="{Binding CanRemove}"
                                                         ToolTip.Tip="{Binding RemoveTooltip}">
-                                                    <Image Width="15"
-                                                           Height="15"
-                                                           Source="{SvgImage avares://gated/Resources/delete.svg}" />
+                                                    <shared:ThemeIcon Width="15"
+                                                           Height="15" Icon="delete.svg" />
                                                 </Button>
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>

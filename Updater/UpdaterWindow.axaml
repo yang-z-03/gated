@@ -10,7 +10,7 @@
         MaxHeight="500"
         WindowStartupLocation="CenterScreen"
         FontFamily="avares://update/Fonts/#Roboto"
-        Background="{DynamicResource AppBrushBackground4}">
+        Background="{DynamicResource AppBrushWindowBackground}">
     <Window.Resources>
         <LinearGradientBrush x:Key="RightFadeMask"
                              StartPoint="0%,0%"

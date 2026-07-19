@@ -587,12 +587,14 @@
 
 
     <!-- Gated application light theme tokens. Ordered from intense to smooth. -->
+    <Color x:Key="AppColorBackground0">#FFFFFF</Color>
     <Color x:Key="AppColorBackground1">#F0F0F0</Color>
     <Color x:Key="AppColorBackground2">#EAEAEA</Color>
     <Color x:Key="AppColorBackground3">#E1E1E1</Color>
     <Color x:Key="AppColorBackground4">#DADADA</Color>
     <Color x:Key="AppColorBackground5">#CFCFCF</Color>
     <Color x:Key="AppColorBackground6">#BFBFBF</Color>
+    <Color x:Key="AppColorWindowBackground">#F6F6F6</Color>
 
     <Color x:Key="AppColorBorder1">#EFEFEF</Color>
     <Color x:Key="AppColorBorder2">#CDCDCD</Color>
@@ -680,6 +682,7 @@
     <SolidColorBrush x:Key="AppBrushBackground4" Color="{StaticResource AppColorBackground4}" />
     <SolidColorBrush x:Key="AppBrushBackground5" Color="{StaticResource AppColorBackground5}" />
     <SolidColorBrush x:Key="AppBrushBackground6" Color="{StaticResource AppColorBackground6}" />
+    <SolidColorBrush x:Key="AppBrushWindowBackground" Color="{StaticResource AppColorWindowBackground}" />
 
     <SolidColorBrush x:Key="AppBrushBorder1" Color="{StaticResource AppColorBorder1}" />
     <SolidColorBrush x:Key="AppBrushBorder2" Color="{StaticResource AppColorBorder2}" />
@@ -718,5 +721,5 @@
     <SolidColorBrush x:Key="AppBrushOverlayHighlightSoft" Color="#1A000000" />
     <SolidColorBrush x:Key="AppBrushOverlayHighlight" Color="#2A000000" />
 
-    <SolidColorBrush x:Key="SemiColorSplits" Opacity="1" Color="{StaticResource AppColorBackground2}" />
+    <SolidColorBrush x:Key="SemiColorSplits" Opacity="1" Color="{StaticResource AppColorBackground0}" />
 </ResourceDictionary>

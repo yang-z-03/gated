@@ -8,17 +8,42 @@ using Avalonia.Utilities;
 
 public class DataRowViewPropertyAccessorPlugin : IPropertyAccessorPlugin
 {
-    public bool Match(object obj, string propertyName) => obj is DataRowView row && row.Row.Table.Columns.Contains(propertyName);
+    private const string ordinal_property_prefix = "__gated_data_column_";
+
+    public static string BindingPropertyName(DataColumn column) =>
+        $"{ordinal_property_prefix}{column.Ordinal.ToString(CultureInfo.InvariantCulture)}";
+
+    public bool Match(object obj, string propertyName) =>
+        obj is DataRowView row && try_resolve_column_name(row, propertyName, out _);
 
     public IPropertyAccessor? Start(WeakReference<object?> reference, string propertyName)
     {
         ArgumentNullException.ThrowIfNull(reference);
         ArgumentNullException.ThrowIfNull(propertyName);
 
-        if (!reference.TryGetTarget(out var instance) || instance is null)
+        if (!reference.TryGetTarget(out var instance) || instance is not DataRowView row ||
+            !try_resolve_column_name(row, propertyName, out string column_name))
             return null;
 
-        return new DataRowViewPropertyAccessor(reference, propertyName);
+        return new DataRowViewPropertyAccessor(reference, column_name);
+    }
+
+    private static bool try_resolve_column_name(DataRowView row, string property_name, out string column_name)
+    {
+        column_name = "";
+        if (property_name.StartsWith(ordinal_property_prefix, StringComparison.Ordinal) &&
+            int.TryParse(property_name[ordinal_property_prefix.Length..], NumberStyles.None, CultureInfo.InvariantCulture, out int ordinal) &&
+            ordinal >= 0 && ordinal < row.Row.Table.Columns.Count)
+        {
+            column_name = row.Row.Table.Columns[ordinal].ColumnName;
+            return true;
+        }
+
+        if (!row.Row.Table.Columns.Contains(property_name))
+            return false;
+
+        column_name = property_name;
+        return true;
     }
 }
 

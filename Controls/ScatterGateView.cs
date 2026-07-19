@@ -227,7 +227,6 @@ public sealed class ScatterGateView : Control, IThemeResourceAware
     {
         base.Render(context);
         var bounds = Bounds;
-        context.FillRectangle(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Background3")), bounds);
 
         const double left_axis_space = 72;
         const double right_space = 18;

@@ -11,7 +11,7 @@ namespace gated.Services;
 public sealed class WorkspaceBinarySerializer
 {
     private const uint magic = 0x44544731;
-    private const int version = 46;
+    private const int version = 48;
     private const int minimum_supported_version = 42;
     [ThreadStatic] private static int reading_version;
 
@@ -31,6 +31,7 @@ public sealed class WorkspaceBinarySerializer
         write_page_layouts(writer, workspace);
         write_recent_file_paths(writer, workspace);
         write_metadata_columns(writer, workspace);
+        write_experiment_overview(writer, workspace);
     }
 
     public FlowWorkspace Load(string file_path)
@@ -59,6 +60,8 @@ public sealed class WorkspaceBinarySerializer
         read_page_layouts(reader, workspace, file_version);
         read_recent_file_paths(reader, workspace);
         read_metadata_columns(reader, workspace);
+        if (file_version >= 47)
+            read_experiment_overview(reader, workspace);
 
         return workspace;
     }
@@ -85,6 +88,22 @@ public sealed class WorkspaceBinarySerializer
         workspace.MetadataColumns["Sample"] = MetadataColumnKind.String;
         workspace.MetadataColumns[Configuration.CytometerMetadataKey] = MetadataColumnKind.String;
         sync_identity_metadata(workspace);
+    }
+
+    private static void write_experiment_overview(BinaryWriter writer, FlowWorkspace workspace)
+    {
+        write_string(writer, workspace.PurposeAndHypothesis);
+        write_string(writer, workspace.ExperimentSetup);
+        write_string(writer, workspace.Conclusions);
+        write_string(writer, workspace.QualityControl);
+    }
+
+    private static void read_experiment_overview(BinaryReader reader, FlowWorkspace workspace)
+    {
+        workspace.PurposeAndHypothesis = read_string(reader);
+        workspace.ExperimentSetup = read_string(reader);
+        workspace.Conclusions = read_string(reader);
+        workspace.QualityControl = read_string(reader);
     }
 
     private static void sync_identity_metadata(FlowWorkspace workspace)
@@ -298,6 +317,13 @@ public sealed class WorkspaceBinarySerializer
         if (state.LinkedOutputGroupId.HasValue) writer.Write(state.LinkedOutputGroupId.Value.ToByteArray());
         writer.Write(state.GeneratedSampleIds.Count);
         foreach (var pair in state.GeneratedSampleIds) { writer.Write(pair.Key.ToByteArray()); writer.Write(pair.Value.ToByteArray()); }
+        writer.Write(state.DetectorSettings.Count);
+        foreach (var setting in state.DetectorSettings)
+        {
+            write_string(writer, setting.ChannelName);
+            writer.Write((int)setting.ExcitationLight);
+            writer.Write(setting.PlotOrder);
+        }
     }
 
     private static void read_spectral_state(BinaryReader reader, SpectralUnmixingState state)
@@ -321,7 +347,24 @@ public sealed class WorkspaceBinarySerializer
         if (reader.ReadBoolean()) state.LinkedOutputGroupId = new Guid(reader.ReadBytes(16));
         int map_count = reader.ReadInt32();
         for (int index = 0; index < map_count; index++) state.GeneratedSampleIds[new Guid(reader.ReadBytes(16))] = new Guid(reader.ReadBytes(16));
-        state.SetFit(detectors, signatures, spectra, similarity, coefficients); state.IsStale = stale; state.IsUserModified = modified;
+        var detector_settings = new List<SpectralDetectorSetting>();
+        if (reading_version >= 48)
+        {
+            int detector_setting_count = reader.ReadInt32();
+            for (int index = 0; index < detector_setting_count; index++)
+                detector_settings.Add(new SpectralDetectorSetting
+                {
+                    ChannelName = read_string(reader),
+                    ExcitationLight = (ExcitationLightKind)reader.ReadInt32(),
+                    PlotOrder = reader.ReadInt32()
+                });
+        }
+        state.SetFit(detectors, signatures, spectra, similarity, coefficients);
+        if (reading_version >= 48)
+            state.SetDetectorSettings(detector_settings);
+        else
+            state.DetectorSettings.Clear();
+        state.IsStale = stale; state.IsUserModified = modified;
     }
 
     private static void write_sample(BinaryWriter writer, FlowSample sample)

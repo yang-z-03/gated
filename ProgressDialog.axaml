@@ -8,7 +8,7 @@
         WindowStartupLocation="CenterOwner"
         x:CompileBindings="False"
         Title="Please wait"
-        Background="{DynamicResource AppBrushBackground4}">
+        Background="{DynamicResource AppBrushWindowBackground}">
     <Border Padding="22" MinWidth="420">
         <StackPanel Spacing="10">
             <TextBlock Text="{Binding DialogTitle}" TextAlignment="Center"

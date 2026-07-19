@@ -1547,6 +1547,10 @@ public sealed partial class MainWindowViewModel : NotifyBase
         Python.PythonExtensionRuntime.DisposeWorkspaceStorage(Workspace);
         ClearPythonLogs();
         Workspace.Name = loaded.Name;
+        Workspace.PurposeAndHypothesis = loaded.PurposeAndHypothesis;
+        Workspace.ExperimentSetup = loaded.ExperimentSetup;
+        Workspace.Conclusions = loaded.Conclusions;
+        Workspace.QualityControl = loaded.QualityControl;
         Workspace.Groups.Clear();
         Workspace.PageLayouts.Clear();
         Workspace.IntegrationJobs.Clear();
@@ -1592,6 +1596,10 @@ public sealed partial class MainWindowViewModel : NotifyBase
         Python.PythonExtensionRuntime.DisposeWorkspaceStorage(Workspace);
         ClearPythonLogs();
         Workspace.Name = "Untitled Workspace";
+        Workspace.PurposeAndHypothesis = "";
+        Workspace.ExperimentSetup = "";
+        Workspace.Conclusions = "";
+        Workspace.QualityControl = "";
         Workspace.Groups.Clear();
         Workspace.PageLayouts.Clear();
         Workspace.IntegrationJobs.Clear();
@@ -7589,10 +7597,6 @@ internal sealed record SpilloverCalculationResult(CompensationMatrix? Matrix, st
 public sealed class SpilloverControlRowViewModel : NotifyBase
 {
     public const string BlankParameterName = "Blank";
-    private static readonly SvgImage SampleSvg = load_svg("avares://gated/Resources/tube.svg");
-    private static readonly SvgImage OkSvg = load_svg("avares://gated/Resources/ok.svg");
-    private static readonly SvgImage WarningSvg = load_svg("avares://gated/Resources/warning.svg");
-    private static readonly SvgImage DeleteSvg = load_svg("avares://gated/Resources/delete.svg");
     private readonly SpilloverControlRow state;
     private readonly ObservableCollection<string> parameter_choices;
     private double? positive_fraction;
@@ -7616,9 +7620,9 @@ public sealed class SpilloverControlRowViewModel : NotifyBase
     public string SampleName => Sample.Name;
     public int EventCount => Sample.EventCount;
     public ObservableCollection<string> ParameterChoices => parameter_choices;
-    public SvgImage SampleIcon => SampleSvg;
-    public SvgImage PopulationIcon => IsBlank || PositiveSelection is not null ? OkSvg : WarningSvg;
-    public SvgImage RemoveIcon => DeleteSvg;
+    public string SampleIcon => "tube.svg";
+    public string PopulationIcon => IsBlank || PositiveSelection is not null ? "ok.svg" : "warning.svg";
+    public string RemoveIcon => "delete.svg";
     public ICommand RemoveCommand { get; }
 
     public string ParameterName
@@ -7672,8 +7676,6 @@ public sealed class SpilloverControlRowViewModel : NotifyBase
         OnPropertyChanged(nameof(PopulationIcon));
     }
 
-    private static SvgImage load_svg(string uri) =>
-        new() { Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri(uri))) };
 }
 
 public sealed class AxisChoice : NotifyBase

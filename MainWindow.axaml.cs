@@ -404,7 +404,9 @@ public partial class MainWindow : Window
         {
             if (column.ColumnName.StartsWith("__", StringComparison.Ordinal))
                 continue;
-            var binding = new Binding(column.ColumnName)
+            // Use a parser-safe alias which the DataRowView accessor resolves back
+            // to the real column name (including FCS names such as "$DATE").
+            var binding = new Binding(DataRowViewPropertyAccessorPlugin.BindingPropertyName(column))
             {
                 Mode = column.ColumnName is "Group" or "Sample" ? BindingMode.OneWay : BindingMode.TwoWay,
                 UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged
@@ -413,7 +415,7 @@ public partial class MainWindow : Window
             {
                 Header = column.ColumnName,
                 Binding = binding,
-                Width = column.ColumnName is "Group" or "Sample" ? new DataGridLength(130) : new DataGridLength(120),
+                Width = DataGridLength.Auto,
                 IsReadOnly = column.ColumnName is "Group" or "Sample"
             });
         }
@@ -820,7 +822,7 @@ public partial class MainWindow : Window
         {
             Child = panel
         };
-        ThemeResources.BindAppBrush(dialog_content, Border.BackgroundProperty, "Background3");
+        ThemeResources.BindAppBrush(dialog_content, Border.BackgroundProperty, "WindowBackground");
 
         var dialog = new Window
         {
@@ -828,6 +830,7 @@ public partial class MainWindow : Window
             SizeToContent = SizeToContent.WidthAndHeight,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             CanResize = false,
+            Background = new SolidColorBrush(gated.Shared.ThemeResources.AppColor(this, "WindowBackground")),
             Content = dialog_content
         };
 
@@ -1266,7 +1269,7 @@ public partial class MainWindow : Window
             Width = 640,
             MinWidth = 460,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Background = Background,
+            Background = new SolidColorBrush(gated.Shared.ThemeResources.AppColor(this, "WindowBackground")),
             SizeToContent = SizeToContent.Height,
             Content = content
         };
@@ -1338,7 +1341,7 @@ public partial class MainWindow : Window
             Width = 460,
             MinWidth = 360,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Background = Background,
+            Background = new SolidColorBrush(gated.Shared.ThemeResources.AppColor(this, "WindowBackground")),
             SizeToContent = SizeToContent.Height,
             Content = new StackPanel
             {
@@ -1387,7 +1390,7 @@ public partial class MainWindow : Window
             Width = 520,
             MinWidth = 380,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Background = Background,
+            Background = new SolidColorBrush(gated.Shared.ThemeResources.AppColor(this, "WindowBackground")),
             SizeToContent = SizeToContent.Height,
             Content = new StackPanel
             {
@@ -2715,7 +2718,7 @@ public partial class MainWindow : Window
             Width = 430,
             MinWidth = 360,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Background = Background,
+            Background = new SolidColorBrush(gated.Shared.ThemeResources.AppColor(this, "WindowBackground")),
             SizeToContent = SizeToContent.Height,
             Content = new StackPanel
             {
@@ -3039,7 +3042,7 @@ public partial class MainWindow : Window
             Width = 460,
             MinWidth = 360,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Background = Background,
+            Background = new SolidColorBrush(gated.Shared.ThemeResources.AppColor(this, "WindowBackground")),
             SizeToContent = SizeToContent.Height,
             Content = new StackPanel
             {
@@ -3092,7 +3095,7 @@ public partial class MainWindow : Window
             Width = 460,
             MinWidth = 360,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Background = Background,
+            Background = new SolidColorBrush(gated.Shared.ThemeResources.AppColor(this, "WindowBackground")),
             SizeToContent = SizeToContent.Height,
             Content = new StackPanel
             {
@@ -3150,7 +3153,7 @@ public partial class MainWindow : Window
             Width = 420,
             MinWidth = 360,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Background = Background,
+            Background = new SolidColorBrush(gated.Shared.ThemeResources.AppColor(this, "WindowBackground")),
             SizeToContent = SizeToContent.Height,
             Content = new StackPanel
             {
@@ -3231,7 +3234,7 @@ public partial class MainWindow : Window
             Width = 440,
             MinWidth = 380,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Background = Background,
+            Background = new SolidColorBrush(gated.Shared.ThemeResources.AppColor(this, "WindowBackground")),
             SizeToContent = SizeToContent.Height,
             Content = new StackPanel
             {
@@ -3285,7 +3288,7 @@ public partial class MainWindow : Window
             Width = 440,
             MinWidth = 380,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Background = Background,
+            Background = new SolidColorBrush(gated.Shared.ThemeResources.AppColor(this, "WindowBackground")),
             SizeToContent = SizeToContent.Height,
             Content = new StackPanel
             {
@@ -3364,7 +3367,7 @@ public partial class MainWindow : Window
             Width = 460,
             MinWidth = 400,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Background = Background,
+            Background = new SolidColorBrush(gated.Shared.ThemeResources.AppColor(this, "WindowBackground")),
             SizeToContent = SizeToContent.Height,
             Content = new StackPanel
             {

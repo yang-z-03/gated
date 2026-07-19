@@ -12,6 +12,75 @@ namespace gated.Services;
 
 public sealed class FcsReader
 {
+    public static IReadOnlyDictionary<string, string> MetadataNameLookup { get; } =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["ABRT"] = "Aborted events",
+            ["BTIM"] = "Acquisition start time",
+            ["CELLS"] = "Cell subset",
+            ["COM"] = "Comment",
+            ["CREATOR"] = "Creator software",
+            ["CSMODE"] = "Cell subset mode",
+            ["CSVBITS"] = "Cell subset bit count",
+            ["CYT"] = Configuration.CytometerMetadataKey,
+            ["CYTSN"] = "Cytometer serial number",
+            ["DATE"] = "Acquisition date",
+            ["ETIM"] = "Acquisition end time",
+            ["EXP"] = "Investigator",
+            ["FIL"] = "FCS file name",
+            ["GATE"] = "Acquisition gating parameters",
+            ["GATING"] = "Gating software",
+            ["GUID"] = "Globally unique identifier",
+            ["INST"] = "Institution",
+            ["LAST_MODIFIED"] = "Last modified",
+            ["LAST_MODIFIER"] = "Last modifier",
+            ["LOST"] = "Lost events",
+            ["OP"] = "Operator",
+            ["ORIGINALITY"] = "Originality",
+            ["PLATEID"] = "Plate ID",
+            ["PLATENAME"] = "Plate name",
+            ["PROJECT"] = "Project",
+            ["SMNO"] = "Sample number",
+            ["SRC"] = "Specimen source",
+            ["SYS"] = "Operating system",
+            ["TIMESTEP"] = "Time step",
+            ["TR"] = "Trigger parameter and threshold",
+            ["UNICODE"] = "Unicode text encoding",
+            ["VOL"] = "Sample volume",
+            ["WELLID"] = "Well ID"
+        };
+
+    private static readonly IReadOnlyDictionary<string, string> CommonVendorMetadataNames =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["ACQUISITIONTIME"] = "Acquisition time",
+            ["INSTRUMENTNAME"] = "Instrument name",
+            ["INSTRUMENTSERIALNUMBER"] = "Instrument serial number",
+            ["LASERCOUNT"] = "Laser count",
+            ["LASERNAME"] = "Laser name",
+            ["LASERPOWER"] = "Laser power",
+            ["LASERWAVELENGTH"] = "Laser wavelength",
+            ["SAMPLEID"] = "Sample ID",
+            ["SAMPLENAME"] = "Sample name",
+            ["SOFTWAREVERSION"] = "Software version",
+            ["TUBENAME"] = "Tube name",
+            ["WINDOWEXTENSION"] = "Window extension"
+        };
+
+    private static readonly HashSet<string> NonSampleTextKeywords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "beginanalysis", "endanalysis", "begindata", "enddata", "beginstext", "endstext",
+        "byteord", "datatype", "mode", "nextdata", "par", "tot",
+        "spill", "spillover", "comp"
+    };
+
+    private static readonly HashSet<string> CytometerTextKeywords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "cyt", "cytometer", "instrname", "instrument", "machine"
+    };
+
+    private static readonly Regex ParameterKeyword = new("^p[0-9]+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
     private enum DataType
     {
         UnsignedBinaryInteger,
@@ -30,6 +99,7 @@ public sealed class FcsReader
         var parsed = read_fcs_payload(file_path);
         var sample = new FlowSample(parsed.SampleName, parsed.Channels, parsed.Values);
         sample.Metadata[Configuration.CytometerMetadataKey] = parsed.CytometerName;
+        add_sample_metadata(sample.Metadata, parsed.Text);
         if (try_parse_spillover(parsed.Text, parsed.SampleName, out var spillover))
             sample.DefaultCompensation = spillover;
         return sample;
@@ -40,7 +110,41 @@ public sealed class FcsReader
         var parsed = read_fcs_payload(file_path);
         var sample = new ControlSample(parsed.SampleName, parsed.Channels, parsed.Values);
         sample.Metadata[Configuration.CytometerMetadataKey] = parsed.CytometerName;
+        add_sample_metadata(sample.Metadata, parsed.Text);
         return sample;
+    }
+
+    private static void add_sample_metadata(IDictionary<string, string> metadata, IReadOnlyDictionary<string, string> text)
+    {
+        foreach (var item in text.OrderBy(item => item.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            string key = item.Key.Trim().TrimStart('$');
+            string value = item.Value.Trim();
+            if (string.IsNullOrWhiteSpace(key) || string.IsNullOrWhiteSpace(value) ||
+                NonSampleTextKeywords.Contains(key) || CytometerTextKeywords.Contains(key) ||
+                ParameterKeyword.IsMatch(key))
+                continue;
+
+            metadata[MetadataColumnName(key)] = value;
+        }
+    }
+
+    public static string MetadataColumnName(string identifier)
+    {
+        string key = identifier.Trim().TrimStart('$').ToUpperInvariant();
+        if (MetadataNameLookup.TryGetValue(key, out string? standard_name) ||
+            CommonVendorMetadataNames.TryGetValue(key, out standard_name))
+            return standard_name;
+
+        var laser_match = Regex.Match(key, "^LASER([0-9]+)(NAME|POWER|WAVELENGTH)$", RegexOptions.CultureInvariant);
+        if (laser_match.Success)
+            return $"Laser {laser_match.Groups[1].Value} {laser_match.Groups[2].Value.ToLowerInvariant()}";
+
+        string words = Regex.Replace(key, "[_$.-]+", " ");
+        words = Regex.Replace(words, "([A-Z])([0-9])", "$1 $2");
+        words = Regex.Replace(words, "([0-9])([A-Z])", "$1 $2");
+        words = Regex.Replace(words, "\\s+", " ").Trim().ToLowerInvariant();
+        return words.Length == 0 ? "FCS metadata" : char.ToUpperInvariant(words[0]) + words[1..];
     }
 
     private static ParsedFcsPayload read_fcs_payload(string file_path)

@@ -2,13 +2,13 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        mc:Ignorable="d" Width="400" Height="415" CanResize="False"
+        mc:Ignorable="d" Width="400" Height="415" CanResize="False" xmlns:shared="using:gated.Shared"
         x:Class="gated.AboutWindow" WindowStartupLocation="CenterOwner"
         Title="About Gated" FontSize="{StaticResource SemiFontSizeRegular}"
         FontFamily="{StaticResource SemiFontFamilyRegular}"
-        Background="{DynamicResource AppBrushBackground2}">
+        Background="{DynamicResource AppBrushWindowBackground}">
     <StackPanel Orientation="Vertical">
-        <Grid x:Name="HeaderRack" Width="400" Height="94" Margin="0 0 0 10" Background="{DynamicResource AppBrushBackground2}">
+        <Grid x:Name="HeaderRack" Width="400" Height="94" Margin="0 0 0 10">
             <Canvas x:Name="PixelCanvas" Width="400" Height="84" Margin="0 10 0 0" HorizontalAlignment="Center" VerticalAlignment="Center"
                     IsVisible="False" Opacity="0" IsHitTestVisible="False"/>
             <StackPanel x:Name="TitlePanel" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0 10 0 0">
@@ -50,7 +50,7 @@
             </Label>
             <Button Width="24" Height="24" Padding="4" Background="Transparent" BorderBrush="Transparent"
                     Click="path_info_button_click" Classes="Small">
-                <Image Width="14" Height="14" Source="{SvgImage avares://gated/Resources/info.svg}" />
+                <shared:ThemeIcon Width="14" Height="14" Icon="info.svg" />
             </Button>
         </StackPanel>
     </StackPanel>

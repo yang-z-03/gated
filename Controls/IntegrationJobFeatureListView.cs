@@ -140,13 +140,12 @@ public sealed class IntegrationJobFeatureListView : Control
     private void draw_header(DrawingContext context) =>
         draw_text(context, "Feature channels", new Point(10, 6), 13, gated.Shared.ThemeResources.AppColor("Text4"), false);
 
-    private static void draw_icon(DrawingContext context, Rect rect, string uri)
+    private void draw_icon(DrawingContext context, Rect rect, string uri)
     {
-        var icon = new SvgImage { Source = SvgSource.LoadFromStream(AssetLoader.Open(new System.Uri(uri))) };
-        context.DrawImage(icon, rect);
+        context.DrawImage(gated.Shared.ThemeResources.Icon(this, uri), rect);
     }
 
-    private static void draw_chevron(DrawingContext context, Rect rect, bool expanded)
+    private void draw_chevron(DrawingContext context, Rect rect, bool expanded)
     {
         var uri = expanded ? "avares://gated/Resources/chevron-down.svg" : "avares://gated/Resources/chevron-right.svg";
         draw_icon(context, rect, uri);

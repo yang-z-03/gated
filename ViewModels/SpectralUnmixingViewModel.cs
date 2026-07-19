@@ -8,6 +8,7 @@ using Avalonia;
 using Avalonia.Media;
 using Avalonia.Platform;
 using Avalonia.Svg.Skia;
+using Avalonia.Threading;
 using gated.Controls;
 using gated.Models;
 using gated.Services;
@@ -17,8 +18,9 @@ namespace gated.ViewModels;
 public sealed class SpectralUnmixingViewModel : NotifyBase
 {
     private const int PeakInferenceSampleCount = 5000;
-    private const int MaximumPositiveEventCount = 5000;
+    private const int MaximumPositiveEventCount = 3000;
     private const int MaximumPlotEventCount = 3000;
+    private const int MaximumBackgroundEventCount = 3000;
     private readonly MainWindowViewModel owner;
     private readonly SpectralUnmixingService service = new();
     private FlowGroup? group;
@@ -26,6 +28,9 @@ public sealed class SpectralUnmixingViewModel : NotifyBase
     private string status = "Drop spectral controls to begin.";
     private string warning_text = "";
     private bool is_busy;
+    private bool is_applying;
+    private double apply_progress;
+    private string apply_progress_text = "";
     private int active_cache_updates;
     private bool is_preparing_row_caches;
     private ControlSample? scatter_sample_cache;
@@ -57,12 +62,15 @@ public sealed class SpectralUnmixingViewModel : NotifyBase
         DropControlCommand = new RelayCommand(parameter => drop_control(parameter as ProjectNode), parameter => parameter is ProjectNode { Kind: ProjectNodeKind.ControlSample });
         RemoveControlCommand = new RelayCommand(parameter => remove_control(parameter as SpectralControlRowViewModel));
         FitCommand = new RelayCommand(_ => _ = fit_async(), _ => group is not null && !IsBusy);
-        ApplyCommand = new RelayCommand(_ => apply(), _ => group is not null && !IsBusy && !group.SpectralUnmixing.IsStale && group.SpectralUnmixing.Coefficients.Length > 0);
+        ApplyCommand = new RelayCommand(_ => _ = apply_async(), _ => group is not null && !IsBusy && !group.SpectralUnmixing.IsStale && group.SpectralUnmixing.Coefficients.Length > 0);
         GateCommittedCommand = new RelayCommand(_ => gate_committed());
         NewGatePresetCommand = new RelayCommand(_ => new_gate_preset(), _ => group is not null);
     }
 
     public bool IsBusy { get => is_busy; private set { if (SetField(ref is_busy, value)) raise_commands(); } }
+    public bool IsApplying { get => is_applying; private set => SetField(ref is_applying, value); }
+    public double ApplyProgress { get => apply_progress; private set => SetField(ref apply_progress, value); }
+    public string ApplyProgressText { get => apply_progress_text; private set => SetField(ref apply_progress_text, value); }
     public bool IsPreparingRowCaches { get => is_preparing_row_caches; private set => SetField(ref is_preparing_row_caches, value); }
     public string Status { get => status; private set => SetField(ref status, value); }
     public string WarningText { get => warning_text; private set { if (SetField(ref warning_text, value ?? "")) OnPropertyChanged(nameof(HasWarning)); } }
@@ -84,7 +92,7 @@ public sealed class SpectralUnmixingViewModel : NotifyBase
                 SelectedRow.State.PositiveSelection = null;
                 SelectedRow.NotifyPopulationChanged();
                 mark_stale();
-                _ = rebuild_row_cache_async(SelectedRow);
+                rebuild_row_and_dependents(SelectedRow);
             }
             notify_gate();
         }
@@ -153,8 +161,12 @@ public sealed class SpectralUnmixingViewModel : NotifyBase
         var state = group.SpectralUnmixing; _ = state.DefaultGatePreset;
         initialize_gate_presets(state.GatePresets, group);
         foreach (var preset in state.GatePresets) GatePresets.Add(preset);
-        string cytometer = Configuration.CytometerNameForSample(group.Samples.FirstOrDefault());
-        foreach (var detector in Configuration.SpectralDetectors(cytometer)) Detectors.Add(detector);
+        var configured_controls = state.Rows
+            .Select(row => group.ControlSamples.FirstOrDefault(sample => sample.Id == row.ControlSampleId))
+            .Where(sample => sample is not null)
+            .Select(sample => sample!)
+            .ToArray();
+        load_detector_snapshot(state, configured_controls);
         foreach (var row in state.Rows)
         {
             var sample = group.ControlSamples.FirstOrDefault(item => item.Id == row.ControlSampleId);
@@ -172,11 +184,23 @@ public sealed class SpectralUnmixingViewModel : NotifyBase
         foreach (var row in Rows.Where(item => item.State.PlotCache is null)) _ = rebuild_row_cache_async(row);
     }
 
-    internal void RowChanged(SpectralControlRowViewModel row)
+    internal void RowChanged(SpectralControlRowViewModel row, bool background_assignment_changed = false)
     {
         mark_stale();
-        _ = rebuild_row_cache_async(row);
+        if (background_assignment_changed)
+            foreach (var candidate in Rows) _ = rebuild_row_cache_async(candidate);
+        else
+            _ = rebuild_row_cache_async(row);
         if (ReferenceEquals(row, SelectedRow)) refresh_selected_plots();
+    }
+    internal bool CanAssignBackground(SpectralControlRowViewModel row)
+    {
+        var existing = Rows.FirstOrDefault(candidate => !ReferenceEquals(candidate, row) && candidate.IsBackground);
+        if (existing is null)
+            return true;
+        Status = $"{existing.SampleName} is already assigned as the blank/AF control.";
+        WarningText = $"Only one Unstained/Blank/AF control is allowed. Remove or rename {existing.SampleName} before assigning another blank.";
+        return false;
     }
     internal string InferPeakForDisplay(SpectralControlRowViewModel row)
     {
@@ -188,14 +212,155 @@ public sealed class SpectralUnmixingViewModel : NotifyBase
     private void drop_control(ProjectNode? node)
     {
         if (group is null || node?.ControlSample is not { } sample || group.ControlSamples.All(item => item.Id != sample.Id) || Rows.Any(item => item.Sample.Id == sample.Id)) return;
+        if (is_background_name(sample.Name) && Rows.Any(row => row.IsBackground))
+        {
+            var existing = Rows.First(row => row.IsBackground);
+            Status = $"{existing.SampleName} is already assigned as the blank/AF control.";
+            WarningText = $"Only one Unstained/Blank/AF control is allowed. {sample.Name} was not added.";
+            return;
+        }
+        reconcile_detector_snapshot(group.SpectralUnmixing, Rows.Select(row => row.Sample).Append(sample).ToArray());
         var state = new SpectralControlRow { ControlSampleId = sample.Id, MoleculeName = sample.Name, GatePresetId = group.SpectralUnmixing.DefaultGatePreset.Id };
         if (is_background_name(sample.Name)) { state.Role = SpectralControlRole.UnstainedAf; state.MoleculeName = "AF"; }
-        group.SpectralUnmixing.Rows.Add(state); var row = new SpectralControlRowViewModel(this, state, sample); Rows.Add(row); invalidate_scatter_sample(); SelectedRow = row; notify_visibility_state(); mark_stale(); _ = rebuild_row_cache_async(row); owner.RefreshProjectTreeForSpectral();
+        group.SpectralUnmixing.Rows.Add(state); var row = new SpectralControlRowViewModel(this, state, sample); Rows.Add(row); invalidate_scatter_sample(); SelectedRow = row; notify_visibility_state(); mark_stale(); foreach (var candidate in Rows) _ = rebuild_row_cache_async(candidate); owner.RefreshProjectTreeForSpectral();
+    }
+
+    private void load_detector_snapshot(SpectralUnmixingState state, IReadOnlyList<ControlSample> controls)
+    {
+        var common_names = common_channel_names(controls);
+        IReadOnlyList<SpectralDetectorPreference> snapshot;
+        if (state.DetectorSettings.Count > 0)
+        {
+            snapshot = state.DetectorSettings
+                .OrderBy(setting => setting.PlotOrder)
+                .Where(setting => controls.Count == 0 || common_names.Contains(setting.ChannelName))
+                .Select((setting, index) => detector_from_setting(setting, index))
+                .ToArray();
+        }
+        else if (state.DetectorNames.Count > 0)
+        {
+            string cytometer = detector_snapshot_cytometer(controls);
+            snapshot = state.DetectorNames
+                .Where(name => controls.Count == 0 || common_names.Contains(name))
+                .Select((name, index) => Configuration.DescribeSpectralDetector(name, cytometer, index))
+                .ToArray();
+        }
+        else if (controls.Count > 0)
+        {
+            snapshot = Configuration.SnapshotSpectralDetectors(
+                detector_snapshot_cytometer(controls),
+                common_channels(controls));
+        }
+        else
+        {
+            return;
+        }
+
+        apply_detector_snapshot(state, snapshot);
+    }
+
+    private void reconcile_detector_snapshot(SpectralUnmixingState state, IReadOnlyList<ControlSample> controls)
+    {
+        if (state.DetectorSettings.Count == 0 && state.DetectorNames.Count == 0)
+        {
+            load_detector_snapshot(state, controls);
+            return;
+        }
+
+        var common_names = common_channel_names(controls);
+        var existing = state.DetectorSettings.Count > 0
+            ? state.DetectorSettings.OrderBy(setting => setting.PlotOrder).ToArray()
+            : state.DetectorNames.Select((name, index) => new SpectralDetectorSetting
+            {
+                ChannelName = name,
+                ExcitationLight = Configuration.DescribeSpectralDetector(name, detector_snapshot_cytometer(controls), index).ExcitationLight,
+                PlotOrder = index
+            }).ToArray();
+        apply_detector_snapshot(state, existing
+            .Where(setting => common_names.Contains(setting.ChannelName))
+            .Select((setting, index) => detector_from_setting(setting, index))
+            .ToArray());
+    }
+
+    private void apply_detector_snapshot(SpectralUnmixingState state, IReadOnlyList<SpectralDetectorPreference> snapshot)
+    {
+        string[] previous_names = state.DetectorNames.ToArray();
+        state.SetDetectorSettings(snapshot.Select(detector => new SpectralDetectorSetting
+        {
+            ChannelName = detector.ChannelName,
+            ExcitationLight = detector.ExcitationLight,
+            PlotOrder = detector.PlotOrder
+        }));
+        Detectors.Clear();
+        foreach (var detector in snapshot.OrderBy(detector => detector.PlotOrder))
+            Detectors.Add(new SpectralDetectorPreference
+            {
+                ChannelName = detector.ChannelName,
+                Kind = ChannelSemanticKind.Spectrum,
+                Scale = detector.Scale,
+                ExcitationLight = detector.ExcitationLight,
+                PlotOrder = detector.PlotOrder
+            });
+
+        bool names_changed = !previous_names.SequenceEqual(state.DetectorNames, StringComparer.Ordinal);
+        if (names_changed && state.Coefficients.Length > 0)
+            state.IsStale = true;
+        foreach (var row_state in state.Rows)
+        {
+            if (!row_state.UseAutomaticPeak && !state.DetectorNames.Contains(row_state.PeakChannel, StringComparer.Ordinal))
+            {
+                row_state.UseAutomaticPeak = true;
+                row_state.PeakChannel = "";
+                row_state.PositiveSelection = null;
+            }
+            if (!state.DetectorNames.Contains(row_state.CachedPeakChannel, StringComparer.Ordinal))
+                row_state.CachedPeakChannel = "";
+            row_state.PlotCache = null;
+        }
+        foreach (var row in Rows)
+        {
+            row.Refresh();
+        }
+    }
+
+    private static SpectralDetectorPreference detector_from_setting(SpectralDetectorSetting setting, int plot_order) => new()
+    {
+        ChannelName = setting.ChannelName,
+        Kind = ChannelSemanticKind.Spectrum,
+        Scale = CoordinateScaleKind.Logicle,
+        ExcitationLight = setting.ExcitationLight,
+        PlotOrder = plot_order
+    };
+
+    private string detector_snapshot_cytometer(IReadOnlyList<ControlSample> controls)
+    {
+        string? control_name = controls
+            .Select(control => control.Metadata.TryGetValue(Configuration.CytometerMetadataKey, out string? name) ? name : null)
+            .FirstOrDefault(name => !string.IsNullOrWhiteSpace(name));
+        return control_name ?? Configuration.CytometerNameForSample(group?.Samples.FirstOrDefault());
+    }
+
+    private static IReadOnlyList<ChannelDefinition> common_channels(IReadOnlyList<ControlSample> controls)
+    {
+        if (controls.Count == 0)
+            return Array.Empty<ChannelDefinition>();
+        var common = common_channel_names(controls);
+        return controls[0].Channels.Where(channel => common.Contains(channel.Name)).ToArray();
+    }
+
+    private static HashSet<string> common_channel_names(IReadOnlyList<ControlSample> controls)
+    {
+        if (controls.Count == 0)
+            return new HashSet<string>(StringComparer.Ordinal);
+        var common = controls[0].Channels.Select(channel => channel.Name).ToHashSet(StringComparer.Ordinal);
+        foreach (var control in controls.Skip(1))
+            common.IntersectWith(control.Channels.Select(channel => channel.Name));
+        return common;
     }
 
     private void remove_control(SpectralControlRowViewModel? row)
     {
-        if (group is null || row is null) return; group.SpectralUnmixing.Rows.Remove(row.State); Rows.Remove(row); invalidate_scatter_sample(); SelectedRow = Rows.FirstOrDefault(); notify_visibility_state(); mark_stale(); owner.RefreshProjectTreeForSpectral();
+        if (group is null || row is null) return; bool was_background = row.IsBackground; group.SpectralUnmixing.Rows.Remove(row.State); Rows.Remove(row); invalidate_scatter_sample(); SelectedRow = Rows.FirstOrDefault(); notify_visibility_state(); mark_stale(); if (was_background) foreach (var candidate in Rows) _ = rebuild_row_cache_async(candidate); owner.RefreshProjectTreeForSpectral();
     }
 
     private async Task fit_async()
@@ -216,11 +381,41 @@ public sealed class SpectralUnmixingViewModel : NotifyBase
         finally { IsBusy = false; raise_commands(); }
     }
 
-    private void apply()
+    private async Task apply_async()
     {
         if (group is null) return;
-        try { var target = service.Apply(owner.Workspace, group); if (!OutputGroups.Contains(target)) OutputGroups.Add(target); rebuild_output_group_choices(); SelectedOutputGroupChoice = OutputGroupChoices.FirstOrDefault(choice => choice.Group?.Id == target.Id); Status = $"Unmixed samples written to {target.Name}."; WarningText = ""; owner.RefreshProjectTreeForSpectral(); }
+        var source = group;
+        IsBusy = true;
+        IsApplying = true;
+        ApplyProgress = 0;
+        ApplyProgressText = "Preparing spectral unmixing ...";
+        Status = ApplyProgressText;
+        WarningText = "";
+        try
+        {
+            var target = service.EnsureOutputGroup(owner.Workspace, source);
+            var progress = new Progress<SpectralApplyProgress>(update =>
+            {
+                ApplyProgress = Math.Clamp(update.Fraction * 100, 0, 100);
+                ApplyProgressText = $"{update.Detail} — {ApplyProgress:0}%";
+                Status = ApplyProgressText;
+            });
+            var preparation = await Task.Run(() => service.PrepareApply(source, target, progress));
+            service.CommitApply(source, target, preparation);
+            if (!OutputGroups.Contains(target)) OutputGroups.Add(target);
+            rebuild_output_group_choices();
+            SelectedOutputGroupChoice = OutputGroupChoices.FirstOrDefault(choice => choice.Group?.Id == target.Id);
+            Status = $"Unmixed samples written to {target.Name}.";
+            WarningText = "";
+            owner.RefreshProjectTreeForSpectral();
+        }
         catch (Exception exception) { Status = exception.Message; WarningText = exception.Message; }
+        finally
+        {
+            IsApplying = false;
+            IsBusy = false;
+            raise_commands();
+        }
     }
 
     private void gate_committed()
@@ -229,7 +424,10 @@ public sealed class SpectralUnmixingViewModel : NotifyBase
         var affected = Rows.Where(row => row.State.GatePresetId == SelectedGatePreset.Id).ToArray();
         foreach (var row in affected) { row.State.PositiveSelection = null; row.NotifyPopulationChanged(); }
         mark_stale();
-        foreach (var row in affected) _ = rebuild_row_cache_async(row);
+        if (affected.Any(row => row.IsBackground))
+            foreach (var row in Rows) _ = rebuild_row_cache_async(row);
+        else
+            foreach (var row in affected) _ = rebuild_row_cache_async(row);
     }
     private void new_gate_preset()
     {
@@ -241,6 +439,13 @@ public sealed class SpectralUnmixingViewModel : NotifyBase
     }
 
     private void mark_stale() { if (group is null) return; group.SpectralUnmixing.IsStale = true; Status = "Spectral model requires fitting."; WarningText = ""; OnPropertyChanged(nameof(HasFitResults)); raise_commands(); }
+    private void rebuild_row_and_dependents(SpectralControlRowViewModel row)
+    {
+        if (row.IsBackground)
+            foreach (var candidate in Rows) _ = rebuild_row_cache_async(candidate);
+        else
+            _ = rebuild_row_cache_async(row);
+    }
     private void refresh_selected_plots()
     {
         HistogramSeries.Clear(); SpectralEventIndices = []; SelectedSignature = []; SelectedSignatureAmplitude = 1.0;
@@ -284,11 +489,20 @@ public sealed class SpectralUnmixingViewModel : NotifyBase
         string manual_peak = row.State.UseAutomaticPeak ? "" : row.State.PeakChannel;
         SpilloverRangeSelection? positive_selection = row.State.PositiveSelection;
         bool is_background = row.IsBackground;
+        var background_row = Rows.FirstOrDefault(candidate => candidate.IsBackground);
+        ControlSample? background_sample = is_background ? null : background_row?.Sample;
+        var background_preset = background_row is null ? null : GatePresets.FirstOrDefault(item => item.Id == background_row.State.GatePresetId);
+        string background_x_channel = background_preset?.XChannel ?? "FSC-A";
+        string background_y_channel = background_preset?.YChannel ?? "SSC-A";
+        Point[] background_vertices = background_preset?.Vertices.ToArray() ?? [];
         int generation = row.BeginCacheUpdate();
         begin_cache_work();
         try
         {
-            var result = await Task.Run(() => build_plot_cache(row.Sample, x_channel, y_channel, vertices, detectors, manual_peak, positive_selection, is_background));
+            var result = await Task.Run(() => build_plot_cache(
+                row.Sample, x_channel, y_channel, vertices, detectors, manual_peak,
+                positive_selection, is_background, background_sample,
+                background_x_channel, background_y_channel, background_vertices));
             if (!Rows.Contains(row) || !row.CompleteCacheUpdate(generation, result.GatedIndices, result.PositiveIndices, result.PeakChannel, result.PositiveSelection, result.Fingerprint, result.PositiveCount, result.PopulationCount, result.PlotData)) return;
             if (ReferenceEquals(row, SelectedRow)) refresh_selected_plots();
         }
@@ -310,7 +524,9 @@ public sealed class SpectralUnmixingViewModel : NotifyBase
     private static (int[] GatedIndices, int[] PositiveIndices, string PeakChannel, SpilloverRangeSelection? PositiveSelection, float[] Fingerprint, int PositiveCount, int PopulationCount, SpectralPlotData PlotData) build_plot_cache(
         ControlSample sample, string x_channel, string y_channel, IReadOnlyList<Point> vertices,
         IReadOnlyList<SpectralDetectorPreference> detectors, string manual_peak_channel,
-        SpilloverRangeSelection? positive_selection, bool is_background)
+        SpilloverRangeSelection? positive_selection, bool is_background,
+        ControlSample? background_sample, string background_x_channel,
+        string background_y_channel, IReadOnlyList<Point> background_vertices)
     {
         int[] gated;
         if (vertices.Count < 3)
@@ -322,18 +538,63 @@ public sealed class SpectralUnmixingViewModel : NotifyBase
         }
 
         int[] columns = detectors.Select(detector => sample.GetChannelIndex(detector.ChannelName)).ToArray();
-        string peak_channel = resolve_peak_from_sample(sample, gated, detectors, columns, manual_peak_channel);
+        int[] background_gated = background_sample is null
+            ? []
+            : gated_indices(background_sample, background_x_channel, background_y_channel, background_vertices);
+        int[] sampled_background = deterministic_sample(background_gated, Math.Min(MaximumBackgroundEventCount, background_gated.Length));
+        string peak_channel = !string.IsNullOrWhiteSpace(manual_peak_channel)
+            ? manual_peak_channel
+            : background_sample is not null && sampled_background.Length > 0
+                ? SpectracleSignatureDerivation.ResolvePeak(
+                    sample,
+                    deterministic_sample(gated, Math.Min(PeakInferenceSampleCount, gated.Length)),
+                    background_sample,
+                    sampled_background,
+                    detectors.Select(detector => detector.ChannelName).ToArray())
+                : resolve_peak_from_sample(sample, gated, detectors, columns, manual_peak_channel);
         int peak_column = sample.GetChannelIndex(peak_channel);
         int positive_target = Math.Min(MaximumPositiveEventCount, Math.Max(1, (int)Math.Ceiling(gated.Length * 0.1)));
         int[] positives = is_background
             ? deterministic_sample(gated, Math.Min(MaximumPlotEventCount, gated.Length))
             : select_positive_indices(sample, gated, peak_column, positive_selection, positive_target, out positive_selection);
+        if (!is_background && background_sample is not null && background_gated.Length > 0)
+        {
+            int background_peak_column = background_sample.GetChannelIndex(peak_channel);
+            double[] background_peak = background_peak_column < 0
+                ? []
+                : background_gated
+                    .Select(row => (double)background_sample.RawEvents[row, background_peak_column])
+                    .Where(double.IsFinite).OrderBy(value => value).ToArray();
+            if (background_peak.Length > 0)
+            {
+                double positivity_threshold = quantile(background_peak, 0.99);
+                positives = positives
+                    .Where(row => sample.RawEvents[row, peak_column] > positivity_threshold)
+                    .OrderByDescending(row => sample.RawEvents[row, peak_column])
+                    .Take(MaximumPositiveEventCount)
+                    .ToArray();
+            }
+        }
         int[] selected = positives.Length > MaximumPlotEventCount ? deterministic_sample(positives, MaximumPlotEventCount) : positives;
-        float[] fingerprint = is_background
-            ? calculate_af_fingerprint(sample, selected, columns)
-            : calculate_peak_normalized_fingerprint(sample, selected, columns, peak_column);
-        double raw_maximum = selected.SelectMany(index => columns.Where(column => column >= 0).Select(column => (double)sample.RawEvents[index, column]))
-            .Where(double.IsFinite).Select(value => Math.Max(0, value)).DefaultIfEmpty(1).Max();
+        float[,]? corrected_events = null;
+        float[] fingerprint;
+        if (is_background)
+            fingerprint = SpectracleSignatureDerivation.DeriveAfSignature(sample, selected, detectors.Select(detector => detector.ChannelName).ToArray());
+        else if (background_sample is not null && sampled_background.Length >= SpectracleSignatureDerivation.NeighborCount && selected.Length > 0)
+        {
+            var derived = SpectracleSignatureDerivation.DeriveFluorophoreSignature(
+                sample, selected, background_sample, sampled_background,
+                detectors.Select(detector => detector.ChannelName).ToArray());
+            fingerprint = derived.Signature;
+            corrected_events = derived.CorrectedEvents;
+        }
+        else
+            fingerprint = calculate_peak_normalized_fingerprint(sample, selected, columns, peak_column);
+
+        double raw_maximum = corrected_events is null
+            ? selected.SelectMany(index => columns.Where(column => column >= 0).Select(column => (double)sample.RawEvents[index, column]))
+                .Where(double.IsFinite).Select(value => Math.Max(0, value)).DefaultIfEmpty(1).Max()
+            : corrected_events.Cast<float>().Where(float.IsFinite).Select(value => Math.Max(0, (double)value)).DefaultIfEmpty(1).Max();
         if (raw_maximum <= 0) raw_maximum = 1;
         const int bins = 96;
         var density = new int[detectors.Count, bins];
@@ -342,9 +603,12 @@ public sealed class SpectralUnmixingViewModel : NotifyBase
         for (int detector = 0; detector < columns.Length; detector++)
         {
             int column = columns[detector]; if (column < 0) continue;
-            foreach (int index in selected)
+            for (int selected_index = 0; selected_index < selected.Length; selected_index++)
             {
-                double value = sample.RawEvents[index, column]; if (!double.IsFinite(value)) continue;
+                double value = corrected_events is null
+                    ? sample.RawEvents[selected[selected_index], column]
+                    : corrected_events[selected_index, detector];
+                if (!double.IsFinite(value)) continue;
                 double normalized = spectral_intensity_transform(value) / transformed_maximum;
                 density[detector, Math.Clamp((int)(normalized * bins), 0, bins - 1)]++;
             }
@@ -377,46 +641,6 @@ public sealed class SpectralUnmixingViewModel : NotifyBase
         int peak_detector = Array.IndexOf(columns, peak_column);
         if (peak_detector >= 0)
             fingerprint[peak_detector] = 1.0f;
-        return fingerprint;
-    }
-
-    private static float[] calculate_af_fingerprint(ControlSample sample, int[] rows, int[] columns)
-    {
-        var sums = new double[columns.Length];
-        int count = 0;
-        foreach (int row in rows)
-        {
-            double norm = 0;
-            for (int detector = 0; detector < columns.Length; detector++)
-            {
-                int column = columns[detector];
-                if (column < 0)
-                    continue;
-                double value = sample.RawEvents[row, column];
-                if (double.IsFinite(value))
-                    norm = Math.Max(norm, Math.Abs(value));
-            }
-            if (norm <= double.Epsilon)
-                continue;
-            for (int detector = 0; detector < columns.Length; detector++)
-            {
-                int column = columns[detector];
-                if (column < 0)
-                    continue;
-                double value = sample.RawEvents[row, column];
-                if (double.IsFinite(value))
-                    sums[detector] += value / norm;
-            }
-            count++;
-        }
-        if (count == 0)
-            return new float[columns.Length];
-        double maximum = sums.Select(value => Math.Abs(value / count)).DefaultIfEmpty(0).Max();
-        if (maximum <= double.Epsilon)
-            maximum = 1;
-        var fingerprint = new float[columns.Length];
-        for (int detector = 0; detector < columns.Length; detector++)
-            fingerprint[detector] = (float)(sums[detector] / count / maximum);
         return fingerprint;
     }
 
@@ -524,17 +748,18 @@ public sealed class SpectralUnmixingViewModel : NotifyBase
         }
         effective_selection ??= new SpilloverRangeSelection(lower, upper);
 
-        var selected = new List<int>(Math.Min(target, gated.Length));
+        var selected = new List<int>(gated.Length);
         foreach (int row in gated)
         {
             double value = sample.RawEvents[row, peak_column];
             if (!double.IsFinite(value) || value < lower || value > upper)
                 continue;
             selected.Add(row);
-            if (selected.Count >= target)
-                break;
         }
-        return selected.ToArray();
+        return selected
+            .OrderByDescending(row => sample.RawEvents[row, peak_column])
+            .Take(target)
+            .ToArray();
     }
 
     private static double next_finite_value_above(ControlSample sample, int[] rows, int column, double threshold, double fallback)
@@ -572,6 +797,14 @@ public sealed class SpectralUnmixingViewModel : NotifyBase
                 return minimum + span * bin / (bins - 1);
         }
         return minimum;
+    }
+
+    private static double quantile(double[] sorted, double q)
+    {
+        double position = Math.Clamp(q, 0, 1) * (sorted.Length - 1);
+        int lower = (int)Math.Floor(position);
+        int upper = (int)Math.Ceiling(position);
+        return sorted[lower] + (sorted[upper] - sorted[lower]) * (position - lower);
     }
 
     private static int[] deterministic_sample(int[] source, int maximum)
@@ -651,6 +884,13 @@ public sealed class SpectralUnmixingViewModel : NotifyBase
     {
         if (preset is null || preset.Vertices.Count < 3) return Enumerable.Range(0, sample.EventCount).ToArray(); var x = sample.GetChannelValues(preset.XChannel); var y = sample.GetChannelValues(preset.YChannel); var result = new List<int>();
         for (int index = 0; index < Math.Min(x.Length, y.Length); index++) { bool inside = false; for (int i = 0, j = preset.Vertices.Count - 1; i < preset.Vertices.Count; j = i++) if (((preset.Vertices[i].Y > y[index]) != (preset.Vertices[j].Y > y[index])) && x[index] < (preset.Vertices[j].X - preset.Vertices[i].X) * (y[index] - preset.Vertices[i].Y) / (preset.Vertices[j].Y - preset.Vertices[i].Y) + preset.Vertices[i].X) inside = !inside; if (inside) result.Add(index); }
+        return result.ToArray();
+    }
+    private static int[] gated_indices(ControlSample sample, string x_channel, string y_channel, IReadOnlyList<Point> vertices)
+    {
+        if (vertices.Count < 3) return Enumerable.Range(0, sample.EventCount).ToArray();
+        var x = sample.GetChannelValues(x_channel); var y = sample.GetChannelValues(y_channel); var result = new List<int>();
+        for (int index = 0; index < Math.Min(x.Length, y.Length); index++) if (contains_polygon(vertices, x[index], y[index])) result.Add(index);
         return result.ToArray();
     }
     private ControlSample? spectral_scatter_sample()
@@ -760,10 +1000,6 @@ public sealed record SpectralOutputGroupChoice(string Name, FlowGroup? Group, bo
 
 public sealed class SpectralControlRowViewModel : NotifyBase
 {
-    private static readonly SvgImage SampleSvg = load_svg("avares://gated/Resources/tube.svg");
-    private static readonly SvgImage OkSvg = load_svg("avares://gated/Resources/ok.svg");
-    private static readonly SvgImage WarningSvg = load_svg("avares://gated/Resources/warning.svg");
-    private static readonly SvgImage DeleteSvg = load_svg("avares://gated/Resources/delete.svg");
     private readonly SpectralUnmixingViewModel owner;
     private int cache_generation;
     private bool updating_from_cache;
@@ -778,9 +1014,9 @@ public sealed class SpectralControlRowViewModel : NotifyBase
     public ICommand SelectCommand { get; }
     public ICommand RemoveCommand => owner.RemoveControlCommand;
     public string SampleName => Sample.Name;
-    public SvgImage SampleIcon => SampleSvg;
-    public SvgImage PopulationIcon => IsBackground || State.PositiveSelection is not null ? OkSvg : WarningSvg;
-    public SvgImage RemoveIcon => DeleteSvg;
+    public string SampleIcon => "tube.svg";
+    public string PopulationIcon => IsBackground || State.PositiveSelection is not null ? "ok.svg" : "warning.svg";
+    public string RemoveIcon => "delete.svg";
     public string MoleculeName
     {
         get => State.MoleculeName;
@@ -793,6 +1029,13 @@ public sealed class SpectralControlRowViewModel : NotifyBase
             if (State.Role == role && string.Equals(State.MoleculeName, molecule, StringComparison.Ordinal))
                 return;
 
+            if (background && !owner.CanAssignBackground(this))
+            {
+                Dispatcher.UIThread.Post(() => OnPropertyChanged(nameof(MoleculeName)));
+                return;
+            }
+
+            bool background_assignment_changed = IsBackground != background;
             State.Role = role;
             State.MoleculeName = molecule;
             OnPropertyChanged();
@@ -800,7 +1043,7 @@ public sealed class SpectralControlRowViewModel : NotifyBase
             rebuild_maximum_channel_choices();
             OnPropertyChanged(nameof(MaximumChannel));
             NotifyPopulationChanged();
-            owner.RowChanged(this);
+            owner.RowChanged(this, background_assignment_changed);
         }
     }
     public bool IsBackground => State.Role == SpectralControlRole.UnstainedAf;
@@ -927,7 +1170,6 @@ public sealed class SpectralControlRowViewModel : NotifyBase
         NotifyPopulationChanged();
     }
     private static bool is_background(string value) => value.Equals("unstained", StringComparison.OrdinalIgnoreCase) || value.Equals("blank", StringComparison.OrdinalIgnoreCase) || value.Equals("af", StringComparison.OrdinalIgnoreCase);
-    private static SvgImage load_svg(string uri) => new() { Source = SvgSource.LoadFromStream(AssetLoader.Open(new Uri(uri))) };
     private void rebuild_maximum_channel_choices()
     {
         if (maximum_channel_choices.Count == 0)
