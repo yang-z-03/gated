@@ -11,7 +11,7 @@ namespace gated.Services;
 public sealed class WorkspaceBinarySerializer
 {
     private const uint magic = 0x44544731;
-    private const int version = 48;
+    private const int version = 49;
     private const int minimum_supported_version = 42;
     [ThreadStatic] private static int reading_version;
 
@@ -155,6 +155,10 @@ public sealed class WorkspaceBinarySerializer
         writer.Write(group.SpectralSourceGroupId.HasValue);
         if (group.SpectralSourceGroupId.HasValue)
             writer.Write(group.SpectralSourceGroupId.Value.ToByteArray());
+        write_mass_normalization_state(writer, group.MassNormalization);
+        writer.Write(group.MassNormalizationSourceGroupId.HasValue);
+        if (group.MassNormalizationSourceGroupId.HasValue)
+            writer.Write(group.MassNormalizationSourceGroupId.Value.ToByteArray());
     }
 
     private static FlowGroup read_group(BinaryReader reader, int file_version)
@@ -192,6 +196,11 @@ public sealed class WorkspaceBinarySerializer
         {
             read_spectral_state(reader, group.SpectralUnmixing);
             if (reader.ReadBoolean()) group.SpectralSourceGroupId = new Guid(reader.ReadBytes(16));
+        }
+        if (file_version >= 49)
+        {
+            read_mass_normalization_state(reader, group.MassNormalization);
+            if (reader.ReadBoolean()) group.MassNormalizationSourceGroupId = new Guid(reader.ReadBytes(16));
         }
 
         return group;
@@ -365,6 +374,90 @@ public sealed class WorkspaceBinarySerializer
         else
             state.DetectorSettings.Clear();
         state.IsStale = stale; state.IsUserModified = modified;
+    }
+
+    private static void write_mass_normalization_state(BinaryWriter writer, MassNormalizationState state)
+    {
+        writer.Write(state.RemoveBeadsAndDoublets);
+        writer.Write(state.LinkedOutputGroupId.HasValue);
+        if (state.LinkedOutputGroupId.HasValue) writer.Write(state.LinkedOutputGroupId.Value.ToByteArray());
+        writer.Write(state.GeneratedSampleIds.Count);
+        foreach (var pair in state.GeneratedSampleIds)
+        {
+            writer.Write(pair.Key.ToByteArray());
+            writer.Write(pair.Value.ToByteArray());
+        }
+        writer.Write(state.Rows.Count);
+        foreach (var row in state.Rows)
+        {
+            writer.Write(row.SampleId.ToByteArray());
+            writer.Write(row.BeadTypeId.ToByteArray());
+            writer.Write(row.BeadLotId.ToByteArray());
+            write_string(writer, row.BeadTypeName);
+            write_string(writer, row.BeadLotName);
+            write_string(writer, row.DnaChannel);
+            writer.Write(row.References.Count);
+            foreach (var reference in row.References)
+            {
+                writer.Write(reference.MassNumber);
+                writer.Write(reference.ReferenceIntensity);
+            }
+            writer.Write(row.Gates.Count);
+            foreach (var gate in row.Gates)
+            {
+                writer.Write(gate.MassNumber);
+                write_string(writer, gate.ChannelName);
+                writer.Write(gate.Vertices.Count);
+                foreach (var vertex in gate.Vertices)
+                {
+                    writer.Write(vertex.X);
+                    writer.Write(vertex.Y);
+                }
+            }
+        }
+    }
+
+    private static void read_mass_normalization_state(BinaryReader reader, MassNormalizationState state)
+    {
+        state.RemoveBeadsAndDoublets = reader.ReadBoolean();
+        if (reader.ReadBoolean()) state.LinkedOutputGroupId = new Guid(reader.ReadBytes(16));
+        int generated_count = reader.ReadInt32();
+        for (int index = 0; index < generated_count; index++)
+            state.GeneratedSampleIds[new Guid(reader.ReadBytes(16))] = new Guid(reader.ReadBytes(16));
+        int row_count = reader.ReadInt32();
+        for (int index = 0; index < row_count; index++)
+        {
+            var row = new MassNormalizationRow
+            {
+                SampleId = new Guid(reader.ReadBytes(16)),
+                BeadTypeId = new Guid(reader.ReadBytes(16)),
+                BeadLotId = new Guid(reader.ReadBytes(16)),
+                BeadTypeName = read_string(reader),
+                BeadLotName = read_string(reader),
+                DnaChannel = read_string(reader)
+            };
+            int reference_count = reader.ReadInt32();
+            for (int reference_index = 0; reference_index < reference_count; reference_index++)
+                row.References.Add(new MassReferenceSnapshot
+                {
+                    MassNumber = reader.ReadInt32(),
+                    ReferenceIntensity = reader.ReadDouble()
+                });
+            int gate_count = reader.ReadInt32();
+            for (int gate_index = 0; gate_index < gate_count; gate_index++)
+            {
+                var gate = new MassBeadGateState
+                {
+                    MassNumber = reader.ReadInt32(),
+                    ChannelName = read_string(reader)
+                };
+                int vertex_count = reader.ReadInt32();
+                for (int vertex_index = 0; vertex_index < vertex_count; vertex_index++)
+                    gate.Vertices.Add(new Point(reader.ReadDouble(), reader.ReadDouble()));
+                row.Gates.Add(gate);
+            }
+            state.Rows.Add(row);
+        }
     }
 
     private static void write_sample(BinaryWriter writer, FlowSample sample)

@@ -159,7 +159,12 @@
             <Setter Property="CornerRadius" Value="4" />
         </Style>
         <Style Selector="ListBox#spectral_control_table ListBoxItem">
-            <Setter Property="Padding" Value="0" />
+            <Setter Property="Padding" Value="4,0" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="CornerRadius" Value="4" />
+        </Style>
+        <Style Selector="ListBox#mass_normalization_table ListBoxItem">
+            <Setter Property="Padding" Value="4,0" />
             <Setter Property="Margin" Value="0" />
             <Setter Property="CornerRadius" Value="4" />
         </Style>
@@ -308,8 +313,10 @@
                 <MenuItem Header="Subsample sample ..." Click="subsample_sample_menu_item_click" />
                 <MenuItem Header="Copy hierarchy view options to group" Command="{Binding CopyHierarchyViewOptionsToGroupCommand}" />
                 <MenuItem Header="Select equivalent nodes" IsEnabled="False" />
+                <Separator />
                 <MenuItem Header="Expand" Command="{Binding ExpandProjectTreeCommand}" InputGesture="Ctrl + E"/>
                 <MenuItem Header="Collapse" Command="{Binding CollapseProjectTreeCommand}" />
+                <Separator />
                 <MenuItem Header="Preferences ..." Click="preferences_menu_item_click" />
             </MenuItem>
             <MenuItem Header="_Plotting" IsEnabled="{Binding IsDefaultAnalysisMode}">
@@ -550,7 +557,7 @@
                               </StackPanel>
                               <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6" Margin="18,0,0,0" VerticalAlignment="Center">
                                 <Button Classes="Small" Width="32" Height="32" Padding="6" Command="{Binding SelectPreviousEquivalentSampleCommand}">
-                                    <shared:ThemeIcon Width="18" Height="18" Icon="left.svg" />
+                                    <shared:ThemeIcon Width="18" Height="18" Icon="back.svg" />
                                 </Button>
                                 <ComboBox Width="210"
                                           Classes="SampleSwitcher"
@@ -1158,6 +1165,9 @@
                                     <CheckBox Content="Show gridlines"
                                               IsEnabled="{Binding CanEditSelectedPageGridTickOptions}"
                                               IsChecked="{Binding SelectedPageElement.ShowGridlines}" />
+                                    <CheckBox Content="Show tick labels"
+                                              IsEnabled="{Binding CanEditSelectedPageGridTickOptions}"
+                                              IsChecked="{Binding SelectedPageElement.ShowTickLabels}" />
                                     <CheckBox Content="Show gates"
                                               IsEnabled="{Binding CanEditSelectedPageFlowOptions}"
                                               IsChecked="{Binding SelectedPageElement.ShowGates}" />
@@ -1461,7 +1471,7 @@
 
                                 <Grid ColumnDefinitions="Auto,150,Auto" Grid.Row="0" ColumnSpacing="8" VerticalAlignment="Center" HorizontalAlignment="Center" Height="32">
                                     <Button Classes="Small" Width="30" Command="{Binding SelectPreviousSpilloverChannelCommand}">
-                                        <shared:ThemeIcon Width="16" Height="16" Icon="left.svg" />
+                                        <shared:ThemeIcon Width="16" Height="16" Icon="back.svg" />
                                     </Button>
                                     <ComboBox Grid.Column="1"
                                               Width="150"
@@ -1945,6 +1955,108 @@
                                 </ScrollViewer>
                             </StackPanel>
                         </Expander>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+
+            <Grid Grid.Column="2"
+                  IsVisible="{Binding IsMassNormalizationMode}"
+                  Background="{DynamicResource AppBrushBackground1}">
+                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="24" Spacing="14" MaxWidth="750" MinWidth="750" HorizontalAlignment="Center">
+                        <StackPanel Margin="0 12" Spacing="8">
+                            <TextBlock Foreground="{DynamicResource AppBrushText2}" FontWeight="Bold" Text="Mass normalization" />
+                            <TextBlock Foreground="{DynamicResource SemiColorText1}" TextWrapping="Wrap" LineHeight="18"
+                                       Text="Element bead signals provide a time-dependent reference for correcting acquisition drift in mass-cytometry channels. Add samples, verify the automatically detected bead gates, and write normalized copies to a separate grouping." />
+                        </StackPanel>
+
+                        <Grid ColumnDefinitions="280,*" ColumnSpacing="5" IsVisible="{Binding MassPanel.HasRows}">
+                            <Grid RowDefinitions="28,250">
+                                <Grid ColumnDefinitions="Auto,150,Auto" ColumnSpacing="8" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                    <Button Classes="Small" Width="30" Command="{Binding MassPanel.SelectPreviousGatePlotCommand}">
+                                        <shared:ThemeIcon Width="16" Height="16" Icon="back.svg" />
+                                    </Button>
+                                    <ComboBox Grid.Column="1" Width="150" Classes="Small"
+                                              ItemsSource="{Binding MassPanel.GatePlots}"
+                                              SelectedItem="{Binding MassPanel.SelectedGatePlot, Mode=TwoWay}">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                    <Button Grid.Column="2" Classes="Small" Width="30" Command="{Binding MassPanel.SelectNextGatePlotCommand}">
+                                        <shared:ThemeIcon Width="16" Height="16" Icon="right.svg" />
+                                    </Button>
+                                </Grid>
+                                <controls:ScatterGateView Grid.Row="1" Height="250" Margin="0 -12 0 12"
+                                                          Sample="{Binding MassPanel.SelectedGatePlot.Sample}"
+                                                          XChannel="{Binding MassPanel.SelectedGatePlot.XChannel}"
+                                                          YChannel="{Binding MassPanel.SelectedGatePlot.YChannel}"
+                                                          XMinimum="0" XMaximum="{Binding MassPanel.SelectedGatePlot.XMaximum}"
+                                                          XScale="{Binding MassPanel.SelectedGatePlot.XScale}"
+                                                          YMinimum="0" YMaximum="{Binding MassPanel.SelectedGatePlot.YMaximum}"
+                                                          YScale="{Binding MassPanel.SelectedGatePlot.YScale}"
+                                                          Vertices="{Binding MassPanel.SelectedGatePlot.Vertices}"
+                                                          VerticesCommittedCommand="{Binding MassPanel.GateCommittedCommand}" />
+                            </Grid>
+                            <controls:TimeDynamicsView Grid.Column="1" Height="278" Margin="0 5 0 -5" Data="{Binding MassPanel.TimeDynamics}" />
+                        </Grid>
+
+                        <TextBlock Foreground="{DynamicResource SemiColorText1}" Margin="0 8 0 0" Text="Drag regular samples from this grouping into the table" />
+                        <Border Height="300" BorderBrush="{DynamicResource AppBrushBorder3}" BorderThickness="1" CornerRadius="6" Background="{DynamicResource AppBrushBackground3}">
+                            <Grid RowDefinitions="29,*">
+                                <Border Background="{DynamicResource AppBrushBackground3}" CornerRadius="6 6 0 0" Padding="10,0">
+                                    <Grid ColumnDefinitions="165,120,120,100,*,24" Margin="8 0" ColumnSpacing="4">
+                                        <TextBlock Text="Sample" FontSize="13" Foreground="{DynamicResource SemiColorText1}" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="1" Text="Bead type" FontSize="13" Foreground="{DynamicResource SemiColorText1}" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="2" Text="Bead lot" FontSize="13" Foreground="{DynamicResource SemiColorText1}" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="3" Text="DNA channel" FontSize="13" Foreground="{DynamicResource SemiColorText1}" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="4" Text="Bead detection" FontSize="13" Foreground="{DynamicResource SemiColorText1}" VerticalAlignment="Center" />
+                                    </Grid>
+                                </Border>
+                                <ListBox x:Name="mass_normalization_table" Grid.Row="1" SelectionMode="Single" Margin="8 0 8 8"
+                                         ItemsSource="{Binding MassPanel.Rows}" SelectedItem="{Binding MassPanel.SelectedRow, Mode=TwoWay}"
+                                         Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Height="30" Padding="3,0" CornerRadius="4" ClipToBounds="True">
+                                                <Grid ColumnDefinitions="165,120,120,100,*,24" ColumnSpacing="4" VerticalAlignment="Center">
+                                                    <StackPanel Orientation="Horizontal" Spacing="7" ClipToBounds="True">
+                                                        <shared:ThemeIcon Width="15" Height="15" Icon="{Binding SampleIcon}" />
+                                                        <TextBlock Text="{Binding SampleName}" FontSize="13" Foreground="{DynamicResource SemiColorText0}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                                    </StackPanel>
+                                                    <ComboBox Grid.Column="1" Classes="Small" ItemsSource="{Binding BeadTypes}" SelectedItem="{Binding SelectedBeadType, Mode=TwoWay}" />
+                                                    <ComboBox Grid.Column="2" Classes="Small" ItemsSource="{Binding BeadLots}" SelectedItem="{Binding SelectedBeadLot, Mode=TwoWay}" />
+                                                    <ComboBox Grid.Column="3" Classes="Small" ItemsSource="{Binding DnaChannels}" SelectedItem="{Binding DnaChannel, Mode=TwoWay}" />
+                                                    <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="7" ClipToBounds="True">
+                                                        <shared:ThemeIcon Width="15" Height="15" Icon="{Binding PopulationIcon}" />
+                                                        <TextBlock Text="{Binding PopulationText}" FontSize="13" VerticalAlignment="Center" Foreground="{DynamicResource SemiColorText1}" TextTrimming="CharacterEllipsis" />
+                                                    </StackPanel>
+                                                    <Button Grid.Column="5" Classes="Quiet ChannelIconButton" Command="{Binding RemoveCommand}" CommandParameter="{Binding}" ToolTip.Tip="Remove sample">
+                                                        <shared:ThemeIcon Width="15" Height="15" Icon="{Binding RemoveIcon}" />
+                                                    </Button>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </Grid>
+                        </Border>
+
+                        <CheckBox Content="Remove beads and bead-associated doublets from output" IsChecked="{Binding MassPanel.RemoveBeadsAndDoublets, Mode=TwoWay}" />
+                        <Grid ColumnDefinitions="Auto,220,*,Auto" ColumnSpacing="8" IsVisible="{Binding MassPanel.HasRows}">
+                            <TextBlock Text="Output grouping" Foreground="{DynamicResource SemiColorText2}" VerticalAlignment="Center" />
+                            <ComboBox Grid.Column="1" Width="220" Classes="Small" ItemsSource="{Binding MassPanel.OutputGroupChoices}" SelectedItem="{Binding MassPanel.SelectedOutputGroupChoice, Mode=TwoWay}" />
+                            <Button Grid.Column="3" Classes="Small" Content="Apply to grouping" Command="{Binding MassPanel.ApplyCommand}" />
+                        </Grid>
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" IsVisible="{Binding MassPanel.IsApplying}">
+                            <ProgressBar Minimum="0" Maximum="100" Height="8" VerticalAlignment="Center" Value="{Binding MassPanel.ApplyProgress}" />
+                            <TextBlock Grid.Column="1" MinWidth="250" TextAlignment="Right" Foreground="{DynamicResource SemiColorText1}" Text="{Binding MassPanel.ApplyProgressText}" />
+                        </Grid>
+                        <Border IsVisible="{Binding MassPanel.HasWarning}" BorderBrush="{DynamicResource AppBrushWarningBorder}" BorderThickness="1" CornerRadius="6" Padding="10" Background="{DynamicResource AppBrushWarningBackground}">
+                            <TextBlock Foreground="{DynamicResource AppBrushWarningText}" TextWrapping="Wrap" Text="{Binding MassPanel.WarningText}" LineHeight="18"/>
+                        </Border>
                     </StackPanel>
                 </ScrollViewer>
             </Grid>

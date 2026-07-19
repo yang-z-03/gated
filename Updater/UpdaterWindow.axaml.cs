@@ -153,10 +153,10 @@ public sealed partial class UpdaterWindow : Window
         if (index == 0)
         {
             title.Text = options?.RequirementsOnly == true ? "Python runtime is ready" : $"Gated {plan.TargetVersion} is ready";
-            subtitle.Text = "Required archives have been staged. Review the planned installation before applying it.";
+            subtitle.Text = "Required installation files have been staged. Review the planned installation before applying it.";
             populate_summary_page(plan);
             show_only(summary_page);
-            set_ready("Downloads ready", "All required update archives are available locally.");
+            set_ready("Downloads ready", "All required update files are available locally.");
         }
         else if (index == 1)
         {
@@ -171,7 +171,9 @@ public sealed partial class UpdaterWindow : Window
             title.Text = "Installing update";
             subtitle.Text = options?.RequirementsOnly == true
                 ? "Installing embedded Python and reconciling Python packages."
-                : "Replacing application files and reconciling Python packages.";
+                : plan.MsiPath is not null
+                    ? "Installing the Windows package and reconciling Python packages."
+                    : "Replacing application files and reconciling Python packages.";
             show_only(install_page);
             back_button.IsEnabled = false;
             next_button.IsEnabled = false;
@@ -217,9 +219,16 @@ public sealed partial class UpdaterWindow : Window
         string staging_root = Path.Combine(Path.GetTempPath(), "gated-update-stage-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture));
         Directory.CreateDirectory(staging_root);
 
-        var staged_archives = options.RequirementsOnly
+        bool use_msi = !options.RequirementsOnly && target.MsiHref is not null && is_msi_installation(options);
+        var staged_archives = options.RequirementsOnly || use_msi
             ? []
             : download_archives(target.Archives, staging_root, "base", progress);
+        string? msi_path = null;
+        if (use_msi)
+        {
+            msi_path = Path.Combine(staging_root, "gated-update.msi");
+            download_file(target.MsiHref!, msi_path, progress);
+        }
         var python = target.Requirements.FirstOrDefault(requirement => requirement.Type == "package" && requirement.Name == "python");
         bool python_exists = File.Exists(PlatformSupport.EmbeddedPythonLibraryPath(options.RuntimeRoot));
         bool python_required = python is not null &&
@@ -238,7 +247,7 @@ public sealed partial class UpdaterWindow : Window
             return new PythonPackagePlan(package.Name, package.VersionRange, installed_package?.Version, satisfied);
         }).ToArray() ?? [];
 
-        return new UpdatePlan(target, staging_root, staged_archives, staged_python, python, python_required, protected_items, packages);
+        return new UpdatePlan(target, staging_root, staged_archives, msi_path, staged_python, python, python_required, protected_items, packages);
     }
 
     private static void apply_update(UpdateOptions options, UpdatePlan plan, Action<string, double?> progress)
@@ -255,12 +264,12 @@ public sealed partial class UpdaterWindow : Window
         try
         {
             progress("Checking installation file access.", 4);
-            if (!options.RequirementsOnly)
+            if (!options.RequirementsOnly && plan.MsiPath is null)
                 assert_install_root_allows_low_privilege_writes(options.InstallRoot);
             assert_runtime_files_can_be_replaced(options.RuntimeRoot, plan.ProtectedItems);
             terminate_embedded_python_processes(options.RuntimeRoot);
 
-            if (!options.RequirementsOnly)
+            if (!options.RequirementsOnly && plan.MsiPath is null)
             {
                 preserve_compatible_items(options.RuntimeRoot, preserve_root, plan.ProtectedItems, progress);
 
@@ -294,6 +303,18 @@ public sealed partial class UpdaterWindow : Window
                     copy_directory(python_extract_root, options.RuntimeRoot, options.UpdaterPath, progress, 35, 25);
                     restore_executable_bits(options);
                 }
+            }
+            else if (plan.MsiPath is not null)
+            {
+                install_msi(plan.MsiPath, progress);
+                if (plan.PythonRequired)
+                {
+                    string python_root = PlatformSupport.EmbeddedPythonHome(options.RuntimeRoot);
+                    if (Directory.Exists(python_root))
+                        delete_directory_with_retries(python_root, progress);
+                    copy_directory(python_extract_root, options.RuntimeRoot, options.UpdaterPath, progress, 67, 10);
+                }
+                restore_executable_bits(options);
             }
             else
             {
@@ -348,7 +369,11 @@ public sealed partial class UpdaterWindow : Window
 
     private void populate_summary_page(UpdatePlan update_plan)
     {
-        summary_base_package.Text = options?.RequirementsOnly == true ? "Main program will not be updated" : $"{update_plan.BaseArchives.Count} archive(s) staged";
+        summary_base_package.Text = options?.RequirementsOnly == true
+            ? "Main program will not be updated"
+            : update_plan.MsiPath is not null
+                ? "Windows Installer package staged"
+                : $"{update_plan.BaseArchives.Count} archive(s) staged";
         summary_python.Text = update_plan.PythonRequired ? "Will be installed or replaced" : "Installed version satisfies metadata";
         summary_python_packages.Text = $"{update_plan.PythonPackages.Count(package => !package.Satisfied)} package(s) need pip changes";
         summary_scripts.Text = $"{update_plan.ProtectedItems.Count(item => item.Compatible)} kept, {update_plan.ProtectedItems.Count(item => !item.Compatible)} removed";
@@ -364,7 +389,7 @@ public sealed partial class UpdaterWindow : Window
                 "Gated",
                 options?.CurrentVersion.ToString() ?? "unknown",
                 update_plan.TargetVersion.ToString(),
-                options?.RequirementsOnly == true ? "Keep" : "Update"
+                options?.RequirementsOnly == true ? "Keep" : update_plan.MsiPath is not null ? "MSI update" : "Update"
             ]],
             [1, 2]));
 
@@ -447,6 +472,7 @@ public sealed partial class UpdaterWindow : Window
             (string?)element.Attribute("arch"),
             (string?)element.Attribute("minimal"),
             element.Elements("archive").Select(parse_archive).ToArray(),
+            element.Element("msi")?.Attribute("href") is { } msi_href ? new Uri(msi_href.Value) : null,
             requirements,
             script_areas);
     }
@@ -477,17 +503,23 @@ public sealed partial class UpdaterWindow : Window
         {
             var archive = archives[i];
             string path = Path.Combine(staging_root, $"{prefix}-{i + 1}.zip");
-            progress($"Downloading {Path.GetFileName(archive.Href.LocalPath)}.", null);
-            ensure_connection(archive.Href);
-            using var response = http_client.GetAsync(archive.Href, HttpCompletionOption.ResponseHeadersRead).GetAwaiter().GetResult();
-            response.EnsureSuccessStatusCode();
-            using var source = response.Content.ReadAsStream();
-            using var target = File.Create(path);
-            copy_stream_with_progress(source, target, response.Content.Headers.ContentLength, Path.GetFileName(archive.Href.LocalPath), progress);
+            download_file(archive.Href, path, progress);
             staged.Add(new StagedArchive(path, archive.ExtractPath));
         }
 
         return staged.ToArray();
+    }
+
+    private static void download_file(Uri href, string path, Action<string, double?> progress)
+    {
+        string file_name = Path.GetFileName(href.LocalPath);
+        progress($"Downloading {file_name}.", null);
+        ensure_connection(href);
+        using var response = http_client.GetAsync(href, HttpCompletionOption.ResponseHeadersRead).GetAwaiter().GetResult();
+        response.EnsureSuccessStatusCode();
+        using var source = response.Content.ReadAsStream();
+        using var target = File.Create(path);
+        copy_stream_with_progress(source, target, response.Content.Headers.ContentLength, file_name, progress);
     }
 
     private static void copy_stream_with_progress(Stream source, Stream target, long? length, string file_name, Action<string, double?> progress)
@@ -639,6 +671,18 @@ public sealed partial class UpdaterWindow : Window
 
             throw new ManagedInstallationException(managed_installation_message, exception);
         }
+    }
+
+    private static bool is_msi_installation(UpdateOptions options)
+    {
+        if (!OperatingSystem.IsWindows())
+            return false;
+
+        string local_app_data = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        if (string.IsNullOrWhiteSpace(local_app_data))
+            return false;
+
+        return is_same_path(options.InstallRoot, Path.Combine(local_app_data, "gated-core"));
     }
 
     private static void assert_runtime_files_can_be_replaced(string runtime_root, IReadOnlyList<ProtectedItem> scripts)
@@ -834,6 +878,26 @@ public sealed partial class UpdaterWindow : Window
             .Select(item => new PythonPackageState(item.Name ?? "", item.Version ?? ""))
             .Where(item => !string.IsNullOrWhiteSpace(item.Name))
             .ToArray() ?? [];
+    }
+
+    private static void install_msi(string msi_path, Action<string, double?> progress)
+    {
+        progress("Installing Windows Installer package.", 30);
+        var start_info = new ProcessStartInfo
+        {
+            FileName = "msiexec.exe",
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        start_info.ArgumentList.Add("/i");
+        start_info.ArgumentList.Add(msi_path);
+        start_info.ArgumentList.Add("/qn");
+        start_info.ArgumentList.Add("/norestart");
+
+        using var process = Process.Start(start_info) ?? throw new InvalidOperationException("Failed to start Windows Installer.");
+        process.WaitForExit();
+        if (process.ExitCode is not 0 and not 1641 and not 3010)
+            throw new InvalidOperationException($"Windows Installer failed with exit code {process.ExitCode}.");
     }
 
     private static string run_process(string file, string arguments, Action<string, double?> progress, string message)
@@ -1203,6 +1267,7 @@ internal sealed record UpdatePlan(
     VersionEntry Target,
     string StagingRoot,
     IReadOnlyList<StagedArchive> BaseArchives,
+    string? MsiPath,
     StagedArchive? PythonArchive,
     Requirement? PythonRequirement,
     bool PythonRequired,
@@ -1218,6 +1283,7 @@ internal sealed record VersionEntry(
     string? Arch,
     string? MinimalSystemVersion,
     IReadOnlyList<UpdateArchive> Archives,
+    Uri? MsiHref,
     IReadOnlyList<Requirement> Requirements,
     IReadOnlyList<ScriptArea> ScriptAreas)
 {

@@ -200,6 +200,7 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
             or ProjectNodeKind.ControlFolder
             or ProjectNodeKind.SpilloverCompensation
             or ProjectNodeKind.SpectralUnmixing
+            or ProjectNodeKind.MassNormalization
             or ProjectNodeKind.ControlSample
             or ProjectNodeKind.Embedding;
 
@@ -349,6 +350,7 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
             ProjectNodeKind.ControlFolder => "controls.svg",
             ProjectNodeKind.SpilloverCompensation => "matrix.svg",
             ProjectNodeKind.SpectralUnmixing => "embedding.svg",
+            ProjectNodeKind.MassNormalization => "refresh.svg",
             ProjectNodeKind.ControlSample => "tube.svg",
             ProjectNodeKind.Sample => "tube.svg",
             ProjectNodeKind.Population => "subset.svg",

@@ -1267,6 +1267,68 @@ public sealed class SpectralUnmixingState : NotifyBase
     }
 }
 
+public sealed class MassReferenceSnapshot
+{
+    public int MassNumber { get; set; }
+    public double ReferenceIntensity { get; set; } = 1;
+}
+
+public sealed class MassBeadGateState
+{
+    public int MassNumber { get; set; }
+    public string ChannelName { get; set; } = "";
+    public ObservableCollection<Point> Vertices { get; } = new();
+}
+
+public sealed class MassNormalizationRow : NotifyBase
+{
+    private Guid sample_id;
+    private Guid bead_type_id;
+    private Guid bead_lot_id;
+    private string bead_type_name = "";
+    private string bead_lot_name = "";
+    private string dna_channel = "";
+
+    public Guid SampleId { get => sample_id; set => SetField(ref sample_id, value); }
+    public Guid BeadTypeId { get => bead_type_id; set => SetField(ref bead_type_id, value); }
+    public Guid BeadLotId { get => bead_lot_id; set => SetField(ref bead_lot_id, value); }
+    public string BeadTypeName { get => bead_type_name; set => SetField(ref bead_type_name, value ?? ""); }
+    public string BeadLotName { get => bead_lot_name; set => SetField(ref bead_lot_name, value ?? ""); }
+    public string DnaChannel { get => dna_channel; set => SetField(ref dna_channel, value ?? ""); }
+    public ObservableCollection<MassReferenceSnapshot> References { get; } = new();
+    public ObservableCollection<MassBeadGateState> Gates { get; } = new();
+    public int[] QcBeadIndices { get; set; } = [];
+    public int[] RemovedEventIndices { get; set; } = [];
+    public MassTimeDynamicsData? TimeDynamics { get; set; }
+    public string CacheError { get; set; } = "";
+}
+
+public sealed class MassNormalizationState : NotifyBase
+{
+    private bool remove_beads_and_doublets = true;
+    private Guid? linked_output_group_id;
+
+    public ObservableCollection<MassNormalizationRow> Rows { get; } = new();
+    public Dictionary<Guid, Guid> GeneratedSampleIds { get; } = new();
+    public bool RemoveBeadsAndDoublets { get => remove_beads_and_doublets; set => SetField(ref remove_beads_and_doublets, value); }
+    public Guid? LinkedOutputGroupId { get => linked_output_group_id; set => SetField(ref linked_output_group_id, value); }
+}
+
+public sealed record MassTimeSeries(
+    int MassNumber,
+    string ChannelName,
+    IReadOnlyList<double> Times,
+    IReadOnlyList<double> RawMedians,
+    IReadOnlyList<double> NormalizedMedians,
+    double ReferenceIntensity);
+
+public sealed record MassTimeDynamicsData(
+    string TimeChannel,
+    IReadOnlyList<MassTimeSeries> Series,
+    double MinimumTime,
+    double MaximumTime,
+    double MaximumIntensity);
+
 public sealed class ControlSample : NotifyBase
 {
     private string name = "";
@@ -1942,7 +2004,9 @@ public sealed class FlowGroup : NotifyBase
     public ObservableCollection<CompensationMatrix> CompensationCandidates { get; } = new();
     public SpilloverCompensationState SpilloverCompensation { get; } = new();
     public SpectralUnmixingState SpectralUnmixing { get; } = new();
+    public MassNormalizationState MassNormalization { get; } = new();
     public Guid? SpectralSourceGroupId { get; set; }
+    public Guid? MassNormalizationSourceGroupId { get; set; }
     public GateViewOptions RootViewOptions { get; set; } = new();
     public Dictionary<string, GateViewOptions> SampleRootViewOptions { get; } = new(StringComparer.Ordinal);
     public Dictionary<string, AxisSettings> DataImpliedViewOptions { get; } = new(StringComparer.Ordinal);

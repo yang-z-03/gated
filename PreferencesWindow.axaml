@@ -123,6 +123,67 @@
                 </Grid>
             </Grid>
 
+            <Grid x:Name="elementBeadsPage" RowDefinitions="Auto,Auto,Auto,*" RowSpacing="10" IsVisible="False">
+                <TextBlock Foreground="{DynamicResource SemiColorText0}" TextWrapping="Wrap" LineHeight="18"
+                           Text="Define element bead isotope sets and manufacturer lot reference intensities used by mass normalization." />
+
+                <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                    <StackPanel Spacing="8" Orientation="Horizontal" HorizontalAlignment="Left">
+                    <StackPanel Spacing="6">
+                        <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Bead type" />
+                        <ComboBox x:Name="beadTypeCombo" Classes="Small" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Spacing="6">
+                        <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Bead lot" />
+                        <ComboBox x:Name="beadLotCombo" Classes="Small" />
+                    </StackPanel>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Bottom">
+                        <Button x:Name="addBeadTypeButton" Classes="Small" Width="30" ToolTip.Tip="Add bead type">
+                            <shared:ThemeIcon Width="16" Height="16" Icon="add-type.svg" />
+                        </Button>
+                        <Button x:Name="addLotButton" Classes="Small" Width="30" ToolTip.Tip="Add lot definition">
+                            <shared:ThemeIcon Width="16" Height="16" Icon="add-lot.svg" />
+                        </Button>
+                        <Button x:Name="addIsotopeButton" Classes="Small" Width="30" ToolTip.Tip="Add isotope definition">
+                            <shared:ThemeIcon Width="16" Height="16" Icon="add-isotope.svg" />
+                        </Button>
+                        <Button x:Name="removeLotButton" Classes="Small" Width="30" ToolTip.Tip="Remove selected lot">
+                            <shared:ThemeIcon Width="16" Height="16" Icon="delete.svg" />
+                        </Button>
+                    </StackPanel>
+                </Grid>
+
+                <Grid Grid.Row="2" ColumnDefinitions="Auto,*,Auto,*" ColumnSpacing="8">
+                    <TextBlock VerticalAlignment="Center" Foreground="{DynamicResource SemiColorText2}" Text="Type name" />
+                    <TextBox x:Name="beadTypeNameBox" Grid.Column="1" Classes="Small" />
+                    <TextBlock Grid.Column="2" VerticalAlignment="Center" Foreground="{DynamicResource SemiColorText2}" Text="Lot name" />
+                    <TextBox x:Name="beadLotNameBox" Grid.Column="3" Classes="Small" />
+                </Grid>
+
+                <Border Grid.Row="3" BorderBrush="{DynamicResource AppBrushBorder3}" BorderThickness="1" CornerRadius="6"
+                        Background="{DynamicResource AppBrushBackground2}" Padding="8" ClipToBounds="True">
+                    <DataGrid x:Name="beadReferenceGrid" AutoGenerateColumns="False" CanUserResizeColumns="True"
+                              GridLinesVisibility="Horizontal" HeadersVisibility="Column">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Channel" Binding="{Binding MassNumber}" Width="*" IsReadOnly="True" />
+                            <DataGridTextColumn Header="Reference intensity" Binding="{Binding ReferenceIntensity}" Width="2*" />
+                            <DataGridTemplateColumn Width="42" CanUserResize="False">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Button Classes="Small" Width="30" HorizontalAlignment="Center"
+                                                ToolTip.Tip="Remove isotope definition"
+                                                Click="remove_isotope_from_row">
+                                            <shared:ThemeIcon Width="16" Height="16" Icon="delete.svg" />
+                                        </Button>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Border>
+            </Grid>
+
             <StackPanel x:Name="appearancePage"
                         Spacing="18">
                 <TextBlock Foreground="{DynamicResource SemiColorText0}" TextWrapping="Wrap" LineHeight="18"

@@ -49,6 +49,8 @@ public sealed class SpectralDetectorPreference : INotifyPropertyChanged
     private CoordinateScaleKind scale = CoordinateScaleKind.Logicle;
     public event PropertyChangedEventHandler? PropertyChanged;
     public string ChannelName { get; set; } = "";
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? MassNumber { get; set; }
     public ChannelSemanticKind Kind
     {
         get => kind;
@@ -78,6 +80,31 @@ public sealed class SpectralDetectorPreference : INotifyPropertyChanged
     public int PlotOrder { get; set; }
 }
 
+public sealed class ElementBeadReferencePreference
+{
+    public int MassNumber { get; set; }
+    public double ReferenceIntensity { get; set; } = Configuration.DefaultElementBeadReferenceIntensity;
+}
+
+public sealed class ElementBeadLotPreference
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string Name { get; set; } = Configuration.DefaultElementBeadLotName;
+    public ObservableCollection<ElementBeadReferencePreference> References { get; set; } = new();
+
+    public override string ToString() => Name;
+}
+
+public sealed class ElementBeadTypePreference
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string Name { get; set; } = "Element beads";
+    public ObservableCollection<int> Isotopes { get; set; } = new();
+    public ObservableCollection<ElementBeadLotPreference> Lots { get; set; } = new();
+
+    public override string ToString() => Name;
+}
+
 public sealed class ChannelAssumption
 {
     private ChannelSemanticKind kind = ChannelSemanticKind.Optical;
@@ -102,17 +129,27 @@ public sealed class CytometerPreferenceStore
     public string SelectedCytometerName { get; set; } = Configuration.DefaultCytometerName;
     public string ThemeName { get; set; } = "Light";
     public ObservableCollection<CytometerPreference> Cytometers { get; set; } = new();
+    public bool ElementBeadsInitialized { get; set; }
+    public ObservableCollection<ElementBeadTypePreference> ElementBeads { get; set; } = new();
 }
 
 public static class Configuration
 {
     public const string DefaultCytometerName = "Default";
     public const string CytometerMetadataKey = "Cytometer";
+    public const double DefaultElementBeadReferenceIntensity = 4000;
+    public const string DefaultElementBeadLotName = "Default (4000)";
     private const string file_name = "cytometer-preferences.json";
     private static readonly JsonSerializerOptions json_options = new() { WriteIndented = true };
+    // load_store() uses these while normalizing detector and bead metadata, so
+    // they must be initialized before the store field below.
+    private static readonly Regex mass_channel_pattern = new(@"^(?:[A-Z][a-z]?(?<mass>\d{2,3})(?:Di|Dd)?|(?<mass>\d{2,3})[A-Z][a-z]?(?:Di|Dd)?)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Guid dvs_bead_type_id = new("d7a76e26-7e5a-4d59-91b7-bbd47038a140");
+    private static readonly Guid dvs_relative_lot_id = new("71c68fd9-c076-41e5-b223-ae4f8c679151");
+    private static readonly Guid beta_bead_type_id = new("3cbe2e72-a619-4d55-88ab-f9451c719139");
+    private static readonly Guid beta_relative_lot_id = new("05555015-10d5-4aaa-867e-f47cf47b4159");
     private static CytometerPreferenceStore store = load_store();
     private static readonly Lazy<IReadOnlyList<string[]>> spectral_database = new(load_spectral_database);
-    private static readonly Regex mass_channel_pattern = new(@"^(?:[A-Z][a-z]?\d{2,3}(?:Di|Dd)?|\d{2,3}[A-Z][a-z]?(?:Di|Dd)?)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     public static CytometerPreferenceStore Preferences => store;
 
@@ -137,8 +174,12 @@ public static class Configuration
         int order = preference.Detectors.Count;
         foreach (var channel in channels)
         {
-            if (preference.Detectors.Any(item => string.Equals(item.ChannelName, channel.Name, StringComparison.OrdinalIgnoreCase)))
+            var existing = preference.Detectors.FirstOrDefault(item => string.Equals(item.ChannelName, channel.Name, StringComparison.OrdinalIgnoreCase));
+            if (existing is not null)
+            {
+                reconcile_mass_metadata(existing);
                 continue;
+            }
             preference.Detectors.Add(infer_detector(channel.Name, name, order++));
             /* Legacy assumptions remain useful for old preference files. */
             if (preference.Channels.Any(item => pattern_matches(item.Pattern, channel.Name)))
@@ -194,9 +235,27 @@ public static class Configuration
         !string.IsNullOrWhiteSpace(channel_name) && channel_name.Contains("SSC", StringComparison.OrdinalIgnoreCase);
 
     public static ChannelSemanticKind ChannelKind(string channel_name, string? cytometer_name = null) =>
-        detector_for_channel(channel_name, cytometer_name) is { } detector
+        TryInferMassNumber(channel_name, out _)
+            ? ChannelSemanticKind.Mass
+            : detector_for_channel(channel_name, cytometer_name) is { } detector
             ? normalize_kind(detector.Kind, detector.IsSpectral)
             : assumption_for_channel(channel_name, cytometer_name)?.Kind ?? infer_channel(channel_name).Kind;
+
+    public static int? MassNumberForChannel(string channel_name, string? cytometer_name = null)
+    {
+        if (detector_for_channel(channel_name, cytometer_name)?.MassNumber is { } configured)
+            return configured;
+        return TryInferMassNumber(channel_name, out int inferred) ? inferred : null;
+    }
+
+    public static bool TryInferMassNumber(string? channel_name, out int mass_number)
+    {
+        mass_number = 0;
+        if (string.IsNullOrWhiteSpace(channel_name))
+            return false;
+        var match = mass_channel_pattern.Match(channel_name.Trim());
+        return match.Success && int.TryParse(match.Groups["mass"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out mass_number);
+    }
 
     public static PlatformTransformationKind DefaultPlatformTransformationForChannel(string channel_name) =>
         DefaultCoordinateScaleForChannel(channel_name) switch
@@ -423,12 +482,23 @@ public static class Configuration
 
     private static void normalize_preferences(CytometerPreferenceStore loaded)
     {
+        loaded.Cytometers ??= new ObservableCollection<CytometerPreference>();
+        loaded.ElementBeads ??= new ObservableCollection<ElementBeadTypePreference>();
+        if (!loaded.ElementBeadsInitialized)
+        {
+            loaded.ElementBeads.Clear();
+            foreach (var beads in create_default_element_beads())
+                loaded.ElementBeads.Add(beads);
+            loaded.ElementBeadsInitialized = true;
+        }
+        normalize_element_beads(loaded.ElementBeads);
         foreach (var preference in loaded.Cytometers)
         {
             preference.Detectors ??= new ObservableCollection<SpectralDetectorPreference>();
             preference.Channels ??= new ObservableCollection<ChannelAssumption>();
             foreach (var detector in preference.Detectors)
             {
+                reconcile_mass_metadata(detector);
                 detector.Kind = normalize_kind(detector.Kind, detector.IsSpectral);
                 detector.IsSpectral = false;
                 detector.UseObservedRange = detector.Kind == ChannelSemanticKind.Time;
@@ -439,6 +509,66 @@ public static class Configuration
                 channel.UseObservedRange = channel.Kind == ChannelSemanticKind.Time;
             }
         }
+    }
+
+    private static void reconcile_mass_metadata(SpectralDetectorPreference detector)
+    {
+        if (TryInferMassNumber(detector.ChannelName, out int mass_number))
+        {
+            detector.MassNumber = mass_number;
+            detector.Kind = ChannelSemanticKind.Mass;
+            detector.Scale = CoordinateScaleKind.Arcsinh;
+            return;
+        }
+        detector.MassNumber = null;
+    }
+
+    private static void normalize_element_beads(ObservableCollection<ElementBeadTypePreference> types)
+    {
+        foreach (var type in types)
+        {
+            type.Name = string.IsNullOrWhiteSpace(type.Name) ? "Element beads" : type.Name.Trim();
+            type.Isotopes ??= new ObservableCollection<int>();
+            type.Lots ??= new ObservableCollection<ElementBeadLotPreference>();
+            var masses = type.Isotopes.Where(mass => mass > 0).Distinct().OrderBy(mass => mass).ToArray();
+            type.Isotopes.Clear();
+            foreach (int mass in masses) type.Isotopes.Add(mass);
+            foreach (var lot in type.Lots)
+            {
+                lot.Name = string.IsNullOrWhiteSpace(lot.Name) ? "Lot" : lot.Name.Trim();
+                lot.References ??= new ObservableCollection<ElementBeadReferencePreference>();
+                var references = lot.References
+                    .Where(reference => masses.Contains(reference.MassNumber))
+                    .GroupBy(reference => reference.MassNumber)
+                    .ToDictionary(group => group.Key, group => group.First().ReferenceIntensity);
+                lot.References.Clear();
+                foreach (int mass in masses)
+                    lot.References.Add(new ElementBeadReferencePreference
+                    {
+                        MassNumber = mass,
+                        ReferenceIntensity = references.TryGetValue(mass, out double intensity) && double.IsFinite(intensity) && intensity > 0
+                            ? intensity
+                            : DefaultElementBeadReferenceIntensity
+                    });
+            }
+        }
+    }
+
+    private static IReadOnlyList<ElementBeadTypePreference> create_default_element_beads() =>
+    [
+        create_element_beads(dvs_bead_type_id, dvs_relative_lot_id, "DVS beads", [140, 151, 153, 165, 175]),
+        create_element_beads(beta_bead_type_id, beta_relative_lot_id, "Beta beads", [139, 141, 159, 169, 175])
+    ];
+
+    private static ElementBeadTypePreference create_element_beads(Guid type_id, Guid lot_id, string name, IReadOnlyList<int> masses)
+    {
+        var type = new ElementBeadTypePreference { Id = type_id, Name = name };
+        foreach (int mass in masses) type.Isotopes.Add(mass);
+        var lot = new ElementBeadLotPreference { Id = lot_id, Name = DefaultElementBeadLotName };
+        foreach (int mass in masses)
+            lot.References.Add(new ElementBeadReferencePreference { MassNumber = mass, ReferenceIntensity = DefaultElementBeadReferenceIntensity });
+        type.Lots.Add(lot);
+        return type;
     }
 
     private static CytometerPreference create_default_preference() =>
@@ -611,6 +741,7 @@ public static class Configuration
             clone.Detectors.Add(new SpectralDetectorPreference
             {
                 ChannelName = detector.ChannelName,
+                MassNumber = detector.MassNumber,
                 Kind = detector.Kind,
                 Scale = detector.Scale,
                 UseObservedRange = detector.UseObservedRange,
@@ -672,7 +803,7 @@ public static class Configuration
     }
 
     private static bool is_mass_channel_name(string channel_name) =>
-        mass_channel_pattern.IsMatch(channel_name.Trim());
+        TryInferMassNumber(channel_name, out _);
 
     private static IEnumerable<double> signed_log_ticks(double minimum, double maximum, bool major)
     {

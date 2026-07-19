@@ -30,6 +30,7 @@ public enum MainWindowViewState
     GroupMetadata,
     SpilloverCompensation,
     SpectralUnmixing,
+    MassNormalization,
     Platform
 }
 
@@ -110,6 +111,15 @@ public sealed partial class MainWindowViewModel : NotifyBase
     private CancellationTokenSource? gate_recalculation_cancellation;
     private bool is_compensation_applying;
     private CancellationTokenSource? compensation_application_cancellation;
+    private GateClipboard? gate_clipboard;
+
+    private sealed record GateClipboard(
+        Guid SourceGroupId,
+        Guid RootGateId,
+        bool IncludesDescendants,
+        IReadOnlyDictionary<Guid, GateDefinition> Gates,
+        IReadOnlyDictionary<Guid, Guid?> HierarchyParentIds,
+        IReadOnlySet<Guid> PrimarySubtreeIds);
 
     public FlowWorkspace Workspace { get; } = new();
     public ObservableCollection<ProjectNode> ProjectNodes { get; } = new();
@@ -145,6 +155,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
     public DataView WorkspaceMetadataTableView => workspace_metadata_table.DefaultView;
     public DataTable WorkspaceMetadataTable => workspace_metadata_table;
     public SpectralUnmixingViewModel SpectralPanel { get; }
+    public MassNormalizationViewModel MassPanel { get; }
 
     public ICommand CreateGroupCommand { get; }
     public ICommand CreateLayoutCommand { get; }
@@ -165,6 +176,10 @@ public sealed partial class MainWindowViewModel : NotifyBase
     public ICommand RecalculateSelectedGateCommand { get; }
     public ICommand RecalculateSelectedStatisticCommand { get; }
     public ICommand CopyHierarchyViewOptionsToGroupCommand { get; }
+    public ICommand DiscardSamplePopulationViewOptionCommand { get; }
+    public ICommand CopyGateCommand { get; }
+    public ICommand CopyGateWithDescendantsCommand { get; }
+    public ICommand PasteGateCommand { get; }
     public ICommand RefreshSelectedLayoutCommand { get; }
     public ICommand ExpandProjectTreeCommand { get; }
     public ICommand CollapseProjectTreeCommand { get; }
@@ -220,10 +235,12 @@ public sealed partial class MainWindowViewModel : NotifyBase
     public Func<CompensationMatrix, Task<bool>>? RequestCompensationEditorAsync { get; set; }
     public Func<string, string, Task>? RequestMessageAsync { get; set; }
     public Func<string, string, Task<bool>>? RequestConfirmationAsync { get; set; }
+    public Func<string, string, Task<bool>>? RequestCompatibleGatePasteAsync { get; set; }
 
     public MainWindowViewModel()
     {
         SpectralPanel = new SpectralUnmixingViewModel(this);
+        MassPanel = new MassNormalizationViewModel(this);
         Python.PythonExtensionRuntime.StatusChanged += UpdatePythonExecutionStatus;
         Python.PythonExtensionRuntime.LogRunStarted += BeginPythonLogRun;
         Python.PythonExtensionRuntime.LogReceived += AppendPythonLog;
@@ -250,6 +267,10 @@ public sealed partial class MainWindowViewModel : NotifyBase
         RecalculateSelectedGateCommand = new RelayCommand(_ => RecalculateEditedGate(selected_gate), _ => selected_group is not null);
         RecalculateSelectedStatisticCommand = new RelayCommand(_ => recalculate_selected_statistic(), _ => selected_group is not null && selected_statistic_definition() is not null);
         CopyHierarchyViewOptionsToGroupCommand = new RelayCommand(_ => copy_hierarchy_view_options_to_group(), _ => can_copy_hierarchy_view_options_to_group());
+        DiscardSamplePopulationViewOptionCommand = new RelayCommand(_ => discard_sample_population_view_option(), _ => can_discard_sample_population_view_option());
+        CopyGateCommand = new RelayCommand(_ => _ = copy_selected_gate_async(include_descendants: false), _ => can_copy_selected_gate());
+        CopyGateWithDescendantsCommand = new RelayCommand(_ => _ = copy_selected_gate_async(include_descendants: true), _ => can_copy_selected_gate());
+        PasteGateCommand = new RelayCommand(_ => _ = paste_gate_async(), _ => can_paste_gate());
         RefreshSelectedLayoutCommand = new RelayCommand(_ => RefreshLayoutCanvas(), _ => selected_page_layout is not null);
         ExpandProjectTreeCommand = new RelayCommand(_ => set_project_tree_expanded(true));
         CollapseProjectTreeCommand = new RelayCommand(_ => set_project_tree_expanded(false));
@@ -1064,6 +1085,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         OnPropertyChanged(nameof(IsGroupMetadataMode));
         OnPropertyChanged(nameof(IsSpilloverCompensationMode));
         OnPropertyChanged(nameof(IsSpectralUnmixingMode));
+        OnPropertyChanged(nameof(IsMassNormalizationMode));
         OnPropertyChanged(nameof(IsPlotPropertiesMode));
         if (!string.IsNullOrWhiteSpace(status_text))
             StatusText = status_text;
@@ -2486,6 +2508,9 @@ public sealed partial class MainWindowViewModel : NotifyBase
         if (selected_node?.Kind == ProjectNodeKind.Sample && selected_group is not null && selected_sample is not null)
         {
             remove_sample_preferred_views(selected_group, selected_sample.Name);
+            for (int index = selected_group.MassNormalization.Rows.Count - 1; index >= 0; index--)
+                if (selected_group.MassNormalization.Rows[index].SampleId == selected_sample.Id)
+                    selected_group.MassNormalization.Rows.RemoveAt(index);
             selected_group.Samples.Remove(selected_sample);
         }
         else if (selected_node?.Kind == ProjectNodeKind.ControlSample && selected_group is not null && selected_control_sample is not null)
@@ -2503,7 +2528,15 @@ public sealed partial class MainWindowViewModel : NotifyBase
             remove_gate(selected_group, selected_gate);
         else if (selected_node?.Kind == ProjectNodeKind.Group && selected_group is not null)
         {
+            Guid removed_group_id = selected_group.Id;
             Workspace.Groups.Remove(selected_group);
+            foreach (var remaining in Workspace.Groups)
+            {
+                if (remaining.MassNormalization.LinkedOutputGroupId == removed_group_id)
+                    remaining.MassNormalization.LinkedOutputGroupId = null;
+                if (remaining.SpectralUnmixing.LinkedOutputGroupId == removed_group_id)
+                    remaining.SpectralUnmixing.LinkedOutputGroupId = null;
+            }
             group_to_recalculate = null;
         }
         else if (selected_node?.Kind == ProjectNodeKind.Platform && selected_integration_job is not null)
@@ -2625,6 +2658,9 @@ public sealed partial class MainWindowViewModel : NotifyBase
         }
 
         remove_sample_preferred_views(source_group, sample.Name);
+        for (int index = source_group.MassNormalization.Rows.Count - 1; index >= 0; index--)
+            if (source_group.MassNormalization.Rows[index].SampleId == sample.Id)
+                source_group.MassNormalization.Rows.RemoveAt(index);
         source_group.Samples.Remove(sample);
         source_group.RefreshChannelProfile();
         if (required_names.Length > 0 && !sample_names.SequenceEqual(required_names, StringComparer.Ordinal))
@@ -2964,6 +3000,388 @@ public sealed partial class MainWindowViewModel : NotifyBase
         }
     }
 
+    private bool can_copy_selected_gate() =>
+        selected_group is not null && selected_gate is not null &&
+        selected_node?.Kind is ProjectNodeKind.Gate or ProjectNodeKind.GatePopulationSlot or ProjectNodeKind.Population;
+
+    private bool can_paste_gate() =>
+        gate_clipboard is not null && selected_group is not null &&
+        selected_node?.Kind is ProjectNodeKind.GateFolder or ProjectNodeKind.Gate or ProjectNodeKind.GatePopulationSlot or ProjectNodeKind.Population;
+
+    private async Task copy_selected_gate_async(bool include_descendants)
+    {
+        if (selected_group is null || selected_gate is null || !can_copy_selected_gate())
+            return;
+
+        var source_lookup = all_gates(selected_group.Gates)
+            .GroupBy(gate => gate.Id)
+            .ToDictionary(group => group.Key, group => group.First());
+        var primary = (include_descendants ? all_gates([selected_gate]) : [selected_gate]).ToArray();
+        var primary_ids = primary.Select(gate => gate.Id).ToHashSet();
+        var snapshots = primary.ToDictionary(gate => gate.Id, gate => clone_gate_definition(gate, gate.Id));
+        var hierarchy_parent_ids = primary.ToDictionary(
+            gate => gate.Id,
+            gate => gate.Id == selected_gate.Id || gate.Parent is null || !primary_ids.Contains(gate.Parent.Id)
+                ? (Guid?)null
+                : gate.Parent.Id);
+        var visiting = new HashSet<Guid>();
+        var visited = new HashSet<Guid>();
+
+        foreach (var gate in primary)
+        {
+            if (collect_boolean_gate_dependencies(
+                    gate,
+                    source_lookup,
+                    snapshots,
+                    hierarchy_parent_ids,
+                    primary_ids,
+                    visiting,
+                    visited,
+                    out string error))
+                continue;
+            if (RequestMessageAsync is not null)
+                await RequestMessageAsync("Copy gate failed", error);
+            StatusText = error;
+            return;
+        }
+
+        gate_clipboard = new GateClipboard(
+            selected_group.Id,
+            selected_gate.Id,
+            include_descendants,
+            snapshots,
+            hierarchy_parent_ids,
+            primary_ids);
+        StatusText = include_descendants
+            ? $"Copied {selected_gate.Name} and its descendants"
+            : $"Copied {selected_gate.Name}";
+        raise_command_states();
+    }
+
+    private static bool collect_boolean_gate_dependencies(
+        GateDefinition gate,
+        IReadOnlyDictionary<Guid, GateDefinition> source_lookup,
+        IDictionary<Guid, GateDefinition> snapshots,
+        IDictionary<Guid, Guid?> hierarchy_parent_ids,
+        IReadOnlySet<Guid> primary_ids,
+        ISet<Guid> visiting,
+        ISet<Guid> visited,
+        out string error)
+    {
+        error = "";
+        if (visited.Contains(gate.Id)) return true;
+        if (!visiting.Add(gate.Id))
+        {
+            error = $"Logical gate dependency cycle detected at {gate.Name}.";
+            return false;
+        }
+
+        if (gate.IsBooleanCombination)
+        {
+            foreach (var dependency in boolean_dependencies(gate))
+            {
+                if (dependency.GateId is not Guid source_id || !source_lookup.TryGetValue(source_id, out var source))
+                {
+                    error = $"{gate.Name} references a logical source gate that no longer exists.";
+                    visiting.Remove(gate.Id);
+                    return false;
+                }
+                if (!source.PopulationRegions.Contains(dependency.Region))
+                {
+                    error = $"{gate.Name} references an unavailable population of {source.Name}.";
+                    visiting.Remove(gate.Id);
+                    return false;
+                }
+                var ancestor_path = new Stack<GateDefinition>();
+                for (GateDefinition? current = source; current is not null && !primary_ids.Contains(current.Id); current = current.Parent)
+                    ancestor_path.Push(current);
+                GateDefinition? copied_parent = ancestor_path.Count > 0 ? ancestor_path.Peek().Parent : source.Parent;
+                if (copied_parent is not null && visiting.Contains(copied_parent.Id))
+                {
+                    error = $"{gate.Name} depends on its own descendant {source.Name}.";
+                    visiting.Remove(gate.Id);
+                    return false;
+                }
+                while (ancestor_path.Count > 0)
+                {
+                    var required = ancestor_path.Pop();
+                    snapshots.TryAdd(required.Id, clone_gate_definition(required, required.Id));
+                    hierarchy_parent_ids[required.Id] = copied_parent is not null &&
+                                                               (primary_ids.Contains(copied_parent.Id) || snapshots.ContainsKey(copied_parent.Id))
+                        ? copied_parent.Id
+                        : null;
+                    copied_parent = required;
+                    if (!collect_boolean_gate_dependencies(
+                            required,
+                            source_lookup,
+                            snapshots,
+                            hierarchy_parent_ids,
+                            primary_ids,
+                            visiting,
+                            visited,
+                            out error))
+                    {
+                        visiting.Remove(gate.Id);
+                        return false;
+                    }
+                }
+                if (primary_ids.Contains(source.Id) &&
+                    !collect_boolean_gate_dependencies(
+                        source,
+                        source_lookup,
+                        snapshots,
+                        hierarchy_parent_ids,
+                        primary_ids,
+                        visiting,
+                        visited,
+                        out error))
+                {
+                    visiting.Remove(gate.Id);
+                    return false;
+                }
+            }
+        }
+
+        visiting.Remove(gate.Id);
+        visited.Add(gate.Id);
+        return true;
+    }
+
+    private async Task paste_gate_async()
+    {
+        if (gate_clipboard is not { } clipboard || selected_group is null || !can_paste_gate())
+            return;
+
+        GateDefinition? destination_parent = selected_node?.Kind == ProjectNodeKind.GateFolder ? null : selected_gate;
+        if (clipboard.IncludesDescendants && clipboard.SourceGroupId == selected_group.Id &&
+            destination_parent is not null && clipboard.PrimarySubtreeIds.Contains(destination_parent.Id))
+        {
+            const string recursive_message = "A gate and its descendants cannot be pasted into itself or one of its descendants. Copy the gate without descendants to perform this paste.";
+            if (RequestMessageAsync is not null)
+                await RequestMessageAsync("Paste gate failed", recursive_message);
+            StatusText = recursive_message;
+            return;
+        }
+
+        var target_channels = selected_group.Channels
+            .GroupBy(channel => channel.Name, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First().Name, StringComparer.OrdinalIgnoreCase);
+        var missing_by_gate = clipboard.Gates.Values
+            .Select(gate => (Gate: gate, Missing: required_gate_channels(gate)
+                .Where(channel => !target_channels.ContainsKey(channel))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray()))
+            .Where(item => item.Missing.Length > 0)
+            .ToArray();
+
+        bool compatible_only = false;
+        if (missing_by_gate.Length > 0)
+        {
+            string details = string.Join("\n", missing_by_gate.Take(8).Select(item => $"• {item.Gate.Name}: {string.Join(", ", item.Missing)}"));
+            if (missing_by_gate.Length > 8) details += $"\n• … and {missing_by_gate.Length - 8} more";
+            string message = $"The target group does not contain every channel used by the copied gates:\n\n{details}\n\nCancel, or copy only gates whose complete dependency chain is compatible.";
+            compatible_only = RequestCompatibleGatePasteAsync is not null &&
+                              await RequestCompatibleGatePasteAsync("Incompatible gate channels", message);
+            if (!compatible_only) return;
+        }
+
+        var eligible = clipboard.Gates.Keys.ToHashSet();
+        if (compatible_only)
+            foreach (var item in missing_by_gate) eligible.Remove(item.Gate.Id);
+        prune_ineligible_gate_dependencies(clipboard, eligible);
+        var included = required_paste_gate_ids(clipboard, eligible);
+        if (!included.Contains(clipboard.RootGateId))
+        {
+            const string no_compatible_message = "The copied root gate does not have a fully compatible channel and dependency chain for this group.";
+            if (RequestMessageAsync is not null)
+                await RequestMessageAsync("Paste gate failed", no_compatible_message);
+            StatusText = no_compatible_message;
+            return;
+        }
+
+        var new_ids = included.ToDictionary(id => id, _ => Guid.NewGuid());
+        var clones = included.ToDictionary(id => id, id => clone_gate_definition(clipboard.Gates[id], new_ids[id]));
+        foreach (Guid source_id in included)
+        {
+            var clone = clones[source_id];
+            var source = clipboard.Gates[source_id];
+            clone.BooleanFirstGateId = source.BooleanFirstGateId is Guid first && new_ids.TryGetValue(first, out Guid mapped_first) ? mapped_first : null;
+            clone.BooleanSecondGateId = source.BooleanSecondGateId is Guid second && new_ids.TryGetValue(second, out Guid mapped_second) ? mapped_second : null;
+            remap_gate_channels(clone, target_channels);
+        }
+
+        foreach (var item in clipboard.HierarchyParentIds)
+        {
+            if (item.Value is not Guid parent_id || !included.Contains(item.Key) || !included.Contains(parent_id)) continue;
+            clones[item.Key].Parent = clones[parent_id];
+            clones[parent_id].Children.Add(clones[item.Key]);
+        }
+
+        PopulationRegion destination_region = destination_parent is null ? PopulationRegion.Primary : current_parent_population_region();
+        var root_ids = included
+            .Where(id => !clipboard.HierarchyParentIds.TryGetValue(id, out Guid? parent_id) || parent_id is null || !included.Contains(parent_id.Value))
+            .OrderBy(id => id == clipboard.RootGateId ? 1 : 0)
+            .ThenBy(id => clipboard.Gates[id].Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var destination = destination_parent is null ? selected_group.Gates : destination_parent.Children;
+        foreach (Guid root_id in root_ids)
+        {
+            var clone = clones[root_id];
+            clone.Parent = destination_parent;
+            clone.ParentPopulationRegion = destination_region;
+            destination.Add(clone);
+        }
+
+        selected_group.RecalculateSamples();
+        SelectedGate = clones[clipboard.RootGateId];
+        refresh_project_tree();
+        refresh_plot_gates();
+        refresh_selected_statistics();
+        StatusText = included.Count == clipboard.Gates.Count
+            ? $"Pasted {clones[clipboard.RootGateId].Name}"
+            : $"Pasted {clones[clipboard.RootGateId].Name}; incompatible gates were omitted";
+        raise_command_states();
+    }
+
+    private static void prune_ineligible_gate_dependencies(GateClipboard clipboard, ISet<Guid> eligible)
+    {
+        bool changed;
+        do
+        {
+            changed = false;
+            foreach (Guid id in eligible.ToArray())
+            {
+                if (clipboard.HierarchyParentIds.TryGetValue(id, out Guid? parent_id) && parent_id is Guid parent && !eligible.Contains(parent))
+                {
+                    eligible.Remove(id);
+                    changed = true;
+                    continue;
+                }
+                var gate = clipboard.Gates[id];
+                if (gate.IsBooleanCombination && boolean_dependencies(gate).Any(dependency => dependency.GateId is not Guid source || !eligible.Contains(source)))
+                {
+                    eligible.Remove(id);
+                    changed = true;
+                }
+            }
+        } while (changed);
+    }
+
+    private static HashSet<Guid> required_paste_gate_ids(GateClipboard clipboard, IReadOnlySet<Guid> eligible)
+    {
+        var included = new HashSet<Guid>();
+        if (!eligible.Contains(clipboard.RootGateId)) return included;
+
+        void add_gate(Guid id, bool include_primary_children)
+        {
+            if (!eligible.Contains(id)) return;
+            if (!clipboard.PrimarySubtreeIds.Contains(id) &&
+                clipboard.HierarchyParentIds.TryGetValue(id, out Guid? hierarchy_parent) &&
+                hierarchy_parent is Guid parent_id)
+                add_gate(parent_id, include_primary_children: false);
+            if (!included.Add(id)) return;
+            var gate = clipboard.Gates[id];
+            foreach (var dependency in boolean_dependencies(gate))
+                if (dependency.GateId is Guid source_id) add_gate(source_id, include_primary_children: false);
+            if (!include_primary_children) return;
+            foreach (Guid child_id in clipboard.HierarchyParentIds
+                         .Where(item => item.Value == id && clipboard.PrimarySubtreeIds.Contains(item.Key))
+                         .Select(item => item.Key))
+                add_gate(child_id, include_primary_children: true);
+        }
+
+        add_gate(clipboard.RootGateId, include_primary_children: clipboard.IncludesDescendants);
+        return included;
+    }
+
+    private static IEnumerable<(Guid? GateId, PopulationRegion Region)> boolean_dependencies(GateDefinition gate)
+    {
+        if (!gate.IsBooleanCombination) yield break;
+        yield return (gate.BooleanFirstGateId, gate.BooleanFirstRegion);
+        yield return (gate.BooleanSecondGateId, gate.BooleanSecondRegion);
+    }
+
+    private static IEnumerable<string> required_gate_channels(GateDefinition gate)
+    {
+        if (!string.IsNullOrWhiteSpace(gate.XChannel)) yield return gate.XChannel;
+        if (!string.IsNullOrWhiteSpace(gate.YChannel)) yield return gate.YChannel!;
+    }
+
+    private static GateDefinition clone_gate_definition(GateDefinition source, Guid id)
+    {
+        var clone = new GateDefinition
+        {
+            Id = id,
+            Name = source.Name,
+            Kind = source.Kind,
+            XChannel = source.XChannel,
+            YChannel = source.YChannel,
+            ParentPopulationRegion = source.ParentPopulationRegion,
+            XMinimum = source.XMinimum,
+            XMaximum = source.XMaximum,
+            XScale = source.XScale.Clone(),
+            YMinimum = source.YMinimum,
+            YMaximum = source.YMaximum,
+            YScale = source.YScale.Clone(),
+            PreferredXChannel = source.PreferredXChannel,
+            PreferredYChannel = source.PreferredYChannel,
+            PreferredXMinimum = source.PreferredXMinimum,
+            PreferredXMaximum = source.PreferredXMaximum,
+            PreferredXScale = source.PreferredXScale.Clone(),
+            PreferredYMinimum = source.PreferredYMinimum,
+            PreferredYMaximum = source.PreferredYMaximum,
+            PreferredYScale = source.PreferredYScale.Clone(),
+            PreferredPlotMode = source.PreferredPlotMode,
+            PreferredShowOutlierPoints = source.PreferredShowOutlierPoints,
+            PreferredDrawLargeDots = source.PreferredDrawLargeDots,
+            PreferredShowGridlines = source.PreferredShowGridlines,
+            PreferredShowGateAnnotations = source.PreferredShowGateAnnotations,
+            PreferredShowGateAnnotationNames = source.PreferredShowGateAnnotationNames,
+            PreferredContourLevelCount = source.PreferredContourLevelCount,
+            PreferredDensitySmoothing = source.PreferredDensitySmoothing,
+            PreferredDensityPalette = source.PreferredDensityPalette,
+            PreferredDotColor = clone_dot_color(source.PreferredDotColor),
+            BooleanFirstGateId = source.BooleanFirstGateId,
+            BooleanFirstRegion = source.BooleanFirstRegion,
+            BooleanSecondGateId = source.BooleanSecondGateId,
+            BooleanSecondRegion = source.BooleanSecondRegion,
+            IsTreeExpanded = source.IsTreeExpanded
+        };
+        foreach (var vertex in source.Vertices) clone.Vertices.Add(vertex);
+        foreach (var statistic in source.Statistics)
+            clone.Statistics.Add(new StatisticDefinition
+            {
+                Kind = statistic.Kind,
+                DisplayName = statistic.DisplayName,
+                ChannelName = statistic.ChannelName,
+                PythonSource = statistic.PythonSource
+            });
+        foreach (var item in source.PopulationNames) clone.PopulationNames[item.Key] = item.Value;
+        foreach (var item in source.PopulationPreferredViews) clone.PopulationPreferredViews[item.Key] = clone_gate_view_options(item.Value);
+        foreach (var item in source.SamplePreferredViews) clone.SamplePreferredViews[item.Key] = clone_gate_view_options(item.Value);
+        return clone;
+    }
+
+    private static void remap_gate_channels(GateDefinition gate, IReadOnlyDictionary<string, string> channels)
+    {
+        string remap(string value, string fallback = "") =>
+            !string.IsNullOrWhiteSpace(value) && channels.TryGetValue(value, out string? actual) ? actual : fallback;
+
+        gate.XChannel = remap(gate.XChannel, gate.XChannel);
+        gate.YChannel = string.IsNullOrWhiteSpace(gate.YChannel) ? gate.YChannel : remap(gate.YChannel!, gate.YChannel!);
+        gate.PreferredXChannel = remap(gate.PreferredXChannel, gate.XChannel);
+        gate.PreferredYChannel = string.IsNullOrWhiteSpace(gate.PreferredYChannel) ? gate.YChannel : remap(gate.PreferredYChannel!, gate.YChannel ?? "");
+        gate.PreferredDotColor.ChannelName = remap(gate.PreferredDotColor.ChannelName);
+        foreach (var statistic in gate.Statistics)
+            statistic.ChannelName = remap(statistic.ChannelName, gate.XChannel);
+        foreach (var view in gate.PopulationPreferredViews.Values.Concat(gate.SamplePreferredViews.Values))
+        {
+            view.XChannel = remap(view.XChannel, gate.XChannel);
+            view.YChannel = string.IsNullOrWhiteSpace(view.YChannel) ? gate.YChannel : remap(view.YChannel!, gate.YChannel ?? "");
+            view.DotColor.ChannelName = remap(view.DotColor.ChannelName);
+        }
+    }
+
     private static bool has_external_boolean_dependency(FlowGroup group, GateDefinition edited_gate)
     {
         var edited_subtree_ids = all_gates([edited_gate]).Select(gate => gate.Id).ToHashSet();
@@ -3210,7 +3628,10 @@ public sealed partial class MainWindowViewModel : NotifyBase
             return Array.Empty<BooleanPopulationChoice>();
 
         var choices = new List<BooleanPopulationChoice>();
-        foreach (var gate in all_gates(selected_group.Gates).Where(gate => gate.Kind is not (GateKind.Merge or GateKind.Exclude or GateKind.Overlap)))
+        // Logical gates may depend on older logical gates. A gate is added only
+        // after this selection completes and existing sources are not editable,
+        // so the new gate itself cannot appear here or create a back-edge.
+        foreach (var gate in all_gates(selected_group.Gates))
         foreach (var region in gate.PopulationRegions)
             choices.Add(new BooleanPopulationChoice(gate.Id, region, gate.PopulationName(region)));
 
@@ -3314,8 +3735,8 @@ public sealed partial class MainWindowViewModel : NotifyBase
             !passive_control_selection &&
             ViewState is MainWindowViewState.Metadata or MainWindowViewState.GroupMetadata)
             set_view_state(MainWindowViewState.Analysis, "Analysis view");
-        if (node.Kind is not ProjectNodeKind.ControlFolder and not ProjectNodeKind.SpilloverCompensation and not ProjectNodeKind.SpectralUnmixing and not ProjectNodeKind.ControlSample &&
-            ViewState is MainWindowViewState.SpilloverCompensation or MainWindowViewState.SpectralUnmixing)
+        if (node.Kind is not ProjectNodeKind.ControlFolder and not ProjectNodeKind.SpilloverCompensation and not ProjectNodeKind.SpectralUnmixing and not ProjectNodeKind.MassNormalization and not ProjectNodeKind.ControlSample &&
+            ViewState is MainWindowViewState.SpilloverCompensation or MainWindowViewState.SpectralUnmixing or MainWindowViewState.MassNormalization)
             set_view_state(MainWindowViewState.Analysis, "Analysis view");
         var previous_group = selected_group;
         var previous_gate = selected_gate;
@@ -3446,6 +3867,19 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 SelectedCompensation = null;
                 SpectralPanel.SetGroup(selected_group);
                 IsSpectralUnmixingMode = true;
+                break;
+            case ProjectNodeKind.MassNormalization:
+                SelectedIntegrationJob = null;
+                IsWorkspaceMetadataMode = false;
+                if (node.Group is not null)
+                    SelectedGroup = node.Group;
+                SelectedSample = null;
+                SelectedPopulation = null;
+                SelectedGate = null;
+                SelectedControlSample = null;
+                SelectedCompensation = null;
+                MassPanel.SetGroup(selected_group);
+                IsMassNormalizationMode = true;
                 break;
             case ProjectNodeKind.Compensation:
                 SelectedIntegrationJob = null;
@@ -3825,6 +4259,37 @@ public sealed partial class MainWindowViewModel : NotifyBase
             : $"Copied {copied_count} hierarchy view options to grouping defaults";
     }
 
+    private bool can_discard_sample_population_view_option()
+    {
+        if (selected_node?.Kind != ProjectNodeKind.Population ||
+            selected_sample is null ||
+            selected_gate is null ||
+            selected_population is null)
+            return false;
+
+        string key = sample_preferred_view_key(selected_sample.Name, selected_population.Region);
+        return selected_gate.SamplePreferredViews.ContainsKey(key);
+    }
+
+    private void discard_sample_population_view_option()
+    {
+        if (!can_discard_sample_population_view_option() ||
+            selected_sample is null ||
+            selected_gate is null ||
+            selected_population is null)
+            return;
+
+        string key = sample_preferred_view_key(selected_sample.Name, selected_population.Region);
+        if (!selected_gate.SamplePreferredViews.Remove(key))
+            return;
+
+        apply_axis_from_gate_context(selected_gate);
+        refresh_plot_gates();
+        refresh_project_tree_preserving_selection();
+        raise_command_states();
+        StatusText = "Discarded sample population view option";
+    }
+
     private static int copy_population_hierarchy_view_options_to_group(string sample_name, PopulationResult population)
     {
         int copied_count = 0;
@@ -4029,6 +4494,21 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 set_view_state(MainWindowViewState.SpectralUnmixing, "Spectral unmixing");
             }
             else if (IsSpectralUnmixingMode)
+                set_view_state(MainWindowViewState.Analysis, "Analysis view");
+        }
+    }
+
+    public bool IsMassNormalizationMode
+    {
+        get => ViewState == MainWindowViewState.MassNormalization;
+        private set
+        {
+            if (value)
+            {
+                SelectedIntegrationJob = null;
+                set_view_state(MainWindowViewState.MassNormalization, "Mass normalization");
+            }
+            else if (IsMassNormalizationMode)
                 set_view_state(MainWindowViewState.Analysis, "Analysis view");
         }
     }
@@ -4888,6 +5368,13 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 group: group,
                 count: group.SpectralUnmixing.Rows.Count,
                 depth: 3));
+            controls_node.Children.Add(create_project_node(
+                ProjectNodeKind.MassNormalization,
+                "Mass normalization",
+                $"{group_key}:controls:mass-normalization",
+                group: group,
+                count: group.MassNormalization.Rows.Count,
+                depth: 3));
             foreach (var control_sample in group.ControlSamples)
             {
                 controls_node.Children.Add(create_project_node(
@@ -5281,6 +5768,10 @@ public sealed partial class MainWindowViewModel : NotifyBase
             RecalculateSelectedGateCommand,
             RecalculateSelectedStatisticCommand,
             CopyHierarchyViewOptionsToGroupCommand,
+            DiscardSamplePopulationViewOptionCommand,
+            CopyGateCommand,
+            CopyGateWithDescendantsCommand,
+            PasteGateCommand,
             RefreshSelectedLayoutCommand,
             DeleteSelectedCommand,
             CloseWorkspaceCommand,
@@ -7781,6 +8272,7 @@ public enum ProjectNodeKind
     ControlFolder,
     SpilloverCompensation,
     SpectralUnmixing,
+    MassNormalization,
     ControlSample,
     CompensationFolder,
     Compensation,
@@ -7897,6 +8389,7 @@ public sealed class ProjectNode : NotifyBase
         ProjectNodeKind.ControlFolder => "avares://gated/Resources/controls.svg",
         ProjectNodeKind.SpilloverCompensation => "avares://gated/Resources/matrix.svg",
         ProjectNodeKind.SpectralUnmixing => "avares://gated/Resources/embedding.svg",
+        ProjectNodeKind.MassNormalization => "avares://gated/Resources/refresh.svg",
         ProjectNodeKind.ControlSample => "avares://gated/Resources/tube.svg",
         ProjectNodeKind.CompensationFolder => "avares://gated/Resources/matrix.svg",
         ProjectNodeKind.Compensation => IsAppliedCompensation ? "avares://gated/Resources/ok.svg" : "avares://gated/Resources/matrix.svg",
@@ -7931,6 +8424,7 @@ public sealed class ProjectNode : NotifyBase
         ProjectNodeKind.ControlFolder => "C",
         ProjectNodeKind.SpilloverCompensation => "M",
         ProjectNodeKind.SpectralUnmixing => "U",
+        ProjectNodeKind.MassNormalization => "N",
         ProjectNodeKind.ControlSample => "S",
         ProjectNodeKind.CompensationFolder => "C",
         ProjectNodeKind.Compensation => IsAppliedCompensation ? "*" : "M",

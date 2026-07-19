@@ -9,7 +9,7 @@
         <PublishSingleFile>true</PublishSingleFile>
         <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
         <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
-        <Version>4.0.0</Version>
+        <Version>5.0.0</Version>
     </PropertyGroup>
 
     <ItemGroup>

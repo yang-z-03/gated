@@ -67,6 +67,7 @@ public partial class MainWindow : Window
         view_model.RequestCompensationEditorAsync = show_compensation_editor_dialog;
         view_model.RequestMessageAsync = show_message_dialog;
         view_model.RequestConfirmationAsync = show_confirmation_dialog;
+        view_model.RequestCompatibleGatePasteAsync = show_compatible_gate_paste_dialog;
         gated.Python.PythonExtensionRuntime.InputRequested = show_python_input_dialog_blocking;
         PageEditorView.ResolveProjectNodeByKey = view_model.FindProjectNodeByKey;
         view_model.PropertyChanged += view_model_property_changed;
@@ -102,6 +103,9 @@ public partial class MainWindow : Window
         DragDrop.SetAllowDrop(spectral_control_table, true);
         DragDrop.AddDragOverHandler(spectral_control_table, spectral_control_table_drag_over);
         DragDrop.AddDropHandler(spectral_control_table, spectral_control_table_drop);
+        DragDrop.SetAllowDrop(mass_normalization_table, true);
+        DragDrop.AddDragOverHandler(mass_normalization_table, mass_normalization_table_drag_over);
+        DragDrop.AddDropHandler(mass_normalization_table, mass_normalization_table_drop);
 
         this.PropertyChanged += (s, e) => {
             if (e.Property == Window.WindowStateProperty)
@@ -149,7 +153,8 @@ public partial class MainWindow : Window
             or MainWindowViewState.Metadata
             or MainWindowViewState.Platform
             or MainWindowViewState.SpilloverCompensation
-            or MainWindowViewState.SpectralUnmixing ? active : inactive;
+            or MainWindowViewState.SpectralUnmixing
+            or MainWindowViewState.MassNormalization ? active : inactive;
         mainModeLayoutText.Foreground = view_model.ViewState == MainWindowViewState.Layout ? active : inactive;
         mainModeCodeText.Foreground = view_model.ViewState == MainWindowViewState.Code ? active : inactive;
     }
@@ -1438,6 +1443,63 @@ public partial class MainWindow : Window
         return result;
     }
 
+    private async Task<bool> show_compatible_gate_paste_dialog(string title, string message)
+    {
+        var result = false;
+        var dialog = new Window
+        {
+            Title = title,
+            Width = 560,
+            MinWidth = 400,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = new SolidColorBrush(gated.Shared.ThemeResources.AppColor(this, "WindowBackground")),
+            SizeToContent = SizeToContent.Height,
+            Content = new StackPanel
+            {
+                Margin = new Thickness(16),
+                Spacing = 12,
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = title,
+                        FontWeight = FontWeight.SemiBold,
+                        Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text2"))
+                    },
+                    new TextBlock
+                    {
+                        Text = message,
+                        TextWrapping = TextWrapping.Wrap,
+                        LineHeight = 18,
+                        Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text3"))
+                    },
+                    new StackPanel
+                    {
+                        Orientation = Avalonia.Layout.Orientation.Horizontal,
+                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                        Spacing = 8,
+                        Children =
+                        {
+                            new Button { Content = "Cancel", MinWidth = 80, IsCancel = true },
+                            new Button { Content = "Copy compatible only", MinWidth = 150, IsDefault = true }
+                        }
+                    }
+                }
+            }
+        };
+
+        var buttons = ((StackPanel)((StackPanel)dialog.Content).Children[2]).Children;
+        apply_small_button_classes((Control)dialog.Content);
+        ((Button)buttons[0]).Click += (_, _) => dialog.Close();
+        ((Button)buttons[1]).Click += (_, _) =>
+        {
+            result = true;
+            dialog.Close();
+        };
+        await dialog.ShowDialog(this);
+        return result;
+    }
+
     public async Task OpenCommandLineFilesAsync(IEnumerable<string> paths)
     {
         var file_paths = paths
@@ -1878,6 +1940,8 @@ public partial class MainWindow : Window
                     build_create_gate_context_menu(),
                     build_plotting_context_menu("Default plotting options"),
                     new Separator(),
+                    command_menu_item("Paste gate", view_model.PasteGateCommand),
+                    new Separator(),
                     command_menu_item("Recalculate gating scheme", view_model.RecalculateSelectedGroupCommand),
                     new Separator(),
                     command_menu_item("Expand all", view_model.ExpandProjectTreeCommand),
@@ -1908,6 +1972,12 @@ public partial class MainWindow : Window
                     command_menu_item("Collapse all", view_model.CollapseProjectTreeCommand));
                 break;
 
+            case ProjectNodeKind.MassNormalization:
+                add_menu_items(menu,
+                    command_menu_item("Expand all", view_model.ExpandProjectTreeCommand),
+                    command_menu_item("Collapse all", view_model.CollapseProjectTreeCommand));
+                break;
+
             case ProjectNodeKind.ControlSample:
                 add_menu_items(menu,
                     command_menu_item("Rename control sample ...", view_model.RenameSelectedNodeCommand),
@@ -1927,6 +1997,10 @@ public partial class MainWindow : Window
                     build_statistics_context_menu(hide_population ? "Create statistics ..." : $"Create statistics ({population_name}) ..."),
                     build_plotting_context_menu(hide_population ? "Default plotting options" : $"Default plotting options ({population_name})"),
                     new Separator(),
+                    command_menu_item("Copy gate", view_model.CopyGateCommand),
+                    command_menu_item("Copy gate and its descendants", view_model.CopyGateWithDescendantsCommand),
+                    command_menu_item("Paste gate", view_model.PasteGateCommand),
+                    new Separator(),
                     command_menu_item("Recalculate gating scheme", view_model.RecalculateSelectedGateCommand),
                     command_menu_item("Recalculate statistics", view_model.RecalculateSelectedGroupCommand),
                     new Separator(),
@@ -1945,7 +2019,14 @@ public partial class MainWindow : Window
                     build_statistics_context_menu("Create statistics ..."),
                     build_plotting_context_menu("Default plotting options"),
                     new Separator(),
-                    command_menu_item("Copy hierarchy view options to group", view_model.CopyHierarchyViewOptionsToGroupCommand),
+                    command_menu_item("Copy gate", view_model.CopyGateCommand),
+                    command_menu_item("Copy gate and its descendants", view_model.CopyGateWithDescendantsCommand),
+                    command_menu_item("Paste gate", view_model.PasteGateCommand),
+                    new Separator(),
+                    command_menu_item("Copy hierarchy view options to group", view_model.CopyHierarchyViewOptionsToGroupCommand));
+                if (node.Kind == ProjectNodeKind.Population)
+                    menu.Items.Add(command_menu_item("Discard view option", view_model.DiscardSamplePopulationViewOptionCommand));
+                add_menu_items(menu,
                     new Separator(),
                     command_menu_item("Recalculate gating scheme", view_model.RecalculateSelectedGateCommand),
                     command_menu_item("Recalculate statistics", view_model.RecalculateSelectedGroupCommand),
@@ -2408,6 +2489,23 @@ public partial class MainWindow : Window
         var node = PageEditorView.ResolveDraggedProjectNode(e.DataTransfer);
         if (node is not null && view_model.SpectralPanel.DropControlCommand.CanExecute(node))
             view_model.SpectralPanel.DropControlCommand.Execute(node);
+        PageEditorView.DraggedProjectNode = null;
+        e.Handled = true;
+    }
+
+    private void mass_normalization_table_drag_over(object? sender, DragEventArgs e)
+    {
+        var node = PageEditorView.ResolveDraggedProjectNode(e.DataTransfer);
+        e.DragEffects = node is not null && view_model.MassPanel.DropSampleCommand.CanExecute(node)
+            ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void mass_normalization_table_drop(object? sender, DragEventArgs e)
+    {
+        var node = PageEditorView.ResolveDraggedProjectNode(e.DataTransfer);
+        if (node is not null && view_model.MassPanel.DropSampleCommand.CanExecute(node))
+            view_model.MassPanel.DropSampleCommand.Execute(node);
         PageEditorView.DraggedProjectNode = null;
         e.Handled = true;
     }
