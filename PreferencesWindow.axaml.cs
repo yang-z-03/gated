@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using gated.Models;
@@ -181,23 +182,33 @@ public partial class PreferencesWindow : Window
         isotope_rows.Add(new IsotopePreferenceRow { ElementSymbol = "" });
     }
 
-    private async void add_isotope_mass_from_row(object? sender, Avalonia.Interactivity.RoutedEventArgs event_args)
+    private void isotope_mass_editor_key_down(object? sender, KeyEventArgs event_args)
     {
-        if (sender is not Button { DataContext: IsotopePreferenceRow row }) return;
-        if (!int.TryParse(row.PendingMass, out int mass) || mass <= 0)
-        {
-            await show_message("Isotopes", "Enter a positive integer isotope mass.");
+        if (event_args.Key != Key.Enter || sender is not TextBox { DataContext: IsotopePreferenceRow row })
             return;
-        }
+        event_args.Handled = true;
+        commit_pending_isotope_mass(row);
+    }
+
+    private void isotope_mass_editor_lost_focus(object? sender, Avalonia.Interactivity.RoutedEventArgs event_args)
+    {
+        if (sender is TextBox { DataContext: IsotopePreferenceRow row })
+            commit_pending_isotope_mass(row);
+    }
+
+    private static void commit_pending_isotope_mass(IsotopePreferenceRow row)
+    {
+        string pending = row.PendingMass.Trim();
+        if (pending.Length == 0 || !int.TryParse(pending, out int mass) || mass <= 0)
+            return;
         if (row.Tags.Any(tag => tag.Mass == mass))
         {
-            await show_message("Isotopes", $"Mass {mass} is already registered for {row.ElementSymbol}.");
+            row.PendingMass = "";
             return;
         }
         row.Tags.Add(new IsotopeMassTag(row, mass));
         row.SortTags();
         row.PendingMass = "";
-        row.NotifyPendingMass();
     }
 
     private void remove_isotope_mass_from_tag(object? sender, Avalonia.Interactivity.RoutedEventArgs event_args)
@@ -523,7 +534,6 @@ public partial class PreferencesWindow : Window
             Tags.Clear();
             foreach (var tag in ordered) Tags.Add(tag);
         }
-        public void NotifyPendingMass() => OnPropertyChanged(nameof(PendingMass));
     }
 
     public sealed record IsotopeMassTag(IsotopePreferenceRow Owner, int Mass);

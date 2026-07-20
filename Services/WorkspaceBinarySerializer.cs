@@ -11,7 +11,7 @@ namespace gated.Services;
 public sealed class WorkspaceBinarySerializer
 {
     private const uint magic = 0x44544731;
-    private const int version = 50;
+    private const int version = 51;
     private const int minimum_supported_version = 42;
     [ThreadStatic] private static int reading_version;
 
@@ -204,7 +204,7 @@ public sealed class WorkspaceBinarySerializer
             if (reader.ReadBoolean()) group.MassNormalizationSourceGroupId = new Guid(reader.ReadBytes(16));
         }
         if (file_version >= 50)
-            read_mass_compensation_state(reader, group.MassCompensation);
+            read_mass_compensation_state(reader, group.MassCompensation, file_version);
 
         return group;
     }
@@ -429,9 +429,23 @@ public sealed class WorkspaceBinarySerializer
             writer.Write(row.ControlSampleId.ToByteArray());
             write_string(writer, row.SourceChannelName);
         }
+
+        writer.Write(state.CalculatedMatrix is not null);
+        if (state.CalculatedMatrix is not null)
+        {
+            write_compensation(writer, state.CalculatedMatrix);
+            int annotation_rows = state.CalculatedAnnotations.GetLength(0);
+            int annotation_columns = state.CalculatedAnnotations.GetLength(1);
+            writer.Write(annotation_rows);
+            writer.Write(annotation_columns);
+            for (int row = 0; row < annotation_rows; row++)
+            for (int column = 0; column < annotation_columns; column++)
+                writer.Write((int)state.CalculatedAnnotations[row, column]);
+            writer.Write(state.IsCalculatedMatrixStale);
+        }
     }
 
-    private static void read_mass_compensation_state(BinaryReader reader, MassCompensationState state)
+    private static void read_mass_compensation_state(BinaryReader reader, MassCompensationState state, int file_version)
     {
         state.MatrixName = read_string(reader);
         int count = reader.ReadInt32();
@@ -441,6 +455,18 @@ public sealed class WorkspaceBinarySerializer
                 ControlSampleId = new Guid(reader.ReadBytes(16)),
                 SourceChannelName = read_string(reader)
             });
+
+        if (file_version < 51 || !reader.ReadBoolean())
+            return;
+
+        state.CalculatedMatrix = read_compensation(reader);
+        int annotation_rows = reader.ReadInt32();
+        int annotation_columns = reader.ReadInt32();
+        state.CalculatedAnnotations = new MassLeakageKind[annotation_rows, annotation_columns];
+        for (int row = 0; row < annotation_rows; row++)
+        for (int column = 0; column < annotation_columns; column++)
+            state.CalculatedAnnotations[row, column] = (MassLeakageKind)reader.ReadInt32();
+        state.IsCalculatedMatrixStale = reader.ReadBoolean();
     }
 
     private static void read_mass_normalization_state(BinaryReader reader, MassNormalizationState state)

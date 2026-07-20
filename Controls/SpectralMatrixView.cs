@@ -17,6 +17,7 @@ namespace gated.Controls;
 public enum SpectralMatrixPalette
 {
     Auto,
+    GrayRed,
     Reds,
     Blues,
     Turbo,
@@ -25,6 +26,23 @@ public enum SpectralMatrixPalette
 
 public sealed class SpectralMatrixView : Decorator
 {
+    private static readonly Color[] light_red_heat_stops =
+    [
+        Color.Parse("#FEE5D9"),
+        Color.Parse("#FCAE91"),
+        Color.Parse("#FB6A4A"),
+        Color.Parse("#EF3B2C"),
+        Color.Parse("#CB181D")
+    ];
+    private static readonly Color[] dark_red_heat_stops =
+    [
+        Color.Parse("#260000"),
+        Color.Parse("#650B0B"),
+        Color.Parse("#A81717"),
+        Color.Parse("#E52B25"),
+        Color.Parse("#FF6255")
+    ];
+
     public static readonly StyledProperty<IReadOnlyList<SpectralMatrixRowViewModel>?> RowsProperty =
         AvaloniaProperty.Register<SpectralMatrixView, IReadOnlyList<SpectralMatrixRowViewModel>?>(nameof(Rows));
     public static readonly StyledProperty<IReadOnlyList<string>?> ColumnLabelsProperty =
@@ -37,6 +55,8 @@ public sealed class SpectralMatrixView : Decorator
         AvaloniaProperty.Register<SpectralMatrixView, bool>(nameof(IsEditMode));
     public static readonly StyledProperty<bool> ShowAnnotationsProperty =
         AvaloniaProperty.Register<SpectralMatrixView, bool>(nameof(ShowAnnotations));
+    public static readonly StyledProperty<bool> IgnoreDiagonalProperty =
+        AvaloniaProperty.Register<SpectralMatrixView, bool>(nameof(IgnoreDiagonal));
     public static readonly StyledProperty<double> StressAboveProperty =
         AvaloniaProperty.Register<SpectralMatrixView, double>(nameof(StressAbove), double.NaN);
     public static readonly StyledProperty<SpectralMatrixPalette> PaletteProperty =
@@ -63,6 +83,7 @@ public sealed class SpectralMatrixView : Decorator
             YAxisTitleProperty,
             IsEditModeProperty,
             ShowAnnotationsProperty,
+            IgnoreDiagonalProperty,
             StressAboveProperty,
             PaletteProperty,
             TextBrushProperty,
@@ -132,6 +153,12 @@ public sealed class SpectralMatrixView : Decorator
         set => SetValue(ShowAnnotationsProperty, value);
     }
 
+    public bool IgnoreDiagonal
+    {
+        get => GetValue(IgnoreDiagonalProperty);
+        set => SetValue(IgnoreDiagonalProperty, value);
+    }
+
     public double StressAbove
     {
         get => GetValue(StressAboveProperty);
@@ -161,7 +188,10 @@ public sealed class SpectralMatrixView : Decorator
         base.OnPropertyChanged(change);
         if (change.Property == RowsProperty)
             observe_rows(change.NewValue as IReadOnlyList<SpectralMatrixRowViewModel>);
-        if (change.Property == RowsProperty || change.Property == ColumnLabelsProperty || change.Property == ShowAnnotationsProperty)
+        if (change.Property == RowsProperty ||
+            change.Property == ColumnLabelsProperty ||
+            change.Property == ShowAnnotationsProperty ||
+            change.Property == YAxisTitleProperty)
             InvalidateMeasure();
     }
 
@@ -218,7 +248,12 @@ public sealed class SpectralMatrixView : Decorator
             return;
         }
 
-        var values = rows.SelectMany(row => row.Cells.Select(cell => (double)cell.Value)).Where(double.IsFinite).ToArray();
+        var values = rows
+            .SelectMany((row, row_index) => row.Cells.Select((cell, column_index) => (row_index, column_index, value: (double)cell.Value)))
+            .Where(item => !IgnoreDiagonal || item.row_index != item.column_index)
+            .Select(item => item.value)
+            .Where(double.IsFinite)
+            .ToArray();
         var norm = calculate_norm(values);
         int label_stride = column_label_stride(labels, column_count, layout.CellWidth);
         bool draw_column_grid = ShowAnnotations || layout.CellWidth >= 3.0;
@@ -246,13 +281,20 @@ public sealed class SpectralMatrixView : Decorator
                     continue;
 
                 double value = rows[row].Cells[column].Value;
-                double row_limit = norm.Diverging ? row_diverging_limit(rows[row]) : 1.0;
                 var fill_rect = layout.CellWidth <= 1.2 || layout.CellHeight <= 1.2 ? rect : rect.Deflate(0.5);
-                context.FillRectangle(new SolidColorBrush(color_for(value, norm, row_limit)), fill_rect);
+                if (IgnoreDiagonal && row == column)
+                {
+                    context.FillRectangle(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Background0")), fill_rect);
+                    continue;
+                }
+
+                double row_limit = norm.Diverging ? row_diverging_limit(rows[row], row) : 1.0;
+                var fill_color = color_for(value, norm, row_limit);
+                context.FillRectangle(new SolidColorBrush(fill_color), fill_rect);
                 if (ShowAnnotations)
                 {
                     bool highlighted = row == highlighted_row || column == highlighted_column;
-                    IBrush value_brush = value > 0.75 ? new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Background4")) : Brushes.White;
+                    IBrush value_brush = contrasting_text_brush(fill_color);
                     var value_text = text(format_value(value), 13, value_brush, highlighted ? FontWeight.Bold : FontWeight.Normal);
                     context.DrawText(value_text, new Point(rect.Center.X - value_text.Width / 2, rect.Center.Y - value_text.Height / 2));
                 }
@@ -339,7 +381,14 @@ public sealed class SpectralMatrixView : Decorator
 
     private MatrixMetrics calculate_cell_metrics(int row_count, int column_count, Size available)
     {
-        double left = Math.Max(138, longest_row_label_width() + 28);
+        const double outer_left_padding = 6;
+        const double title_label_gap = 8;
+        const double label_matrix_gap = 8;
+        double row_label_width = longest_row_label_width();
+        double y_title_thickness = y_axis_title_thickness();
+        double left = outer_left_padding + row_label_width + label_matrix_gap;
+        if (y_title_thickness > 0)
+            left += y_title_thickness + title_label_gap;
         double top = maximum_column_label_height() + 18;
         double right = 18;
         double bottom = 36;
@@ -366,8 +415,13 @@ public sealed class SpectralMatrixView : Decorator
     private double longest_row_label_width()
     {
         var rows = Rows ?? [];
-        return rows.Select(row => text(row.Name, 13, Brushes.White, FontWeight.Bold).Width).DefaultIfEmpty(110).Max();
+        return rows.Select(row => text(row.Name, 13, Brushes.White, FontWeight.Bold).Width).DefaultIfEmpty(0).Max();
     }
+
+    private double y_axis_title_thickness() =>
+        string.IsNullOrWhiteSpace(YAxisTitle)
+            ? 0
+            : text(YAxisTitle, 13, Brushes.White, FontWeight.Bold).Height;
 
     private double maximum_annotation_width()
     {
@@ -391,7 +445,7 @@ public sealed class SpectralMatrixView : Decorator
         if (!string.IsNullOrWhiteSpace(YAxisTitle))
         {
             var title = text(YAxisTitle, 13, text_brush, FontWeight.Bold);
-            double title_x = Math.Max(6, layout.Matrix.Left - longest_row_label_width() - 32);
+            double title_x = 6 + title.Height / 2;
             using (context.PushTransform(Matrix.CreateTranslation(-title.Width / 2, -title.Height / 2) *
                                          Matrix.CreateRotation(-Math.PI / 2) *
                                          Matrix.CreateTranslation(title_x, layout.Matrix.Top + layout.Matrix.Height / 2)))
@@ -439,6 +493,8 @@ public sealed class SpectralMatrixView : Decorator
             return;
         var hit = hit_cell(e.GetPosition(this));
         if (hit.Row < 0 || hit.Column < 0 || Rows is null || hit.Row >= Rows.Count || hit.Column >= Rows[hit.Row].Cells.Count)
+            return;
+        if (IgnoreDiagonal && hit.Row == hit.Column)
             return;
         var cell = Rows[hit.Row].Cells[hit.Column];
         if (!cell.IsEditable)
@@ -505,7 +561,13 @@ public sealed class SpectralMatrixView : Decorator
             double limit = Math.Max(Math.Abs(minimum), Math.Abs(maximum));
             return new MatrixNorm(-limit, limit <= 0 ? 1 : limit, true);
         }
-        if (Math.Abs(maximum - minimum) < double.Epsilon)
+        if (minimum >= 0)
+        {
+            minimum = 0;
+            if (maximum <= 0)
+                maximum = 1;
+        }
+        else if (Math.Abs(maximum - minimum) < double.Epsilon)
             maximum = minimum + 1;
         return new MatrixNorm(minimum, maximum, false);
     }
@@ -521,10 +583,12 @@ public sealed class SpectralMatrixView : Decorator
         return Math.Max(1, (int)Math.Ceiling(required / cell_width));
     }
 
-    private static double row_diverging_limit(SpectralMatrixRowViewModel row)
+    private double row_diverging_limit(SpectralMatrixRowViewModel row, int row_index)
     {
         double limit = row.Cells
-            .Select(cell => Math.Abs(Math.Clamp((double)cell.Value, -1.0, 1.0)))
+            .Select((cell, column_index) => IgnoreDiagonal && row_index == column_index
+                ? double.NaN
+                : Math.Abs(Math.Clamp((double)cell.Value, -1.0, 1.0)))
             .Where(double.IsFinite)
             .DefaultIfEmpty(0)
             .Max();
@@ -545,8 +609,46 @@ public sealed class SpectralMatrixView : Decorator
                                : ramp(neutral, gated.Shared.ThemeResources.AppColor("DangerText"), magnitude);
         }
 
+        if (Math.Abs(value) <= 1e-12)
+            return gated.Shared.ThemeResources.AppColor("Background0");
+
         double t = Math.Clamp((value - norm.Minimum) / Math.Max(norm.Maximum - norm.Minimum, 1e-12), 0, 1);
-        return PlotColorMaps.ColorAt(PlotColorPalette.Viridis, t);
+        return Palette switch
+        {
+            SpectralMatrixPalette.Reds => red_heat_color(t),
+            SpectralMatrixPalette.Blues => PlotColorMaps.ColorAt(PlotColorPalette.Blues, 1.0 - t),
+            SpectralMatrixPalette.Turbo => PlotColorMaps.ColorAt(PlotColorPalette.Turbo, t),
+            _ => red_heat_color(t)
+        };
+    }
+
+    private static Color red_heat_color(double value)
+    {
+        var zero = gated.Shared.ThemeResources.AppColor("Background0");
+        Color[] stops = relative_luminance(zero) < 0.5 ? dark_red_heat_stops : light_red_heat_stops;
+
+        double scaled = Math.Clamp(value, 0, 1) * stops.Length;
+        int segment = Math.Min(stops.Length - 1, (int)Math.Floor(scaled));
+        double local = segment == stops.Length - 1 && scaled >= stops.Length
+            ? 1
+            : scaled - segment;
+        return ramp(segment == 0 ? zero : stops[segment - 1], stops[segment], local);
+    }
+
+    private static IBrush contrasting_text_brush(Color background)
+    {
+        return relative_luminance(background) > 0.42 ? Brushes.Black : Brushes.White;
+    }
+
+    private static double relative_luminance(Color color)
+    {
+        static double linear(byte channel)
+        {
+            double value = channel / 255.0;
+            return value <= 0.04045 ? value / 12.92 : Math.Pow((value + 0.055) / 1.055, 2.4);
+        }
+
+        return 0.2126 * linear(color.R) + 0.7152 * linear(color.G) + 0.0722 * linear(color.B);
     }
 
     private static Color ramp(Color low, Color high, double t)

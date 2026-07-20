@@ -5,7 +5,7 @@
         x:Class="gated.MainWindow"
         x:CompileBindings="False"
         Width="1500" Height="850"
-        MinWidth="1100" MinHeight="700"
+        MinWidth="1275" MinHeight="700"
         Title="Gated"
 
         ExtendClientAreaChromeHints="Default"
@@ -164,6 +164,11 @@
             <Setter Property="CornerRadius" Value="4" />
         </Style>
         <Style Selector="ListBox#mass_normalization_table ListBoxItem">
+            <Setter Property="Padding" Value="4,0" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="CornerRadius" Value="4" />
+        </Style>
+        <Style Selector="ListBox#mass_spillover_table ListBoxItem">
             <Setter Property="Padding" Value="4,0" />
             <Setter Property="Margin" Value="0" />
             <Setter Property="CornerRadius" Value="4" />
@@ -482,7 +487,13 @@
             </Grid>
         </Border>
 
-        <Grid x:Name="main_workspace_grid" ColumnDefinitions="500,5,*">
+        <Grid x:Name="main_workspace_grid" >
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="500" MinWidth="300" />
+                <ColumnDefinition Width="5"/>
+                <ColumnDefinition Width="*" MinWidth="770"/>
+            </Grid.ColumnDefinitions>
+
             <Border Grid.Column="0"
                     BorderBrush="{DynamicResource SemiColorSplits}"
                     BorderThickness="0,0,1,0"
@@ -1748,7 +1759,7 @@
                   IsVisible="{Binding IsMassCompensationMode}"
                   Background="{DynamicResource AppBrushBackground1}">
                 <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-                    <StackPanel Margin="24" Spacing="14" MaxWidth="900" MinWidth="750" HorizontalAlignment="Center">
+                    <StackPanel Margin="24" Spacing="14" MaxWidth="750" MinWidth="750" HorizontalAlignment="Center">
                         <StackPanel Margin="0 12" Spacing="8">
                             <TextBlock Foreground="{DynamicResource AppBrushText2}" FontWeight="Bold" Text="Mass Cytometry Compensation" />
                             <TextBlock Foreground="{DynamicResource SemiColorText1}" TextWrapping="Wrap" LineHeight="18"
@@ -1770,6 +1781,7 @@
                                     </Grid>
                                 </Border>
                                 <ListBox Grid.Row="1" Margin="8 0 8 8" SelectionMode="Single"
+                                         x:Name="mass_spillover_table"
                                          ItemsSource="{Binding MassCompensationPanel.Rows}"
                                          SelectedItem="{Binding MassCompensationPanel.SelectedRow, Mode=TwoWay}"
                                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
@@ -1839,32 +1851,35 @@
                                     <TextBlock Text="The matrix is outdated. Recalculate after changing control assignments."
                                                Foreground="{DynamicResource AppBrushWarningTextStrong}" />
                                 </Border>
-                                <StackPanel Orientation="Horizontal" Spacing="18">
-                                    <StackPanel Orientation="Horizontal" Spacing="6">
-                                        <Border Width="18" Height="18" BorderBrush="#70C99B" BorderThickness="3" />
-                                        <TextBlock Text="Isotopic impurity" VerticalAlignment="Center" />
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                                    <StackPanel Orientation="Horizontal" Spacing="18">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <Border Width="18" Height="18" BorderBrush="#70C99B" BorderThickness="3" />
+                                            <TextBlock Text="Isotopic impurity" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <Border Width="18" Height="18" BorderBrush="#3D43B8" BorderThickness="3" />
+                                            <TextBlock Text="M±1" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <Border Width="18" Height="18" BorderBrush="#C92C2C" BorderThickness="3" />
+                                            <TextBlock Text="M+16" VerticalAlignment="Center" />
+                                        </StackPanel>
                                     </StackPanel>
-                                    <StackPanel Orientation="Horizontal" Spacing="6">
-                                        <Border Width="18" Height="18" BorderBrush="#3D43B8" BorderThickness="3" />
-                                        <TextBlock Text="M±1" VerticalAlignment="Center" />
-                                    </StackPanel>
-                                    <StackPanel Orientation="Horizontal" Spacing="6">
-                                        <Border Width="18" Height="18" BorderBrush="#C92C2C" BorderThickness="3" />
-                                        <TextBlock Text="M+16" VerticalAlignment="Center" />
-                                    </StackPanel>
-                                </StackPanel>
-                                <Border BorderBrush="{DynamicResource AppBrushBorder3}" BorderThickness="1" CornerRadius="6"
-                                        Background="{DynamicResource AppBrushBackground3}" Padding="8">
-                                    <ScrollViewer MaxHeight="750" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-                                        <controls:SpectralMatrixView Rows="{Binding MassCompensationPanel.MatrixRows}"
-                                                                     ColumnLabels="{Binding MassCompensationPanel.MatrixColumnLabels}"
-                                                                     XAxisTitle="Receiving isotope"
-                                                                     YAxisTitle="Source isotope"
-                                                                     IsEditMode="True"
-                                                                     ShowAnnotations="True"
-                                                                     Palette="Blues" />
-                                    </ScrollViewer>
-                                </Border>
+                                    <CheckBox x:Name="mass_compensation_matrix_annotate" Grid.Column="1"
+                                              Content="Annotate" IsChecked="False"
+                                              Foreground="{DynamicResource SemiColorText1}" />
+                                </Grid>
+                                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                                    <controls:SpectralMatrixView Rows="{Binding MassCompensationPanel.MatrixRows}"
+                                                                 ColumnLabels="{Binding MassCompensationPanel.MatrixColumnLabels}"
+                                                                 XAxisTitle="Receiving isotope"
+                                                                 YAxisTitle="Source isotope"
+                                                                 IgnoreDiagonal="True"
+                                                                 IsEditMode="{Binding IsChecked, ElementName=mass_compensation_matrix_annotate}"
+                                                                 ShowAnnotations="{Binding IsChecked, ElementName=mass_compensation_matrix_annotate}"
+                                                                 Palette="GrayRed" />
+                                </ScrollViewer>
                             </StackPanel>
                         </Expander>
                     </StackPanel>

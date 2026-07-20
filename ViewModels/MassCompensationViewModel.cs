@@ -52,6 +52,8 @@ public sealed class MassCompensationViewModel : NotifyBase
         {
             if (group is null || group.MassCompensation.MatrixName == value) return;
             group.MassCompensation.MatrixName = value;
+            if (group.MassCompensation.CalculatedMatrix is { } calculated)
+                calculated.Name = group.MassCompensation.MatrixName;
             OnPropertyChanged();
         }
     }
@@ -68,17 +70,30 @@ public sealed class MassCompensationViewModel : NotifyBase
             return;
         }
         var valid_ids = group.ControlSamples.Select(sample => sample.Id).ToHashSet();
+        bool removed_missing_control = false;
         for (int index = group.MassCompensation.Rows.Count - 1; index >= 0; index--)
             if (!valid_ids.Contains(group.MassCompensation.Rows[index].ControlSampleId))
+            {
                 group.MassCompensation.Rows.RemoveAt(index);
+                removed_missing_control = true;
+            }
+        if (removed_missing_control && group.MassCompensation.CalculatedMatrix is not null)
+            group.MassCompensation.IsCalculatedMatrixStale = true;
         var descriptors = service.DescribeChannels(group);
         foreach (var state in group.MassCompensation.Rows)
             if (group.ControlSamples.FirstOrDefault(sample => sample.Id == state.ControlSampleId) is { } sample)
                 Rows.Add(new MassCompensationRowViewModel(this, state, sample, choices_for(sample, descriptors)));
         SelectedRow = Rows.FirstOrDefault();
+        if (group.MassCompensation.CalculatedMatrix is { } calculated)
+        {
+            build_matrix(calculated, labels_for(calculated, descriptors), annotations_for(calculated, descriptors));
+            IsStale = group.MassCompensation.IsCalculatedMatrixStale;
+        }
         Status = descriptors.Count == 0
             ? "No mass channels with element and mass metadata are registered for this group."
-            : Rows.Count == 0 ? "Drop single-staining controls to begin." : "Ready to calculate mass compensation.";
+            : draft_matrix is not null
+                ? IsStale ? "Loaded the saved spillover matrix; it is outdated and must be recalculated." : "Loaded the saved spillover matrix. Review or edit it, then apply."
+                : Rows.Count == 0 ? "Drop single-staining controls to begin." : "Ready to calculate mass compensation.";
         OnPropertyChanged(nameof(MatrixName));
         notify_visibility();
     }
@@ -133,7 +148,7 @@ public sealed class MassCompensationViewModel : NotifyBase
         {
             var result = await Task.Run(() => service.Fit(current_group, controls, MatrixName));
             if (!ReferenceEquals(group, current_group)) return;
-            build_matrix(result);
+            save_and_build_matrix(result);
             IsStale = false;
             Status = "Fit complete. Review or edit the spillover matrix, then apply it.";
         }
@@ -141,18 +156,32 @@ public sealed class MassCompensationViewModel : NotifyBase
         finally { IsBusy = false; }
     }
 
-    private void build_matrix(MassCompensationFitResult result)
+    private void save_and_build_matrix(MassCompensationFitResult result)
     {
-        draft_matrix = result.Matrix;
+        if (group is null)
+            return;
+        group.MassCompensation.CalculatedMatrix = result.Matrix;
+        group.MassCompensation.CalculatedAnnotations = (MassLeakageKind[,])result.Annotations.Clone();
+        group.MassCompensation.IsCalculatedMatrixStale = false;
+        build_matrix(result.Matrix, result.Channels.Select(channel => channel.DisplayName).ToArray(), result.Annotations);
+    }
+
+    private void build_matrix(
+        CompensationMatrix matrix,
+        IReadOnlyList<string> labels,
+        MassLeakageKind[,] annotations)
+    {
+        draft_matrix = matrix;
         MatrixColumnLabels.Clear();
-        foreach (var channel in result.Channels) MatrixColumnLabels.Add(channel.DisplayName);
+        foreach (string label in labels) MatrixColumnLabels.Add(label);
         MatrixRows.Clear();
-        var values = (float[,])result.Matrix.Values.Clone();
-        for (int source = 0; source < result.Channels.Count; source++)
+        var values = (float[,])matrix.Values.Clone();
+        int size = matrix.ChannelNames.Count;
+        for (int source = 0; source < size; source++)
         {
             int captured_source = source;
             var cells = new List<SpectralMatrixCellViewModel>();
-            for (int receiving = 0; receiving < result.Channels.Count; receiving++)
+            for (int receiving = 0; receiving < size; receiving++)
             {
                 int captured_receiving = receiving;
                 cells.Add(new SpectralMatrixCellViewModel(
@@ -163,9 +192,9 @@ public sealed class MassCompensationViewModel : NotifyBase
                         values[captured_source, captured_receiving] = value;
                         draft_matrix?.ReplaceValues(values);
                     },
-                    result.Annotations[source, receiving]));
+                    annotations[source, receiving]));
             }
-            MatrixRows.Add(new SpectralMatrixRowViewModel(result.Channels[source].DisplayName, cells));
+            MatrixRows.Add(new SpectralMatrixRowViewModel(labels[source], cells));
         }
         OnPropertyChanged(nameof(HasMatrix));
         raise_commands();
@@ -192,8 +221,46 @@ public sealed class MassCompensationViewModel : NotifyBase
 
     private void mark_stale()
     {
-        if (draft_matrix is not null) IsStale = true;
+        if (draft_matrix is not null)
+        {
+            IsStale = true;
+            if (group is not null)
+                group.MassCompensation.IsCalculatedMatrixStale = true;
+        }
         raise_commands();
+    }
+
+    private static IReadOnlyList<string> labels_for(
+        CompensationMatrix matrix,
+        IReadOnlyList<MassChannelDescriptor> descriptors)
+    {
+        var by_name = descriptors.ToDictionary(channel => channel.ChannelName, StringComparer.Ordinal);
+        return matrix.ChannelNames
+            .Select(name => by_name.TryGetValue(name, out var descriptor) ? descriptor.DisplayName : name)
+            .ToArray();
+    }
+
+    private MassLeakageKind[,] annotations_for(
+        CompensationMatrix matrix,
+        IReadOnlyList<MassChannelDescriptor> descriptors)
+    {
+        int size = matrix.ChannelNames.Count;
+        if (group?.MassCompensation.CalculatedAnnotations is { } saved &&
+            saved.GetLength(0) == size &&
+            saved.GetLength(1) == size)
+            return saved;
+
+        var by_name = descriptors.ToDictionary(channel => channel.ChannelName, StringComparer.Ordinal);
+        var result = new MassLeakageKind[size, size];
+        for (int source = 0; source < size; source++)
+        for (int receiving = 0; receiving < size; receiving++)
+            if (by_name.TryGetValue(matrix.ChannelNames[source], out var source_descriptor) &&
+                by_name.TryGetValue(matrix.ChannelNames[receiving], out var receiving_descriptor))
+                result[source, receiving] = MassCompensationService.ClassifyInteraction(
+                    source_descriptor,
+                    receiving_descriptor,
+                    Configuration.Preferences.Isotopes);
+        return result;
     }
 
     private static IReadOnlyList<MassChannelChoice> choices_for(ControlSample sample, IReadOnlyList<MassChannelDescriptor> channels) =>

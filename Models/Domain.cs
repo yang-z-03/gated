@@ -1166,12 +1166,25 @@ public sealed class MassCompensationControlRow : NotifyBase
 public sealed class MassCompensationState : NotifyBase
 {
     private string matrix_name = "Mass compensation";
+    private CompensationMatrix? calculated_matrix;
+    private bool is_calculated_matrix_stale;
     public string MatrixName
     {
         get => matrix_name;
         set => SetField(ref matrix_name, string.IsNullOrWhiteSpace(value) ? "Mass compensation" : value);
     }
     public ObservableCollection<MassCompensationControlRow> Rows { get; } = new();
+    public CompensationMatrix? CalculatedMatrix
+    {
+        get => calculated_matrix;
+        set => SetField(ref calculated_matrix, value);
+    }
+    public MassLeakageKind[,] CalculatedAnnotations { get; set; } = new MassLeakageKind[0, 0];
+    public bool IsCalculatedMatrixStale
+    {
+        get => is_calculated_matrix_stale;
+        set => SetField(ref is_calculated_matrix_stale, value);
+    }
 }
 
 public enum SpectralControlRole

@@ -86,14 +86,14 @@ public sealed class MassCompensationService
                 int receiving_index = control.Sample.GetChannelIndex(channels[receiving].ChannelName);
                 if (receiving_index < 0)
                     throw new InvalidOperationException($"{control.Sample.Name} does not contain receiving channel {channels[receiving].ChannelName}.");
-                values[source, receiving] = Convert.ToSingle(fit_slope(
+                values[source, receiving] = Convert.ToSingle(Math.Max(0.0, fit_slope(
                     control.Sample.RawEvents,
                     event_indices,
                     source_index,
                     receiving_index,
                     control.Sample.Name,
                     channels[source].DisplayName,
-                    channels[receiving].DisplayName));
+                    channels[receiving].DisplayName)));
             }
         }
 

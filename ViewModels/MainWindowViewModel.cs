@@ -178,7 +178,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
     public ICommand RecalculateSelectedGateCommand { get; }
     public ICommand RecalculateSelectedStatisticCommand { get; }
     public ICommand CopyHierarchyViewOptionsToGroupCommand { get; }
-    public ICommand DiscardSamplePopulationViewOptionCommand { get; }
+    public ICommand DiscardSampleViewOptionCommand { get; }
     public ICommand CopyGateCommand { get; }
     public ICommand CopyGateWithDescendantsCommand { get; }
     public ICommand PasteGateCommand { get; }
@@ -270,7 +270,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         RecalculateSelectedGateCommand = new RelayCommand(_ => RecalculateEditedGate(selected_gate), _ => selected_group is not null);
         RecalculateSelectedStatisticCommand = new RelayCommand(_ => recalculate_selected_statistic(), _ => selected_group is not null && selected_statistic_definition() is not null);
         CopyHierarchyViewOptionsToGroupCommand = new RelayCommand(_ => copy_hierarchy_view_options_to_group(), _ => can_copy_hierarchy_view_options_to_group());
-        DiscardSamplePopulationViewOptionCommand = new RelayCommand(_ => discard_sample_population_view_option(), _ => can_discard_sample_population_view_option());
+        DiscardSampleViewOptionCommand = new RelayCommand(_ => discard_sample_view_option(), _ => can_discard_sample_view_option());
         CopyGateCommand = new RelayCommand(_ => _ = copy_selected_gate_async(include_descendants: false), _ => can_copy_selected_gate());
         CopyGateWithDescendantsCommand = new RelayCommand(_ => _ = copy_selected_gate_async(include_descendants: true), _ => can_copy_selected_gate());
         PasteGateCommand = new RelayCommand(_ => _ = paste_gate_async(), _ => can_paste_gate());
@@ -4296,35 +4296,52 @@ public sealed partial class MainWindowViewModel : NotifyBase
             : $"Copied {copied_count} hierarchy view options to grouping defaults";
     }
 
-    private bool can_discard_sample_population_view_option()
+    private bool can_discard_sample_view_option()
     {
-        if (selected_node?.Kind != ProjectNodeKind.Population ||
-            selected_sample is null ||
-            selected_gate is null ||
-            selected_population is null)
+        if (selected_group is null || selected_sample is null || selected_node is null)
             return false;
 
-        string key = sample_preferred_view_key(selected_sample.Name, selected_population.Region);
-        return selected_gate.SamplePreferredViews.ContainsKey(key);
+        if (selected_node.Kind == ProjectNodeKind.Sample)
+            return selected_group.SampleRootViewOptions.ContainsKey(selected_sample.Name);
+
+        if (selected_node.Kind != ProjectNodeKind.Population || selected_gate is null || selected_population is null)
+            return false;
+
+        return selected_gate.SamplePreferredViews.ContainsKey(
+            sample_preferred_view_key(selected_sample.Name, selected_population.Region));
     }
 
-    private void discard_sample_population_view_option()
+    private void discard_sample_view_option()
     {
-        if (!can_discard_sample_population_view_option() ||
+        if (!can_discard_sample_view_option() ||
+            selected_group is null ||
             selected_sample is null ||
-            selected_gate is null ||
-            selected_population is null)
+            selected_node is null)
             return;
 
-        string key = sample_preferred_view_key(selected_sample.Name, selected_population.Region);
-        if (!selected_gate.SamplePreferredViews.Remove(key))
-            return;
+        string status;
+        if (selected_node.Kind == ProjectNodeKind.Sample)
+        {
+            if (!selected_group.SampleRootViewOptions.Remove(selected_sample.Name))
+                return;
+            apply_root_axis_context();
+            status = "Discarded sample root view option";
+        }
+        else
+        {
+            if (selected_gate is null || selected_population is null)
+                return;
+            string key = sample_preferred_view_key(selected_sample.Name, selected_population.Region);
+            if (!selected_gate.SamplePreferredViews.Remove(key))
+                return;
+            apply_axis_from_gate_context(selected_gate);
+            status = "Discarded sample population view option";
+        }
 
-        apply_axis_from_gate_context(selected_gate);
         refresh_plot_gates();
         refresh_project_tree_preserving_selection();
         raise_command_states();
-        StatusText = "Discarded sample population view option";
+        StatusText = status;
     }
 
     private static int copy_population_hierarchy_view_options_to_group(string sample_name, PopulationResult population)
@@ -5013,6 +5030,8 @@ public sealed partial class MainWindowViewModel : NotifyBase
             spillover_row.ParameterName = SpilloverControlRowViewModel.BlankParameterName;
         foreach (var mass_row in selected_group.MassCompensation.Rows.Where(item => item.SourceChannelName == removed_name))
             mass_row.SourceChannelName = "";
+        if (selected_group.MassCompensation.CalculatedMatrix is not null)
+            selected_group.MassCompensation.IsCalculatedMatrixStale = true;
         selected_group.RefreshChannelProfile();
         selected_group.ResetIdentityCompensation();
         selected_group.SampleRootViewOptions.Clear();
@@ -5170,6 +5189,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
             spillover_row.ParameterName = new_name;
         foreach (var mass_row in selected_group.MassCompensation.Rows.Where(item => item.SourceChannelName == old_name))
             mass_row.SourceChannelName = new_name;
+        selected_group.MassCompensation.CalculatedMatrix?.RenameChannel(old_name, new_name);
         selected_group.RenameChannelInProfile(old_name, new_name);
         refresh_spillover_workspace();
         if (IsMassCompensationMode) MassCompensationPanel.SetGroup(selected_group);
@@ -5818,7 +5838,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
             RecalculateSelectedGateCommand,
             RecalculateSelectedStatisticCommand,
             CopyHierarchyViewOptionsToGroupCommand,
-            DiscardSamplePopulationViewOptionCommand,
+            DiscardSampleViewOptionCommand,
             CopyGateCommand,
             CopyGateWithDescendantsCommand,
             PasteGateCommand,

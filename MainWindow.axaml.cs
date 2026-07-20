@@ -2037,7 +2037,7 @@ public partial class MainWindow : Window
                     new Separator(),
                     command_menu_item("Copy hierarchy view options to group", view_model.CopyHierarchyViewOptionsToGroupCommand));
                 if (node.Kind == ProjectNodeKind.Population)
-                    menu.Items.Add(command_menu_item("Discard view option", view_model.DiscardSamplePopulationViewOptionCommand));
+                    menu.Items.Add(command_menu_item("Discard view option", view_model.DiscardSampleViewOptionCommand));
                 add_menu_items(menu,
                     new Separator(),
                     command_menu_item("Recalculate gating scheme", view_model.RecalculateSelectedGateCommand),
@@ -2079,6 +2079,7 @@ public partial class MainWindow : Window
                     build_plotting_context_menu("Default plotting options"),
                     new Separator(),
                     command_menu_item("Copy hierarchy view options to group", view_model.CopyHierarchyViewOptionsToGroupCommand),
+                    command_menu_item("Discard view option", view_model.DiscardSampleViewOptionCommand),
                     new Separator(),
                     command_menu_item("Recalculate gating scheme", view_model.RecalculateSelectedGroupCommand),
                     click_menu_item("Subsample sample ...", subsample_sample_menu_item_click),
