@@ -1143,6 +1143,37 @@ public sealed class SpilloverCompensationState : NotifyBase
     public ObservableCollection<SpilloverControlRow> Rows { get; } = new();
 }
 
+[Flags]
+public enum MassLeakageKind
+{
+    None = 0,
+    IsotopicImpurity = 1,
+    AbundanceSensitivity = 2,
+    OxideFormation = 4
+}
+
+public sealed class MassCompensationControlRow : NotifyBase
+{
+    private string source_channel_name = "";
+    public Guid ControlSampleId { get; set; }
+    public string SourceChannelName
+    {
+        get => source_channel_name;
+        set => SetField(ref source_channel_name, value ?? "");
+    }
+}
+
+public sealed class MassCompensationState : NotifyBase
+{
+    private string matrix_name = "Mass compensation";
+    public string MatrixName
+    {
+        get => matrix_name;
+        set => SetField(ref matrix_name, string.IsNullOrWhiteSpace(value) ? "Mass compensation" : value);
+    }
+    public ObservableCollection<MassCompensationControlRow> Rows { get; } = new();
+}
+
 public enum SpectralControlRole
 {
     Molecule,
@@ -2003,6 +2034,7 @@ public sealed class FlowGroup : NotifyBase
     public ObservableCollection<StatisticDefinition> Statistics { get; } = new();
     public ObservableCollection<CompensationMatrix> CompensationCandidates { get; } = new();
     public SpilloverCompensationState SpilloverCompensation { get; } = new();
+    public MassCompensationState MassCompensation { get; } = new();
     public SpectralUnmixingState SpectralUnmixing { get; } = new();
     public MassNormalizationState MassNormalization { get; } = new();
     public Guid? SpectralSourceGroupId { get; set; }

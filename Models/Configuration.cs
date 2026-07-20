@@ -49,6 +49,8 @@ public sealed class SpectralDetectorPreference : INotifyPropertyChanged
     private CoordinateScaleKind scale = CoordinateScaleKind.Logicle;
     public event PropertyChangedEventHandler? PropertyChanged;
     public string ChannelName { get; set; } = "";
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public string ElementSymbol { get; set; } = "";
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? MassNumber { get; set; }
     public ChannelSemanticKind Kind
@@ -84,6 +86,14 @@ public sealed class ElementBeadReferencePreference
 {
     public int MassNumber { get; set; }
     public double ReferenceIntensity { get; set; } = Configuration.DefaultElementBeadReferenceIntensity;
+}
+
+public sealed class IsotopeElementPreference
+{
+    public string ElementSymbol { get; set; } = "";
+    public ObservableCollection<int> IsotopeMasses { get; set; } = new();
+
+    public override string ToString() => ElementSymbol;
 }
 
 public sealed class ElementBeadLotPreference
@@ -131,6 +141,8 @@ public sealed class CytometerPreferenceStore
     public ObservableCollection<CytometerPreference> Cytometers { get; set; } = new();
     public bool ElementBeadsInitialized { get; set; }
     public ObservableCollection<ElementBeadTypePreference> ElementBeads { get; set; } = new();
+    public bool IsotopesInitialized { get; set; }
+    public ObservableCollection<IsotopeElementPreference> Isotopes { get; set; } = new();
 }
 
 public static class Configuration
@@ -143,7 +155,7 @@ public static class Configuration
     private static readonly JsonSerializerOptions json_options = new() { WriteIndented = true };
     // load_store() uses these while normalizing detector and bead metadata, so
     // they must be initialized before the store field below.
-    private static readonly Regex mass_channel_pattern = new(@"^(?:[A-Z][a-z]?(?<mass>\d{2,3})(?:Di|Dd)?|(?<mass>\d{2,3})[A-Z][a-z]?(?:Di|Dd)?)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex mass_channel_pattern = new(@"^(?:(?<element>[A-Z][a-z]?)(?<mass>\d{2,3})(?:Di|Dd)?|(?<mass>\d{2,3})(?<element>[A-Z][a-z]?)(?:Di|Dd)?)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Guid dvs_bead_type_id = new("d7a76e26-7e5a-4d59-91b7-bbd47038a140");
     private static readonly Guid dvs_relative_lot_id = new("71c68fd9-c076-41e5-b223-ae4f8c679151");
     private static readonly Guid beta_bead_type_id = new("3cbe2e72-a619-4d55-88ab-f9451c719139");
@@ -248,6 +260,13 @@ public static class Configuration
         return TryInferMassNumber(channel_name, out int inferred) ? inferred : null;
     }
 
+    public static string ElementSymbolForChannel(string channel_name, string? cytometer_name = null)
+    {
+        if (detector_for_channel(channel_name, cytometer_name)?.ElementSymbol is { Length: > 0 } configured)
+            return normalize_element_symbol(configured);
+        return TryInferMassMetadata(channel_name, out string element, out _) ? element : "";
+    }
+
     public static bool TryInferMassNumber(string? channel_name, out int mass_number)
     {
         mass_number = 0;
@@ -255,6 +274,19 @@ public static class Configuration
             return false;
         var match = mass_channel_pattern.Match(channel_name.Trim());
         return match.Success && int.TryParse(match.Groups["mass"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out mass_number);
+    }
+
+    public static bool TryInferMassMetadata(string? channel_name, out string element_symbol, out int mass_number)
+    {
+        element_symbol = "";
+        mass_number = 0;
+        if (string.IsNullOrWhiteSpace(channel_name))
+            return false;
+        var match = mass_channel_pattern.Match(channel_name.Trim());
+        if (!match.Success || !int.TryParse(match.Groups["mass"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out mass_number))
+            return false;
+        element_symbol = normalize_element_symbol(match.Groups["element"].Value);
+        return element_symbol.Length > 0;
     }
 
     public static PlatformTransformationKind DefaultPlatformTransformationForChannel(string channel_name) =>
@@ -484,6 +516,7 @@ public static class Configuration
     {
         loaded.Cytometers ??= new ObservableCollection<CytometerPreference>();
         loaded.ElementBeads ??= new ObservableCollection<ElementBeadTypePreference>();
+        loaded.Isotopes ??= new ObservableCollection<IsotopeElementPreference>();
         if (!loaded.ElementBeadsInitialized)
         {
             loaded.ElementBeads.Clear();
@@ -492,6 +525,14 @@ public static class Configuration
             loaded.ElementBeadsInitialized = true;
         }
         normalize_element_beads(loaded.ElementBeads);
+        if (!loaded.IsotopesInitialized)
+        {
+            loaded.Isotopes.Clear();
+            foreach (var element in create_default_isotopes())
+                loaded.Isotopes.Add(element);
+            loaded.IsotopesInitialized = true;
+        }
+        normalize_isotopes(loaded.Isotopes);
         foreach (var preference in loaded.Cytometers)
         {
             preference.Detectors ??= new ObservableCollection<SpectralDetectorPreference>();
@@ -513,14 +554,67 @@ public static class Configuration
 
     private static void reconcile_mass_metadata(SpectralDetectorPreference detector)
     {
-        if (TryInferMassNumber(detector.ChannelName, out int mass_number))
+        if (TryInferMassMetadata(detector.ChannelName, out string element, out int mass_number))
         {
-            detector.MassNumber = mass_number;
+            detector.MassNumber ??= mass_number;
+            if (string.IsNullOrWhiteSpace(detector.ElementSymbol))
+                detector.ElementSymbol = element;
             detector.Kind = ChannelSemanticKind.Mass;
             detector.Scale = CoordinateScaleKind.Arcsinh;
             return;
         }
-        detector.MassNumber = null;
+        if (detector.Kind == ChannelSemanticKind.Mass && detector.MassNumber is > 0)
+            detector.ElementSymbol = normalize_element_symbol(detector.ElementSymbol);
+        else if (detector.Kind != ChannelSemanticKind.Mass)
+        {
+            detector.MassNumber = null;
+            detector.ElementSymbol = "";
+        }
+    }
+
+    private static void normalize_isotopes(ObservableCollection<IsotopeElementPreference> elements)
+    {
+        var normalized = elements
+            .Where(element => element is not null)
+            .Select(element => new IsotopeElementPreference
+            {
+                ElementSymbol = normalize_element_symbol(element.ElementSymbol),
+                IsotopeMasses = new ObservableCollection<int>((element.IsotopeMasses ?? new ObservableCollection<int>())
+                    .Where(mass => mass > 0).Distinct().OrderBy(mass => mass))
+            })
+            .Where(element => element.ElementSymbol.Length > 0)
+            .GroupBy(element => element.ElementSymbol, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .ToArray();
+        elements.Clear();
+        foreach (var element in normalized)
+            elements.Add(element);
+    }
+
+    private static IReadOnlyList<IsotopeElementPreference> create_default_isotopes() =>
+    [
+        create_isotopes("La", 138, 139),
+        create_isotopes("Pr", 141),
+        create_isotopes("Nd", 142, 143, 144, 145, 146, 148, 150),
+        create_isotopes("Sm", 144, 147, 148, 149, 150, 152, 154),
+        create_isotopes("Eu", 151, 153),
+        create_isotopes("Gd", 152, 154, 155, 156, 157, 158, 160),
+        create_isotopes("Dy", 156, 158, 160, 161, 162, 163, 164),
+        create_isotopes("Er", 162, 164, 166, 167, 168, 170),
+        create_isotopes("Tb", 159),
+        create_isotopes("Ho", 165),
+        create_isotopes("Yb", 168, 170, 171, 172, 173, 174, 176),
+        create_isotopes("Tm", 169),
+        create_isotopes("Lu", 175, 176)
+    ];
+
+    private static IsotopeElementPreference create_isotopes(string element, params int[] masses) =>
+        new() { ElementSymbol = element, IsotopeMasses = new ObservableCollection<int>(masses) };
+
+    private static string normalize_element_symbol(string? value)
+    {
+        value = value?.Trim() ?? "";
+        return value.Length == 0 ? "" : value[..1].ToUpperInvariant() + value[1..].ToLowerInvariant();
     }
 
     private static void normalize_element_beads(ObservableCollection<ElementBeadTypePreference> types)
@@ -608,7 +702,20 @@ public static class Configuration
     private static SpectralDetectorPreference infer_detector(string channel_name, string cytometer_name, int order)
     {
         var inferred = infer_channel(channel_name);
-        if (inferred.Kind is ChannelSemanticKind.Time or ChannelSemanticKind.Scatter or ChannelSemanticKind.Mass or ChannelSemanticKind.Background or ChannelSemanticKind.Model)
+        if (inferred.Kind == ChannelSemanticKind.Mass)
+        {
+            _ = TryInferMassMetadata(channel_name, out string element, out int mass);
+            return new SpectralDetectorPreference
+            {
+                ChannelName = channel_name,
+                ElementSymbol = element,
+                MassNumber = mass > 0 ? mass : null,
+                Kind = ChannelSemanticKind.Mass,
+                Scale = CoordinateScaleKind.Arcsinh,
+                PlotOrder = order
+            };
+        }
+        if (inferred.Kind is ChannelSemanticKind.Time or ChannelSemanticKind.Scatter or ChannelSemanticKind.Background or ChannelSemanticKind.Model)
             return new SpectralDetectorPreference { ChannelName = channel_name, Kind = inferred.Kind, Scale = inferred.Scale, UseObservedRange = inferred.UseObservedRange, PlotOrder = order };
 
         bool area = channel_name.EndsWith("-A", StringComparison.OrdinalIgnoreCase);
@@ -741,6 +848,7 @@ public static class Configuration
             clone.Detectors.Add(new SpectralDetectorPreference
             {
                 ChannelName = detector.ChannelName,
+                ElementSymbol = detector.ElementSymbol,
                 MassNumber = detector.MassNumber,
                 Kind = detector.Kind,
                 Scale = detector.Scale,

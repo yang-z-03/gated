@@ -29,6 +29,7 @@ public enum MainWindowViewState
     Metadata,
     GroupMetadata,
     SpilloverCompensation,
+    MassCompensation,
     SpectralUnmixing,
     MassNormalization,
     Platform
@@ -155,6 +156,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
     public DataView WorkspaceMetadataTableView => workspace_metadata_table.DefaultView;
     public DataTable WorkspaceMetadataTable => workspace_metadata_table;
     public SpectralUnmixingViewModel SpectralPanel { get; }
+    public MassCompensationViewModel MassCompensationPanel { get; }
     public MassNormalizationViewModel MassPanel { get; }
 
     public ICommand CreateGroupCommand { get; }
@@ -240,6 +242,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
     public MainWindowViewModel()
     {
         SpectralPanel = new SpectralUnmixingViewModel(this);
+        MassCompensationPanel = new MassCompensationViewModel(this);
         MassPanel = new MassNormalizationViewModel(this);
         Python.PythonExtensionRuntime.StatusChanged += UpdatePythonExecutionStatus;
         Python.PythonExtensionRuntime.LogRunStarted += BeginPythonLogRun;
@@ -1018,6 +1021,21 @@ public sealed partial class MainWindowViewModel : NotifyBase
         }
     }
 
+    public bool IsMassCompensationMode
+    {
+        get => ViewState == MainWindowViewState.MassCompensation;
+        private set
+        {
+            if (value)
+            {
+                SelectedIntegrationJob = null;
+                set_view_state(MainWindowViewState.MassCompensation, "Mass compensation");
+            }
+            else if (IsMassCompensationMode)
+                set_view_state(MainWindowViewState.Analysis, "Analysis view");
+        }
+    }
+
     public bool IsWorkspaceMetadataMode
     {
         get => ViewState == MainWindowViewState.Metadata;
@@ -1084,6 +1102,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         OnPropertyChanged(nameof(IsIntegrationJobMode));
         OnPropertyChanged(nameof(IsGroupMetadataMode));
         OnPropertyChanged(nameof(IsSpilloverCompensationMode));
+        OnPropertyChanged(nameof(IsMassCompensationMode));
         OnPropertyChanged(nameof(IsSpectralUnmixingMode));
         OnPropertyChanged(nameof(IsMassNormalizationMode));
         OnPropertyChanged(nameof(IsPlotPropertiesMode));
@@ -2348,6 +2367,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         OnPropertyChanged(nameof(IsEditorYAxisLinearScale));
         foreach (var group in Workspace.Groups.Where(group => group.SpectralUnmixing.Rows.Count > 0)) group.SpectralUnmixing.IsStale = true;
         if (IsSpectralUnmixingMode) SpectralPanel.SetGroup(selected_group);
+        if (IsMassCompensationMode) MassCompensationPanel.SetGroup(selected_group);
     }
 
     private async Task rename_selected_embedding_async()
@@ -2519,8 +2539,12 @@ public sealed partial class MainWindowViewModel : NotifyBase
             for (int index = selected_group.SpilloverCompensation.Rows.Count - 1; index >= 0; index--)
                 if (selected_group.SpilloverCompensation.Rows[index].ControlSampleId == selected_control_sample.Id)
                     selected_group.SpilloverCompensation.Rows.RemoveAt(index);
+            for (int index = selected_group.MassCompensation.Rows.Count - 1; index >= 0; index--)
+                if (selected_group.MassCompensation.Rows[index].ControlSampleId == selected_control_sample.Id)
+                    selected_group.MassCompensation.Rows.RemoveAt(index);
             group_to_recalculate = null;
             refresh_spillover_workspace();
+            if (IsMassCompensationMode) MassCompensationPanel.SetGroup(selected_group);
         }
         else if (selected_node?.Kind is ProjectNodeKind.Gate or ProjectNodeKind.GatePopulationSlot && selected_group is not null && selected_gate is not null)
             remove_gate(selected_group, selected_gate);
@@ -3735,8 +3759,8 @@ public sealed partial class MainWindowViewModel : NotifyBase
             !passive_control_selection &&
             ViewState is MainWindowViewState.Metadata or MainWindowViewState.GroupMetadata)
             set_view_state(MainWindowViewState.Analysis, "Analysis view");
-        if (node.Kind is not ProjectNodeKind.ControlFolder and not ProjectNodeKind.SpilloverCompensation and not ProjectNodeKind.SpectralUnmixing and not ProjectNodeKind.MassNormalization and not ProjectNodeKind.ControlSample &&
-            ViewState is MainWindowViewState.SpilloverCompensation or MainWindowViewState.SpectralUnmixing or MainWindowViewState.MassNormalization)
+        if (node.Kind is not ProjectNodeKind.ControlFolder and not ProjectNodeKind.SpilloverCompensation and not ProjectNodeKind.MassCompensation and not ProjectNodeKind.SpectralUnmixing and not ProjectNodeKind.MassNormalization and not ProjectNodeKind.ControlSample &&
+            ViewState is MainWindowViewState.SpilloverCompensation or MainWindowViewState.MassCompensation or MainWindowViewState.SpectralUnmixing or MainWindowViewState.MassNormalization)
             set_view_state(MainWindowViewState.Analysis, "Analysis view");
         var previous_group = selected_group;
         var previous_gate = selected_gate;
@@ -3844,6 +3868,19 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 SelectedCompensation = null;
                 IsSpilloverCompensationMode = true;
                 refresh_spillover_workspace();
+                break;
+            case ProjectNodeKind.MassCompensation:
+                SelectedIntegrationJob = null;
+                IsWorkspaceMetadataMode = false;
+                if (node.Group is not null)
+                    SelectedGroup = node.Group;
+                SelectedSample = null;
+                SelectedPopulation = null;
+                SelectedGate = null;
+                SelectedControlSample = selected_group?.ControlSamples.FirstOrDefault();
+                SelectedCompensation = null;
+                MassCompensationPanel.SetGroup(selected_group);
+                IsMassCompensationMode = true;
                 break;
             case ProjectNodeKind.ControlSample:
                 SelectedIntegrationJob = null;
@@ -4974,6 +5011,8 @@ public sealed partial class MainWindowViewModel : NotifyBase
             sample.ProjectChannels(remaining_channels);
         foreach (var spillover_row in selected_group.SpilloverCompensation.Rows.Where(item => item.ParameterName == removed_name))
             spillover_row.ParameterName = SpilloverControlRowViewModel.BlankParameterName;
+        foreach (var mass_row in selected_group.MassCompensation.Rows.Where(item => item.SourceChannelName == removed_name))
+            mass_row.SourceChannelName = "";
         selected_group.RefreshChannelProfile();
         selected_group.ResetIdentityCompensation();
         selected_group.SampleRootViewOptions.Clear();
@@ -4982,6 +5021,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         apply_axes_from_group_root_view(selected_group);
         refresh_selection_sidebars();
         refresh_spillover_workspace();
+        if (IsMassCompensationMode) MassCompensationPanel.SetGroup(selected_group);
         refresh_workspace_sample_metadata();
         refresh_project_tree();
         refresh_plot_gates();
@@ -5128,8 +5168,11 @@ public sealed partial class MainWindowViewModel : NotifyBase
         rename_channel_references(selected_group, old_name, new_name);
         foreach (var spillover_row in selected_group.SpilloverCompensation.Rows.Where(item => item.ParameterName == old_name))
             spillover_row.ParameterName = new_name;
+        foreach (var mass_row in selected_group.MassCompensation.Rows.Where(item => item.SourceChannelName == old_name))
+            mass_row.SourceChannelName = new_name;
         selected_group.RenameChannelInProfile(old_name, new_name);
         refresh_spillover_workspace();
+        if (IsMassCompensationMode) MassCompensationPanel.SetGroup(selected_group);
         StatusText = $"Renamed channel: {old_name} to {new_name}";
         return new_name;
     }
@@ -5360,6 +5403,13 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 $"{group_key}:controls:spillover",
                 group: group,
                 count: group.SpilloverCompensation.Rows.Count,
+                depth: 3));
+            controls_node.Children.Add(create_project_node(
+                ProjectNodeKind.MassCompensation,
+                "Mass compensation",
+                $"{group_key}:controls:mass-compensation",
+                group: group,
+                count: group.MassCompensation.Rows.Count,
                 depth: 3));
             controls_node.Children.Add(create_project_node(
                 ProjectNodeKind.SpectralUnmixing,
@@ -8271,6 +8321,7 @@ public enum ProjectNodeKind
     StatisticDefinition,
     ControlFolder,
     SpilloverCompensation,
+    MassCompensation,
     SpectralUnmixing,
     MassNormalization,
     ControlSample,
@@ -8388,6 +8439,7 @@ public sealed class ProjectNode : NotifyBase
         ProjectNodeKind.StatisticDefinition => "avares://gated/Resources/statistics.svg",
         ProjectNodeKind.ControlFolder => "avares://gated/Resources/controls.svg",
         ProjectNodeKind.SpilloverCompensation => "avares://gated/Resources/matrix.svg",
+        ProjectNodeKind.MassCompensation => "avares://gated/Resources/matrix.svg",
         ProjectNodeKind.SpectralUnmixing => "avares://gated/Resources/embedding.svg",
         ProjectNodeKind.MassNormalization => "avares://gated/Resources/refresh.svg",
         ProjectNodeKind.ControlSample => "avares://gated/Resources/tube.svg",
@@ -8423,6 +8475,7 @@ public sealed class ProjectNode : NotifyBase
         ProjectNodeKind.StatisticDefinition => "D",
         ProjectNodeKind.ControlFolder => "C",
         ProjectNodeKind.SpilloverCompensation => "M",
+        ProjectNodeKind.MassCompensation => "M",
         ProjectNodeKind.SpectralUnmixing => "U",
         ProjectNodeKind.MassNormalization => "N",
         ProjectNodeKind.ControlSample => "S",

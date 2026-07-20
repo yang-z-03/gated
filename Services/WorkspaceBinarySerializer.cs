@@ -11,7 +11,7 @@ namespace gated.Services;
 public sealed class WorkspaceBinarySerializer
 {
     private const uint magic = 0x44544731;
-    private const int version = 49;
+    private const int version = 50;
     private const int minimum_supported_version = 42;
     [ThreadStatic] private static int reading_version;
 
@@ -159,6 +159,7 @@ public sealed class WorkspaceBinarySerializer
         writer.Write(group.MassNormalizationSourceGroupId.HasValue);
         if (group.MassNormalizationSourceGroupId.HasValue)
             writer.Write(group.MassNormalizationSourceGroupId.Value.ToByteArray());
+        write_mass_compensation_state(writer, group.MassCompensation);
     }
 
     private static FlowGroup read_group(BinaryReader reader, int file_version)
@@ -202,6 +203,8 @@ public sealed class WorkspaceBinarySerializer
             read_mass_normalization_state(reader, group.MassNormalization);
             if (reader.ReadBoolean()) group.MassNormalizationSourceGroupId = new Guid(reader.ReadBytes(16));
         }
+        if (file_version >= 50)
+            read_mass_compensation_state(reader, group.MassCompensation);
 
         return group;
     }
@@ -415,6 +418,29 @@ public sealed class WorkspaceBinarySerializer
                 }
             }
         }
+    }
+
+    private static void write_mass_compensation_state(BinaryWriter writer, MassCompensationState state)
+    {
+        write_string(writer, state.MatrixName);
+        writer.Write(state.Rows.Count);
+        foreach (var row in state.Rows)
+        {
+            writer.Write(row.ControlSampleId.ToByteArray());
+            write_string(writer, row.SourceChannelName);
+        }
+    }
+
+    private static void read_mass_compensation_state(BinaryReader reader, MassCompensationState state)
+    {
+        state.MatrixName = read_string(reader);
+        int count = reader.ReadInt32();
+        for (int index = 0; index < count; index++)
+            state.Rows.Add(new MassCompensationControlRow
+            {
+                ControlSampleId = new Guid(reader.ReadBytes(16)),
+                SourceChannelName = read_string(reader)
+            });
     }
 
     private static void read_mass_normalization_state(BinaryReader reader, MassNormalizationState state)

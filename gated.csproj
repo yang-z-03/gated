@@ -30,6 +30,7 @@
       <Compile Remove="Msix\**" />
       <Compile Remove="Pixels\**" />
       <Compile Remove="Updater\**" />
+      <Compile Remove="Tests\**" />
       <EmbeddedResource Remove=".github\**" />
       <EmbeddedResource Remove="artifacts\**" />
       <EmbeddedResource Remove="Msix\**" />
@@ -40,6 +41,7 @@
       <None Remove="Msix\**" />
       <None Remove="Pixels\**" />
       <None Remove="Updater\**" />
+      <None Remove="Tests\**" />
 
       <AvaloniaXaml Remove="Installer\**" />
       <Compile Remove="Installer\**" />

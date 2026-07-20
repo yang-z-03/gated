@@ -1745,6 +1745,133 @@
             </Grid>
 
             <Grid Grid.Column="2"
+                  IsVisible="{Binding IsMassCompensationMode}"
+                  Background="{DynamicResource AppBrushBackground1}">
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="24" Spacing="14" MaxWidth="900" MinWidth="750" HorizontalAlignment="Center">
+                        <StackPanel Margin="0 12" Spacing="8">
+                            <TextBlock Foreground="{DynamicResource AppBrushText2}" FontWeight="Bold" Text="Mass Cytometry Compensation" />
+                            <TextBlock Foreground="{DynamicResource SemiColorText1}" TextWrapping="Wrap" LineHeight="18"
+                                       Text="Mass compensation estimates isotopic impurity, adjacent-mass abundance sensitivity, and oxide spillover from ungated single-staining control tubes." />
+                        </StackPanel>
+
+                        <TextBlock Foreground="{DynamicResource SemiColorText1}"
+                                   Text="Drag single-staining control samples into the table. Each tube is sampled deterministically at up to 5,000 events." />
+                        <Border x:Name="mass_compensation_table" Height="300"
+                                BorderBrush="{DynamicResource AppBrushBorder3}" BorderThickness="1" CornerRadius="6"
+                                Background="{DynamicResource AppBrushBackground3}" ClipToBounds="True">
+                            <Grid RowDefinitions="29,*">
+                                <Border Background="{DynamicResource AppBrushBackground3}" CornerRadius="6 6 0 0" Padding="10,0">
+                                    <Grid ColumnDefinitions="*,240,34" Margin="8 0" ColumnSpacing="12">
+                                        <TextBlock Text="Control sample name" Padding="15 0 0 0" FontSize="13"
+                                                   Foreground="{DynamicResource SemiColorText1}" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="1" Text="Single-staining isotope" FontSize="13"
+                                                   Foreground="{DynamicResource SemiColorText1}" VerticalAlignment="Center" />
+                                    </Grid>
+                                </Border>
+                                <ListBox Grid.Row="1" Margin="8 0 8 8" SelectionMode="Single"
+                                         ItemsSource="{Binding MassCompensationPanel.Rows}"
+                                         SelectedItem="{Binding MassCompensationPanel.SelectedRow, Mode=TwoWay}"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Height="30" Padding="3,0" CornerRadius="4">
+                                                <Grid ColumnDefinitions="*,240,34" ColumnSpacing="12" VerticalAlignment="Center">
+                                                    <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
+                                                        <shared:ThemeIcon Width="15" Height="15" Icon="{Binding SampleIcon}" />
+                                                        <TextBlock Text="{Binding SampleName}" FontSize="13"
+                                                                   Foreground="{DynamicResource SemiColorText0}"
+                                                                   TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                                    </StackPanel>
+                                                    <ComboBox Grid.Column="1" Classes="Small" Width="240"
+                                                              ItemsSource="{Binding IsotopeChoices}"
+                                                              SelectedItem="{Binding SelectedChoice, Mode=TwoWay}" />
+                                                    <Button Grid.Column="2" Classes="Quiet ChannelIconButton"
+                                                            Command="{Binding RemoveCommand}" CommandParameter="{Binding}"
+                                                            ToolTip.Tip="Remove control tube">
+                                                        <shared:ThemeIcon Width="15" Height="15" Icon="{Binding RemoveIcon}" />
+                                                    </Button>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </Grid>
+                        </Border>
+
+                        <Grid ColumnDefinitions="Auto,220,*,Auto,Auto" ColumnSpacing="10"
+                              IsVisible="{Binding MassCompensationPanel.HasRows}">
+                            <TextBlock Text="Compensation Matrix" Foreground="{DynamicResource SemiColorText2}" VerticalAlignment="Center" />
+                            <TextBox Grid.Column="1" Classes="Small"
+                                     Text="{Binding MassCompensationPanel.MatrixName, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" />
+                            <Button Grid.Column="3" Classes="Small" Command="{Binding MassCompensationPanel.CalculateCommand}">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <shared:ThemeIcon Width="16" Height="16" Icon="ok.svg" />
+                                    <TextBlock Text="Calculate Auto-compensation" />
+                                </StackPanel>
+                            </Button>
+                            <Button Grid.Column="4" Classes="Small" Command="{Binding MassCompensationPanel.ApplyCommand}">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <shared:ThemeIcon Width="16" Height="16" Icon="ok.svg" />
+                                    <TextBlock Text="Apply" />
+                                </StackPanel>
+                            </Button>
+                        </Grid>
+
+                        <Border Background="{DynamicResource AppBrushBackground3}" BorderBrush="{DynamicResource AppBrushBorder3}"
+                                BorderThickness="1" CornerRadius="6" Padding="10,7">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Text="{Binding MassCompensationPanel.Status}" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource SemiColorText1}" VerticalAlignment="Center" />
+                                <controls:SpinnerView Grid.Column="1" Width="24" Height="24"
+                                                      IsVisible="{Binding MassCompensationPanel.IsBusy}" />
+                            </Grid>
+                        </Border>
+
+                        <Expander Header="Spillover matrix" IsExpanded="True"
+                                  IsVisible="{Binding MassCompensationPanel.HasMatrix}" Margin="0,0,0,24">
+                            <StackPanel Margin="0,8,0,0" Spacing="10">
+                                <Border IsVisible="{Binding MassCompensationPanel.IsStale}"
+                                        Background="{DynamicResource AppBrushWarningBackground}"
+                                        BorderBrush="{DynamicResource AppBrushWarningBorderMuted}" BorderThickness="1"
+                                        CornerRadius="6" Padding="10,7">
+                                    <TextBlock Text="The matrix is outdated. Recalculate after changing control assignments."
+                                               Foreground="{DynamicResource AppBrushWarningTextStrong}" />
+                                </Border>
+                                <StackPanel Orientation="Horizontal" Spacing="18">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <Border Width="18" Height="18" BorderBrush="#70C99B" BorderThickness="3" />
+                                        <TextBlock Text="Isotopic impurity" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <Border Width="18" Height="18" BorderBrush="#3D43B8" BorderThickness="3" />
+                                        <TextBlock Text="M±1" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <Border Width="18" Height="18" BorderBrush="#C92C2C" BorderThickness="3" />
+                                        <TextBlock Text="M+16" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </StackPanel>
+                                <Border BorderBrush="{DynamicResource AppBrushBorder3}" BorderThickness="1" CornerRadius="6"
+                                        Background="{DynamicResource AppBrushBackground3}" Padding="8">
+                                    <ScrollViewer MaxHeight="750" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                                        <controls:SpectralMatrixView Rows="{Binding MassCompensationPanel.MatrixRows}"
+                                                                     ColumnLabels="{Binding MassCompensationPanel.MatrixColumnLabels}"
+                                                                     XAxisTitle="Receiving isotope"
+                                                                     YAxisTitle="Source isotope"
+                                                                     IsEditMode="True"
+                                                                     ShowAnnotations="True"
+                                                                     Palette="Blues" />
+                                    </ScrollViewer>
+                                </Border>
+                            </StackPanel>
+                        </Expander>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+
+            <Grid Grid.Column="2"
                   IsVisible="{Binding IsSpectralUnmixingMode}"
                   Background="{DynamicResource AppBrushBackground1}">
                 <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">

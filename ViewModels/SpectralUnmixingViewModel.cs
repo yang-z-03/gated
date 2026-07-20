@@ -1218,8 +1218,12 @@ public sealed record SpectralMatrixRowViewModel(string Name, IReadOnlyList<Spect
 public sealed class SpectralMatrixCellViewModel : NotifyBase
 {
     private float value; private readonly Action<float>? changed;
-    public SpectralMatrixCellViewModel(float value, bool editable, Action<float>? changed) { this.value = value; IsEditable = editable; this.changed = changed; }
+    public SpectralMatrixCellViewModel(float value, bool editable, Action<float>? changed, MassLeakageKind annotations = MassLeakageKind.None)
+    {
+        this.value = value; IsEditable = editable; this.changed = changed; Annotations = annotations;
+    }
     public float Value { get => value; set { if (SetField(ref this.value, value)) changed?.Invoke(value); } }
     public bool IsEditable { get; }
+    public MassLeakageKind Annotations { get; }
     public string Display => value.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
 }

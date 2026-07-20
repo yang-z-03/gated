@@ -100,6 +100,9 @@ public partial class MainWindow : Window
         DragDrop.SetAllowDrop(spillover_control_table, true);
         DragDrop.AddDragOverHandler(spillover_control_table, spillover_control_table_drag_over);
         DragDrop.AddDropHandler(spillover_control_table, spillover_control_table_drop);
+        DragDrop.SetAllowDrop(mass_compensation_table, true);
+        DragDrop.AddDragOverHandler(mass_compensation_table, mass_compensation_table_drag_over);
+        DragDrop.AddDropHandler(mass_compensation_table, mass_compensation_table_drop);
         DragDrop.SetAllowDrop(spectral_control_table, true);
         DragDrop.AddDragOverHandler(spectral_control_table, spectral_control_table_drag_over);
         DragDrop.AddDropHandler(spectral_control_table, spectral_control_table_drop);
@@ -153,6 +156,7 @@ public partial class MainWindow : Window
             or MainWindowViewState.Metadata
             or MainWindowViewState.Platform
             or MainWindowViewState.SpilloverCompensation
+            or MainWindowViewState.MassCompensation
             or MainWindowViewState.SpectralUnmixing
             or MainWindowViewState.MassNormalization ? active : inactive;
         mainModeLayoutText.Foreground = view_model.ViewState == MainWindowViewState.Layout ? active : inactive;
@@ -1964,6 +1968,14 @@ public partial class MainWindow : Window
                     command_menu_item("Collapse all", view_model.CollapseProjectTreeCommand));
                 break;
 
+            case ProjectNodeKind.MassCompensation:
+                add_menu_items(menu,
+                    click_menu_item("Add control samples ...", add_control_samples_menu_item_click),
+                    new Separator(),
+                    command_menu_item("Expand all", view_model.ExpandProjectTreeCommand),
+                    command_menu_item("Collapse all", view_model.CollapseProjectTreeCommand));
+                break;
+
             case ProjectNodeKind.SpectralUnmixing:
                 add_menu_items(menu,
                     click_menu_item("Add control samples ...", add_control_samples_menu_item_click),
@@ -2481,6 +2493,23 @@ public partial class MainWindow : Window
         var node = PageEditorView.ResolveDraggedProjectNode(e.DataTransfer);
         e.DragEffects = node is not null && view_model.SpectralPanel.DropControlCommand.CanExecute(node)
             ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void mass_compensation_table_drag_over(object? sender, DragEventArgs e)
+    {
+        var node = PageEditorView.ResolveDraggedProjectNode(e.DataTransfer);
+        e.DragEffects = node is not null && view_model.MassCompensationPanel.DropControlCommand.CanExecute(node)
+            ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void mass_compensation_table_drop(object? sender, DragEventArgs e)
+    {
+        var node = PageEditorView.ResolveDraggedProjectNode(e.DataTransfer);
+        if (node is not null && view_model.MassCompensationPanel.DropControlCommand.CanExecute(node))
+            view_model.MassCompensationPanel.DropControlCommand.Execute(node);
+        PageEditorView.DraggedProjectNode = null;
         e.Handled = true;
     }
 

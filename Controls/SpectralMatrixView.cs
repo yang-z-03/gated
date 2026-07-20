@@ -258,6 +258,8 @@ public sealed class SpectralMatrixView : Decorator
                 }
                 if (double.IsFinite(StressAbove) && value > StressAbove)
                     context.DrawRectangle(null, stress_pen, rect.Deflate(1.2));
+                if (rows[row].Cells[column].Annotations != MassLeakageKind.None)
+                    draw_annotation_border(context, rect, rows[row].Cells[column].Annotations);
             }
         }
         context.DrawLine(grid_pen, new Point(layout.Matrix.Left, layout.Matrix.Bottom), new Point(layout.Matrix.Right, layout.Matrix.Bottom));
@@ -551,6 +553,29 @@ public sealed class SpectralMatrixView : Decorator
     {
         byte channel(byte a, byte b) => (byte)Math.Clamp(a + (b - a) * t, 0, 255);
         return Color.FromRgb(channel(low.R, high.R), channel(low.G, high.G), channel(low.B, high.B));
+    }
+
+    private static void draw_annotation_border(DrawingContext context, Rect rect, MassLeakageKind annotations)
+    {
+        var colors = new List<Color>();
+        if (annotations.HasFlag(MassLeakageKind.IsotopicImpurity)) colors.Add(Color.Parse("#70C99B"));
+        if (annotations.HasFlag(MassLeakageKind.AbundanceSensitivity)) colors.Add(Color.Parse("#3D43B8"));
+        if (annotations.HasFlag(MassLeakageKind.OxideFormation)) colors.Add(Color.Parse("#C92C2C"));
+        if (colors.Count == 0) return;
+        var border = rect.Deflate(1.2);
+        if (colors.Count == 1)
+        {
+            context.DrawRectangle(null, new Pen(new SolidColorBrush(colors[0]), 2.4), border);
+            return;
+        }
+        var first = new Pen(new SolidColorBrush(colors[0]), 2.4);
+        var second = new Pen(new SolidColorBrush(colors[1]), 2.4);
+        context.DrawLine(first, border.TopLeft, border.TopRight);
+        context.DrawLine(first, border.TopLeft, border.BottomLeft);
+        context.DrawLine(second, border.BottomLeft, border.BottomRight);
+        context.DrawLine(second, border.TopRight, border.BottomRight);
+        if (colors.Count > 2)
+            context.DrawRectangle(null, new Pen(new SolidColorBrush(colors[2]), 1.2), border.Deflate(2));
     }
 
     private static string format_value(double value)

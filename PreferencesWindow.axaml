@@ -89,6 +89,8 @@
                                   HeadersVisibility="Column">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="Channel" Binding="{Binding ChannelName}" Width="*" />
+                                <DataGridTextColumn Header="Element" Binding="{Binding ElementSymbol}" Width="78" />
+                                <DataGridTextColumn Header="Mass" Binding="{Binding MassNumber}" Width="68" />
                                 <DataGridTemplateColumn Header="Kind" Width="125">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
@@ -181,6 +183,71 @@
                             </DataGridTemplateColumn>
                         </DataGrid.Columns>
                     </DataGrid>
+                </Border>
+            </Grid>
+
+            <Grid x:Name="isotopesPage" RowDefinitions="Auto,Auto,*" RowSpacing="10" IsVisible="False">
+                <TextBlock Foreground="{DynamicResource SemiColorText0}" TextWrapping="Wrap" LineHeight="18"
+                           Text="Define elements and isotope masses that may cross-talk through isotopic impurity. Adjacent-mass and oxide interactions are inferred independently." />
+                <Grid Grid.Row="1" ColumnDefinitions="*,Auto">
+                    <TextBlock Foreground="{DynamicResource SemiColorText2}" VerticalAlignment="Center"
+                               Text="Element isotope definitions" />
+                    <Button x:Name="addIsotopeElementButton" Grid.Column="1" Classes="Small" Width="30"
+                            ToolTip.Tip="Add element definition">
+                        <shared:ThemeIcon Width="16" Height="16" Icon="add-isotope.svg" />
+                    </Button>
+                </Grid>
+                <Border Grid.Row="2" BorderBrush="{DynamicResource AppBrushBorder3}" BorderThickness="1" CornerRadius="6"
+                        Background="{DynamicResource AppBrushBackground2}" Padding="8" ClipToBounds="True">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <ItemsControl x:Name="isotopeElementList">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border BorderBrush="{DynamicResource AppBrushBorder3}" BorderThickness="0,0,0,1" Padding="3,7">
+                                        <Grid ColumnDefinitions="105,*,34" ColumnSpacing="8">
+                                            <TextBox Classes="Small" Text="{Binding ElementSymbol, Mode=TwoWay}" Watermark="Element" />
+                                            <StackPanel Grid.Column="1" Spacing="5">
+                                                <ItemsControl ItemsSource="{Binding Tags}">
+                                                    <ItemsControl.ItemsPanel>
+                                                        <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                                                    </ItemsControl.ItemsPanel>
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Border CornerRadius="5" Margin="0,0,5,4" Padding="7,2,2,2"
+                                                                    Background="{DynamicResource AppBrushBackground4}"
+                                                                    BorderBrush="{DynamicResource AppBrushBorder2}" BorderThickness="1">
+                                                                <StackPanel Orientation="Horizontal" Spacing="3">
+                                                                    <TextBlock Text="{Binding Mass}" VerticalAlignment="Center" />
+                                                                    <Button Classes="Quiet ChannelIconButton" Width="22" Height="22"
+                                                                            ToolTip.Tip="Remove isotope mass"
+                                                                            Click="remove_isotope_mass_from_tag">
+                                                                        <shared:ThemeIcon Width="12" Height="12" Icon="cross.svg" />
+                                                                    </Button>
+                                                                </StackPanel>
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                                <StackPanel Orientation="Horizontal" Spacing="5">
+                                                    <TextBox Classes="Small" Width="90" Watermark="Mass"
+                                                             Text="{Binding PendingMass, Mode=TwoWay}" />
+                                                    <Button Classes="Small" Width="30" ToolTip.Tip="Add isotope mass"
+                                                            Click="add_isotope_mass_from_row">
+                                                        <shared:ThemeIcon Width="14" Height="14" Icon="add-isotope.svg" />
+                                                    </Button>
+                                                </StackPanel>
+                                            </StackPanel>
+                                            <Button Grid.Column="2" Classes="Quiet ChannelIconButton" Width="30"
+                                                    ToolTip.Tip="Remove element definition"
+                                                    Click="remove_isotope_element_from_row">
+                                                <shared:ThemeIcon Width="16" Height="16" Icon="delete.svg" />
+                                            </Button>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
                 </Border>
             </Grid>
 

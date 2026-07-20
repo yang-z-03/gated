@@ -15,6 +15,7 @@ public partial class PreferencesWindow : Window
 {
     private readonly string original_theme_name;
     private ObservableCollection<ElementBeadTypePreference> bead_types;
+    private ObservableCollection<IsotopePreferenceRow> isotope_rows;
     private bool binding_beads;
 
     public PreferencesWindow()
@@ -22,19 +23,22 @@ public partial class PreferencesWindow : Window
         InitializeComponent();
         original_theme_name = App.NormalizeThemeName(Configuration.Preferences.ThemeName);
         bead_types = clone_bead_types(Configuration.Preferences.ElementBeads);
+        isotope_rows = clone_isotope_rows(Configuration.Preferences.Isotopes);
         Tag = new PreferenceChoices();
-        preferencePageList.ItemsSource = new[] { "Appearance", "Cytometry", "Element beads" };
+        preferencePageList.ItemsSource = new[] { "Appearance", "Cytometry", "Isotopes", "Element beads" };
         preferencePageList.SelectionChanged += (_, _) => bind_page();
         preferencePageList.SelectedIndex = 0;
         cytometerCombo.SelectionChanged += (_, _) => bind_selected();
         refresh_cytometer_combo(Configuration.Preferences.SelectedCytometerName);
         refresh_bead_types();
+        isotopeElementList.ItemsSource = isotope_rows;
         set_theme_selection(original_theme_name);
 
         addCytometerButton.Click += (_, _) => add_cytometer();
         addChannelButton.Click += (_, _) => add_channel();
         removeChannelButton.Click += (_, _) => remove_channel();
         resetButton.Click += (_, _) => reset_defaults();
+        addIsotopeElementButton.Click += (_, _) => add_isotope_element();
         beadTypeCombo.SelectionChanged += (_, _) => bind_bead_type();
         beadLotCombo.SelectionChanged += (_, _) => bind_bead_lot();
         beadTypeNameBox.TextChanged += (_, _) => update_bead_names();
@@ -57,11 +61,19 @@ public partial class PreferencesWindow : Window
                 await show_message("Element beads", validation);
                 return;
             }
+            if (validate_isotopes() is { } isotope_validation)
+            {
+                await show_message("Isotopes", isotope_validation);
+                return;
+            }
             if (cytometerCombo.SelectedItem is CytometerPreference preference)
                 Configuration.Preferences.SelectedCytometerName = preference.Name;
             Configuration.Preferences.ElementBeads.Clear();
             foreach (var type in clone_bead_types(bead_types)) Configuration.Preferences.ElementBeads.Add(type);
             Configuration.Preferences.ElementBeadsInitialized = true;
+            Configuration.Preferences.Isotopes.Clear();
+            foreach (var element in snapshot_isotopes(isotope_rows)) Configuration.Preferences.Isotopes.Add(element);
+            Configuration.Preferences.IsotopesInitialized = true;
             Configuration.Preferences.ThemeName = selected_theme_name();
             App.ApplyThemePreference(Configuration.Preferences.ThemeName);
             Configuration.SavePreferences();
@@ -97,9 +109,11 @@ public partial class PreferencesWindow : Window
     {
         bool cytometry = string.Equals(preferencePageList.SelectedItem as string, "Cytometry", StringComparison.Ordinal);
         bool element_beads = string.Equals(preferencePageList.SelectedItem as string, "Element beads", StringComparison.Ordinal);
+        bool isotopes = string.Equals(preferencePageList.SelectedItem as string, "Isotopes", StringComparison.Ordinal);
         cytometryPage.IsVisible = cytometry;
         elementBeadsPage.IsVisible = element_beads;
-        appearancePage.IsVisible = !cytometry && !element_beads;
+        isotopesPage.IsVisible = isotopes;
+        appearancePage.IsVisible = !cytometry && !element_beads && !isotopes;
     }
 
     private void set_theme_selection(string theme_name)
@@ -157,8 +171,83 @@ public partial class PreferencesWindow : Window
         Configuration.Preferences.ThemeName = theme_name;
         refresh_cytometer_combo();
         bead_types = clone_bead_types(Configuration.Preferences.ElementBeads);
+        isotope_rows = clone_isotope_rows(Configuration.Preferences.Isotopes);
+        isotopeElementList.ItemsSource = isotope_rows;
         refresh_bead_types();
     }
+
+    private void add_isotope_element()
+    {
+        isotope_rows.Add(new IsotopePreferenceRow { ElementSymbol = "" });
+    }
+
+    private async void add_isotope_mass_from_row(object? sender, Avalonia.Interactivity.RoutedEventArgs event_args)
+    {
+        if (sender is not Button { DataContext: IsotopePreferenceRow row }) return;
+        if (!int.TryParse(row.PendingMass, out int mass) || mass <= 0)
+        {
+            await show_message("Isotopes", "Enter a positive integer isotope mass.");
+            return;
+        }
+        if (row.Tags.Any(tag => tag.Mass == mass))
+        {
+            await show_message("Isotopes", $"Mass {mass} is already registered for {row.ElementSymbol}.");
+            return;
+        }
+        row.Tags.Add(new IsotopeMassTag(row, mass));
+        row.SortTags();
+        row.PendingMass = "";
+        row.NotifyPendingMass();
+    }
+
+    private void remove_isotope_mass_from_tag(object? sender, Avalonia.Interactivity.RoutedEventArgs event_args)
+    {
+        if (sender is Button { DataContext: IsotopeMassTag tag })
+            tag.Owner.Tags.Remove(tag);
+    }
+
+    private async void remove_isotope_element_from_row(object? sender, Avalonia.Interactivity.RoutedEventArgs event_args)
+    {
+        if (sender is not Button { DataContext: IsotopePreferenceRow row } ||
+            !await confirm("Remove element", $"Remove the isotope definition for {row.ElementSymbol}?")) return;
+        isotope_rows.Remove(row);
+    }
+
+    private string? validate_isotopes()
+    {
+        if (isotope_rows.GroupBy(row => row.ElementSymbol.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Any(group => string.IsNullOrWhiteSpace(group.Key) || group.Count() > 1))
+            return "Element symbols must be non-empty and unique.";
+        foreach (var row in isotope_rows)
+        {
+            string symbol = row.ElementSymbol.Trim();
+            if (symbol.Length > 3 || symbol.Any(character => !char.IsLetter(character)))
+                return $"{row.ElementSymbol} is not a valid one-to-three letter element symbol.";
+            if (row.Tags.Count == 0) return $"{row.ElementSymbol} must define at least one isotope mass.";
+            if (row.Tags.Any(tag => tag.Mass <= 0) || row.Tags.Select(tag => tag.Mass).Distinct().Count() != row.Tags.Count)
+                return $"{row.ElementSymbol} contains an invalid or duplicate isotope mass.";
+        }
+        return null;
+    }
+
+    private static ObservableCollection<IsotopePreferenceRow> clone_isotope_rows(IEnumerable<IsotopeElementPreference> source)
+    {
+        var result = new ObservableCollection<IsotopePreferenceRow>();
+        foreach (var element in source)
+        {
+            var row = new IsotopePreferenceRow { ElementSymbol = element.ElementSymbol };
+            foreach (int mass in element.IsotopeMasses.OrderBy(mass => mass)) row.Tags.Add(new IsotopeMassTag(row, mass));
+            result.Add(row);
+        }
+        return result;
+    }
+
+    private static IEnumerable<IsotopeElementPreference> snapshot_isotopes(IEnumerable<IsotopePreferenceRow> rows) =>
+        rows.Select(row => new IsotopeElementPreference
+        {
+            ElementSymbol = row.ElementSymbol.Trim(),
+            IsotopeMasses = new ObservableCollection<int>(row.Tags.Select(tag => tag.Mass).Distinct().OrderBy(mass => mass))
+        });
 
     private void refresh_bead_types(Guid? selected_id = null)
     {
@@ -420,4 +509,22 @@ public partial class PreferencesWindow : Window
         public Array ScaleChoices { get; } = Enum.GetValues<CoordinateScaleKind>();
         public Array ExcitationChoices { get; } = Enum.GetValues<ExcitationLightKind>();
     }
+
+    public sealed class IsotopePreferenceRow : NotifyBase
+    {
+        private string element_symbol = "";
+        private string pending_mass = "";
+        public string ElementSymbol { get => element_symbol; set => SetField(ref element_symbol, value ?? ""); }
+        public string PendingMass { get => pending_mass; set => SetField(ref pending_mass, value ?? ""); }
+        public ObservableCollection<IsotopeMassTag> Tags { get; } = new();
+        public void SortTags()
+        {
+            var ordered = Tags.OrderBy(tag => tag.Mass).ToArray();
+            Tags.Clear();
+            foreach (var tag in ordered) Tags.Add(tag);
+        }
+        public void NotifyPendingMass() => OnPropertyChanged(nameof(PendingMass));
+    }
+
+    public sealed record IsotopeMassTag(IsotopePreferenceRow Owner, int Mass);
 }

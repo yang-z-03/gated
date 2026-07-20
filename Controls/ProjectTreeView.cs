@@ -199,6 +199,7 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
             or ProjectNodeKind.Compensation
             or ProjectNodeKind.ControlFolder
             or ProjectNodeKind.SpilloverCompensation
+            or ProjectNodeKind.MassCompensation
             or ProjectNodeKind.SpectralUnmixing
             or ProjectNodeKind.MassNormalization
             or ProjectNodeKind.ControlSample
@@ -349,6 +350,7 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
             ProjectNodeKind.Compensation => node.IsAppliedCompensation ? "ok.svg" : "matrix.svg",
             ProjectNodeKind.ControlFolder => "controls.svg",
             ProjectNodeKind.SpilloverCompensation => "matrix.svg",
+            ProjectNodeKind.MassCompensation => "matrix.svg",
             ProjectNodeKind.SpectralUnmixing => "embedding.svg",
             ProjectNodeKind.MassNormalization => "refresh.svg",
             ProjectNodeKind.ControlSample => "tube.svg",
