@@ -1358,6 +1358,56 @@ public sealed class MassNormalizationState : NotifyBase
     public Guid? LinkedOutputGroupId { get => linked_output_group_id; set => SetField(ref linked_output_group_id, value); }
 }
 
+public sealed class IndexDemultiplexCutoffState : NotifyBase
+{
+    private string channel_name = "";
+    private double? cutoff;
+    private bool is_manual;
+    private string fit_error = "";
+
+    public string ChannelName { get => channel_name; set => SetField(ref channel_name, value ?? ""); }
+    public double? Cutoff { get => cutoff; set => SetField(ref cutoff, value); }
+    public bool IsManual { get => is_manual; set => SetField(ref is_manual, value); }
+    public string FitError { get => fit_error; set => SetField(ref fit_error, value ?? ""); }
+    public double FitMaximum { get; set; }
+    public double LinearSlope { get; set; }
+    public double LinearIntercept { get; set; }
+    public double LinearRss { get; set; } = double.NaN;
+    public double LogLogisticSlope { get; set; }
+    public double LogLogisticUpper { get; set; }
+    public double LogLogisticMidpoint { get; set; }
+    public double LogLogisticRss { get; set; } = double.NaN;
+}
+
+public sealed class IndexDemultiplexSampleRow
+{
+    public Guid SampleId { get; set; }
+    public ObservableCollection<IndexDemultiplexCutoffState> Cutoffs { get; } = new();
+}
+
+public sealed class IndexDemultiplexSubsetState : NotifyBase
+{
+    private string signature = "";
+    private string name = "Subset 0";
+    private bool isIncluded = true;
+
+    public int Mask { get; set; }
+    public string Signature { get => signature; set => SetField(ref signature, value ?? ""); }
+    public string Name { get => name; set => SetField(ref name, value ?? ""); }
+    public bool IsIncluded { get => isIncluded; set => SetField(ref isIncluded, value); }
+}
+
+public sealed class IndexDemultiplexState : NotifyBase
+{
+    private Guid? linked_output_group_id;
+
+    public ObservableCollection<string> SelectedChannels { get; } = new();
+    public ObservableCollection<IndexDemultiplexSampleRow> Rows { get; } = new();
+    public ObservableCollection<IndexDemultiplexSubsetState> Subsets { get; } = new();
+    public Dictionary<string, Guid> GeneratedSampleIds { get; } = new(StringComparer.Ordinal);
+    public Guid? LinkedOutputGroupId { get => linked_output_group_id; set => SetField(ref linked_output_group_id, value); }
+}
+
 public sealed record MassTimeSeries(
     int MassNumber,
     string ChannelName,
@@ -2050,8 +2100,10 @@ public sealed class FlowGroup : NotifyBase
     public MassCompensationState MassCompensation { get; } = new();
     public SpectralUnmixingState SpectralUnmixing { get; } = new();
     public MassNormalizationState MassNormalization { get; } = new();
+    public IndexDemultiplexState IndexDemultiplex { get; } = new();
     public Guid? SpectralSourceGroupId { get; set; }
     public Guid? MassNormalizationSourceGroupId { get; set; }
+    public Guid? IndexDemultiplexSourceGroupId { get; set; }
     public GateViewOptions RootViewOptions { get; set; } = new();
     public Dictionary<string, GateViewOptions> SampleRootViewOptions { get; } = new(StringComparer.Ordinal);
     public Dictionary<string, AxisSettings> DataImpliedViewOptions { get; } = new(StringComparer.Ordinal);

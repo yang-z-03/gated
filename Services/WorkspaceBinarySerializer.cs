@@ -11,7 +11,7 @@ namespace gated.Services;
 public sealed class WorkspaceBinarySerializer
 {
     private const uint magic = 0x44544731;
-    private const int version = 51;
+    private const int version = 52;
     private const int minimum_supported_version = 42;
     [ThreadStatic] private static int reading_version;
 
@@ -160,6 +160,10 @@ public sealed class WorkspaceBinarySerializer
         if (group.MassNormalizationSourceGroupId.HasValue)
             writer.Write(group.MassNormalizationSourceGroupId.Value.ToByteArray());
         write_mass_compensation_state(writer, group.MassCompensation);
+        write_index_demultiplex_state(writer, group.IndexDemultiplex);
+        writer.Write(group.IndexDemultiplexSourceGroupId.HasValue);
+        if (group.IndexDemultiplexSourceGroupId.HasValue)
+            writer.Write(group.IndexDemultiplexSourceGroupId.Value.ToByteArray());
     }
 
     private static FlowGroup read_group(BinaryReader reader, int file_version)
@@ -205,6 +209,11 @@ public sealed class WorkspaceBinarySerializer
         }
         if (file_version >= 50)
             read_mass_compensation_state(reader, group.MassCompensation, file_version);
+        if (file_version >= 52)
+        {
+            read_index_demultiplex_state(reader, group.IndexDemultiplex);
+            if (reader.ReadBoolean()) group.IndexDemultiplexSourceGroupId = new Guid(reader.ReadBytes(16));
+        }
 
         return group;
     }
@@ -510,6 +519,90 @@ public sealed class WorkspaceBinarySerializer
             }
             state.Rows.Add(row);
         }
+    }
+
+    private static void write_index_demultiplex_state(BinaryWriter writer, IndexDemultiplexState state)
+    {
+        write_string_array(writer, state.SelectedChannels.ToArray());
+        writer.Write(state.Rows.Count);
+        foreach (var row in state.Rows)
+        {
+            writer.Write(row.SampleId.ToByteArray());
+            writer.Write(row.Cutoffs.Count);
+            foreach (var cutoff in row.Cutoffs)
+            {
+                write_string(writer, cutoff.ChannelName);
+                writer.Write(cutoff.Cutoff.HasValue);
+                if (cutoff.Cutoff.HasValue) writer.Write(cutoff.Cutoff.Value);
+                writer.Write(cutoff.IsManual);
+                write_string(writer, cutoff.FitError);
+                writer.Write(cutoff.FitMaximum);
+                writer.Write(cutoff.LinearSlope);
+                writer.Write(cutoff.LinearIntercept);
+                writer.Write(cutoff.LinearRss);
+                writer.Write(cutoff.LogLogisticSlope);
+                writer.Write(cutoff.LogLogisticUpper);
+                writer.Write(cutoff.LogLogisticMidpoint);
+                writer.Write(cutoff.LogLogisticRss);
+            }
+        }
+        writer.Write(state.Subsets.Count);
+        foreach (var subset in state.Subsets)
+        {
+            writer.Write(subset.Mask);
+            write_string(writer, subset.Signature);
+            write_string(writer, subset.Name);
+            writer.Write(subset.IsIncluded);
+        }
+        writer.Write(state.LinkedOutputGroupId.HasValue);
+        if (state.LinkedOutputGroupId.HasValue) writer.Write(state.LinkedOutputGroupId.Value.ToByteArray());
+        writer.Write(state.GeneratedSampleIds.Count);
+        foreach (var pair in state.GeneratedSampleIds.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+        {
+            write_string(writer, pair.Key);
+            writer.Write(pair.Value.ToByteArray());
+        }
+    }
+
+    private static void read_index_demultiplex_state(BinaryReader reader, IndexDemultiplexState state)
+    {
+        foreach (string channel in read_string_array(reader) ?? []) state.SelectedChannels.Add(channel);
+        int row_count = reader.ReadInt32();
+        for (int row_index = 0; row_index < row_count; row_index++)
+        {
+            var row = new IndexDemultiplexSampleRow { SampleId = new Guid(reader.ReadBytes(16)) };
+            int cutoff_count = reader.ReadInt32();
+            for (int cutoff_index = 0; cutoff_index < cutoff_count; cutoff_index++)
+            {
+                var cutoff = new IndexDemultiplexCutoffState { ChannelName = read_string(reader) };
+                if (reader.ReadBoolean()) cutoff.Cutoff = reader.ReadDouble();
+                cutoff.IsManual = reader.ReadBoolean();
+                cutoff.FitError = read_string(reader);
+                cutoff.FitMaximum = reader.ReadDouble();
+                cutoff.LinearSlope = reader.ReadDouble();
+                cutoff.LinearIntercept = reader.ReadDouble();
+                cutoff.LinearRss = reader.ReadDouble();
+                cutoff.LogLogisticSlope = reader.ReadDouble();
+                cutoff.LogLogisticUpper = reader.ReadDouble();
+                cutoff.LogLogisticMidpoint = reader.ReadDouble();
+                cutoff.LogLogisticRss = reader.ReadDouble();
+                row.Cutoffs.Add(cutoff);
+            }
+            state.Rows.Add(row);
+        }
+        int subset_count = reader.ReadInt32();
+        for (int index = 0; index < subset_count; index++)
+            state.Subsets.Add(new IndexDemultiplexSubsetState
+            {
+                Mask = reader.ReadInt32(),
+                Signature = read_string(reader),
+                Name = read_string(reader),
+                IsIncluded = reader.ReadBoolean()
+            });
+        if (reader.ReadBoolean()) state.LinkedOutputGroupId = new Guid(reader.ReadBytes(16));
+        int generated_count = reader.ReadInt32();
+        for (int index = 0; index < generated_count; index++)
+            state.GeneratedSampleIds[read_string(reader)] = new Guid(reader.ReadBytes(16));
     }
 
     private static void write_sample(BinaryWriter writer, FlowSample sample)

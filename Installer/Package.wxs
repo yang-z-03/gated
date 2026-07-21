@@ -1,5 +1,5 @@
 ﻿<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
-    <Package Id="Gated" Name="Gated" Manufacturer="XSI" Version="0.31.36"
+    <Package Id="Gated" Name="Gated" Manufacturer="XSI" Version="0.31.38"
              UpgradeCode="{40CB66CE-AB87-4489-A9CA-9D7687EC7A3F}"
              Scope="perUser">
         <MajorUpgrade DowngradeErrorMessage="A newer version has already been installed." />

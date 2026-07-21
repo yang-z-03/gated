@@ -59,6 +59,8 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         DataContext = view_model;
+        demultiplex_sample_table.Panel = view_model.DemultiplexPanel;
+        demultiplex_subset_table.Panel = view_model.DemultiplexPanel;
         view_model.RequestTextInputAsync = show_text_input_dialog;
         view_model.RequestScriptSaveChoiceAsync = show_script_save_dialog;
         view_model.RequestChoiceInputAsync = show_choice_input_dialog;
@@ -97,18 +99,16 @@ public partial class MainWindow : Window
         DragDrop.SetAllowDrop(this, true);
         DragDrop.AddDragOverHandler(this, drag_over);
         DragDrop.AddDropHandler(this, drop_files);
-        DragDrop.SetAllowDrop(spillover_control_table, true);
-        DragDrop.AddDragOverHandler(spillover_control_table, spillover_control_table_drag_over);
-        DragDrop.AddDropHandler(spillover_control_table, spillover_control_table_drop);
-        DragDrop.SetAllowDrop(mass_compensation_table, true);
-        DragDrop.AddDragOverHandler(mass_compensation_table, mass_compensation_table_drag_over);
-        DragDrop.AddDropHandler(mass_compensation_table, mass_compensation_table_drop);
-        DragDrop.SetAllowDrop(spectral_control_table, true);
-        DragDrop.AddDragOverHandler(spectral_control_table, spectral_control_table_drag_over);
-        DragDrop.AddDropHandler(spectral_control_table, spectral_control_table_drop);
-        DragDrop.SetAllowDrop(mass_normalization_table, true);
-        DragDrop.AddDragOverHandler(mass_normalization_table, mass_normalization_table_drag_over);
-        DragDrop.AddDropHandler(mass_normalization_table, mass_normalization_table_drop);
+        register_control_table_drop_target(spillover_control_drop_target, spillover_control_table,
+            spillover_control_table_drag_over, spillover_control_table_drop);
+        register_control_table_drop_target(mass_compensation_drop_target, mass_compensation_table,
+            mass_compensation_table_drag_over, mass_compensation_table_drop);
+        register_control_table_drop_target(spectral_control_drop_target, spectral_control_table,
+            spectral_control_table_drag_over, spectral_control_table_drop);
+        register_control_table_drop_target(mass_normalization_drop_target, mass_normalization_table,
+            mass_normalization_table_drag_over, mass_normalization_table_drop);
+        register_control_table_drop_target(demultiplex_sample_drop_target, demultiplex_sample_table,
+            demultiplex_sample_table_drag_over, demultiplex_sample_table_drop);
 
         this.PropertyChanged += (s, e) => {
             if (e.Property == Window.WindowStateProperty)
@@ -158,7 +158,8 @@ public partial class MainWindow : Window
             or MainWindowViewState.SpilloverCompensation
             or MainWindowViewState.MassCompensation
             or MainWindowViewState.SpectralUnmixing
-            or MainWindowViewState.MassNormalization ? active : inactive;
+            or MainWindowViewState.MassNormalization
+            or MainWindowViewState.IndexDemultiplex ? active : inactive;
         mainModeLayoutText.Foreground = view_model.ViewState == MainWindowViewState.Layout ? active : inactive;
         mainModeCodeText.Foreground = view_model.ViewState == MainWindowViewState.Code ? active : inactive;
     }
@@ -1990,6 +1991,12 @@ public partial class MainWindow : Window
                     command_menu_item("Collapse all", view_model.CollapseProjectTreeCommand));
                 break;
 
+            case ProjectNodeKind.IndexDemultiplex:
+                add_menu_items(menu,
+                    command_menu_item("Expand all", view_model.ExpandProjectTreeCommand),
+                    command_menu_item("Collapse all", view_model.CollapseProjectTreeCommand));
+                break;
+
             case ProjectNodeKind.ControlSample:
                 add_menu_items(menu,
                     command_menu_item("Rename control sample ...", view_model.RenameSelectedNodeCommand),
@@ -2536,6 +2543,35 @@ public partial class MainWindow : Window
         var node = PageEditorView.ResolveDraggedProjectNode(e.DataTransfer);
         if (node is not null && view_model.MassPanel.DropSampleCommand.CanExecute(node))
             view_model.MassPanel.DropSampleCommand.Execute(node);
+        PageEditorView.DraggedProjectNode = null;
+        e.Handled = true;
+    }
+
+    private static void register_control_table_drop_target(
+        Control surface,
+        Control table,
+        EventHandler<DragEventArgs> drag_over_handler,
+        EventHandler<DragEventArgs> drop_handler)
+    {
+        DragDrop.SetAllowDrop(surface, true);
+        DragDrop.SetAllowDrop(table, true);
+        surface.AddHandler(DragDrop.DragOverEvent, drag_over_handler, RoutingStrategies.Bubble, true);
+        surface.AddHandler(DragDrop.DropEvent, drop_handler, RoutingStrategies.Bubble, true);
+    }
+
+    private void demultiplex_sample_table_drag_over(object? sender, DragEventArgs e)
+    {
+        var node = PageEditorView.ResolveDraggedProjectNode(e.DataTransfer);
+        e.DragEffects = node is not null && view_model.DemultiplexPanel.DropSampleCommand.CanExecute(node)
+            ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void demultiplex_sample_table_drop(object? sender, DragEventArgs e)
+    {
+        var node = PageEditorView.ResolveDraggedProjectNode(e.DataTransfer);
+        if (node is not null && view_model.DemultiplexPanel.DropSampleCommand.CanExecute(node))
+            view_model.DemultiplexPanel.DropSampleCommand.Execute(node);
         PageEditorView.DraggedProjectNode = null;
         e.Handled = true;
     }

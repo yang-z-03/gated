@@ -202,6 +202,7 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
             or ProjectNodeKind.MassCompensation
             or ProjectNodeKind.SpectralUnmixing
             or ProjectNodeKind.MassNormalization
+            or ProjectNodeKind.IndexDemultiplex
             or ProjectNodeKind.ControlSample
             or ProjectNodeKind.Embedding;
 
@@ -355,6 +356,7 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
             ProjectNodeKind.MassCompensation => "matrix.svg",
             ProjectNodeKind.SpectralUnmixing => "spectral.svg",
             ProjectNodeKind.MassNormalization => "normalize.svg",
+            ProjectNodeKind.IndexDemultiplex => "subset.svg",
             ProjectNodeKind.ControlSample => "tube.svg",
             ProjectNodeKind.Sample => "tube.svg",
             ProjectNodeKind.Population => "subset.svg",

@@ -32,6 +32,7 @@ public enum MainWindowViewState
     MassCompensation,
     SpectralUnmixing,
     MassNormalization,
+    IndexDemultiplex,
     Platform
 }
 
@@ -158,6 +159,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
     public SpectralUnmixingViewModel SpectralPanel { get; }
     public MassCompensationViewModel MassCompensationPanel { get; }
     public MassNormalizationViewModel MassPanel { get; }
+    public IndexDemultiplexViewModel DemultiplexPanel { get; }
 
     public ICommand CreateGroupCommand { get; }
     public ICommand CreateLayoutCommand { get; }
@@ -244,6 +246,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         SpectralPanel = new SpectralUnmixingViewModel(this);
         MassCompensationPanel = new MassCompensationViewModel(this);
         MassPanel = new MassNormalizationViewModel(this);
+        DemultiplexPanel = new IndexDemultiplexViewModel(this);
         Python.PythonExtensionRuntime.StatusChanged += UpdatePythonExecutionStatus;
         Python.PythonExtensionRuntime.LogRunStarted += BeginPythonLogRun;
         Python.PythonExtensionRuntime.LogReceived += AppendPythonLog;
@@ -1105,6 +1108,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         OnPropertyChanged(nameof(IsMassCompensationMode));
         OnPropertyChanged(nameof(IsSpectralUnmixingMode));
         OnPropertyChanged(nameof(IsMassNormalizationMode));
+        OnPropertyChanged(nameof(IsIndexDemultiplexMode));
         OnPropertyChanged(nameof(IsPlotPropertiesMode));
         if (!string.IsNullOrWhiteSpace(status_text))
             StatusText = status_text;
@@ -2368,6 +2372,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         foreach (var group in Workspace.Groups.Where(group => group.SpectralUnmixing.Rows.Count > 0)) group.SpectralUnmixing.IsStale = true;
         if (IsSpectralUnmixingMode) SpectralPanel.SetGroup(selected_group);
         if (IsMassCompensationMode) MassCompensationPanel.SetGroup(selected_group);
+        if (IsIndexDemultiplexMode) DemultiplexPanel.SetGroup(selected_group);
     }
 
     private async Task rename_selected_embedding_async()
@@ -2531,6 +2536,9 @@ public sealed partial class MainWindowViewModel : NotifyBase
             for (int index = selected_group.MassNormalization.Rows.Count - 1; index >= 0; index--)
                 if (selected_group.MassNormalization.Rows[index].SampleId == selected_sample.Id)
                     selected_group.MassNormalization.Rows.RemoveAt(index);
+            for (int index = selected_group.IndexDemultiplex.Rows.Count - 1; index >= 0; index--)
+                if (selected_group.IndexDemultiplex.Rows[index].SampleId == selected_sample.Id)
+                    selected_group.IndexDemultiplex.Rows.RemoveAt(index);
             selected_group.Samples.Remove(selected_sample);
         }
         else if (selected_node?.Kind == ProjectNodeKind.ControlSample && selected_group is not null && selected_control_sample is not null)
@@ -2560,6 +2568,10 @@ public sealed partial class MainWindowViewModel : NotifyBase
                     remaining.MassNormalization.LinkedOutputGroupId = null;
                 if (remaining.SpectralUnmixing.LinkedOutputGroupId == removed_group_id)
                     remaining.SpectralUnmixing.LinkedOutputGroupId = null;
+                if (remaining.IndexDemultiplex.LinkedOutputGroupId == removed_group_id)
+                    remaining.IndexDemultiplex.LinkedOutputGroupId = null;
+                if (remaining.IndexDemultiplexSourceGroupId == removed_group_id)
+                    remaining.IndexDemultiplexSourceGroupId = null;
             }
             group_to_recalculate = null;
         }
@@ -2619,6 +2631,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         refresh_selection_sidebars();
         refresh_plot_gates();
         refresh_selected_statistics();
+        if (IsIndexDemultiplexMode) DemultiplexPanel.SetGroup(selected_group);
     }
 
     private bool can_delete_selected_node() =>
@@ -2685,6 +2698,9 @@ public sealed partial class MainWindowViewModel : NotifyBase
         for (int index = source_group.MassNormalization.Rows.Count - 1; index >= 0; index--)
             if (source_group.MassNormalization.Rows[index].SampleId == sample.Id)
                 source_group.MassNormalization.Rows.RemoveAt(index);
+        for (int index = source_group.IndexDemultiplex.Rows.Count - 1; index >= 0; index--)
+            if (source_group.IndexDemultiplex.Rows[index].SampleId == sample.Id)
+                source_group.IndexDemultiplex.Rows.RemoveAt(index);
         source_group.Samples.Remove(sample);
         source_group.RefreshChannelProfile();
         if (required_names.Length > 0 && !sample_names.SequenceEqual(required_names, StringComparer.Ordinal))
@@ -3759,8 +3775,8 @@ public sealed partial class MainWindowViewModel : NotifyBase
             !passive_control_selection &&
             ViewState is MainWindowViewState.Metadata or MainWindowViewState.GroupMetadata)
             set_view_state(MainWindowViewState.Analysis, "Analysis view");
-        if (node.Kind is not ProjectNodeKind.ControlFolder and not ProjectNodeKind.SpilloverCompensation and not ProjectNodeKind.MassCompensation and not ProjectNodeKind.SpectralUnmixing and not ProjectNodeKind.MassNormalization and not ProjectNodeKind.ControlSample &&
-            ViewState is MainWindowViewState.SpilloverCompensation or MainWindowViewState.MassCompensation or MainWindowViewState.SpectralUnmixing or MainWindowViewState.MassNormalization)
+        if (node.Kind is not ProjectNodeKind.ControlFolder and not ProjectNodeKind.SpilloverCompensation and not ProjectNodeKind.MassCompensation and not ProjectNodeKind.SpectralUnmixing and not ProjectNodeKind.MassNormalization and not ProjectNodeKind.IndexDemultiplex and not ProjectNodeKind.ControlSample &&
+            ViewState is MainWindowViewState.SpilloverCompensation or MainWindowViewState.MassCompensation or MainWindowViewState.SpectralUnmixing or MainWindowViewState.MassNormalization or MainWindowViewState.IndexDemultiplex)
             set_view_state(MainWindowViewState.Analysis, "Analysis view");
         var previous_group = selected_group;
         var previous_gate = selected_gate;
@@ -3917,6 +3933,19 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 SelectedCompensation = null;
                 MassPanel.SetGroup(selected_group);
                 IsMassNormalizationMode = true;
+                break;
+            case ProjectNodeKind.IndexDemultiplex:
+                SelectedIntegrationJob = null;
+                IsWorkspaceMetadataMode = false;
+                if (node.Group is not null)
+                    SelectedGroup = node.Group;
+                SelectedSample = null;
+                SelectedPopulation = null;
+                SelectedGate = null;
+                SelectedControlSample = null;
+                SelectedCompensation = null;
+                DemultiplexPanel.SetGroup(selected_group);
+                IsIndexDemultiplexMode = true;
                 break;
             case ProjectNodeKind.Compensation:
                 SelectedIntegrationJob = null;
@@ -4567,6 +4596,21 @@ public sealed partial class MainWindowViewModel : NotifyBase
         }
     }
 
+    public bool IsIndexDemultiplexMode
+    {
+        get => ViewState == MainWindowViewState.IndexDemultiplex;
+        private set
+        {
+            if (value)
+            {
+                SelectedIntegrationJob = null;
+                set_view_state(MainWindowViewState.IndexDemultiplex, "Index demultiplex");
+            }
+            else if (IsIndexDemultiplexMode)
+                set_view_state(MainWindowViewState.Analysis, "Analysis view");
+        }
+    }
+
     private void swap_editor_axes()
     {
         if (!IsYAxisEnabled)
@@ -5030,6 +5074,11 @@ public sealed partial class MainWindowViewModel : NotifyBase
             spillover_row.ParameterName = SpilloverControlRowViewModel.BlankParameterName;
         foreach (var mass_row in selected_group.MassCompensation.Rows.Where(item => item.SourceChannelName == removed_name))
             mass_row.SourceChannelName = "";
+        selected_group.IndexDemultiplex.SelectedChannels.Remove(removed_name);
+        foreach (var demultiplex_row in selected_group.IndexDemultiplex.Rows)
+            foreach (var cutoff in demultiplex_row.Cutoffs.Where(item => item.ChannelName == removed_name).ToArray())
+                demultiplex_row.Cutoffs.Remove(cutoff);
+        selected_group.IndexDemultiplex.Subsets.Clear();
         if (selected_group.MassCompensation.CalculatedMatrix is not null)
             selected_group.MassCompensation.IsCalculatedMatrixStale = true;
         selected_group.RefreshChannelProfile();
@@ -5041,6 +5090,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         refresh_selection_sidebars();
         refresh_spillover_workspace();
         if (IsMassCompensationMode) MassCompensationPanel.SetGroup(selected_group);
+        if (IsIndexDemultiplexMode) DemultiplexPanel.SetGroup(selected_group);
         refresh_workspace_sample_metadata();
         refresh_project_tree();
         refresh_plot_gates();
@@ -5189,10 +5239,22 @@ public sealed partial class MainWindowViewModel : NotifyBase
             spillover_row.ParameterName = new_name;
         foreach (var mass_row in selected_group.MassCompensation.Rows.Where(item => item.SourceChannelName == old_name))
             mass_row.SourceChannelName = new_name;
+        for (int index = 0; index < selected_group.IndexDemultiplex.SelectedChannels.Count; index++)
+            if (selected_group.IndexDemultiplex.SelectedChannels[index] == old_name)
+                selected_group.IndexDemultiplex.SelectedChannels[index] = new_name;
+        foreach (var demultiplex_row in selected_group.IndexDemultiplex.Rows)
+            foreach (var cutoff in demultiplex_row.Cutoffs.Where(item => item.ChannelName == old_name))
+                cutoff.ChannelName = new_name;
+        foreach (var subset in selected_group.IndexDemultiplex.Subsets)
+        {
+            subset.Signature = subset.Signature.Replace($"{old_name}=", $"{new_name}=", StringComparison.Ordinal);
+            subset.Name = $"#{subset.Mask}";
+        }
         selected_group.MassCompensation.CalculatedMatrix?.RenameChannel(old_name, new_name);
         selected_group.RenameChannelInProfile(old_name, new_name);
         refresh_spillover_workspace();
         if (IsMassCompensationMode) MassCompensationPanel.SetGroup(selected_group);
+        if (IsIndexDemultiplexMode) DemultiplexPanel.SetGroup(selected_group);
         StatusText = $"Renamed channel: {old_name} to {new_name}";
         return new_name;
     }
@@ -5444,6 +5506,13 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 $"{group_key}:controls:mass-normalization",
                 group: group,
                 count: group.MassNormalization.Rows.Count,
+                depth: 3));
+            controls_node.Children.Add(create_project_node(
+                ProjectNodeKind.IndexDemultiplex,
+                "Index Demultiplex",
+                $"{group_key}:controls:index-demultiplex",
+                group: group,
+                count: group.IndexDemultiplex.Rows.Count,
                 depth: 3));
             foreach (var control_sample in group.ControlSamples)
             {
@@ -8344,6 +8413,7 @@ public enum ProjectNodeKind
     MassCompensation,
     SpectralUnmixing,
     MassNormalization,
+    IndexDemultiplex,
     ControlSample,
     CompensationFolder,
     Compensation,
@@ -8462,6 +8532,7 @@ public sealed class ProjectNode : NotifyBase
         ProjectNodeKind.MassCompensation => "avares://gated/Resources/matrix.svg",
         ProjectNodeKind.SpectralUnmixing => "avares://gated/Resources/embedding.svg",
         ProjectNodeKind.MassNormalization => "avares://gated/Resources/refresh.svg",
+        ProjectNodeKind.IndexDemultiplex => "avares://gated/Resources/subset.svg",
         ProjectNodeKind.ControlSample => "avares://gated/Resources/tube.svg",
         ProjectNodeKind.CompensationFolder => "avares://gated/Resources/matrix.svg",
         ProjectNodeKind.Compensation => IsAppliedCompensation ? "avares://gated/Resources/ok.svg" : "avares://gated/Resources/matrix.svg",
@@ -8498,6 +8569,7 @@ public sealed class ProjectNode : NotifyBase
         ProjectNodeKind.MassCompensation => "M",
         ProjectNodeKind.SpectralUnmixing => "U",
         ProjectNodeKind.MassNormalization => "N",
+        ProjectNodeKind.IndexDemultiplex => "D",
         ProjectNodeKind.ControlSample => "S",
         ProjectNodeKind.CompensationFolder => "C",
         ProjectNodeKind.Compensation => IsAppliedCompensation ? "*" : "M",

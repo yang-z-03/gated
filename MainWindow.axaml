@@ -173,6 +173,27 @@
             <Setter Property="Margin" Value="0" />
             <Setter Property="CornerRadius" Value="4" />
         </Style>
+        <Style Selector="DataGrid.ControlSampleGrid DataGridRow">
+            <Setter Property="Margin" Value="4,0,4,0" />
+            <Setter Property="MinHeight" Value="28" />
+        </Style>
+        <Style Selector="DataGrid.ControlSampleGrid DataGridRow /template/ Border#BackgroundBorder">
+            <Setter Property="Margin" Value="0" />
+        </Style>
+        <Style Selector="DataGrid.ControlSampleGrid DataGridCell">
+            <Setter Property="Padding" Value="3,0" />
+            <Setter Property="MinHeight" Value="28" />
+        </Style>
+        <Style Selector="DataGrid.ControlSampleGrid ComboBox">
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="DataGrid.ControlSampleGrid Button">
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="DataGrid.ControlSampleGrid StackPanel.IconRow">
+            <Setter Property="Margin" Value="8,0,0,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
     </Window.Styles>
 
     <DockPanel x:Name="window">
@@ -1520,68 +1541,31 @@
                                    Text="Drag samples to the area for blank control and single-staining samples" />
 
 
-                        <Border Height="300"
+                        <Border x:Name="spillover_control_drop_target" Height="300"
                                 BorderBrush="{DynamicResource AppBrushBorder3}"
                                 BorderThickness="1"
                                 CornerRadius="6"
                                 Background="{DynamicResource AppBrushBackground3}"
                                 ClipToBounds="True">
-                            <Grid RowDefinitions="29,*">
-                                <Border Background="{DynamicResource AppBrushBackground3}" CornerRadius="6 6 0 0" Padding="10,0">
-                                    <Grid ColumnDefinitions="*,150,190,34" Margin="8 0 8 0" ColumnSpacing="12">
-                                        <TextBlock Text="Control sample" Padding="15 0 0 0" FontSize="13" Foreground="{DynamicResource SemiColorText1}" VerticalAlignment="Center" />
-                                        <TextBlock Grid.Column="1" Padding="3 0 0 0" Text="Parameter" FontSize="13" Foreground="{DynamicResource SemiColorText1}" VerticalAlignment="Center" />
-                                        <TextBlock Grid.Column="2" Padding="3 0 0 0" Text="Population" FontSize="13" Foreground="{DynamicResource SemiColorText1}" VerticalAlignment="Center" />
-                                        <TextBlock Grid.Column="3" Padding="3 0 0 0" Text="" FontSize="13" Foreground="{DynamicResource SemiColorText1}" VerticalAlignment="Center" HorizontalAlignment="Center" />
-                                    </Grid>
-                                </Border>
-
-                                <ListBox x:Name="spillover_control_table"
-                                         Grid.Row="1"
-                                         SelectionMode="Single"
-                                         Margin="8 0 8 8"
-                                         ItemsSource="{Binding SpilloverRows}"
-                                         SelectedItem="{Binding SelectedSpilloverRow, Mode=TwoWay}"
-                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                         ScrollViewer.VerticalScrollBarVisibility="Auto">
-                                    <ListBox.ItemTemplate>
-                                        <DataTemplate>
-                                            <Border Height="28" Padding="3,0" CornerRadius="4">
-                                                <Grid ColumnDefinitions="*,150,190,34" ColumnSpacing="12" VerticalAlignment="Center">
-                                                    <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
-                                                        <shared:ThemeIcon Width="15" Height="15" Icon="{Binding SampleIcon}" />
-                                                        <TextBlock Text="{Binding SampleName}"
-                                                                   FontSize="13"
-                                                                   Foreground="{DynamicResource SemiColorText0}"
-                                                                   VerticalAlignment="Center"
-                                                                   TextTrimming="CharacterEllipsis" />
-                                                    </StackPanel>
-                                                    <ComboBox Grid.Column="1"
-                                                              Width="150"
-                                                              Classes="Small"
-                                                              ItemsSource="{Binding ParameterChoices}"
-                                                              SelectedItem="{Binding ParameterName, Mode=TwoWay}" />
-                                                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
-                                                        <shared:ThemeIcon Width="15" Height="15" Icon="{Binding PopulationIcon}" />
-                                                        <TextBlock Text="{Binding PositivePercentText}"
-                                                                   FontSize="13"
-                                                                   Foreground="{DynamicResource SemiColorText1}"
-                                                                   VerticalAlignment="Center"
-                                                                   TextTrimming="CharacterEllipsis" />
-                                                    </StackPanel>
-                                                    <Button Grid.Column="3"
-                                                            Classes="Quiet ChannelIconButton"
-                                                            Command="{Binding RemoveCommand}"
-                                                            CommandParameter="{Binding}"
-                                                            ToolTip.Tip="Remove from plot">
-                                                        <shared:ThemeIcon Width="15" Height="15" Icon="{Binding RemoveIcon}" />
-                                                    </Button>
-                                                </Grid>
-                                            </Border>
-                                        </DataTemplate>
-                                    </ListBox.ItemTemplate>
-                                </ListBox>
-                            </Grid>
+                            <DataGrid x:Name="spillover_control_table" Classes="ControlSampleGrid"
+                                      AutoGenerateColumns="False" CanUserResizeColumns="True" SelectionMode="Single"
+                                      ItemsSource="{Binding SpilloverRows}" SelectedItem="{Binding SelectedSpilloverRow, Mode=TwoWay}"
+                                      ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                <DataGrid.Columns>
+                                    <DataGridTemplateColumn Header="Control sample" Width="*" MinWidth="150">
+                                        <DataGridTemplateColumn.CellTemplate><DataTemplate><StackPanel Classes="IconRow" Orientation="Horizontal" Spacing="7"><shared:ThemeIcon Width="15" Height="15" Icon="{Binding SampleIcon}" /><TextBlock Text="{Binding SampleName}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" /></StackPanel></DataTemplate></DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+                                    <DataGridTemplateColumn Header="Parameter" Width="150" MinWidth="100">
+                                        <DataGridTemplateColumn.CellTemplate><DataTemplate><ComboBox Classes="Small" HorizontalAlignment="Stretch" ItemsSource="{Binding ParameterChoices}" SelectedItem="{Binding ParameterName, Mode=TwoWay}" /></DataTemplate></DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+                                    <DataGridTemplateColumn Header="Population" Width="190" MinWidth="110">
+                                        <DataGridTemplateColumn.CellTemplate><DataTemplate><StackPanel Classes="IconRow" Orientation="Horizontal" Spacing="7"><shared:ThemeIcon Width="15" Height="15" Icon="{Binding PopulationIcon}" /><TextBlock Text="{Binding PositivePercentText}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" /></StackPanel></DataTemplate></DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+                                    <DataGridTemplateColumn Width="52" CanUserResize="False">
+                                        <DataGridTemplateColumn.CellTemplate><DataTemplate><Button Classes="Small" HorizontalAlignment="Center" Command="{Binding RemoveCommand}" CommandParameter="{Binding}" ToolTip.Tip="Remove from plot"><shared:ThemeIcon Width="15" Height="15" Icon="{Binding RemoveIcon}" /></Button></DataTemplate></DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+                                </DataGrid.Columns>
+                            </DataGrid>
                         </Border>
 
                         <StackPanel Margin="0 12 0 4" IsVisible="{Binding HasSpilloverControls}">
@@ -1786,48 +1770,25 @@
 
                         <TextBlock Foreground="{DynamicResource SemiColorText1}"
                                    Text="Drag single-staining control samples into the table. Each tube is sampled deterministically at up to 5,000 events." />
-                        <Border x:Name="mass_compensation_table" Height="300"
+                        <Border x:Name="mass_compensation_drop_target" Height="300"
                                 BorderBrush="{DynamicResource AppBrushBorder3}" BorderThickness="1" CornerRadius="6"
                                 Background="{DynamicResource AppBrushBackground3}" ClipToBounds="True">
-                            <Grid RowDefinitions="29,*">
-                                <Border Background="{DynamicResource AppBrushBackground3}" CornerRadius="6 6 0 0" Padding="10,0">
-                                    <Grid ColumnDefinitions="*,240,34" Margin="8 0" ColumnSpacing="12">
-                                        <TextBlock Text="Control sample name" Padding="15 0 0 0" FontSize="13"
-                                                   Foreground="{DynamicResource SemiColorText1}" VerticalAlignment="Center" />
-                                        <TextBlock Grid.Column="1" Text="Single-staining isotope" FontSize="13"
-                                                   Foreground="{DynamicResource SemiColorText1}" VerticalAlignment="Center" />
-                                    </Grid>
-                                </Border>
-                                <ListBox Grid.Row="1" Margin="8 0 8 8" SelectionMode="Single"
-                                         x:Name="mass_spillover_table"
-                                         ItemsSource="{Binding MassCompensationPanel.Rows}"
-                                         SelectedItem="{Binding MassCompensationPanel.SelectedRow, Mode=TwoWay}"
-                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                         ScrollViewer.VerticalScrollBarVisibility="Auto">
-                                    <ListBox.ItemTemplate>
-                                        <DataTemplate>
-                                            <Border Height="30" Padding="3,0" CornerRadius="4">
-                                                <Grid ColumnDefinitions="*,240,34" ColumnSpacing="12" VerticalAlignment="Center">
-                                                    <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
-                                                        <shared:ThemeIcon Width="15" Height="15" Icon="{Binding SampleIcon}" />
-                                                        <TextBlock Text="{Binding SampleName}" FontSize="13"
-                                                                   Foreground="{DynamicResource SemiColorText0}"
-                                                                   TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                                                    </StackPanel>
-                                                    <ComboBox Grid.Column="1" Classes="Small" Width="240"
-                                                              ItemsSource="{Binding IsotopeChoices}"
-                                                              SelectedItem="{Binding SelectedChoice, Mode=TwoWay}" />
-                                                    <Button Grid.Column="2" Classes="Quiet ChannelIconButton"
-                                                            Command="{Binding RemoveCommand}" CommandParameter="{Binding}"
-                                                            ToolTip.Tip="Remove control tube">
-                                                        <shared:ThemeIcon Width="15" Height="15" Icon="{Binding RemoveIcon}" />
-                                                    </Button>
-                                                </Grid>
-                                            </Border>
-                                        </DataTemplate>
-                                    </ListBox.ItemTemplate>
-                                </ListBox>
-                            </Grid>
+                            <DataGrid x:Name="mass_compensation_table" Classes="ControlSampleGrid"
+                                      AutoGenerateColumns="False" CanUserResizeColumns="True" SelectionMode="Single"
+                                      ItemsSource="{Binding MassCompensationPanel.Rows}" SelectedItem="{Binding MassCompensationPanel.SelectedRow, Mode=TwoWay}"
+                                      ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                <DataGrid.Columns>
+                                    <DataGridTemplateColumn Header="Control sample name" Width="*" MinWidth="160">
+                                        <DataGridTemplateColumn.CellTemplate><DataTemplate><StackPanel Classes="IconRow" Orientation="Horizontal" Spacing="7"><shared:ThemeIcon Width="15" Height="15" Icon="{Binding SampleIcon}" /><TextBlock Text="{Binding SampleName}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" /></StackPanel></DataTemplate></DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+                                    <DataGridTemplateColumn Header="Single-staining isotope" Width="240" MinWidth="130">
+                                        <DataGridTemplateColumn.CellTemplate><DataTemplate><ComboBox Classes="Small" HorizontalAlignment="Stretch" ItemsSource="{Binding IsotopeChoices}" SelectedItem="{Binding SelectedChoice, Mode=TwoWay}" /></DataTemplate></DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+                                    <DataGridTemplateColumn Width="52" CanUserResize="False">
+                                        <DataGridTemplateColumn.CellTemplate><DataTemplate><Button Classes="Small" HorizontalAlignment="Center" Command="{Binding RemoveCommand}" CommandParameter="{Binding}" ToolTip.Tip="Remove control tube"><shared:ThemeIcon Width="15" Height="15" Icon="{Binding RemoveIcon}" /></Button></DataTemplate></DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+                                </DataGrid.Columns>
+                            </DataGrid>
                         </Border>
 
                         <Grid ColumnDefinitions="Auto,220,*,Auto,Auto" ColumnSpacing="10"
@@ -1970,51 +1931,19 @@
                                                    PlotForeground="{DynamicResource SemiColorText0}" />
 
                         <TextBlock Foreground="{DynamicResource SemiColorText1}" Text="Drag blank and single-staining control samples into the table" />
-                        <Border Height="300" BorderBrush="{DynamicResource AppBrushBorder3}" BorderThickness="1" CornerRadius="6" Background="{DynamicResource AppBrushBackground3}">
-                            <Grid RowDefinitions="29,*">
-                                <Border Background="{DynamicResource AppBrushBackground3}" CornerRadius="6 6 0 0" Padding="10,0">
-                                    <Grid ColumnDefinitions="8,165,155,150,175,24" Margin="8 0" ColumnSpacing="4">
-                                        <TextBlock Grid.Column="1" Text="Control sample" FontSize="13" Foreground="{DynamicResource SemiColorText1}" VerticalAlignment="Center" />
-                                        <TextBlock Grid.Column="2" Text="Unmixing molecule" FontSize="13" Foreground="{DynamicResource SemiColorText1}" VerticalAlignment="Center" />
-                                        <TextBlock Grid.Column="3" Text="Maximum channel" FontSize="13" Foreground="{DynamicResource SemiColorText1}" VerticalAlignment="Center" />
-                                        <TextBlock Grid.Column="4" Text="Population" FontSize="13" Foreground="{DynamicResource SemiColorText1}" VerticalAlignment="Center" />
-                                    </Grid>
-                                </Border>
-                                <ListBox x:Name="spectral_control_table" Grid.Row="1" SelectionMode="Single" Margin="8 0 8 8"
-                                         ItemsSource="{Binding SpectralPanel.Rows}"
-                                         SelectedItem="{Binding SpectralPanel.SelectedRow, Mode=TwoWay}"
-                                         Background="Transparent"
-                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                         ScrollViewer.VerticalScrollBarVisibility="Auto">
-                                    <ListBox.ItemTemplate>
-                                        <DataTemplate>
-                                            <Border Height="28" Padding="3,0" CornerRadius="4" ClipToBounds="True">
-                                                <Grid ColumnDefinitions="183,155,150,175,24" ColumnSpacing="4" ClipToBounds="True" VerticalAlignment="Center">
-                                                    <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center" ClipToBounds="True">
-                                                        <shared:ThemeIcon Width="15" Height="15" Icon="{Binding SampleIcon}" />
-                                                        <TextBlock Text="{Binding SampleName}" FontSize="13" Foreground="{DynamicResource SemiColorText0}" TextTrimming="CharacterEllipsis" />
-                                                    </StackPanel>
-                                                    <TextBox Grid.Column="1" Classes="Small" Margin="0,0" Text="{Binding MoleculeName, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" ClipToBounds="True" />
-                                                    <ComboBox Grid.Column="2" Classes="Small" Margin="0,0" ItemsSource="{Binding MaximumChannelChoices}" SelectedItem="{Binding MaximumChannel, Mode=TwoWay}" IsEnabled="{Binding !IsBackground}">
-                                                        <ComboBox.ItemTemplate>
-                                                            <DataTemplate>
-                                                                <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
-                                                            </DataTemplate>
-                                                        </ComboBox.ItemTemplate>
-                                                    </ComboBox>
-                                                    <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center" ClipToBounds="True">
-                                                        <shared:ThemeIcon Width="15" Height="15" Icon="{Binding PopulationIcon}" />
-                                                        <TextBlock Text="{Binding PositivePercentText}" FontSize="13" Foreground="{DynamicResource SemiColorText1}" TextTrimming="CharacterEllipsis" />
-                                                    </StackPanel>
-                                                    <Button Grid.Column="4" Classes="Quiet ChannelIconButton" Command="{Binding RemoveCommand}" CommandParameter="{Binding}" ToolTip.Tip="Remove control">
-                                                        <shared:ThemeIcon Width="15" Height="15" Icon="{Binding RemoveIcon}" />
-                                                    </Button>
-                                                </Grid>
-                                            </Border>
-                                        </DataTemplate>
-                                    </ListBox.ItemTemplate>
-                                </ListBox>
-                            </Grid>
+                        <Border x:Name="spectral_control_drop_target" Height="300" BorderBrush="{DynamicResource AppBrushBorder3}" BorderThickness="1" CornerRadius="6" Background="{DynamicResource AppBrushBackground3}">
+                            <DataGrid x:Name="spectral_control_table" Classes="ControlSampleGrid"
+                                      AutoGenerateColumns="False" CanUserResizeColumns="True" SelectionMode="Single"
+                                      ItemsSource="{Binding SpectralPanel.Rows}" SelectedItem="{Binding SpectralPanel.SelectedRow, Mode=TwoWay}"
+                                      ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                <DataGrid.Columns>
+                                    <DataGridTemplateColumn Header="Control sample" Width="165" MinWidth="120"><DataGridTemplateColumn.CellTemplate><DataTemplate><StackPanel Classes="IconRow" Orientation="Horizontal" Spacing="7"><shared:ThemeIcon Width="15" Height="15" Icon="{Binding SampleIcon}" /><TextBlock Text="{Binding SampleName}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" /></StackPanel></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+                                    <DataGridTemplateColumn Header="Unmixing molecule" Width="155" MinWidth="100"><DataGridTemplateColumn.CellTemplate><DataTemplate><TextBox Classes="Small" HorizontalAlignment="Stretch" Text="{Binding MoleculeName, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" /></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+                                    <DataGridTemplateColumn Header="Maximum channel" Width="150" MinWidth="100"><DataGridTemplateColumn.CellTemplate><DataTemplate><ComboBox Classes="Small" HorizontalAlignment="Stretch" ItemsSource="{Binding MaximumChannelChoices}" SelectedItem="{Binding MaximumChannel, Mode=TwoWay}" IsEnabled="{Binding !IsBackground}"><ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" /></DataTemplate></ComboBox.ItemTemplate></ComboBox></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+                                    <DataGridTemplateColumn Header="Population" Width="*" MinWidth="130"><DataGridTemplateColumn.CellTemplate><DataTemplate><StackPanel Classes="IconRow" Orientation="Horizontal" Spacing="7"><shared:ThemeIcon Width="15" Height="15" Icon="{Binding PopulationIcon}" /><TextBlock Text="{Binding PositivePercentText}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" /></StackPanel></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+                                    <DataGridTemplateColumn Width="52" CanUserResize="False"><DataGridTemplateColumn.CellTemplate><DataTemplate><Button Classes="Small" HorizontalAlignment="Center" Command="{Binding RemoveCommand}" CommandParameter="{Binding}" ToolTip.Tip="Remove control"><shared:ThemeIcon Width="15" Height="15" Icon="{Binding RemoveIcon}" /></Button></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+                                </DataGrid.Columns>
+                            </DataGrid>
                         </Border>
 
                         <Grid ColumnDefinitions="Auto,220,Auto,*,Auto" ColumnSpacing="8" IsVisible="{Binding SpectralPanel.HasControls}">
@@ -2164,50 +2093,35 @@
                         </Grid>
 
                         <TextBlock Foreground="{DynamicResource SemiColorText1}" Margin="0 8 0 0" Text="Drag regular samples from this grouping into the table" />
-                        <Border Height="300" BorderBrush="{DynamicResource AppBrushBorder3}" BorderThickness="1" CornerRadius="6" Background="{DynamicResource AppBrushBackground3}">
-                            <Grid RowDefinitions="29,*">
-                                <Border Background="{DynamicResource AppBrushBackground3}" CornerRadius="6 6 0 0" Padding="10,0">
-                                    <Grid ColumnDefinitions="165,120,120,100,*,24" Margin="8 0" ColumnSpacing="4">
-                                        <TextBlock Text="Sample" FontSize="13" Foreground="{DynamicResource SemiColorText1}" VerticalAlignment="Center" />
-                                        <TextBlock Grid.Column="1" Text="Bead type" FontSize="13" Foreground="{DynamicResource SemiColorText1}" VerticalAlignment="Center" />
-                                        <TextBlock Grid.Column="2" Text="Bead lot" FontSize="13" Foreground="{DynamicResource SemiColorText1}" VerticalAlignment="Center" />
-                                        <TextBlock Grid.Column="3" Text="DNA channel" FontSize="13" Foreground="{DynamicResource SemiColorText1}" VerticalAlignment="Center" />
-                                        <TextBlock Grid.Column="4" Text="Bead detection" FontSize="13" Foreground="{DynamicResource SemiColorText1}" VerticalAlignment="Center" />
-                                    </Grid>
-                                </Border>
-                                <ListBox x:Name="mass_normalization_table" Grid.Row="1" SelectionMode="Single" Margin="8 0 8 8"
-                                         ItemsSource="{Binding MassPanel.Rows}" SelectedItem="{Binding MassPanel.SelectedRow, Mode=TwoWay}"
-                                         Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto">
-                                    <ListBox.ItemTemplate>
-                                        <DataTemplate>
-                                            <Border Height="30" Padding="3,0" CornerRadius="4" ClipToBounds="True">
-                                                <Grid ColumnDefinitions="165,120,120,100,*,24" ColumnSpacing="4" VerticalAlignment="Center">
-                                                    <StackPanel Orientation="Horizontal" Spacing="7" ClipToBounds="True">
-                                                        <shared:ThemeIcon Width="15" Height="15" Icon="{Binding SampleIcon}" />
-                                                        <TextBlock Text="{Binding SampleName}" FontSize="13" Foreground="{DynamicResource SemiColorText0}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                                                    </StackPanel>
-                                                    <ComboBox Grid.Column="1" Classes="Small" ItemsSource="{Binding BeadTypes}" SelectedItem="{Binding SelectedBeadType, Mode=TwoWay}" />
-                                                    <ComboBox Grid.Column="2" Classes="Small" ItemsSource="{Binding BeadLots}" SelectedItem="{Binding SelectedBeadLot, Mode=TwoWay}" />
-                                                    <ComboBox Grid.Column="3" Classes="Small" ItemsSource="{Binding DnaChannels}" SelectedItem="{Binding DnaChannel, Mode=TwoWay}" />
-                                                    <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="7" ClipToBounds="True">
-                                                        <shared:ThemeIcon Width="15" Height="15" Icon="{Binding PopulationIcon}" />
-                                                        <TextBlock Text="{Binding PopulationText}" FontSize="13" VerticalAlignment="Center" Foreground="{DynamicResource SemiColorText1}" TextTrimming="CharacterEllipsis" />
-                                                    </StackPanel>
-                                                    <Button Grid.Column="5" Classes="Quiet ChannelIconButton" Command="{Binding RemoveCommand}" CommandParameter="{Binding}" ToolTip.Tip="Remove sample">
-                                                        <shared:ThemeIcon Width="15" Height="15" Icon="{Binding RemoveIcon}" />
-                                                    </Button>
-                                                </Grid>
-                                            </Border>
-                                        </DataTemplate>
-                                    </ListBox.ItemTemplate>
-                                </ListBox>
-                            </Grid>
+                        <Border x:Name="mass_normalization_drop_target" Height="300" BorderBrush="{DynamicResource AppBrushBorder3}" BorderThickness="1" CornerRadius="6" Background="{DynamicResource AppBrushBackground3}">
+                            <DataGrid x:Name="mass_normalization_table" Classes="ControlSampleGrid"
+                                      AutoGenerateColumns="False" CanUserResizeColumns="True" SelectionMode="Single"
+                                      ItemsSource="{Binding MassPanel.Rows}" SelectedItem="{Binding MassPanel.SelectedRow, Mode=TwoWay}"
+                                      ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                <DataGrid.Columns>
+                                    <DataGridTemplateColumn Header="Sample" Width="165" MinWidth="120"><DataGridTemplateColumn.CellTemplate><DataTemplate><StackPanel Classes="IconRow" Orientation="Horizontal" Spacing="7"><shared:ThemeIcon Width="15" Height="15" Icon="{Binding SampleIcon}" /><TextBlock Text="{Binding SampleName}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" /></StackPanel></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+                                    <DataGridTemplateColumn Header="Bead type" Width="120" MinWidth="90"><DataGridTemplateColumn.CellTemplate><DataTemplate><ComboBox Classes="Small" HorizontalAlignment="Stretch" ItemsSource="{Binding BeadTypes}" SelectedItem="{Binding SelectedBeadType, Mode=TwoWay}" /></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+                                    <DataGridTemplateColumn Header="Bead lot" Width="120" MinWidth="90"><DataGridTemplateColumn.CellTemplate><DataTemplate><ComboBox Classes="Small" HorizontalAlignment="Stretch" ItemsSource="{Binding BeadLots}" SelectedItem="{Binding SelectedBeadLot, Mode=TwoWay}" /></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+                                    <DataGridTemplateColumn Header="DNA channel" Width="110" MinWidth="90"><DataGridTemplateColumn.CellTemplate><DataTemplate><ComboBox Classes="Small" HorizontalAlignment="Stretch" ItemsSource="{Binding DnaChannels}" SelectedItem="{Binding DnaChannel, Mode=TwoWay}" /></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+                                    <DataGridTemplateColumn Header="Bead detection" Width="*" MinWidth="150"><DataGridTemplateColumn.CellTemplate><DataTemplate><StackPanel Classes="IconRow" Orientation="Horizontal" Spacing="7"><shared:ThemeIcon Width="15" Height="15" Icon="{Binding PopulationIcon}" /><TextBlock Text="{Binding PopulationText}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" /></StackPanel></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+                                    <DataGridTemplateColumn Width="52" CanUserResize="False"><DataGridTemplateColumn.CellTemplate><DataTemplate><Button Classes="Small" HorizontalAlignment="Center" Command="{Binding RemoveCommand}" CommandParameter="{Binding}" ToolTip.Tip="Remove sample"><shared:ThemeIcon Width="15" Height="15" Icon="{Binding RemoveIcon}" /></Button></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+                                </DataGrid.Columns>
+                            </DataGrid>
                         </Border>
 
                         <CheckBox Content="Remove beads and bead-associated doublets from output" IsChecked="{Binding MassPanel.RemoveBeadsAndDoublets, Mode=TwoWay}" />
                         <Grid ColumnDefinitions="Auto,220,*,Auto" ColumnSpacing="8" IsVisible="{Binding MassPanel.HasRows}">
                             <TextBlock Text="Output grouping" Foreground="{DynamicResource SemiColorText2}" VerticalAlignment="Center" />
-                            <ComboBox Grid.Column="1" Width="220" Classes="Small" ItemsSource="{Binding MassPanel.OutputGroupChoices}" SelectedItem="{Binding MassPanel.SelectedOutputGroupChoice, Mode=TwoWay}" />
+                            <ComboBox Grid.Column="1" Width="220" Classes="Small" ItemsSource="{Binding MassPanel.OutputGroupChoices}" SelectedItem="{Binding MassPanel.SelectedOutputGroupChoice, Mode=TwoWay}">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal" Spacing="7">
+                                            <shared:ThemeIcon Width="15" Height="15" Icon="group.svg" />
+                                            <TextBlock Text="{Binding Name}" Margin="0 0 8 0" TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
                             <Button Grid.Column="3" Classes="Small" Content="Apply to grouping" Command="{Binding MassPanel.ApplyCommand}" />
                         </Grid>
                         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" IsVisible="{Binding MassPanel.IsApplying}">
@@ -2216,6 +2130,147 @@
                         </Grid>
                         <Border IsVisible="{Binding MassPanel.HasWarning}" BorderBrush="{DynamicResource AppBrushWarningBorder}" BorderThickness="1" CornerRadius="6" Padding="10" Background="{DynamicResource AppBrushWarningBackground}">
                             <TextBlock Foreground="{DynamicResource AppBrushWarningText}" TextWrapping="Wrap" Text="{Binding MassPanel.WarningText}" LineHeight="18"/>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+
+            <Grid Grid.Column="2"
+                  IsVisible="{Binding IsIndexDemultiplexMode}"
+                  Background="{DynamicResource AppBrushBackground1}">
+                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="24" Spacing="14" MaxWidth="750" MinWidth="750" HorizontalAlignment="Center">
+                        <StackPanel Margin="0 12" Spacing="8">
+                            <TextBlock Foreground="{DynamicResource AppBrushText2}" FontWeight="Bold" Text="Index Demultiplex" />
+                            <TextBlock Foreground="{DynamicResource SemiColorText1}" TextWrapping="Wrap" LineHeight="18"
+                                       Text="Select index channels, review the automatically fitted raw-signal cutoffs, choose the desired positive/negative subsets, and split copies into a separate grouping." />
+                        </StackPanel>
+
+                        <Grid ColumnDefinitions="340,*" ColumnSpacing="12">
+                            <Grid RowDefinitions="Auto,*" RowSpacing="8">
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                        <ComboBox Classes="Small" PlaceholderText="(No channel)"
+                                                  ItemsSource="{Binding DemultiplexPanel.AvailableChannels}"
+                                                  SelectedItem="{Binding DemultiplexPanel.SelectedAvailableChannel, Mode=TwoWay}">
+                                            <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" /></DataTemplate></ComboBox.ItemTemplate>
+                                        </ComboBox>
+                                        <Button Grid.Column="1" Classes="Small" Command="{Binding DemultiplexPanel.AddChannelCommand}" ToolTip.Tip="Add index channel">
+                                            <shared:ThemeIcon Width="16" Height="16" Icon="add-isotope.svg" />
+                                        </Button>
+                                </Grid>
+                                <Border Grid.Row="1" Height="260" VerticalAlignment="Top"
+                                        BorderBrush="{DynamicResource AppBrushBorder3}" BorderThickness="1" CornerRadius="6"
+                                        Background="{DynamicResource AppBrushBackground3}" ClipToBounds="True">
+                                    <DataGrid x:Name="demultiplex_channel_table"
+                                              Classes="ControlSampleGrid" AutoGenerateColumns="False" CanUserResizeColumns="True"
+                                              SelectionMode="Single" IsReadOnly="True"
+                                              ItemsSource="{Binding DemultiplexPanel.Channels}"
+                                              SelectedItem="{Binding DemultiplexPanel.SelectedChannel, Mode=TwoWay}"
+                                              ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                              ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                        <DataGrid.Columns>
+                                            <DataGridTemplateColumn Header="Channel" Width="*" MinWidth="85">
+                                                <DataGridTemplateColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <StackPanel Classes="IconRow" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
+                                                            <shared:ThemeIcon Width="15" Height="15" Icon="channel.svg" />
+                                                            <TextBlock Text="{Binding Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                                        </StackPanel>
+                                                    </DataTemplate>
+                                                </DataGridTemplateColumn.CellTemplate>
+                                            </DataGridTemplateColumn>
+                                            <DataGridTextColumn Header="Min" Binding="{Binding MinimumText}" Width="52" MinWidth="48" />
+                                            <DataGridTextColumn Header="Max" Binding="{Binding MaximumText}" Width="58" MinWidth="52" />
+                                            <DataGridTextColumn Header="Threshold" Binding="{Binding ThresholdText}" Width="76" MinWidth="68" />
+                                            <DataGridTemplateColumn Width="52" CanUserResize="False">
+                                                <DataGridTemplateColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <Button Classes="Small" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                Command="{Binding RemoveCommand}" CommandParameter="{Binding}" ToolTip.Tip="Remove index channel">
+                                                            <shared:ThemeIcon Width="14" Height="14" Icon="close.svg" />
+                                                        </Button>
+                                                    </DataTemplate>
+                                                </DataGridTemplateColumn.CellTemplate>
+                                            </DataGridTemplateColumn>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </Border>
+                            </Grid>
+
+                            <Grid Grid.Column="1" RowDefinitions="32,260" RowSpacing="4">
+                                <Grid ColumnDefinitions="Auto,*,Auto,*" ColumnSpacing="6" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                    <TextBlock Text="Sample" VerticalAlignment="Center" Foreground="{DynamicResource SemiColorText1}" />
+                                    <ComboBox Grid.Column="1" Classes="Small" ItemsSource="{Binding DemultiplexPanel.Rows}"
+                                              SelectedItem="{Binding DemultiplexPanel.SelectedRow, Mode=TwoWay}">
+                                        <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding SampleName}" TextTrimming="CharacterEllipsis" /></DataTemplate></ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                    <TextBlock Grid.Column="2" Text="Channel" VerticalAlignment="Center" Foreground="{DynamicResource SemiColorText1}" />
+                                    <ComboBox Grid.Column="3" Classes="Small" ItemsSource="{Binding DemultiplexPanel.Channels}"
+                                              SelectedItem="{Binding DemultiplexPanel.SelectedChannel, Mode=TwoWay}">
+                                        <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" /></DataTemplate></ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                </Grid>
+                                <controls:HistogramView Grid.Row="1"
+                                                        Series="{Binding DemultiplexPanel.HistogramSeries}"
+                                                        Curves="{Binding DemultiplexPanel.HistogramCurves}"
+                                                        Models="{Binding DemultiplexPanel.HistogramModels}"
+                                                        Annotations="{Binding DemultiplexPanel.HistogramAnnotations}"
+                                                        AnnotationCommittedCommand="{Binding DemultiplexPanel.AnnotationCommittedCommand}"
+                                                        Minimum="{Binding DemultiplexPanel.HistogramMinimum}"
+                                                        Maximum="{Binding DemultiplexPanel.HistogramMaximum}"
+                                                        AxisScale="{Binding DemultiplexPanel.HistogramAxisScale}"
+                                                        ArcsinhCofactor="5"
+                                                        XTitle="{Binding DemultiplexPanel.HistogramXTitle}"
+                                                        YTitle="Normalized frequency / yield"
+                                                        YMinimum="0" YMaximum="1"
+                                                        Margin="0 -20 0 20"/>
+                            </Grid>
+                        </Grid>
+
+                        <TextBlock Foreground="{DynamicResource SemiColorText1}" Text="Drag regular, fully stained samples from this grouping into the sample table" />
+                        <Border x:Name="demultiplex_sample_drop_target" Height="250"
+                                BorderBrush="{DynamicResource AppBrushBorder3}" BorderThickness="1" CornerRadius="6"
+                                Background="{DynamicResource AppBrushBackground3}" ClipToBounds="True">
+                            <controls:DemultiplexSampleDataGrid x:Name="demultiplex_sample_table" Classes="ControlSampleGrid"
+                                                                   SelectedItem="{Binding DemultiplexPanel.SelectedRow, Mode=TwoWay}"
+                                                                   ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                                                   ScrollViewer.VerticalScrollBarVisibility="Auto" />
+                        </Border>
+
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Foreground="{DynamicResource SemiColorText1}" Text="Subsets" VerticalAlignment="Center" />
+                            <CheckBox Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                      Content="Show presumed index only"
+                                      IsChecked="{Binding DemultiplexPanel.ShowPresumedIndexOnly, Mode=TwoWay}" />
+                        </Grid>
+                        <Border Height="300" BorderBrush="{DynamicResource AppBrushBorder3}" BorderThickness="1" CornerRadius="6" Background="{DynamicResource AppBrushBackground3}" ClipToBounds="True">
+                            <controls:DemultiplexSubsetDataGrid x:Name="demultiplex_subset_table" Classes="ControlSampleGrid"
+                                                                  ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                                                  ScrollViewer.VerticalScrollBarVisibility="Auto" />
+                        </Border>
+
+                        <Grid ColumnDefinitions="Auto,240,*,Auto" ColumnSpacing="8" IsVisible="{Binding DemultiplexPanel.HasRows}">
+                            <TextBlock Text="Output grouping" Foreground="{DynamicResource SemiColorText2}" VerticalAlignment="Center" />
+                            <ComboBox Grid.Column="1" Classes="Small" ItemsSource="{Binding DemultiplexPanel.OutputGroupChoices}"
+                                      SelectedItem="{Binding DemultiplexPanel.SelectedOutputGroupChoice, Mode=TwoWay}">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal" Spacing="7">
+                                            <shared:ThemeIcon Width="15" Height="15" Icon="group.svg" />
+                                            <TextBlock Margin="0 0 8 0" Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                            <Button Grid.Column="3" Classes="Small" Content="Split" Command="{Binding DemultiplexPanel.ApplyCommand}" />
+                        </Grid>
+                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12" IsVisible="{Binding DemultiplexPanel.IsApplying}">
+                            <ProgressBar Minimum="0" Maximum="100" Height="8" VerticalAlignment="Center" Value="{Binding DemultiplexPanel.ApplyProgress}" />
+                            <TextBlock Grid.Column="1" MinWidth="250" TextAlignment="Right" Foreground="{DynamicResource SemiColorText1}" Text="{Binding DemultiplexPanel.ApplyProgressText}" />
+                            <Button Grid.Column="2" Classes="Small" Content="Cancel" Command="{Binding DemultiplexPanel.CancelApplyCommand}" />
+                        </Grid>
+                        <Border IsVisible="{Binding DemultiplexPanel.HasWarning}" BorderBrush="{DynamicResource AppBrushWarningBorder}" BorderThickness="1" CornerRadius="6" Padding="10" Background="{DynamicResource AppBrushWarningBackground}">
+                            <TextBlock Foreground="{DynamicResource AppBrushWarningText}" TextWrapping="Wrap" Text="{Binding DemultiplexPanel.WarningText}" />
                         </Border>
                     </StackPanel>
                 </ScrollViewer>

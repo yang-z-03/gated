@@ -4,6 +4,7 @@ using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Globalization;
 using System.Linq;
+using System.Windows.Input;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
@@ -22,6 +23,184 @@ public enum HistogramAxisScaleKind
 }
 
 public sealed record HistogramRangeSelection(double Minimum, double Maximum);
+
+public sealed record HistogramPoint(double X, double Y);
+
+public abstract record HistogramModel
+{
+    public abstract double Evaluate(double x);
+}
+
+public sealed record HistogramLinearModel(double K, double B) : HistogramModel
+{
+    public override double Evaluate(double x) => K * x + B;
+}
+
+public sealed record HistogramGaussianModel(double Sigma, double Mu) : HistogramModel
+{
+    public override double Evaluate(double x) => Sigma > 0
+        ? Math.Exp(-0.5 * Math.Pow((x - Mu) / Sigma, 2)) / (Sigma * Math.Sqrt(2 * Math.PI))
+        : double.NaN;
+}
+
+public sealed record HistogramPolynomialModel(int Order, IReadOnlyList<double> Coefficients) : HistogramModel
+{
+    public override double Evaluate(double x)
+    {
+        if (Order < 0 || Coefficients.Count != Order + 1) return double.NaN;
+        double value = 0;
+        foreach (double coefficient in Coefficients) value = value * x + coefficient;
+        return value;
+    }
+}
+
+public sealed record HistogramGammaModel(double Shape, double Scale) : HistogramModel
+{
+    public override double Evaluate(double x)
+    {
+        if (x < 0 || Shape <= 0 || Scale <= 0) return double.NaN;
+        if (x == 0) return Shape == 1 ? 1 / Scale : Shape < 1 ? double.PositiveInfinity : 0;
+        double log = (Shape - 1) * Math.Log(x) - x / Scale - log_gamma(Shape) - Shape * Math.Log(Scale);
+        return Math.Exp(log);
+    }
+
+    private static double log_gamma(double value)
+    {
+        double[] coefficients = [676.5203681218851, -1259.1392167224028, 771.32342877765313,
+            -176.61502916214059, 12.507343278686905, -0.13857109526572012,
+            9.9843695780195716e-6, 1.5056327351493116e-7];
+        if (value < 0.5) return Math.Log(Math.PI) - Math.Log(Math.Sin(Math.PI * value)) - log_gamma(1 - value);
+        value -= 1;
+        double x = 0.99999999999980993;
+        for (int index = 0; index < coefficients.Length; index++) x += coefficients[index] / (value + index + 1);
+        double t = value + coefficients.Length - 0.5;
+        return 0.5 * Math.Log(2 * Math.PI) + (value + 0.5) * Math.Log(t) - t + Math.Log(x);
+    }
+}
+
+public sealed record HistogramHypergeometricModel(int PopulationSize, int SuccessStates, int DrawCount) : HistogramModel
+{
+    public override double Evaluate(double x)
+    {
+        int successes = (int)Math.Round(x);
+        if (Math.Abs(x - successes) > 1e-6 || PopulationSize <= 0 || SuccessStates < 0 || DrawCount < 0 ||
+            SuccessStates > PopulationSize || DrawCount > PopulationSize || successes < 0 ||
+            successes > SuccessStates || DrawCount - successes > PopulationSize - SuccessStates) return double.NaN;
+        return Math.Exp(log_combination(SuccessStates, successes) +
+                        log_combination(PopulationSize - SuccessStates, DrawCount - successes) -
+                        log_combination(PopulationSize, DrawCount));
+    }
+
+    private static double log_combination(int n, int k)
+    {
+        if (k < 0 || k > n) return double.NegativeInfinity;
+        k = Math.Min(k, n - k);
+        double result = 0;
+        for (int index = 1; index <= k; index++) result += Math.Log(n - k + index) - Math.Log(index);
+        return result;
+    }
+}
+
+public sealed record HistogramLogLogisticModel(double Slope, double Upper, double Midpoint) : HistogramModel
+{
+    public override double Evaluate(double x)
+    {
+        if (x <= 0 || Slope <= 0 || Upper <= 0 || Midpoint <= 0) return double.NaN;
+        double exponent = Math.Clamp(Slope * (Math.Log(x) - Math.Log(Midpoint)), -60, 60);
+        return Upper / (1 + Math.Exp(exponent));
+    }
+}
+
+public sealed record HistogramCalculationTerm(double Coefficient, HistogramModel Model);
+
+public sealed record HistogramCalculationModel(IReadOnlyList<HistogramCalculationTerm> Terms) : HistogramModel
+{
+    public override double Evaluate(double x) => evaluate(x, new HashSet<HistogramModel>(ReferenceEqualityComparer.Instance));
+
+    public IReadOnlyList<HistogramCalculationTerm> ResolveElementary()
+    {
+        var result = new List<HistogramCalculationTerm>();
+        flatten(1, this, result, new HashSet<HistogramModel>(ReferenceEqualityComparer.Instance));
+        return result;
+    }
+
+    private static void flatten(double coefficient, HistogramModel model, ICollection<HistogramCalculationTerm> result, HashSet<HistogramModel> path)
+    {
+        if (!path.Add(model)) throw new InvalidOperationException("Histogram calculation models cannot contain recursive dependencies.");
+        if (model is HistogramCalculationModel calculation)
+            foreach (var term in calculation.Terms) flatten(coefficient * term.Coefficient, term.Model, result, path);
+        else
+            result.Add(new HistogramCalculationTerm(coefficient, model));
+        path.Remove(model);
+    }
+
+    private double evaluate(double x, HashSet<HistogramModel> path)
+    {
+        if (!path.Add(this)) return double.NaN;
+        double value = 0;
+        foreach (var term in Terms)
+        {
+            double item = term.Model is HistogramCalculationModel calculation
+                ? calculation.evaluate(x, path)
+                : term.Model.Evaluate(x);
+            if (!double.IsFinite(item) || !double.IsFinite(term.Coefficient)) { path.Remove(this); return double.NaN; }
+            value += term.Coefficient * item;
+        }
+        path.Remove(this);
+        return value;
+    }
+}
+
+public sealed class HistogramModelLayer : NotifyBase
+{
+    private HistogramModel model = new HistogramLinearModel(0, 0);
+    private Color color = gated.Shared.ThemeResources.AppColor("Theme5");
+    private string name = "";
+    private double thickness = 1.8;
+    private HistogramAxisScaleKind x_input_scale = HistogramAxisScaleKind.Linear;
+    private double x_arcsinh_cofactor = 5.0;
+    public HistogramModel Model { get => model; set => SetField(ref model, value ?? new HistogramLinearModel(0, 0)); }
+    public Color Color { get => color; set => SetField(ref color, value); }
+    public string Name { get => name; set => SetField(ref name, value ?? ""); }
+    public double Thickness { get => thickness; set => SetField(ref thickness, Math.Max(0.5, value)); }
+    public HistogramAxisScaleKind XInputScale { get => x_input_scale; set => SetField(ref x_input_scale, value); }
+    public double XArcsinhCofactor { get => x_arcsinh_cofactor; set => SetField(ref x_arcsinh_cofactor, value > 0 && double.IsFinite(value) ? value : 5.0); }
+
+    public double TransformInput(double raw_value) => XInputScale switch
+    {
+        HistogramAxisScaleKind.Log => Math.Sign(raw_value) * Math.Log10(1 + Math.Abs(raw_value)),
+        HistogramAxisScaleKind.Arcsinh => Math.Asinh(raw_value / XArcsinhCofactor),
+        _ => raw_value
+    };
+}
+
+public sealed class HistogramCurveSeries : NotifyBase
+{
+    private IReadOnlyList<HistogramPoint> points = [];
+    private Color color = gated.Shared.ThemeResources.AppColor("Theme6");
+    private string name = "";
+    private double thickness = 1.6;
+    public IReadOnlyList<HistogramPoint> Points { get => points; set => SetField(ref points, value ?? []); }
+    public Color Color { get => color; set => SetField(ref color, value); }
+    public string Name { get => name; set => SetField(ref name, value ?? ""); }
+    public double Thickness { get => thickness; set => SetField(ref thickness, Math.Max(0.5, value)); }
+}
+
+public enum HistogramAnnotationOrientation { Vertical, Horizontal }
+
+public sealed class HistogramLineAnnotation : NotifyBase
+{
+    private double value;
+    private string text = "";
+    private Color color = gated.Shared.ThemeResources.AppColor("Theme6");
+    private bool is_editable;
+    public HistogramAnnotationOrientation Orientation { get; init; }
+    public double Value { get => value; set => SetField(ref this.value, value); }
+    public string Text { get => text; set => SetField(ref text, value ?? ""); }
+    public Color Color { get => color; set => SetField(ref color, value); }
+    public bool IsEditable { get => is_editable; set => SetField(ref is_editable, value); }
+    public bool IsDashed { get; set; } = true;
+}
 
 public sealed class HistogramSeries : NotifyBase
 {
@@ -107,6 +286,25 @@ public sealed class HistogramView : Control
     public static readonly StyledProperty<HistogramRangeSelection?> SelectionProperty =
         AvaloniaProperty.Register<HistogramView, HistogramRangeSelection?>(nameof(Selection), defaultBindingMode: Avalonia.Data.BindingMode.TwoWay);
 
+    public static readonly StyledProperty<IReadOnlyList<HistogramCurveSeries>?> CurvesProperty =
+        AvaloniaProperty.Register<HistogramView, IReadOnlyList<HistogramCurveSeries>?>(nameof(Curves));
+    public static readonly StyledProperty<IReadOnlyList<HistogramModelLayer>?> ModelsProperty =
+        AvaloniaProperty.Register<HistogramView, IReadOnlyList<HistogramModelLayer>?>(nameof(Models));
+    public static readonly StyledProperty<IReadOnlyList<HistogramLineAnnotation>?> AnnotationsProperty =
+        AvaloniaProperty.Register<HistogramView, IReadOnlyList<HistogramLineAnnotation>?>(nameof(Annotations));
+    public static readonly StyledProperty<double> YMinimumProperty =
+        AvaloniaProperty.Register<HistogramView, double>(nameof(YMinimum), 0);
+    public static readonly StyledProperty<double> YMaximumProperty =
+        AvaloniaProperty.Register<HistogramView, double>(nameof(YMaximum), 1.1);
+    public static readonly StyledProperty<HistogramAxisScaleKind> YAxisScaleProperty =
+        AvaloniaProperty.Register<HistogramView, HistogramAxisScaleKind>(nameof(YAxisScale), HistogramAxisScaleKind.Linear);
+    public static readonly StyledProperty<string> XTitleProperty =
+        AvaloniaProperty.Register<HistogramView, string>(nameof(XTitle), "");
+    public static readonly StyledProperty<string> YTitleProperty =
+        AvaloniaProperty.Register<HistogramView, string>(nameof(YTitle), "Normalized Frequency");
+    public static readonly StyledProperty<ICommand?> AnnotationCommittedCommandProperty =
+        AvaloniaProperty.Register<HistogramView, ICommand?>(nameof(AnnotationCommittedCommand));
+
     private Rect plot_rect;
     private List<PreparedSeries>? prepared_series;
     private PreparedAxis? prepared_axis;
@@ -114,6 +312,9 @@ public sealed class HistogramView : Control
     private readonly List<HistogramSeries> subscribed_series = new();
     private DragTarget drag_target = DragTarget.None;
     private HistogramRangeSelection? draft_selection;
+    private HistogramLineAnnotation? dragged_annotation;
+    private readonly List<INotifyPropertyChanged> subscribed_layers = new();
+    private readonly List<INotifyCollectionChanged> subscribed_layer_collections = new();
 
     static HistogramView()
     {
@@ -130,7 +331,15 @@ public sealed class HistogramView : Control
             BinSmoothingProperty,
             YMaximumFactorProperty,
             IsGatingEnabledProperty,
-            SelectionProperty);
+            SelectionProperty,
+            CurvesProperty,
+            ModelsProperty,
+            AnnotationsProperty,
+            YMinimumProperty,
+            YMaximumProperty,
+            YAxisScaleProperty,
+            XTitleProperty,
+            YTitleProperty);
     }
 
     public IReadOnlyList<HistogramSeries>? Series
@@ -211,6 +420,16 @@ public sealed class HistogramView : Control
         set => SetValue(SelectionProperty, value);
     }
 
+    public IReadOnlyList<HistogramCurveSeries>? Curves { get => GetValue(CurvesProperty); set => SetValue(CurvesProperty, value); }
+    public IReadOnlyList<HistogramModelLayer>? Models { get => GetValue(ModelsProperty); set => SetValue(ModelsProperty, value); }
+    public IReadOnlyList<HistogramLineAnnotation>? Annotations { get => GetValue(AnnotationsProperty); set => SetValue(AnnotationsProperty, value); }
+    public double YMinimum { get => GetValue(YMinimumProperty); set => SetValue(YMinimumProperty, value); }
+    public double YMaximum { get => GetValue(YMaximumProperty); set => SetValue(YMaximumProperty, value); }
+    public HistogramAxisScaleKind YAxisScale { get => GetValue(YAxisScaleProperty); set => SetValue(YAxisScaleProperty, value); }
+    public string XTitle { get => GetValue(XTitleProperty); set => SetValue(XTitleProperty, value); }
+    public string YTitle { get => GetValue(YTitleProperty); set => SetValue(YTitleProperty, value); }
+    public ICommand? AnnotationCommittedCommand { get => GetValue(AnnotationCommittedCommandProperty); set => SetValue(AnnotationCommittedCommandProperty, value); }
+
     protected override Size MeasureOverride(Size availableSize)
     {
         double width = double.IsInfinity(availableSize.Width) ? 360 : availableSize.Width;
@@ -223,6 +442,8 @@ public sealed class HistogramView : Control
         base.OnPropertyChanged(change);
         if (change.Property == SeriesProperty)
             resubscribe_series();
+        if (change.Property == CurvesProperty || change.Property == ModelsProperty || change.Property == AnnotationsProperty)
+            resubscribe_layers();
         if (change.Property == SeriesProperty
             || change.Property == MinimumProperty
             || change.Property == MaximumProperty
@@ -233,17 +454,30 @@ public sealed class HistogramView : Control
             || change.Property == LogicleNegativeDecadesProperty
             || change.Property == ArcsinhCofactorProperty
             || change.Property == BinSmoothingProperty
-            || change.Property == YMaximumFactorProperty)
+            || change.Property == YMaximumFactorProperty
+            || change.Property == YMinimumProperty
+            || change.Property == YMaximumProperty
+            || change.Property == YAxisScaleProperty)
             invalidate_bins();
     }
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
-        if (!IsGatingEnabled || !plot_rect.Contains(e.GetPosition(this)))
+        if (!plot_rect.Contains(e.GetPosition(this)))
             return;
 
         var point = e.GetPosition(this);
+        dragged_annotation = nearest_editable_annotation(point.X);
+        if (dragged_annotation is not null)
+        {
+            dragged_annotation.Value = screen_to_data(point.X);
+            e.Pointer.Capture(this);
+            e.Handled = true;
+            return;
+        }
+        if (!IsGatingEnabled)
+            return;
         double value = screen_to_data(point.X);
         drag_target = nearest_selection_edge(point.X);
         if (drag_target == DragTarget.None)
@@ -264,6 +498,13 @@ public sealed class HistogramView : Control
     {
         base.OnPointerMoved(e);
         var point = e.GetPosition(this);
+        if (dragged_annotation is not null)
+        {
+            dragged_annotation.Value = screen_to_data(point.X);
+            InvalidateVisual();
+            e.Handled = true;
+            return;
+        }
         if (drag_target != DragTarget.None)
         {
             update_selection(screen_to_data(point.X));
@@ -271,7 +512,8 @@ public sealed class HistogramView : Control
             return;
         }
 
-        Cursor = IsGatingEnabled && plot_rect.Contains(point) && nearest_selection_edge(point.X) != DragTarget.None
+        Cursor = plot_rect.Contains(point) && (nearest_editable_annotation(point.X) is not null ||
+                 IsGatingEnabled && nearest_selection_edge(point.X) != DragTarget.None)
             ? new Cursor(StandardCursorType.Hand)
             : Cursor.Default;
     }
@@ -279,6 +521,15 @@ public sealed class HistogramView : Control
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
         base.OnPointerReleased(e);
+        if (dragged_annotation is { } annotation)
+        {
+            dragged_annotation = null;
+            if (AnnotationCommittedCommand?.CanExecute(annotation) == true)
+                AnnotationCommittedCommand.Execute(annotation);
+            e.Pointer.Capture(null);
+            e.Handled = true;
+            return;
+        }
         if (draft_selection is { } selection)
             Selection = normalized_selection(selection);
         draft_selection = null;
@@ -304,7 +555,10 @@ public sealed class HistogramView : Control
         context.FillRectangle(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Background4")), plot_rect);
         draw_grid(context);
         draw_series(context);
+        draw_curves(context);
+        draw_models(context);
         draw_selection(context);
+        draw_annotations(context);
         draw_axes(context);
     }
 
@@ -316,15 +570,17 @@ public sealed class HistogramView : Control
             if (item.Points.Count == 0)
                 continue;
 
+            var points = item.Points.Select(point => new Point(data_to_screen(point.X), y_data_to_screen(point.Y))).ToArray();
+
             var fill = new SolidColorBrush(Color.FromArgb(42, item.Color.R, item.Color.G, item.Color.B));
             var stroke = new Pen(new SolidColorBrush(item.Color), 1.8);
             var fill_geometry = new StreamGeometry();
             using (var geometry = fill_geometry.Open())
             {
-                geometry.BeginFigure(new Point(item.Points[0].X, plot_rect.Bottom), true);
-                foreach (var point in item.Points)
+                geometry.BeginFigure(new Point(points[0].X, y_data_to_screen(0)), true);
+                foreach (var point in points)
                     geometry.LineTo(point);
-                geometry.LineTo(new Point(item.Points[^1].X, plot_rect.Bottom));
+                geometry.LineTo(new Point(points[^1].X, y_data_to_screen(0)));
                 geometry.EndFigure(true);
             }
             context.DrawGeometry(fill, null, fill_geometry);
@@ -332,8 +588,8 @@ public sealed class HistogramView : Control
             var line_geometry = new StreamGeometry();
             using (var geometry = line_geometry.Open())
             {
-                geometry.BeginFigure(item.Points[0], false);
-                foreach (var point in item.Points.Skip(1))
+                geometry.BeginFigure(points[0], false);
+                foreach (var point in points.Skip(1))
                     geometry.LineTo(point);
             }
             context.DrawGeometry(null, stroke, line_geometry);
@@ -369,17 +625,16 @@ public sealed class HistogramView : Control
 
             counts = smooth(counts, BinSmoothing);
             double maximum = counts.DefaultIfEmpty(0).Max();
-            double y_maximum = maximum * Math.Max(1.0, YMaximumFactor);
             var points = new List<Point>(bins);
-            if (y_maximum > 0)
+            if (maximum > 0)
             {
                 for (int bin = 0; bin < bins; bin++)
                 {
                     double normalized_x = (bin + 0.5) / bins;
-                    double normalized_y = counts[bin] / y_maximum;
-                    points.Add(new Point(
-                        plot_rect.Left + normalized_x * plot_rect.Width,
-                        plot_rect.Bottom - normalized_y * plot_rect.Height));
+                    double normalized_y = counts[bin] / maximum;
+                    double transformed = axis.TransformedMinimum + normalized_x * transformed_span;
+                    double raw_x = axis.Scale.InverseTransform(transformed);
+                    points.Add(new Point(raw_x, normalized_y));
                 }
             }
 
@@ -387,6 +642,71 @@ public sealed class HistogramView : Control
         }
 
         return result;
+    }
+
+    private void draw_curves(DrawingContext context)
+    {
+        if (Curves is null) return;
+        foreach (var curve in Curves)
+            draw_xy_line(context, curve.Points, curve.Color, curve.Thickness);
+    }
+
+    private void draw_models(DrawingContext context)
+    {
+        if (Models is null || prepare_axis() is not { } axis) return;
+        foreach (var layer in Models)
+        {
+            var points = new List<HistogramPoint>();
+            for (int index = 0; index <= 320; index++)
+            {
+                double transformed = axis.TransformedMinimum + (axis.TransformedMaximum - axis.TransformedMinimum) * index / 320.0;
+                double x = axis.Scale.InverseTransform(transformed);
+                double y;
+                try { y = layer.Model.Evaluate(layer.TransformInput(x)); }
+                catch { y = double.NaN; }
+                if (double.IsFinite(x) && double.IsFinite(y)) points.Add(new HistogramPoint(x, y));
+                else if (points.Count > 1) { draw_xy_line(context, points, layer.Color, layer.Thickness); points.Clear(); }
+                else points.Clear();
+            }
+            if (points.Count > 1) draw_xy_line(context, points, layer.Color, layer.Thickness);
+        }
+    }
+
+    private void draw_xy_line(DrawingContext context, IReadOnlyList<HistogramPoint> source, Color color, double thickness)
+    {
+        var finite = source.Where(point => double.IsFinite(point.X) && double.IsFinite(point.Y)).ToArray();
+        if (finite.Length < 2) return;
+        var geometry = new StreamGeometry();
+        using (var path = geometry.Open())
+        {
+            path.BeginFigure(new Point(data_to_screen(finite[0].X), y_data_to_screen(finite[0].Y)), false);
+            foreach (var point in finite.Skip(1)) path.LineTo(new Point(data_to_screen(point.X), y_data_to_screen(point.Y)));
+        }
+        context.DrawGeometry(null, new Pen(new SolidColorBrush(color), thickness), geometry);
+    }
+
+    private void draw_annotations(DrawingContext context)
+    {
+        if (Annotations is null) return;
+        foreach (var annotation in Annotations)
+        {
+            var pen = new Pen(new SolidColorBrush(annotation.Color), annotation.IsEditable ? 2 : 1.4,
+                annotation.IsDashed ? DashStyle.Dash : null);
+            if (annotation.Orientation == HistogramAnnotationOrientation.Vertical)
+            {
+                double x = data_to_screen(annotation.Value);
+                context.DrawLine(pen, new Point(x, plot_rect.Top), new Point(x, plot_rect.Bottom));
+                if (!string.IsNullOrWhiteSpace(annotation.Text))
+                    draw_centered_text(context, annotation.Text, new Point(x, plot_rect.Top + 3), 11, annotation.Color);
+            }
+            else
+            {
+                double y = y_data_to_screen(annotation.Value);
+                context.DrawLine(pen, new Point(plot_rect.Left, y), new Point(plot_rect.Right, y));
+                if (!string.IsNullOrWhiteSpace(annotation.Text))
+                    context.DrawText(create_text(annotation.Text, 11, annotation.Color), new Point(plot_rect.Left + 4, y - 16));
+            }
+        }
     }
 
     private void draw_selection(DrawingContext context)
@@ -466,10 +786,19 @@ public sealed class HistogramView : Control
             draw_centered_text(context, format_axis_value(tick), new Point(x, plot_rect.Bottom + 8), 11, tick_text);
         }
 
-        string x_title = Series?.FirstOrDefault()?.Name ?? "";
+        for (int index = 0; index <= 5; index++)
+        {
+            double value = YMinimum + (YMaximum - YMinimum) * index / 5.0;
+            double y = y_data_to_screen(value);
+            context.DrawLine(tick_pen, new Point(plot_rect.Left - 6, y), new Point(plot_rect.Left, y));
+            draw_right_aligned_text(context, format_axis_value(value), new Point(plot_rect.Left - 8, y - 7), 11, tick_text);
+        }
+
+        string x_title = string.IsNullOrWhiteSpace(XTitle) ? Series?.FirstOrDefault()?.Name ?? "" : XTitle;
         if (!string.IsNullOrWhiteSpace(x_title))
             draw_centered_text(context, x_title, new Point(plot_rect.Left + plot_rect.Width / 2, Bounds.Bottom - 15), 12, text_color);
-        draw_vertical_centered_text(context, "Normalized Frequency", new Point(Bounds.Left + 45, plot_rect.Top + plot_rect.Height / 2), 12, text_color);
+        if (!string.IsNullOrWhiteSpace(YTitle))
+            draw_vertical_centered_text(context, YTitle, new Point(Bounds.Left + 18, plot_rect.Top + plot_rect.Height / 2), 12, text_color);
     }
 
     private IEnumerable<double> major_axis_ticks()
@@ -529,6 +858,30 @@ public sealed class HistogramView : Control
             return plot_rect.Left;
         return plot_rect.Left + Math.Clamp((transformed - axis.TransformedMinimum) / span, 0, 1) * plot_rect.Width;
     }
+
+    private double y_data_to_screen(double value)
+    {
+        var scale = y_scale();
+        double minimum = scale.Transform(YMinimum);
+        double maximum = scale.Transform(YMaximum);
+        double transformed = scale.Transform(value);
+        if (!double.IsFinite(minimum) || !double.IsFinite(maximum) || !double.IsFinite(transformed) || maximum <= minimum)
+            return plot_rect.Bottom;
+        return plot_rect.Bottom - Math.Clamp((transformed - minimum) / (maximum - minimum), 0, 1) * plot_rect.Height;
+    }
+
+    private AxisScale y_scale() => new()
+    {
+        Kind = YAxisScale switch
+        {
+            HistogramAxisScaleKind.Log => CoordinateScaleKind.Logarithmic,
+            HistogramAxisScaleKind.Logicle => CoordinateScaleKind.Logicle,
+            HistogramAxisScaleKind.Arcsinh => CoordinateScaleKind.Arcsinh,
+            _ => CoordinateScaleKind.Linear
+        },
+        Logicle = new LogicleParameters(LogicleTopOfScale, LogicleLinearizationWidth, LogicleDecades, LogicleNegativeDecades),
+        ArcsinhCofactor = ArcsinhCofactor
+    };
 
     private double screen_to_data(double x)
     {
@@ -631,6 +984,15 @@ public sealed class HistogramView : Control
         return left_distance <= right_distance ? DragTarget.Minimum : DragTarget.Maximum;
     }
 
+    private HistogramLineAnnotation? nearest_editable_annotation(double x) =>
+        Annotations?
+            .Where(annotation => annotation.IsEditable && annotation.Orientation == HistogramAnnotationOrientation.Vertical)
+            .Select(annotation => (Annotation: annotation, Distance: Math.Abs(data_to_screen(annotation.Value) - x)))
+            .Where(item => item.Distance <= 12)
+            .OrderBy(item => item.Distance)
+            .Select(item => item.Annotation)
+            .FirstOrDefault();
+
     private static HistogramRangeSelection normalized_selection(HistogramRangeSelection selection) =>
         selection.Minimum <= selection.Maximum
             ? selection
@@ -646,10 +1008,10 @@ public sealed class HistogramView : Control
         double observed_minimum = percentile_in_sorted(finite, 0.0001);
         double observed_maximum = percentile_in_sorted(finite, 0.999);
         double minimum = Minimum is { } requested_minimum && double.IsFinite(requested_minimum)
-            ? Math.Clamp(requested_minimum, observed_minimum, observed_maximum)
+            ? requested_minimum
             : observed_minimum;
         double maximum = Maximum is { } requested_maximum && double.IsFinite(requested_maximum)
-            ? Math.Clamp(requested_maximum, observed_minimum, observed_maximum)
+            ? requested_maximum
             : observed_maximum;
         if (maximum < minimum)
             (minimum, maximum) = (maximum, minimum);
@@ -743,14 +1105,53 @@ public sealed class HistogramView : Control
         }
     }
 
+    private void resubscribe_layers()
+    {
+        foreach (var collection in subscribed_layer_collections) collection.CollectionChanged -= on_layer_collection_changed;
+        foreach (var layer in subscribed_layers) layer.PropertyChanged -= on_layer_property_changed;
+        subscribed_layer_collections.Clear();
+        subscribed_layers.Clear();
+        subscribe_layer_collection(Curves);
+        subscribe_layer_collection(Models);
+        subscribe_layer_collection(Annotations);
+    }
+
+    private void subscribe_layer_collection<T>(IReadOnlyList<T>? values) where T : class, INotifyPropertyChanged
+    {
+        if (values is INotifyCollectionChanged collection)
+        {
+            subscribed_layer_collections.Add(collection);
+            collection.CollectionChanged += on_layer_collection_changed;
+        }
+        if (values is null) return;
+        foreach (var value in values)
+        {
+            subscribed_layers.Add(value);
+            value.PropertyChanged += on_layer_property_changed;
+        }
+    }
+
+    private void on_layer_collection_changed(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        resubscribe_layers();
+        InvalidateVisual();
+    }
+
+    private void on_layer_property_changed(object? sender, PropertyChangedEventArgs e) => InvalidateVisual();
+
     private void on_series_collection_changed(object? sender, NotifyCollectionChangedEventArgs e)
     {
         resubscribe_series();
         invalidate_bins();
     }
 
-    private void on_series_property_changed(object? sender, PropertyChangedEventArgs e) =>
-        invalidate_bins();
+    private void on_series_property_changed(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(HistogramSeries.Values) or nameof(HistogramSeries.SortedValues) or nameof(HistogramSeries.BinCount))
+            invalidate_bins();
+        else
+            InvalidateVisual();
+    }
 
     private void draw_centered_text(DrawingContext context, string text, Point origin, double size, Color color)
     {
