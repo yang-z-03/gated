@@ -2,6 +2,7 @@ using System;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
+using Avalonia.Styling;
 using Avalonia.Threading;
 
 namespace gated.Controls;
@@ -35,6 +36,13 @@ public sealed class SpinnerView : Control
         base.OnDetachedFromVisualTree(e);
     }
 
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property.Name == nameof(ActualThemeVariant))
+            InvalidateVisual();
+    }
+
     public override void Render(DrawingContext context)
     {
         base.Render(context);
@@ -46,6 +54,9 @@ public sealed class SpinnerView : Control
         var center = new Point(bounds.Left + bounds.Width / 2, bounds.Top + bounds.Height / 2);
         double outer = size * 0.46;
         double inner = size * 0.25;
+        var color = ActualThemeVariant == ThemeVariant.Dark
+            ? Colors.White
+            : Color.FromRgb(72, 72, 72);
         for (int index = 0; index < 12; index++)
         {
             int age = (index - frame + 12) % 12;
@@ -53,7 +64,7 @@ public sealed class SpinnerView : Control
             double angle = index / 12.0 * Math.PI * 2.0;
             var start = new Point(center.X + Math.Cos(angle) * inner, center.Y + Math.Sin(angle) * inner);
             var end = new Point(center.X + Math.Cos(angle) * outer, center.Y + Math.Sin(angle) * outer);
-            context.DrawLine(new Pen(new SolidColorBrush(Color.FromArgb(alpha, 255, 255, 255)), Math.Max(1.2, size * 0.08), lineCap: PenLineCap.Round), start, end);
+            context.DrawLine(new Pen(new SolidColorBrush(Color.FromArgb(alpha, color.R, color.G, color.B)), Math.Max(1.2, size * 0.08), lineCap: PenLineCap.Round), start, end);
         }
     }
 }

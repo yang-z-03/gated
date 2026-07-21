@@ -649,7 +649,13 @@
                                     BorderBrush="{DynamicResource SemiColorBorder}"
                                     BorderThickness="1"
                                     CornerRadius="6"
+                                    Opacity="{Binding PlotAxisControlsOpacity, ElementName=editor_plot}"
                                     IsVisible="{Binding PlotAxisControlsVisible, ElementName=editor_plot}">
+                                <Border.Transitions>
+                                    <Transitions>
+                                        <DoubleTransition Property="Opacity" Duration="0:0:0.18" />
+                                    </Transitions>
+                                </Border.Transitions>
                                 <StackPanel Orientation="Horizontal"
                                             HorizontalAlignment="Center"
                                             Spacing="4">
@@ -702,7 +708,13 @@
                             </Border>
                             <LayoutTransformControl Canvas.Left="{Binding PlotYAxisControlLeft, ElementName=editor_plot}"
                                                     Canvas.Top="{Binding PlotYAxisControlTop, ElementName=editor_plot}"
+                                                    Opacity="{Binding PlotAxisControlsOpacity, ElementName=editor_plot}"
                                                     IsVisible="{Binding PlotAxisControlsVisible, ElementName=editor_plot}">
+                                <LayoutTransformControl.Transitions>
+                                    <Transitions>
+                                        <DoubleTransition Property="Opacity" Duration="0:0:0.18" />
+                                    </Transitions>
+                                </LayoutTransformControl.Transitions>
                                 <LayoutTransformControl.LayoutTransform>
                                     <RotateTransform Angle="-90" />
                                 </LayoutTransformControl.LayoutTransform>
@@ -770,8 +782,14 @@
                                     Padding="7"
                                     Command="{Binding SwapEditorAxesCommand}"
                                     IsEnabled="{Binding IsYAxisEnabled}"
+                                    Opacity="{Binding PlotAxisControlsOpacity, ElementName=editor_plot}"
                                     IsVisible="{Binding PlotAxisControlsVisible, ElementName=editor_plot}"
                                     ToolTip.Tip="Swap axes">
+                                <Button.Transitions>
+                                    <Transitions>
+                                        <DoubleTransition Property="Opacity" Duration="0:0:0.18" />
+                                    </Transitions>
+                                </Button.Transitions>
                                 <shared:ThemeIcon Width="18"
                                        Height="18" Icon="swap.svg" />
                             </Button>

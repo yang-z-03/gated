@@ -111,7 +111,10 @@ public sealed class FlowPlotView : Control
         AvaloniaProperty.Register<FlowPlotView, double>(nameof(PlotAxisChannelControlWidth), 180);
 
     public static readonly StyledProperty<bool> PlotAxisControlsVisibleProperty =
-        AvaloniaProperty.Register<FlowPlotView, bool>(nameof(PlotAxisControlsVisible), true);
+        AvaloniaProperty.Register<FlowPlotView, bool>(nameof(PlotAxisControlsVisible));
+
+    public static readonly StyledProperty<double> PlotAxisControlsOpacityProperty =
+        AvaloniaProperty.Register<FlowPlotView, double>(nameof(PlotAxisControlsOpacity));
 
     public static readonly StyledProperty<double> PlotYAxisControlLeftProperty =
         AvaloniaProperty.Register<FlowPlotView, double>(nameof(PlotYAxisControlLeft));
@@ -146,6 +149,7 @@ public sealed class FlowPlotView : Control
     private WriteableBitmap? cached_plot_bitmap;
     private PlotMode cached_plot_mode;
     private bool cached_histogram;
+    private bool axis_controls_reveal_pending;
 
     static FlowPlotView()
     {
@@ -327,6 +331,12 @@ public sealed class FlowPlotView : Control
     {
         get => GetValue(PlotAxisControlsVisibleProperty);
         private set => SetValue(PlotAxisControlsVisibleProperty, value);
+    }
+
+    public double PlotAxisControlsOpacity
+    {
+        get => GetValue(PlotAxisControlsOpacityProperty);
+        private set => SetValue(PlotAxisControlsOpacityProperty, value);
     }
 
     public double PlotYAxisControlLeft
@@ -513,6 +523,7 @@ public sealed class FlowPlotView : Control
         double size = Math.Min(available_width, available_height);
         if (size < 120)
         {
+            PlotAxisControlsOpacity = 0;
             PlotAxisControlsVisible = false;
             PlotSize = 0;
             PlotAxisSwapButtonLeft = 0;
@@ -529,7 +540,6 @@ public sealed class FlowPlotView : Control
         PlotTop = plot_rect.Top;
         PlotSize = plot_rect.Width;
         PlotBottom = plot_rect.Bottom;
-        PlotAxisControlsVisible = true;
         PlotAxisChannelControlWidth = Math.Clamp(size - 62, 56, 180);
         PlotAxisControlWidth = PlotAxisChannelControlWidth + 62;
         PlotAxisControlLeft = plot_rect.Left + (plot_rect.Width - PlotAxisControlWidth) / 2;
@@ -538,6 +548,7 @@ public sealed class FlowPlotView : Control
         PlotYAxisControlTop = plot_rect.Top + plot_rect.Height / 2 - PlotAxisControlWidth / 2;
         PlotAxisSwapButtonLeft = PlotYAxisControlLeft;
         PlotAxisSwapButtonTop = PlotAxisControlTop;
+        reveal_axis_controls();
         context.FillRectangle(Brushes.White, plot_rect);
 
         if (XAxis is null || YAxis is null)
@@ -556,6 +567,25 @@ public sealed class FlowPlotView : Control
         draw_gates(context);
         draw_active_tool_preview(context);
         draw_pending_gate(context);
+    }
+
+    private void reveal_axis_controls()
+    {
+        if (PlotAxisControlsVisible)
+            return;
+
+        PlotAxisControlsOpacity = 0;
+        PlotAxisControlsVisible = true;
+        if (axis_controls_reveal_pending)
+            return;
+
+        axis_controls_reveal_pending = true;
+        Dispatcher.UIThread.Post(() =>
+        {
+            axis_controls_reveal_pending = false;
+            if (PlotAxisControlsVisible)
+                PlotAxisControlsOpacity = 1;
+        });
     }
 
     private void draw_density(DrawingContext context)
