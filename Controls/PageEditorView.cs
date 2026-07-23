@@ -96,6 +96,8 @@ public sealed class PageEditorView : Control
     private readonly Dictionary<Guid, (string Key, WriteableBitmap? Bitmap)> plot_bitmap_cache = new();
     private readonly Dictionary<Guid, (string Key, RenderTargetBitmap Bitmap)> element_bitmap_cache = new();
     private readonly HashSet<Guid> refreshing_element_ids = new();
+    private readonly HashSet<Platform> subscribed_plot_platforms = [];
+    private readonly HashSet<PlatformPopulationInput> subscribed_plot_populations = [];
     private CancellationTokenSource? render_cache_refresh_cancellation;
 
     public event EventHandler<PageElementContextRequestedEventArgs>? ElementContextRequested;
@@ -476,54 +478,81 @@ public sealed class PageEditorView : Control
     private void draw_platform_plot(DrawingContext context, PlatformPlotElement element, Rect bounds)
     {
         draw_centered_text_in_band(context, element.Title, new Rect(bounds.Left, bounds.Top, bounds.Width, title_space), 13, Colors.Black, bolded: true);
+        var plot_rect = plot_rect_for(bounds, element.ShowTickLabels);
         var presentation = element.Platform is null
             ? PlatformPresentation.Empty
             : PlatformCatalog.Get(element.Platform.Kind).CreatePresentation(element.Platform);
         var document = !string.IsNullOrWhiteSpace(element.OutputKey)
             ? presentation.Plot(element.OutputKey)
             : presentation.Plots.FirstOrDefault();
-        var series = document?.Series.ToArray() ?? [];
-        bool has_data = series.Length > 0 && series.Any(item => item.X.Length > 0 && item.Y.Length > 0);
-        if (!has_data)
-            series = platform_dummy_series(element.Platform);
-
-        var plot_rect = plot_rect_for(bounds, element.ShowTickLabels);
-
-        var points = series
-            .SelectMany(item => item.X.Zip(item.Y).Where(pair => double.IsFinite(pair.First) && double.IsFinite(pair.Second)))
-            .ToArray();
-        if (points.Length == 0)
-            return;
-        double min_x = points.Min(item => item.First);
-        double max_x = points.Max(item => item.First);
-        double min_y = Math.Min(0, points.Min(item => item.Second));
-        double max_y = points.Max(item => item.Second);
-        if (max_x <= min_x) max_x = min_x + 1;
-        if (max_y <= min_y) max_y = min_y + 1;
-        max_y *= 1.08;
-
-        draw_platform_axes_and_grid(context, element, bounds, plot_rect, min_x, max_x, min_y, max_y, series);
-        if (!has_data)
+        if (document is null || !document.Series.Any(item => item.X.Length > 0 && item.Y.Length > 0))
         {
             draw_centered_text_in_band(context, "No platform plot data", plot_rect, 12, Colors.Gray, bolded: false);
             return;
         }
 
-        foreach (var plot in series)
+        var points = document.Series
+            .SelectMany(item => item.X.Zip(item.Y).Where(pair => double.IsFinite(pair.First) && double.IsFinite(pair.Second)))
+            .ToArray();
+        if (points.Length == 0)
         {
-            int count = Math.Min(plot.X.Length, plot.Y.Length);
-            var pen = platform_plot_pen(plot);
-            Point? previous = null;
-            for (int index = 0; index < count; index++)
+            draw_centered_text_in_band(context, "No platform plot data", plot_rect, 12, Colors.Gray, bolded: false);
+            return;
+        }
+
+        double transformed_min_x = document.XScale.Transform(document.Minimum);
+        double transformed_max_x = document.XScale.Transform(document.Maximum);
+        if (!double.IsFinite(transformed_min_x) ||
+            !double.IsFinite(transformed_max_x) ||
+            transformed_max_x <= transformed_min_x)
+        {
+            draw_centered_text_in_band(context, "No platform plot data", plot_rect, 12, Colors.Gray, bolded: false);
+            return;
+        }
+
+        double min_y = Math.Min(0, points.Min(item => item.Second));
+        double max_y = points.Max(item => item.Second);
+        if (max_y <= min_y) max_y = min_y + 1;
+        max_y *= 1.08;
+
+        draw_platform_axes_and_grid(context, element, document, bounds, plot_rect, transformed_min_x, transformed_max_x, min_y, max_y);
+
+        using (context.PushClip(plot_rect))
+        {
+            foreach (var plot in document.Series)
             {
-                if (!double.IsFinite(plot.X[index]) || !double.IsFinite(plot.Y[index]))
+                int count = Math.Min(plot.X.Length, plot.Y.Length);
+                var pen = platform_plot_pen(plot);
+                var curve_points = new List<Point>(count);
+                for (int index = 0; index < count; index++)
+                {
+                    if (!double.IsFinite(plot.X[index]) || !double.IsFinite(plot.Y[index]))
+                        continue;
+                    double transformed_x = document.XScale.Transform(plot.X[index]);
+                    if (!double.IsFinite(transformed_x))
+                        continue;
+                    double x = plot_rect.Left + (transformed_x - transformed_min_x) / (transformed_max_x - transformed_min_x) * plot_rect.Width;
+                    double y = plot_rect.Bottom - (Math.Max(0, plot.Y[index]) - min_y) / (max_y - min_y) * plot_rect.Height;
+                    curve_points.Add(new Point(x, y));
+                }
+                if (curve_points.Count < 2)
                     continue;
-                double x = plot_rect.Left + (plot.X[index] - min_x) / (max_x - min_x) * plot_rect.Width;
-                double y = plot_rect.Bottom - (Math.Max(0, plot.Y[index]) - min_y) / (max_y - min_y) * plot_rect.Height;
-                var point = new Point(x, y);
-                if (previous is not null)
-                    context.DrawLine(pen, previous.Value, point);
-                previous = point;
+                if (plot.Role == PlatformSeriesRole.Component && element.Platform is not null && platform_fill_components(element.Platform))
+                {
+                    var geometry = new StreamGeometry();
+                    using (var path = geometry.Open())
+                    {
+                        path.BeginFigure(new Point(curve_points[0].X, plot_rect.Bottom), true);
+                        foreach (var point in curve_points)
+                            path.LineTo(point);
+                        path.LineTo(new Point(curve_points[^1].X, plot_rect.Bottom));
+                        path.EndFigure(true);
+                    }
+                    Color color = platform_plot_color(plot);
+                    context.DrawGeometry(new SolidColorBrush(Color.FromArgb(30, color.R, color.G, color.B)), null, geometry);
+                }
+                for (int index = 1; index < curve_points.Count; index++)
+                    context.DrawLine(pen, curve_points[index - 1], curve_points[index]);
             }
         }
     }
@@ -622,13 +651,13 @@ public sealed class PageEditorView : Control
     private void draw_platform_axes_and_grid(
         DrawingContext context,
         PlatformPlotElement element,
+        PlatformPlotDocument document,
         Rect bounds,
         Rect plot_rect,
-        double min_x,
-        double max_x,
+        double transformed_min_x,
+        double transformed_max_x,
         double min_y,
-        double max_y,
-        IReadOnlyList<PlatformPlotSeries> series)
+        double max_y)
     {
         var spine_pen = new Pen(Brushes.Black, 1);
         var major_pen = new Pen(Brushes.Black, 1);
@@ -655,17 +684,17 @@ public sealed class PageEditorView : Control
                 draw_right_aligned_text(context, Configuration.FormatAxisValue(tick), new Point(plot_rect.Left - 7, y - 6), 9, Colors.Black);
         }
 
-        foreach (var tick in platform_x_ticks(element.Platform, min_x, max_x, major: false))
+        foreach (var tick in platform_x_ticks(document, major: false))
         {
-            double x = plot_rect.Left + (tick.Position - min_x) / (max_x - min_x) * plot_rect.Width;
+            double x = plot_rect.Left + (tick.Position - transformed_min_x) / (transformed_max_x - transformed_min_x) * plot_rect.Width;
             if (element.ShowGridlines)
                 context.DrawLine(minor_grid_pen, new Point(x, plot_rect.Top), new Point(x, plot_rect.Bottom));
             context.DrawLine(minor_pen, new Point(x, plot_rect.Bottom), new Point(x, plot_rect.Bottom + 3));
             context.DrawLine(minor_pen, new Point(x, plot_rect.Top), new Point(x, plot_rect.Top - 3));
         }
-        foreach (var tick in platform_x_ticks(element.Platform, min_x, max_x, major: true))
+        foreach (var tick in platform_x_ticks(document, major: true))
         {
-            double x = plot_rect.Left + (tick.Position - min_x) / (max_x - min_x) * plot_rect.Width;
+            double x = plot_rect.Left + (tick.Position - transformed_min_x) / (transformed_max_x - transformed_min_x) * plot_rect.Width;
             if (element.ShowGridlines)
                 context.DrawLine(major_grid_pen, new Point(x, plot_rect.Top), new Point(x, plot_rect.Bottom));
             context.DrawLine(major_pen, new Point(x, plot_rect.Bottom), new Point(x, plot_rect.Bottom + 5));
@@ -675,40 +704,8 @@ public sealed class PageEditorView : Control
         }
 
         context.DrawRectangle(null, spine_pen, plot_rect);
-        string x_label = series.FirstOrDefault()?.XLabel ?? "Intensity";
-        string y_label = series.FirstOrDefault()?.YLabel ?? "Frequency";
-        draw_centered_text_in_band(context, x_label, new Rect(plot_rect.Left, bounds.Bottom - bottom_axis_label_space, plot_rect.Width, bottom_axis_label_space), 11, Colors.Black);
-        draw_vertical_centered_text(context, y_label, new Point(bounds.Left + left_axis_label_space / 2, plot_rect.Top + plot_rect.Height / 2), 11, Colors.Black);
-    }
-
-    private static PlatformPlotSeries[] platform_dummy_series(Platform? platform)
-    {
-        double minimum;
-        double maximum;
-        if (platform?.Axis.Transform == PlatformTransformationKind.Logicle)
-        {
-            minimum = platform.Axis.Minimum;
-            maximum = platform.Axis.Maximum;
-        }
-        else
-        {
-            minimum = platform?.Axis.Minimum ?? 0;
-            maximum = platform?.Axis.Maximum ?? 1;
-        }
-        if (maximum <= minimum)
-            maximum = minimum + 1;
-
-        return
-        [
-            new PlatformPlotSeries
-            {
-                Key = "dummy",
-                XLabel = platform?.SelectedFeatureNames.FirstOrDefault() ?? "Intensity",
-                YLabel = "Frequency",
-                X = [minimum, maximum],
-                Y = [0, 1]
-            }
-        ];
+        draw_centered_text_in_band(context, document.XLabel, new Rect(plot_rect.Left, bounds.Bottom - bottom_axis_label_space, plot_rect.Width, bottom_axis_label_space), 11, Colors.Black);
+        draw_vertical_centered_text(context, document.YLabel, new Point(bounds.Left + left_axis_label_space / 2, plot_rect.Top + plot_rect.Height / 2), 11, Colors.Black);
     }
 
     private static IEnumerable<double> platform_y_ticks(double minimum, double maximum, bool major)
@@ -717,44 +714,34 @@ public sealed class PageEditorView : Control
         return major ? Configuration.MajorAxisTicks(axis) : Configuration.MinorAxisTicks(axis);
     }
 
-    private static IEnumerable<(double Position, string Label)> platform_x_ticks(Platform? platform, double minimum, double maximum, bool major)
+    private static IEnumerable<(double Position, string Label)> platform_x_ticks(PlatformPlotDocument document, bool major)
     {
-        if (platform?.Axis.Transform == PlatformTransformationKind.Logicle)
+        var axis = new AxisSettings
         {
-            var transform = new LogicleTransform(platform.Axis.Logicle);
-            var axis = new AxisSettings
-            {
-                Minimum = platform.Axis.Minimum,
-                Maximum = platform.Axis.Maximum,
-                ScaleKind = CoordinateScaleKind.Logicle
-            };
-            var ticks = major ? Configuration.MajorAxisTicks(axis) : Configuration.MinorAxisTicks(axis);
-            foreach (double raw in ticks)
-            {
-                if (raw >= minimum && raw <= maximum)
-                    yield return (raw, Configuration.FormatAxisValue(raw));
-            }
-            yield break;
+            Minimum = document.Minimum,
+            Maximum = document.Maximum,
+            ScaleKind = document.XScale.Kind,
+            ArcsinhCofactor = document.XScale.ArcsinhCofactor
+        };
+        var ticks = major ? Configuration.MajorAxisTicks(axis) : Configuration.MinorAxisTicks(axis);
+        foreach (double raw in ticks)
+        {
+            if (raw < document.Minimum || raw > document.Maximum)
+                continue;
+            double transformed = document.XScale.Transform(raw);
+            if (double.IsFinite(transformed))
+                yield return (transformed, Configuration.FormatAxisValue(raw));
         }
-
-        var linear_axis = new AxisSettings { Minimum = minimum, Maximum = maximum, ScaleKind = CoordinateScaleKind.Linear };
-        var linear_ticks = major ? Configuration.MajorAxisTicks(linear_axis) : Configuration.MinorAxisTicks(linear_axis);
-        foreach (double value in linear_ticks)
-            yield return (value, Configuration.FormatAxisValue(value));
     }
 
     private static Pen platform_plot_pen(PlatformPlotSeries series)
     {
-        bool is_component = series.Role == PlatformSeriesRole.Component;
-        bool is_sum = series.Role == PlatformSeriesRole.Fit;
-        Color color = PlatformPalette.ColorForSeriesKey(series.Key);
-        if (is_sum)
-            color = Color.FromRgb((byte)Math.Max(0, color.R - 42), (byte)Math.Max(0, color.G - 42), (byte)Math.Max(0, color.B - 42));
-        var pen = new Pen(new SolidColorBrush(color), is_component ? 1.2 : is_sum ? 2.0 : 1.2);
-        if (is_component)
-            pen.DashStyle = DashStyle.Dot;
-        return pen;
+        double thickness = series.Role == PlatformSeriesRole.Observed ? 2.4 : 1.1;
+        return new Pen(new SolidColorBrush(platform_plot_color(series)), thickness);
     }
+
+    private static Color platform_plot_color(PlatformPlotSeries series) =>
+        PlatformPalette.ColorForIndex(series.SourceId >= 0 ? series.SourceId : 0);
 
     private (string[] Columns, string[][] Rows, Color?[] Colors) platform_statistic_table_data(Platform? platform, string output_key)
     {
@@ -834,6 +821,14 @@ public sealed class PageEditorView : Control
             CellCyclePlatform cell_cycle => cell_cycle.DrawComponents,
             ProliferationPlatform proliferation => proliferation.DrawComponents,
             _ => true
+        };
+
+    private static bool platform_fill_components(Platform platform) =>
+        platform switch
+        {
+            CellCyclePlatform cell_cycle => cell_cycle.FillComponents,
+            ProliferationPlatform proliferation => proliferation.FillComponents,
+            _ => false
         };
 
     private double[] table_column_widths(IReadOnlyList<string> columns, IReadOnlyList<string[]> rows, double minimum_total_width)
@@ -946,6 +941,7 @@ public sealed class PageEditorView : Control
                 string.Join(",", platform.SelectedFeatureNames),
                 platform_draw_model_sum(platform),
                 platform_draw_components(platform),
+                platform_fill_components(platform),
                 platform.RowMap.Count,
                 platform.PlotSeries.Count,
                 string.Join(";", platform.PlotSeries.Select(plot => $"{plot.Key}:{plot.X.Length}:{plot.Y.Length}:{plot.X.FirstOrDefault():G6}:{plot.Y.FirstOrDefault():G6}:{plot.X.LastOrDefault():G6}:{plot.Y.LastOrDefault():G6}")),
@@ -1798,6 +1794,7 @@ public sealed class PageEditorView : Control
         else
         {
             subscribed_page_elements = PageElements;
+            resubscribe_platform_population_visibility();
         }
         update_content_extent();
         InvalidateVisual();
@@ -1844,6 +1841,7 @@ public sealed class PageEditorView : Control
     {
         subscribed_page_elements = PageElements;
         subscribe_collection_items(subscribed_page_elements);
+        resubscribe_platform_population_visibility();
     }
 
     private void subscribe_collection_items(IEnumerable? items)
@@ -1863,6 +1861,7 @@ public sealed class PageEditorView : Control
     {
         unsubscribe_collection_items(subscribed_page_elements);
         subscribed_page_elements = [];
+        resubscribe_platform_population_visibility();
     }
 
     private void unsubscribe_collection_items(IEnumerable? items)
@@ -1876,6 +1875,57 @@ public sealed class PageEditorView : Control
             element.YAxis.PropertyChanged -= page_element_property_changed;
             element.DotColor.PropertyChanged -= page_element_property_changed;
         }
+    }
+
+    private void resubscribe_platform_population_visibility()
+    {
+        var active_platforms = subscribed_page_elements
+            .OfType<PlatformPlotElement>()
+            .Select(element => element.Platform)
+            .Where(platform => platform is not null)
+            .Cast<Platform>()
+            .ToHashSet();
+        foreach (var platform in subscribed_plot_platforms.Where(platform => !active_platforms.Contains(platform)).ToArray())
+        {
+            platform.Populations.CollectionChanged -= platform_populations_changed;
+            subscribed_plot_platforms.Remove(platform);
+        }
+        foreach (var platform in active_platforms.Where(platform => subscribed_plot_platforms.Add(platform)))
+            platform.Populations.CollectionChanged += platform_populations_changed;
+
+        var active_populations = active_platforms.SelectMany(platform => platform.Populations).ToHashSet();
+        foreach (var population in subscribed_plot_populations.Where(population => !active_populations.Contains(population)).ToArray())
+        {
+            population.PropertyChanged -= platform_population_visibility_changed;
+            subscribed_plot_populations.Remove(population);
+        }
+        foreach (var population in active_populations.Where(population => subscribed_plot_populations.Add(population)))
+            population.PropertyChanged += platform_population_visibility_changed;
+    }
+
+    private void platform_populations_changed(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        resubscribe_platform_population_visibility();
+        refresh_platform_plot_elements(platform => ReferenceEquals(platform.Populations, sender));
+    }
+
+    private void platform_population_visibility_changed(object? sender, PropertyChangedEventArgs e)
+    {
+        if (sender is not PlatformPopulationInput population ||
+            e.PropertyName is not (nameof(PlatformPopulationInput.IsSelected) or null or ""))
+            return;
+        refresh_platform_plot_elements(platform => platform.Populations.Contains(population));
+    }
+
+    private void refresh_platform_plot_elements(Func<Platform, bool> predicate)
+    {
+        foreach (var element in subscribed_page_elements.OfType<PlatformPlotElement>())
+        {
+            if (element.Platform is not { } platform || !predicate(platform))
+                continue;
+            remove_element_caches(element.Id);
+        }
+        InvalidateVisual();
     }
 
     private void page_element_property_changed(object? sender, PropertyChangedEventArgs e)

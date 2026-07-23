@@ -33,19 +33,6 @@ def _geometric_mean(values):
     return float(np.exp(np.mean(np.log(values))))
 
 
-def _smooth(values, half_window):
-    values = np.asarray(values, dtype=float)
-    half_window = int(max(0, half_window))
-    if half_window <= 0 or values.size == 0:
-        return values
-    out = np.empty_like(values)
-    for index in range(values.size):
-        start = max(0, index - half_window)
-        stop = min(values.size, index + half_window + 1)
-        out[index] = np.mean(values[start:stop])
-    return out
-
-
 def _normality_p(values):
     values = np.asarray(values, dtype=float)
     values = values[np.isfinite(values)]
@@ -88,15 +75,15 @@ def _ks_p(values, reference):
     return float(stats.ks_2samp(values, reference, alternative="two-sided").pvalue)
 
 
-def _chisquare_p(values, reference, minimum, maximum):
+def _chisquare_p(values, reference, minimum, maximum, bins):
     values = np.asarray(values, dtype=float)
     reference = np.asarray(reference, dtype=float)
     values = values[np.isfinite(values)]
     reference = reference[np.isfinite(reference)]
     if values.size == 0 or reference.size == 0 or maximum <= minimum:
         return np.nan
-    observed, _ = np.histogram(values, bins=64, range=(minimum, maximum))
-    expected, _ = np.histogram(reference, bins=64, range=(minimum, maximum))
+    observed, _ = np.histogram(values, bins=bins, range=(minimum, maximum))
+    expected, _ = np.histogram(reference, bins=bins, range=(minimum, maximum))
     observed = observed.astype(float)
     expected = expected.astype(float)
     keep = (observed + expected) > 0
@@ -131,15 +118,19 @@ def _main():
         )
         return
 
-    channel = platform.channels[0] if len(platform.channels) else "Intensity"
-    major = getattr(platform, "major", channel) or channel
-    options = platform.transformations.get(major, None)
-    x_min = float(options.min) if options is not None else float(np.nanmin(transformed[:, 0]))
-    x_max = float(options.max) if options is not None else float(np.nanmax(transformed[:, 0]))
     values_for_range = transformed[:, 0][np.isfinite(transformed[:, 0])]
-    if values_for_range.size and (not np.isfinite(x_min) or not np.isfinite(x_max) or x_max <= x_min):
+    if values_for_range.size:
         x_min = float(np.min(values_for_range))
         x_max = float(np.max(values_for_range))
+        if str(getattr(platform, "transform", "linear")) == "linear":
+            x_min = min(-0.1, x_min)
+            x_max = max(1.1, x_max)
+        elif x_max > x_min:
+            padding = 0.1 * (x_max - x_min)
+            x_min -= padding
+            x_max += padding
+    else:
+        x_min, x_max = 0.0, 1.0
     if not np.isfinite(x_min) or not np.isfinite(x_max) or x_max <= x_min:
         x_min, x_max = 0.0, 1.0
 
@@ -181,6 +172,8 @@ def _main():
     if reference is None:
         reference = sources[0]
     reference_values = reference["values"]
+    distribution_binning = int(platform.parameters.get("distribution_binning", 100) or 100)
+    distribution_binning = max(16, min(1000, distribution_binning))
 
     columns = [
         "Sample",
@@ -200,14 +193,14 @@ def _main():
     ]
 
     rows = []
-    reference_mean = float(np.mean(reference_values))
-    reference_median = float(np.median(reference_values))
+    reference_mean = float(np.mean(reference["raw_values"]))
+    reference_median = float(np.median(reference["raw_values"]))
     reference_geomean = _geometric_mean(reference["raw_values"])
     for item in sources:
         values = item["values"]
         raw_values = item["raw_values"]
-        mean = float(np.mean(values))
-        median = float(np.median(values))
+        mean = float(np.mean(raw_values))
+        median = float(np.median(raw_values))
         geomean = _geometric_mean(raw_values)
         is_reference = item["source_id"] == reference["source_id"]
         rows.append(
@@ -221,7 +214,8 @@ def _main():
                 "1" if is_reference else _fmt_fold(mean / reference_mean if reference_mean else np.nan),
                 "1" if is_reference else _fmt_fold(median / reference_median if reference_median else np.nan),
                 "1" if is_reference else _fmt_fold(geomean / reference_geomean if reference_geomean else np.nan),
-                "-" if is_reference else _fmt_p(_chisquare_p(values, reference_values, x_min, x_max)),
+                "-" if is_reference else _fmt_p(_chisquare_p(
+                    values, reference_values, x_min, x_max, distribution_binning)),
                 _fmt_p(_normality_p(values)),
                 "-" if is_reference else _fmt_p(_ztest_p(values, reference_values)),
                 "-" if is_reference else _fmt_p(_mannwhitney_p(values, reference_values)),
@@ -230,26 +224,6 @@ def _main():
         )
 
     platform.set_result_table("intensity_comparison", "Intensity comparison", columns, rows)
-
-    bins = 400
-    centers = np.linspace(x_min, x_max, bins, endpoint=False) + (x_max - x_min) / (2.0 * bins)
-    half_window = int(getattr(platform, "smoothing_window", 0) or 0)
-    smoothing_enabled = bool(getattr(platform, "enable_smoothing", False))
-    for item in sources:
-        counts, _ = np.histogram(item["values"], bins=bins, range=(x_min, x_max))
-        frequency = counts.astype(float) / max(float(np.sum(counts)), 1.0)
-        if smoothing_enabled:
-            frequency = _smooth(frequency, half_window)
-        platform.set_plot_series(
-            f"source_{item['source_id']}",
-            item["label"],
-            centers.tolist(),
-            frequency.tolist(),
-            major,
-            "Frequency",
-            item["source_id"],
-            "observed",
-        )
 
     platform.set_statistic("Reference", reference["label"])
     platform.set_statistic("Compared populations", len(sources))

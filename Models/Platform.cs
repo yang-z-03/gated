@@ -62,6 +62,8 @@ public static class PlatformParameterKeys
     public const string MaxGenerations = "max_generations";
     public const string PeakProminence = "peak_prominence";
     public const string ReferenceSample = "reference_sample";
+    public const string DistributionBinning = "distribution_binning";
+    public const string ArcsinhCofactor = "arcsinh_cofactor";
 }
 
 public sealed class PlatformRunState : NotifyBase
@@ -543,6 +545,12 @@ public abstract class UnivariatePlatform : Platform
         set => smoothing.Enabled = value;
     }
 
+    public double ArcsinhCofactor
+    {
+        get => get_double_parameter(PlatformParameterKeys.ArcsinhCofactor, 5.0, 0.000001, 1_000_000);
+        set => set_parameter(PlatformParameterKeys.ArcsinhCofactor, Math.Clamp(value, 0.000001, 1_000_000), nameof(ArcsinhCofactor));
+    }
+
     protected override void OnConfigurationInvalidated()
     {
         Histogram = [];
@@ -629,6 +637,12 @@ public sealed class ProliferationPlatform : UnivariatePlatform
         set => set_parameter(PlatformParameterKeys.DrawComponents, value, nameof(DrawComponents));
     }
 
+    public bool FillComponents
+    {
+        get => get_bool_parameter(PlatformParameterKeys.FillComponents, true);
+        set => set_parameter(PlatformParameterKeys.FillComponents, value, nameof(FillComponents));
+    }
+
     public int MaxGenerations
     {
         get => get_int_parameter(PlatformParameterKeys.MaxGenerations, 8, 1, 32);
@@ -651,6 +665,13 @@ public sealed class IntensityComparisonPlatform : UnivariatePlatform
         get => get_string_parameter(PlatformParameterKeys.ReferenceSample, "");
         set => set_parameter(PlatformParameterKeys.ReferenceSample, value ?? "", nameof(ReferenceSample));
     }
+
+    public int DistributionBinning
+    {
+        get => get_int_parameter(PlatformParameterKeys.DistributionBinning, 100, 16, 1000);
+        set => set_parameter(PlatformParameterKeys.DistributionBinning, Math.Clamp(value, 16, 1000), nameof(DistributionBinning));
+    }
+
 }
 
 public sealed class PlatformChannelTransformation : NotifyBase
@@ -659,6 +680,7 @@ public sealed class PlatformChannelTransformation : NotifyBase
     private double minimum;
     private double maximum = new LogicleParameters().T;
     private LogicleParameters logicle = new();
+    private double arcsinh_cofactor = 5.0;
 
     public PlatformTransformationKind Kind
     {
@@ -683,6 +705,14 @@ public sealed class PlatformChannelTransformation : NotifyBase
         get => logicle;
         set => SetField(ref logicle, value);
     }
+
+    public double ArcsinhCofactor
+    {
+        get => arcsinh_cofactor;
+        set => SetField(ref arcsinh_cofactor, double.IsFinite(value) && value > 0 ? value : 5.0);
+    }
+
+    public bool IsAutomatic { get; set; } = true;
 }
 
 public sealed class PlatformResultTable
@@ -745,6 +775,7 @@ public sealed class PlatformPopulationInput : NotifyBase
     private bool is_platform_dropped;
     private Guid? parent_key;
     private Guid row_key = Guid.NewGuid();
+    private int plot_color_index = -1;
 
     public Guid RowKey
     {
@@ -796,6 +827,12 @@ public sealed class PlatformPopulationInput : NotifyBase
     {
         get => is_platform_dropped;
         set => SetField(ref is_platform_dropped, value);
+    }
+
+    public int PlotColorIndex
+    {
+        get => plot_color_index;
+        set => SetField(ref plot_color_index, value);
     }
 
     public string DisplayName => IsPopulation ? PopulationName : $"{GroupName} / {SampleName}";

@@ -38,6 +38,7 @@ public sealed class PlatformPlotDocument
     public string XLabel { get; init; } = "Intensity";
     public string YLabel { get; init; } = "Frequency";
     public PlatformTransformationKind XTransform { get; init; }
+    public AxisScale XScale { get; init; } = new();
     public double Minimum { get; init; }
     public double Maximum { get; init; } = 1;
     public LogicleParameters Logicle { get; init; } = new();

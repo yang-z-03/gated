@@ -757,10 +757,17 @@ public sealed class HistogramView : Control
     {
         var major_grid_pen = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("OverlayGridMajor")), 1);
         var minor_grid_pen = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("OverlayGridMinor")), 1);
-        for (int index = 1; index < 5; index++)
+
+        foreach (double tick in minor_y_axis_ticks())
         {
-            double y = plot_rect.Bottom - plot_rect.Height * index / 5.0;
-            context.DrawLine(index == 5 ? major_grid_pen : minor_grid_pen, new Point(plot_rect.Left, y), new Point(plot_rect.Right, y));
+            double y = y_data_to_screen(tick);
+            context.DrawLine(minor_grid_pen, new Point(plot_rect.Left, y), new Point(plot_rect.Right, y));
+        }
+
+        foreach (double tick in major_y_axis_ticks())
+        {
+            double y = y_data_to_screen(tick);
+            context.DrawLine(major_grid_pen, new Point(plot_rect.Left, y), new Point(plot_rect.Right, y));
         }
 
         foreach (double tick in minor_axis_ticks())
@@ -799,9 +806,8 @@ public sealed class HistogramView : Control
             draw_centered_text(context, format_axis_value(tick), new Point(x, plot_rect.Bottom + 8), 11, tick_text);
         }
 
-        for (int index = 0; index <= 5; index++)
+        foreach (double value in major_y_axis_ticks())
         {
-            double value = YMinimum + (YMaximum - YMinimum) * index / 5.0;
             double y = y_data_to_screen(value);
             context.DrawLine(tick_pen, new Point(plot_rect.Left - 6, y), new Point(plot_rect.Left, y));
             draw_right_aligned_text(context, format_axis_value(value), new Point(plot_rect.Left - 8, y - 7), 11, tick_text);
@@ -859,6 +865,45 @@ public sealed class HistogramView : Control
         foreach (double value in Configuration.MinorAxisTicks(axis))
             if (value >= prepared.Minimum && value <= prepared.Maximum)
                 yield return value;
+    }
+
+    private IEnumerable<double> major_y_axis_ticks()
+    {
+        if (!double.IsFinite(YMinimum) || !double.IsFinite(YMaximum) || YMaximum <= YMinimum)
+            yield break;
+
+        var axis = y_axis_settings();
+        foreach (double value in Configuration.MajorAxisTicks(axis))
+            if (value >= YMinimum && value <= YMaximum)
+                yield return value;
+    }
+
+    private IEnumerable<double> minor_y_axis_ticks()
+    {
+        if (!double.IsFinite(YMinimum) || !double.IsFinite(YMaximum) || YMaximum <= YMinimum)
+            yield break;
+
+        var axis = y_axis_settings();
+        foreach (double value in Configuration.MinorAxisTicks(axis))
+            if (value >= YMinimum && value <= YMaximum)
+                yield return value;
+    }
+
+    private AxisSettings y_axis_settings()
+    {
+        var axis = new AxisSettings
+        {
+            Minimum = YMinimum,
+            Maximum = YMaximum,
+            ScaleKind = y_scale().Kind
+        };
+        axis.Scale.Logicle = new LogicleParameters(
+            LogicleTopOfScale,
+            LogicleLinearizationWidth,
+            LogicleDecades,
+            LogicleNegativeDecades);
+        axis.ArcsinhCofactor = ArcsinhCofactor;
+        return axis;
     }
 
     private double data_to_screen(double value)
@@ -1015,16 +1060,24 @@ public sealed class HistogramView : Control
 
     private (double Minimum, double Maximum) effective_bounds()
     {
+        if (Minimum is { } requested_minimum && double.IsFinite(requested_minimum) &&
+            Maximum is { } requested_maximum && double.IsFinite(requested_maximum))
+        {
+            if (requested_maximum < requested_minimum)
+                (requested_minimum, requested_maximum) = (requested_maximum, requested_minimum);
+            return (requested_minimum, requested_maximum);
+        }
+
         var finite = finite_sorted_values();
         if (finite.Length == 0)
             return (Minimum ?? 0, Maximum ?? 1);
         double observed_minimum = percentile_in_sorted(finite, 0.0001);
         double observed_maximum = percentile_in_sorted(finite, 0.999);
-        double minimum = Minimum is { } requested_minimum && double.IsFinite(requested_minimum)
-            ? requested_minimum
+        double minimum = Minimum is { } supplied_minimum && double.IsFinite(supplied_minimum)
+            ? supplied_minimum
             : observed_minimum;
-        double maximum = Maximum is { } requested_maximum && double.IsFinite(requested_maximum)
-            ? requested_maximum
+        double maximum = Maximum is { } supplied_maximum && double.IsFinite(supplied_maximum)
+            ? supplied_maximum
             : observed_maximum;
         if (maximum < minimum)
             (minimum, maximum) = (maximum, minimum);

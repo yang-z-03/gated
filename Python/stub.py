@@ -332,8 +332,8 @@ class Platform:
         '''Writes a named x/y result. role is observed, fit, or component.'''
         ...
 
-    def set_fit_curve(self, key: str, title: str, kind: str, source_id: int, parameters: list[float], normalizer: float = 1.0, x_label: str = "", y_label: str = ""):
-        '''Writes a parameterized fitted curve. kind is Gaussian, GaussianSum, CellCycleSum, Linear, or Exponential.'''
+    def set_fit_curve(self, key: str, title: str, kind: str, source_id: int, parameters: list[float], normalizer: float = 1.0, x_label: str = "", y_label: str = "", role: str = "fit"):
+        '''Writes a parameterized fitted curve. kind is Gaussian, GaussianSum, CellCycleSum, Linear, or Exponential; role is fit or component.'''
         ...
 
     def add_component_gamma(self, key: str, alpha: float, beta: float, amplitude: float):

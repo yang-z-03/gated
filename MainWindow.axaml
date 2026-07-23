@@ -182,7 +182,7 @@
             <Setter Property="Margin" Value="0" />
         </Style>
         <Style Selector="DataGrid.ControlSampleGrid DataGridCell">
-            <Setter Property="Padding" Value="3,0" />
+            <Setter Property="Padding" Value="0" />
             <Setter Property="MinHeight" Value="28" />
         </Style>
         <Style Selector="DataGrid.ControlSampleGrid ComboBox">

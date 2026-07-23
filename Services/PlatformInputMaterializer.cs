@@ -16,9 +16,14 @@ public sealed class PlatformInputMaterializer
     }
 
     public bool Prepare(Platform job)
+        => prepare(job, publish_state: true);
+
+    private bool prepare(Platform job, bool publish_state)
     {
         if (!try_build_source(job, out var raw, out var source, out var batches, out var row_map, out string warning))
         {
+            if (!publish_state)
+                throw new InvalidOperationException(warning);
             set_warning(job, warning);
             return false;
         }
@@ -31,50 +36,62 @@ public sealed class PlatformInputMaterializer
         if (job is MultivariatePlatform multivariate && job.Kind != PlatformKind.Integration)
             multivariate.Normalized = null;
         update_platform_api_data(job);
-        job.WarningText = "";
-        job.Status = PlatformStatus.Ready;
-        job.CurrentStep = Math.Max(job.CurrentStep, 3);
-        job.NotifyIntegrationDataChanged();
+        if (publish_state)
+        {
+            job.WarningText = "";
+            job.Status = PlatformStatus.Ready;
+            job.CurrentStep = Math.Max(job.CurrentStep, 3);
+            job.NotifyIntegrationDataChanged();
+        }
         return true;
     }
 
-    public bool RunIntegration(Platform job)
+    public bool RunIntegration(
+        Platform job,
+        IProgress<(double Fraction, string Text)>? progress = null,
+        bool publish_state = true)
     {
-        if (!Prepare(job))
+        report(job, progress, 0, "Preparing integration data");
+        if (!prepare(job, publish_state: false))
             return false;
+        throw_if_cancelled(job);
 
-        report(job, 0, "Applying logicle normalization");
-        job.Status = PlatformStatus.Running;
+        report(job, progress, 0.05, "Applying channel transformations");
+        if (publish_state)
+            job.Status = PlatformStatus.Running;
         var integration = job as IntegrationPlatform
             ?? throw new InvalidOperationException("Integration can only run on an integration platform.");
-        var pipeline = new ReductionPipeline(job.Compensated!);
-        pipeline.ApplyLogicle(
-            new LogicleNormalizationOptions
-            {
-                Parameters = job.Axis.Logicle,
-                Scales = build_reduction_scales(job)
-            },
-            force: true);
-        var logicle_normalized = copy(pipeline.State.LogicleNormalized);
+        var channel_normalized = transform_integration_channels(integration, job.Compensated!);
+        job.Transformed = channel_normalized;
+        var pipeline = new ReductionPipeline(channel_normalized);
+        throw_if_cancelled(job);
 
         if (integration.BatchIds.Distinct().Skip(1).Any())
         {
-            report(job, 0.35, "Fitting CytoNorm model");
-            pipeline.FitCytoNorm(logicle_normalized!, integration.BatchIds, integration.CytoNormOptions, force: true);
-            report(job, 0.7, "Applying CytoNorm integration");
+            report(job, progress, 0.35, "Fitting CytoNorm model");
+            pipeline.FitCytoNorm(channel_normalized, integration.BatchIds, integration.CytoNormOptions, force: true);
+            throw_if_cancelled(job);
+            report(job, progress, 0.7, "Applying CytoNorm integration");
             pipeline.ApplyCytoNorm(integration.BatchIds, force: true);
             integration.Normalized = copy(pipeline.State.CytoNormNormalized);
         }
         else
         {
-            integration.Normalized = logicle_normalized;
+            integration.Normalized = copy(channel_normalized);
         }
 
-        report(job, 1, "Integration complete");
-        job.WarningText = "";
-        job.Status = PlatformStatus.Ready;
-        job.CurrentStep = Math.Max(job.CurrentStep, 4);
-        job.NotifyIntegrationDataChanged();
+        throw_if_cancelled(job);
+        report(job, progress, 0.9, "Preparing integration plot previews");
+        _ = PlatformPresentationBuilder.Integration(integration);
+        throw_if_cancelled(job);
+        report(job, progress, 1, "Integration complete");
+        if (publish_state)
+        {
+            job.WarningText = "";
+            job.Status = PlatformStatus.Ready;
+            job.CurrentStep = Math.Max(job.CurrentStep, 4);
+            job.NotifyIntegrationDataChanged();
+        }
         return true;
     }
 
@@ -92,7 +109,7 @@ public sealed class PlatformInputMaterializer
         row_map = new PlatformRowMap();
         warning = "";
 
-        var selected_populations = job.Populations.Where(item => item.IsPlatformDropped).ToArray();
+        var selected_populations = PlatformInitializer.SelectedPopulationInputs(job).ToArray();
         if (selected_populations.Length == 0)
         {
             warning = job.Kind == PlatformKind.Integration
@@ -268,28 +285,40 @@ public sealed class PlatformInputMaterializer
         }
     }
 
-    private CoordinateScaleKind[,] build_reduction_scales(Platform job)
+    private static float[,] transform_integration_channels(IntegrationPlatform job, float[,] source)
     {
         var features = job.SelectedFeatureNames;
-        var scales = new CoordinateScaleKind[job.RowMap.Count, features.Length];
-        for (int row = 0; row < job.RowMap.Count; row++)
+        int rows = source.GetLength(0);
+        int columns = source.GetLength(1);
+        var result = new float[rows, columns];
+        var options = features.Select(feature =>
+                job.Transformations.TryGetValue(feature, out var configured)
+                    ? configured
+                    : new PlatformChannelTransformation())
+            .ToArray();
+        var logicle = options.Select(option => option.Kind == PlatformTransformationKind.Logicle
+                ? new LogicleTransform(option.Logicle)
+                : null)
+            .ToArray();
+        for (int row = 0; row < rows; row++)
+        for (int column = 0; column < columns; column++)
         {
-            int source_id = job.RowMap.SourceIds[row];
-            var source = source_id >= 0 && source_id < job.RowMap.Sources.Count
-                ? job.RowMap.Sources[source_id]
-                : null;
-            var sample = source is null ? null : find_sample(source.SampleId);
-            string cytometer_name = Configuration.CytometerNameForSample(sample);
-            for (int column = 0; column < features.Length; column++)
+            double value = source[row, column];
+            if (!double.IsFinite(value))
             {
-                string feature = features[column];
-                scales[row, column] = sample is not null && sample.Embeddings.ContainsKey(feature)
-                    ? CoordinateScaleKind.Linear
-                    : Configuration.DefaultCoordinateScaleForChannel(feature, cytometer_name);
+                result[row, column] = float.NaN;
+                continue;
             }
+            var option = column < options.Length ? options[column] : new PlatformChannelTransformation();
+            result[row, column] = option.Kind switch
+            {
+                PlatformTransformationKind.Logarithm => (float)(Math.Sign(value) * Math.Log10(1.0 + Math.Abs(value))),
+                PlatformTransformationKind.Logicle => (float)logicle[column]!.Transform(value),
+                PlatformTransformationKind.Arcsinh => (float)Math.Asinh(value / option.ArcsinhCofactor),
+                _ => (float)value
+            };
         }
-
-        return scales;
+        return result;
     }
 
     private Dictionary<Guid, string> build_batch_lookup(Platform job, IEnumerable<Guid> sample_ids)
@@ -309,28 +338,14 @@ public sealed class PlatformInputMaterializer
 
     private void update_platform_api_data(Platform job)
     {
-        update_transformations(job);
-        job.Transformed = transformed_matrix(job);
+        PlatformInitializer.RefreshTransformations(workspace, job);
+        job.Transformed = job.Kind == PlatformKind.Integration ? null : transformed_matrix(job);
         if (job is UnivariatePlatform univariate)
             update_univariate_data(job, univariate);
         foreach (var series in job.PlotSeries)
             job.Series[series.Key] = series;
         foreach (var curve in job.FitCurves)
             job.Models[curve.Key] = curve;
-    }
-
-    private static void update_transformations(Platform job)
-    {
-        foreach (string channel in job.SelectedFeatureNames)
-        {
-            job.Transformations[channel] = new PlatformChannelTransformation
-            {
-                Kind = job.Axis.Transform,
-                Minimum = job.Axis.Minimum,
-                Maximum = job.Axis.Maximum,
-                Logicle = job.Axis.Logicle
-            };
-        }
     }
 
     private static float[,]? transformed_matrix(Platform job)
@@ -353,9 +368,10 @@ public sealed class PlatformInputMaterializer
 
         if (job.Axis.Transform == PlatformTransformationKind.Arcsinh)
         {
+            double cofactor = arcsinh_cofactor(job);
             for (int row = 0; row < source.GetLength(0); row++)
             for (int column = 0; column < source.GetLength(1); column++)
-                result[row, column] = (float)Math.Asinh(source[row, column] / 5.0);
+                result[row, column] = (float)Math.Asinh(source[row, column] / cofactor);
             return result;
         }
 
@@ -382,7 +398,8 @@ public sealed class PlatformInputMaterializer
         var values = column_values(matrix, 0);
         double minimum = transformed_axis_value(job, job.Axis.Minimum);
         double maximum = transformed_axis_value(job, job.Axis.Maximum);
-        platform.Histogram = histogram(values, minimum, maximum, 400);
+        const int bins = 500;
+        platform.Histogram = histogram(values, minimum, maximum, bins);
         platform.Smoothed = smooth(platform.Histogram, platform.EnableSmoothing ? platform.SmoothingWindow : 0);
     }
 
@@ -400,10 +417,13 @@ public sealed class PlatformInputMaterializer
         {
             PlatformTransformationKind.Logicle => new LogicleTransform(job.Axis.Logicle).Transform(value),
             PlatformTransformationKind.Logarithm => Math.Sign(value) * Math.Log10(1.0 + Math.Abs(value)),
-            PlatformTransformationKind.Arcsinh => Math.Asinh(value / 5.0),
+            PlatformTransformationKind.Arcsinh => Math.Asinh(value / arcsinh_cofactor(job)),
             _ => value
         };
     }
+
+    private static double arcsinh_cofactor(Platform job) =>
+        job is UnivariatePlatform univariate ? univariate.ArcsinhCofactor : 5.0;
 
     private static double[] histogram(double[] values, double minimum, double maximum, int bins)
     {
@@ -476,9 +496,24 @@ public sealed class PlatformInputMaterializer
 
     private static float[,]? copy(float[,]? matrix) => matrix is null ? null : (float[,])matrix.Clone();
 
-    private static void report(Platform job, double fraction, string text)
+    private static void report(
+        Platform job,
+        IProgress<(double Fraction, string Text)>? progress,
+        double fraction,
+        string text)
     {
+        if (progress is not null)
+        {
+            progress.Report((fraction, text));
+            return;
+        }
         job.ProgressFraction = fraction;
         job.ProgressText = text;
+    }
+
+    private static void throw_if_cancelled(Platform job)
+    {
+        if (job.CancellationRequested)
+            throw new OperationCanceledException("Integration cancelled.");
     }
 }

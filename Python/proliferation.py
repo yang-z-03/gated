@@ -231,17 +231,26 @@ def _main():
                 _fmt(fraction * 100.0),
                 _fmt(area / (2.0 ** generation)),
             ])
-            platform.set_plot_series(
+            amplitude = float(np.max(components[generation])) if len(components[generation]) else 0.0
+            platform.set_fit_curve(
                 f"generation_{generation}_{source_id}",
                 f"{label} generation {generation}",
-                x.tolist(),
-                components[generation].tolist(),
+                "Gaussian",
+                source_id,
+                [amplitude, float(mean), float(peak_size)],
+                1.0,
                 major,
                 "Normalized frequency",
-                source_id,
                 "component",
             )
-        platform.set_plot_series(f"fit_{source_id}", f"{label} fit", x.tolist(), model.tolist(), major, "Normalized frequency", source_id, "fit")
+        fit_parameters = []
+        for component, mean in zip(components, means):
+            amplitude = float(np.max(component)) if len(component) else 0.0
+            fit_parameters.extend([amplitude, float(mean), float(peak_size)])
+        platform.set_fit_curve(
+            f"fit_{source_id}", f"{label} fit", "GaussianSum", source_id,
+            fit_parameters, 1.0, major, "Normalized frequency", "fit"
+        )
 
     platform.set_result_table(
         "proliferation",

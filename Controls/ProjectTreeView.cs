@@ -178,7 +178,7 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
             or ProjectNodeKind.Group
             or ProjectNodeKind.GateFolder
             or ProjectNodeKind.StatisticDefinition
-            or ProjectNodeKind.Platform;
+            or ProjectNodeKind.PlatformOutput;
 
     private static bool is_context_menu_node(ProjectNode node) =>
         node.Kind is ProjectNodeKind.Workspace
@@ -346,6 +346,7 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
             ProjectNodeKind.Embedding => "embedding.svg",
             ProjectNodeKind.PlatformFolder => "platform.svg",
             ProjectNodeKind.Platform => "integration.svg",
+            ProjectNodeKind.PlatformOutput => node.PlatformOutput?.Kind == PlatformLayoutOutputKind.Table ? "table-edit.svg" : "embedding.svg",
             ProjectNodeKind.GateFolder => "gates.svg",
             ProjectNodeKind.Gate => "gate.svg",
             ProjectNodeKind.StatisticDefinition => "stats.svg",

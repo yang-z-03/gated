@@ -314,12 +314,14 @@ public class Platform
         }
     }
 
-    public void set_fit_curve(string key, string title, string kind, int source_id, PyObject parameters, double normalizer = 1.0, string x_label = "", string y_label = "")
+    public void set_fit_curve(string key, string title, string kind, int source_id, PyObject parameters, double normalizer = 1.0, string x_label = "", string y_label = "", string role = "fit")
     {
         using (Py.GIL())
         {
             if (!Enum.TryParse(kind, ignoreCase: true, out PlatformFitCurveKind curve_kind))
                 throw new ArgumentException($"Unknown fit curve kind '{kind}'.", nameof(kind));
+            if (!Enum.TryParse(role, ignoreCase: true, out PlatformSeriesRole curve_role) || curve_role == PlatformSeriesRole.Observed)
+                throw new ArgumentException($"Unknown fitted-curve role '{role}'. Expected fit or component.", nameof(role));
 
             var curve = new PlatformFitCurve
             {
@@ -327,7 +329,7 @@ public class Platform
                 Title = string.IsNullOrWhiteSpace(title) ? "Fit" : title,
                 Kind = curve_kind,
                 SourceId = source_id,
-                Role = PlatformSeriesRole.Fit,
+                Role = curve_role,
                 Parameters = PlatformPythonHelpers.DoubleArray(parameters),
                 Normalizer = double.IsFinite(normalizer) && normalizer > 0 ? normalizer : 1.0,
                 XLabel = x_label ?? "",
@@ -341,6 +343,8 @@ public class Platform
                 Model.FitCurves.Remove(existing);
             Model.FitCurves.Add(curve);
             Model.Models[curve.Key] = curve;
+            if (curve.Role == PlatformSeriesRole.Component)
+                Model.Components[curve.Key] = [curve];
         }
     }
 
@@ -658,6 +662,14 @@ public sealed class ViewOptions
     public double w => options?.Logicle.W ?? platform?.Axis.Logicle.W ?? 0;
     public double m => options?.Logicle.M ?? platform?.Axis.Logicle.M ?? 0;
     public double a => options?.Logicle.A ?? platform?.Axis.Logicle.A ?? 0;
+    public double arcsinh_a => options?.ArcsinhCofactor ?? 5.0;
+    public string normalization => (options?.Kind ?? platform?.Axis.Transform ?? PlatformTransformationKind.Linear) switch
+    {
+        PlatformTransformationKind.Logarithm => "signed_log1p",
+        PlatformTransformationKind.Logicle => "logicle",
+        PlatformTransformationKind.Arcsinh => "arcsinh",
+        _ => "linear"
+    };
 }
 
 public sealed class PlatformPopulation

@@ -5,39 +5,66 @@
              x:Class="gated.Controls.IntegrationPlatformView"
              x:DataType="platforms:IntegrationPlatformEditorViewModel">
   <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-    <StackPanel Margin="24" Spacing="14" MaxWidth="650" Width="650" HorizontalAlignment="Center">
-      <TextBlock Foreground="{DynamicResource SemiColorText1}" Text="{Binding KindName}" />
-      <TextBox FontSize="20" Padding="6" FontWeight="Light" Text="{Binding Platform.Name}" IsEnabled="{Binding IsEditable}" />
+    <StackPanel Margin="24" Spacing="14" MaxWidth="750" Width="750" HorizontalAlignment="Center">
+      <StackPanel Margin="0,12" Spacing="8">
+        <TextBlock Foreground="{DynamicResource AppBrushText2}" FontWeight="Bold" Text="{Binding KindName}" />
+        <TextBlock Foreground="{DynamicResource SemiColorText1}" TextWrapping="Wrap" LineHeight="18" Text="{Binding KindDescription}" />
+      </StackPanel>
       <Border IsVisible="{Binding HasWarning}" BorderBrush="{DynamicResource AppBrushWarningBorder}" BorderThickness="1" CornerRadius="6" Padding="10" Background="{DynamicResource AppBrushWarningBackground}">
         <TextBlock Foreground="{DynamicResource AppBrushWarningText}" TextWrapping="Wrap" Text="{Binding Platform.WarningText}" />
       </Border>
       <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Select populations and channels" />
-      <Grid ColumnDefinitions="*,*" ColumnSpacing="14">
-        <Border Height="300" BorderBrush="{DynamicResource SemiColorBorder}" BorderThickness="1" CornerRadius="6" Background="{DynamicResource AppBrushBackground3}" ClipToBounds="True">
-          <controls:PlatformPopulationGrid />
-        </Border>
-        <Border Grid.Column="1" Height="300" BorderBrush="{DynamicResource SemiColorBorder}" BorderThickness="1" CornerRadius="6" Background="{DynamicResource AppBrushBackground3}" ClipToBounds="True">
-          <DataGrid Classes="ControlSampleGrid" AutoGenerateColumns="False" IsReadOnly="{Binding IsSelectionReadOnly}" ItemsSource="{Binding Platform.Features}">
+      <Border Height="260" BorderBrush="{DynamicResource SemiColorBorder}" BorderThickness="1" CornerRadius="6" Background="{DynamicResource AppBrushBackground3}" Padding="8" ClipToBounds="True">
+          <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+            <controls:PopulationSelectionTreeView Nodes="{Binding Platform.Populations}"
+                                                  SelectionChangedCommand="{Binding SelectionChangedCommand}"
+                                                  IsReadOnly="{Binding IsSelectionReadOnly}" />
+          </ScrollViewer>
+      </Border>
+      <Border Height="360" BorderBrush="{DynamicResource SemiColorBorder}" BorderThickness="1" CornerRadius="6" Background="{DynamicResource AppBrushBackground3}" ClipToBounds="True">
+          <DataGrid Classes="ControlSampleGrid" AutoGenerateColumns="False" IsReadOnly="{Binding IsSelectionReadOnly}" ItemsSource="{Binding IntegrationChannelRows}" GridLinesVisibility="Horizontal">
             <DataGrid.Columns>
-              <DataGridCheckBoxColumn Header="Use" Binding="{Binding IsSelected, Mode=TwoWay}" Width="55" />
-              <DataGridTextColumn Header="Channel" Binding="{Binding ChannelName}" IsReadOnly="True" Width="*" />
-              <DataGridTextColumn Header="Label" Binding="{Binding Label}" IsReadOnly="True" Width="*" />
+              <DataGridCheckBoxColumn Binding="{Binding IsSelected, Mode=TwoWay}" Width="Auto" CanUserResize="False" />
+              <DataGridTextColumn Header="Channel" Binding="{Binding ChannelName}" IsReadOnly="True" Width="105" />
+              <DataGridTextColumn Header="Label" Binding="{Binding Label}" IsReadOnly="True" Width="90" />
+              <DataGridTextColumn Header="Type" Binding="{Binding ChannelType}" IsReadOnly="True" Width="75" />
+              <DataGridTemplateColumn Header="Normalization" Width="125">
+                <DataGridTemplateColumn.CellTemplate>
+                  <DataTemplate>
+                    <ComboBox Classes="Small" Margin="2,0" ItemsSource="{Binding NormalizationChoices}" SelectedItem="{Binding SelectedNormalization}" IsEnabled="{Binding IsEditable}">
+                      <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding DisplayLabel}" /></DataTemplate></ComboBox.ItemTemplate>
+                    </ComboBox>
+                  </DataTemplate>
+                </DataGridTemplateColumn.CellTemplate>
+              </DataGridTemplateColumn>
+              <DataGridTemplateColumn Header="Parameters" Width="*" MinWidth="300">
+                <DataGridTemplateColumn.CellTemplate>
+                  <DataTemplate>
+                    <Grid Margin="3,0">
+                      <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsLogicle}">
+                        <StackPanel Orientation="Horizontal" Spacing="3"><TextBlock VerticalAlignment="Center" Text="T" /><TextBox Classes="Small" Width="64" Text="{Binding LogicleT}" IsEnabled="{Binding IsEditable}" /></StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="3"><TextBlock VerticalAlignment="Center" Text="W" /><TextBox Classes="Small" Width="44" Text="{Binding LogicleW}" IsEnabled="{Binding IsEditable}" /></StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="3"><TextBlock VerticalAlignment="Center" Text="M" /><TextBox Classes="Small" Width="44" Text="{Binding LogicleM}" IsEnabled="{Binding IsEditable}" /></StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="3"><TextBlock VerticalAlignment="Center" Text="A" /><TextBox Classes="Small" Width="44" Text="{Binding LogicleA}" IsEnabled="{Binding IsEditable}" /></StackPanel>
+                      </StackPanel>
+                      <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center" IsVisible="{Binding IsArcsinh}">
+                        <TextBlock VerticalAlignment="Center" Text="a" />
+                        <TextBox Classes="Small" Width="64" Text="{Binding ArcsinhA}" IsEnabled="{Binding IsEditable}" />
+                      </StackPanel>
+                      <TextBlock VerticalAlignment="Center" Foreground="{DynamicResource SemiColorText2}" Text="—" IsVisible="{Binding HasNoParameters}" />
+                    </Grid>
+                  </DataTemplate>
+                </DataGridTemplateColumn.CellTemplate>
+              </DataGridTemplateColumn>
             </DataGrid.Columns>
           </DataGrid>
-        </Border>
-      </Grid>
+      </Border>
       <StackPanel Spacing="8">
         <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Batch metadata column" />
         <ComboBox Classes="Small" Width="260" IsEnabled="{Binding IsEditable}" ItemsSource="{Binding BatchColumnChoices}" SelectedItem="{Binding SelectedBatchColumnName}" />
       </StackPanel>
-      <Expander Header="Normalization and integration options" IsExpanded="True" IsEnabled="{Binding IsEditable}">
+      <Expander Header="Integration options" IsExpanded="True" IsEnabled="{Binding IsEditable}">
         <StackPanel Margin="0,8,0,12" Spacing="8">
-          <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="8">
-            <StackPanel><TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Logicle T" Margin="0 0 0 8"/><TextBox Text="{Binding LogicleT, UpdateSourceTrigger=PropertyChanged}" /></StackPanel>
-            <StackPanel Grid.Column="1"><TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Logicle W" Margin="0 0 0 8"/><TextBox Text="{Binding LogicleW, UpdateSourceTrigger=PropertyChanged}" /></StackPanel>
-            <StackPanel Grid.Column="2"><TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Logicle M" Margin="0 0 0 8"/><TextBox Text="{Binding LogicleM, UpdateSourceTrigger=PropertyChanged}" /></StackPanel>
-            <StackPanel Grid.Column="3"><TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Logicle A" Margin="0 0 0 8"/><TextBox Text="{Binding LogicleA, UpdateSourceTrigger=PropertyChanged}" /></StackPanel>
-          </Grid>
           <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
             <StackPanel><TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Quantiles" Margin="0 0 0 8"/><NumericUpDown Classes="Small" Minimum="3" Maximum="1000" Value="{Binding CytoNormQuantileCount}" /></StackPanel>
             <StackPanel Grid.Column="1"><TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Minimum cells" Margin="0 0 0 8"/><NumericUpDown Classes="Small" Minimum="1" Maximum="1000000" Value="{Binding CytoNormMinimumCellsPerCluster}" /></StackPanel>
@@ -73,11 +100,14 @@
           </Grid>
           <controls:HistogramView Height="230" Margin="0 -5 0 5"
                                   Series="{Binding IntegrationHistogramSeries}"
+                                  Minimum="{Binding IntegrationHistogramMinimum}"
+                                  Maximum="{Binding IntegrationHistogramMaximum}"
                                   AxisScale="{Binding IntegrationHistogramAxisScale}"
                                   LogicleTopOfScale="{Binding IntegrationHistogramLogicleT}"
                                   LogicleLinearizationWidth="{Binding IntegrationHistogramLogicleW}"
                                   LogicleDecades="{Binding IntegrationHistogramLogicleM}"
                                   LogicleNegativeDecades="{Binding IntegrationHistogramLogicleA}"
+                                  ArcsinhCofactor="{Binding IntegrationHistogramArcsinhA}"
                                   BinSmoothing="{Binding IntegrationHistogramSmoothing}"
                                   YMaximumFactor="1.1"
                                   IsGatingEnabled="False" />

@@ -189,6 +189,26 @@ def _phase_percentages(g1, s, g2):
     return tuple(float(v / total * 100.0) for v in values)
 
 
+def _cell_cycle_curve_parameters(x, fit, g1_amp, g1_mu, g1_sigma, g2_amp, g2_mu, g2_sigma):
+    minimum = float(min(g1_mu, g2_mu))
+    maximum = float(max(g1_mu, g2_mu))
+    if maximum <= minimum:
+        maximum = minimum + max(float(x[-1] - x[0]), 1.0)
+    mask = (x >= minimum) & (x <= maximum)
+    if np.count_nonzero(mask) < 3:
+        coefficients = np.array([0.0])
+    else:
+        t = (x[mask] - minimum) / (maximum - minimum)
+        degree = min(8, int(np.count_nonzero(mask)) - 1)
+        coefficients = np.polynomial.polynomial.polyfit(t, fit["s"][mask], degree)
+    return [
+        float(g1_amp), float(g1_mu), float(g1_sigma),
+        float(g2_amp), float(g2_mu), float(g2_sigma),
+        minimum, maximum,
+        *[float(value) for value in coefficients],
+    ]
+
+
 def _main():
     platform.clear_results()
     row_map = platform.row_map
@@ -244,10 +264,28 @@ def _main():
             _fmt(g2_mu / max(g1_mu, 1e-9)),
         ])
         label = _source_label(first)
-        platform.set_plot_series(f"fit_{source_id}", f"{label} fit", x.tolist(), fit["model"].tolist(), major, "Normalized frequency", source_id, "fit")
-        platform.set_plot_series(f"component_g1_{source_id}", f"{label} G1", x.tolist(), fit["g1"].tolist(), major, "Normalized frequency", source_id, "component")
-        platform.set_plot_series(f"component_s_{source_id}", f"{label} S", x.tolist(), fit["s"].tolist(), major, "Normalized frequency", source_id, "component")
-        platform.set_plot_series(f"component_g2m_{source_id}", f"{label} G2/M", x.tolist(), fit["g2"].tolist(), major, "Normalized frequency", source_id, "component")
+        cell_cycle_parameters = _cell_cycle_curve_parameters(
+            x, fit, g1_amp, g1_mu, g1_sigma, g2_amp, g2_mu, g2_sigma
+        )
+        s_parameters = list(cell_cycle_parameters)
+        s_parameters[0] = 0.0
+        s_parameters[3] = 0.0
+        platform.set_fit_curve(
+            f"fit_{source_id}", f"{label} fit", "CellCycleSum", source_id,
+            cell_cycle_parameters, 1.0, major, "Normalized frequency", "fit"
+        )
+        platform.set_fit_curve(
+            f"component_g1_{source_id}", f"{label} G1", "Gaussian", source_id,
+            [g1_amp, g1_mu, g1_sigma], 1.0, major, "Normalized frequency", "component"
+        )
+        platform.set_fit_curve(
+            f"component_s_{source_id}", f"{label} S", "CellCycleSum", source_id,
+            s_parameters, 1.0, major, "Normalized frequency", "component"
+        )
+        platform.set_fit_curve(
+            f"component_g2m_{source_id}", f"{label} G2/M", "Gaussian", source_id,
+            [g2_amp, g2_mu, g2_sigma], 1.0, major, "Normalized frequency", "component"
+        )
 
     columns = ["Sample", "Population", "Events", "G1 %", "S %", "G2/M %", "G1 mean", "G1 CV %", "G2/M mean", "G2/M CV %", "G2/G1 ratio"]
     platform.set_result_table("cell_cycle", "Cell cycle", columns, rows)

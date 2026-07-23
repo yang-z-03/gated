@@ -1401,6 +1401,7 @@ public sealed class WorkspaceBinarySerializer
             job.Transformed = read_float_matrix(reader);
             _ = read_string(reader);
             read_platform_results(reader, job);
+            PlatformInitializer.RefreshTransformations(workspace, job);
             workspace.Platforms.Add(job);
         }
     }

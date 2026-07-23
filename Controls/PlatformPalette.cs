@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using Avalonia.Media;
 
 namespace gated.Controls;
@@ -20,17 +19,4 @@ internal static class PlatformPalette
 
     public static Color ColorForIndex(int index) => colors[Math.Abs(index) % colors.Length];
 
-    public static Color ColorForSeriesKey(string key)
-    {
-        int? source_id = trailing_number(key);
-        return source_id.HasValue ? ColorForIndex(source_id.Value) : ColorForIndex(0);
-    }
-
-    private static int? trailing_number(string key)
-    {
-        if (string.IsNullOrWhiteSpace(key))
-            return null;
-        var digits = new string(key.Reverse().TakeWhile(char.IsDigit).Reverse().ToArray());
-        return int.TryParse(digits, out int value) ? value : null;
-    }
 }

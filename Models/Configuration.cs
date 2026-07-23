@@ -811,13 +811,8 @@ public static class Configuration
     }
 
     private static ChannelAssumption? assumption_for_channel(string channel_name, string? cytometer_name)
-    {
-        cytometer_name = normalize_cytometer_name(cytometer_name);
-        var ordered = string.IsNullOrWhiteSpace(cytometer_name)
-            ? store.Cytometers
-            : store.Cytometers.Where(item => item.Name == cytometer_name).Concat(store.Cytometers.Where(item => item.Name == DefaultCytometerName));
-        return ordered.SelectMany(item => item.Channels).FirstOrDefault(item => pattern_matches(item.Pattern, channel_name));
-    }
+        => ordered_preferences(cytometer_name).SelectMany(item => item.Channels)
+            .FirstOrDefault(item => pattern_matches(item.Pattern, channel_name));
 
     private static SpectralDetectorPreference? detector_for_channel(string channel_name, string? cytometer_name) =>
         ordered_preferences(cytometer_name).SelectMany(item => item.Detectors)
@@ -826,9 +821,18 @@ public static class Configuration
     private static IEnumerable<CytometerPreference> ordered_preferences(string? cytometer_name)
     {
         cytometer_name = normalize_cytometer_name(cytometer_name);
-        return string.IsNullOrWhiteSpace(cytometer_name)
-            ? store.Cytometers
-            : store.Cytometers.Where(item => item.Name == cytometer_name).Concat(store.Cytometers.Where(item => item.Name == DefaultCytometerName));
+        if (string.IsNullOrWhiteSpace(cytometer_name))
+            return store.Cytometers;
+
+        var requested = store.Cytometers.Where(item =>
+            string.Equals(item.Name, cytometer_name, StringComparison.OrdinalIgnoreCase));
+        var other_cytometers = store.Cytometers.Where(item =>
+            !string.Equals(item.Name, cytometer_name, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(item.Name, DefaultCytometerName, StringComparison.OrdinalIgnoreCase));
+        var defaults = store.Cytometers.Where(item =>
+            string.Equals(item.Name, DefaultCytometerName, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(item.Name, cytometer_name, StringComparison.OrdinalIgnoreCase));
+        return requested.Concat(other_cytometers).Concat(defaults);
     }
 
     private static CytometerPreference get_or_create_preference(string name)

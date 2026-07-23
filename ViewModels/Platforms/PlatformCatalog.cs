@@ -14,7 +14,8 @@ public interface IPlatformImplementation
     PlatformKind Kind { get; }
     string NamePrefix { get; }
     string EditorTitle { get; }
-    IReadOnlyList<PlatformLayoutOutput> LayoutOutputs { get; }
+    string EditorDescription { get; }
+    IReadOnlyList<PlatformLayoutOutput> LayoutOutputs(Platform platform);
     Platform CreateModel();
     PlatformEditorViewModel CreateEditor(FlowWorkspace workspace, Platform platform);
     PlatformPresentation CreatePresentation(Platform platform);
@@ -48,12 +49,33 @@ internal abstract class PlatformImplementation<TPlatform> : IPlatformImplementat
     public abstract PlatformKind Kind { get; }
     public abstract string NamePrefix { get; }
     public abstract string EditorTitle { get; }
-    public abstract IReadOnlyList<PlatformLayoutOutput> LayoutOutputs { get; }
+    public abstract string EditorDescription { get; }
     public Platform CreateModel() => new TPlatform();
     public abstract PlatformEditorViewModel CreateEditor(FlowWorkspace workspace, Platform platform);
     public abstract PlatformPresentation CreatePresentation(Platform platform);
+    public virtual IReadOnlyList<PlatformLayoutOutput> LayoutOutputs(Platform platform)
+    {
+        var presentation = CreatePresentation(Require(platform));
+        var result = new List<PlatformLayoutOutput>();
+        foreach (var plot in presentation.Plots.Where(plot =>
+                     plot.Series.Any(series => series.X.Length > 0 && series.Y.Length > 0)))
+        {
+            result.Add(presentation.Outputs.FirstOrDefault(output =>
+                           output.Kind == PlatformLayoutOutputKind.Plot && output.Key == plot.Key)
+                       ?? new PlatformLayoutOutput(plot.Key, plot.Title, PlatformLayoutOutputKind.Plot, false));
+        }
+        foreach (var table in presentation.Tables.Where(table => table.Columns.Count > 0 || table.Rows.Count > 0))
+        {
+            result.Add(presentation.Outputs.FirstOrDefault(output =>
+                           output.Kind == PlatformLayoutOutputKind.Table && output.Key == table.Key)
+                       ?? new PlatformLayoutOutput(table.Key, table.Title, PlatformLayoutOutputKind.Table, false));
+        }
+        return result;
+    }
+
     public virtual bool Prepare(FlowWorkspace workspace, Platform platform) =>
         new PlatformInputMaterializer(workspace).Prepare(platform);
+
     public virtual async Task ExecuteAsync(FlowWorkspace workspace, Platform platform)
     {
         if (!Prepare(workspace, platform) || string.IsNullOrWhiteSpace(platform.ResourcePath))
@@ -66,7 +88,9 @@ internal abstract class PlatformImplementation<TPlatform> : IPlatformImplementat
             $"platform:{platform.Id}",
             platform.Name));
     }
+
     public abstract void WritePayload(BinaryWriter writer, Platform platform);
+
     public abstract void ReadPayload(BinaryReader reader, Platform platform, int payloadVersion);
 
     protected static void WriteParameters(BinaryWriter writer, Platform platform)
@@ -125,17 +149,29 @@ internal sealed class IntegrationPlatformImplementation : PlatformImplementation
     public override PlatformKind Kind => PlatformKind.Integration;
     public override string NamePrefix => "Integration";
     public override string EditorTitle => "Integration";
-    public override IReadOnlyList<PlatformLayoutOutput> LayoutOutputs =>
-        [new("integration-histogram", "Selected-channel integration histogram", PlatformLayoutOutputKind.Plot, true)];
+    public override string EditorDescription =>
+        "Integrate comparable populations across samples using shared channels, channel-specific transformations, and batch metadata for downstream analysis.";
+
     public override PlatformEditorViewModel CreateEditor(FlowWorkspace workspace, Platform platform) =>
         new IntegrationPlatformEditorViewModel(workspace, Require(platform));
+
     public override PlatformPresentation CreatePresentation(Platform platform) =>
         PlatformPresentationBuilder.Integration(Require(platform));
-    public override Task ExecuteAsync(FlowWorkspace workspace, Platform platform)
+
+    public override async Task ExecuteAsync(FlowWorkspace workspace, Platform platform)
     {
-        new PlatformInputMaterializer(workspace).RunIntegration(Require(platform));
-        return Task.CompletedTask;
+        var integration = Require(platform);
+        var progress = new Progress<(double Fraction, string Text)>(update =>
+        {
+            integration.ProgressFraction = update.Fraction;
+            integration.ProgressText = update.Text;
+        });
+        await Task.Run(() => new PlatformInputMaterializer(workspace)
+            .RunIntegration(integration, progress, publish_state: false));
+        integration.CurrentStep = Math.Max(integration.CurrentStep, 4);
+        integration.NotifyIntegrationDataChanged();
     }
+
     public override void WritePayload(BinaryWriter writer, Platform platform)
     {
         var integration = Require(platform);
@@ -148,7 +184,22 @@ internal sealed class IntegrationPlatformImplementation : PlatformImplementation
         if (integration.CytoNormOptions.GoalBatch.HasValue) writer.Write(integration.CytoNormOptions.GoalBatch.Value);
         WriteDoubleArray(writer, integration.CytoNormOptions.Limits);
         WriteParameters(writer, integration);
+        writer.Write(integration.Transformations.Count);
+        foreach (var item in integration.Transformations.OrderBy(item => item.Key, StringComparer.Ordinal))
+        {
+            writer.Write(item.Key);
+            writer.Write((int)item.Value.Kind);
+            writer.Write(item.Value.Minimum);
+            writer.Write(item.Value.Maximum);
+            writer.Write(item.Value.Logicle.T);
+            writer.Write(item.Value.Logicle.W);
+            writer.Write(item.Value.Logicle.M);
+            writer.Write(item.Value.Logicle.A);
+            writer.Write(item.Value.ArcsinhCofactor);
+            writer.Write(item.Value.IsAutomatic);
+        }
     }
+
     public override void ReadPayload(BinaryReader reader, Platform platform, int payloadVersion)
     {
         var integration = Require(platform);
@@ -163,6 +214,28 @@ internal sealed class IntegrationPlatformImplementation : PlatformImplementation
             Limits = ReadDoubleArray(reader)
         };
         ReadParameters(reader, integration);
+        if (reader.BaseStream.Position >= reader.BaseStream.Length)
+            return;
+        int transformation_count = reader.ReadInt32();
+        if (transformation_count < 0 || transformation_count > 100_000)
+            throw new InvalidDataException("Invalid integration channel transformation count.");
+        for (int index = 0; index < transformation_count; index++)
+        {
+            string channel = reader.ReadString();
+            integration.Transformations[channel] = new PlatformChannelTransformation
+            {
+                Kind = (PlatformTransformationKind)reader.ReadInt32(),
+                Minimum = reader.ReadDouble(),
+                Maximum = reader.ReadDouble(),
+                Logicle = new LogicleParameters(
+                    reader.ReadDouble(),
+                    reader.ReadDouble(),
+                    reader.ReadDouble(),
+                    reader.ReadDouble()),
+                ArcsinhCofactor = reader.ReadDouble(),
+                IsAutomatic = reader.ReadBoolean()
+            };
+        }
     }
 }
 
@@ -171,15 +244,15 @@ internal sealed class CellCyclePlatformImplementation : PlatformImplementation<C
     public override PlatformKind Kind => PlatformKind.CellCycle;
     public override string NamePrefix => "Cell cycle";
     public override string EditorTitle => "Univariate cell cycle modeling";
-    public override IReadOnlyList<PlatformLayoutOutput> LayoutOutputs =>
-    [
-        new("cell-cycle-plot", "Composite fitted histogram", PlatformLayoutOutputKind.Plot, true),
-        new("cell_cycle", "Cell-cycle table", PlatformLayoutOutputKind.Table, true)
-    ];
+    public override string EditorDescription =>
+        "Fit DNA-content distributions to estimate cell-cycle phase fractions and visualize the observed distribution, model sum, and fitted components.";
+
     public override PlatformEditorViewModel CreateEditor(FlowWorkspace workspace, Platform platform) =>
         new CellCyclePlatformEditorViewModel(workspace, Require(platform));
+
     public override PlatformPresentation CreatePresentation(Platform platform) =>
         PlatformPresentationBuilder.Univariate(Require(platform), "cell-cycle-plot", "Cell cycle", "cell_cycle", true, Require(platform).DrawModelSum, Require(platform).DrawComponents);
+
     public override void WritePayload(BinaryWriter writer, Platform platform)
     {
         var value = Require(platform);
@@ -190,6 +263,7 @@ internal sealed class CellCyclePlatformImplementation : PlatformImplementation<C
         WriteSmoothing(writer, value);
         WriteParameters(writer, value);
     }
+
     public override void ReadPayload(BinaryReader reader, Platform platform, int payloadVersion)
     {
         var value = Require(platform);
@@ -207,16 +281,15 @@ internal sealed class ProliferationPlatformImplementation : PlatformImplementati
     public override PlatformKind Kind => PlatformKind.Proliferation;
     public override string NamePrefix => "Proliferation";
     public override string EditorTitle => "Proliferation modeling";
-    public override IReadOnlyList<PlatformLayoutOutput> LayoutOutputs =>
-    [
-        new("proliferation-plot", "Composite fitted histogram", PlatformLayoutOutputKind.Plot, true),
-        new("proliferation", "Proliferation summary", PlatformLayoutOutputKind.Table, true),
-        new("proliferation_generations", "Generation fractions", PlatformLayoutOutputKind.Table, false)
-    ];
+    public override string EditorDescription =>
+        "Fit division peaks in a proliferation-dye distribution to estimate generation structure and visualize the observed distribution and fitted components.";
+
     public override PlatformEditorViewModel CreateEditor(FlowWorkspace workspace, Platform platform) =>
         new ProliferationPlatformEditorViewModel(workspace, Require(platform));
+
     public override PlatformPresentation CreatePresentation(Platform platform) =>
         PlatformPresentationBuilder.Univariate(Require(platform), "proliferation-plot", "Proliferation", "proliferation", true, Require(platform).DrawModelSum, Require(platform).DrawComponents);
+
     public override void WritePayload(BinaryWriter writer, Platform platform)
     {
         var value = Require(platform);
@@ -227,6 +300,7 @@ internal sealed class ProliferationPlatformImplementation : PlatformImplementati
         WriteSmoothing(writer, value);
         WriteParameters(writer, value);
     }
+
     public override void ReadPayload(BinaryReader reader, Platform platform, int payloadVersion)
     {
         var value = Require(platform);
@@ -244,15 +318,12 @@ internal sealed class IntensityComparisonPlatformImplementation : PlatformImplem
     public override PlatformKind Kind => PlatformKind.IntensityComparison;
     public override string NamePrefix => "Intensity comparison";
     public override string EditorTitle => "Population intensity comparison";
-    public override IReadOnlyList<PlatformLayoutOutput> LayoutOutputs =>
-    [
-        new("intensity-comparison-plot", "Overlaid histogram", PlatformLayoutOutputKind.Plot, true),
-        new("intensity_comparison", "Comparison table", PlatformLayoutOutputKind.Table, true)
-    ];
+    public override string EditorDescription =>
+        "Compare intensity distributions for a shared channel across selected populations, using one population as the statistical reference.";
     public override PlatformEditorViewModel CreateEditor(FlowWorkspace workspace, Platform platform) =>
         new IntensityComparisonPlatformEditorViewModel(workspace, Require(platform));
     public override PlatformPresentation CreatePresentation(Platform platform) =>
-        PlatformPresentationBuilder.Univariate(Require(platform), "intensity-comparison-plot", "Intensity comparison", "intensity_comparison", true, true, true, false);
+        PlatformPresentationBuilder.Univariate(Require(platform), "intensity-comparison-plot", "Intensity comparison", "intensity_comparison", true, true, true);
     public override void WritePayload(BinaryWriter writer, Platform platform)
     {
         var value = Require(platform);

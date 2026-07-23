@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using Avalonia.Media;
@@ -48,6 +49,7 @@ public abstract class PlatformEditorViewModel : NotifyBase
     public Platform Platform { get; }
     public ObservableCollection<AxisChoice> ChannelChoices { get; } = new();
     public ObservableCollection<PlatformTransformationKind> TransformationChoices { get; } = new(Enum.GetValues<PlatformTransformationKind>());
+    public ObservableCollection<EnumDisplayChoice<PlatformTransformationKind>> IntensityTransformationChoices { get; } = new(enum_choices<PlatformTransformationKind>());
     public ObservableCollection<EnumDisplayChoice<CellCycleModelKind>> CellCycleModelChoices { get; } = new(enum_choices<CellCycleModelKind>());
     public ObservableCollection<EnumDisplayChoice<CytoNormGoal>> CytoNormGoalChoices { get; } = new(enum_choices<CytoNormGoal>());
     public ObservableCollection<string> BatchColumnChoices { get; } = new();
@@ -70,14 +72,15 @@ public abstract class PlatformEditorViewModel : NotifyBase
         : IsReadOnly;
     public bool HasWarning => Platform.HasWarning;
     public string KindName => PlatformCatalog.Get(Platform.Kind).EditorTitle;
+    public string KindDescription => PlatformCatalog.Get(Platform.Kind).EditorDescription;
     public PlatformPlotDocument? PlotDocument => PlatformCatalog.Get(Platform.Kind).CreatePresentation(Platform).Plots.FirstOrDefault();
     public IReadOnlyList<HistogramCurveSeries> PlatformHistogramCurves => PlotDocument?.Series.Select(series => new HistogramCurveSeries
     {
         Name = series.Title,
         Points = series.X.Zip(series.Y, (x, y) => new HistogramPoint(x, y)).ToArray(),
-        Color = PlatformPalette.ColorForSeriesKey(series.Key),
-        Thickness = series.Role == PlatformSeriesRole.Fit ? 2.2 : 1.4,
-        IsDashed = series.Role == PlatformSeriesRole.Component,
+        Color = PlatformPalette.ColorForIndex(series.SourceId >= 0 ? series.SourceId : 0),
+        Thickness = series.Role == PlatformSeriesRole.Observed ? 2.4 : 1.1,
+        IsDashed = false,
         FillOpacity = series.Role == PlatformSeriesRole.Component && platform_fill_components() ? 0.12 : 0
     }).ToArray() ?? [];
     public double PlatformHistogramMinimum => PlotDocument?.Minimum ?? Platform.Axis.Minimum;
@@ -85,6 +88,18 @@ public abstract class PlatformEditorViewModel : NotifyBase
     public double PlatformHistogramYMaximum => Math.Max(0.01, (PlotDocument?.Series.SelectMany(series => series.Y).Where(double.IsFinite).DefaultIfEmpty(1).Max() ?? 1) * 1.1);
     public string PlatformHistogramXTitle => PlotDocument?.XLabel ?? "Intensity";
     public string PlatformHistogramYTitle => PlotDocument?.YLabel ?? "Normalized frequency";
+    public bool HasIntensityComparisonResults => intensity_comparison_table() is not null;
+    public IReadOnlyList<IntensityComparisonResultRowViewModel> IntensityComparisonResultRows =>
+        intensity_comparison_table()?.Rows.Select(row => new IntensityComparisonResultRowViewModel(row)).ToArray() ?? [];
+    public bool HasCellCycleResults => result_table("cell_cycle") is not null;
+    public IReadOnlyList<CellCycleResultRowViewModel> CellCycleResultRows =>
+        result_table("cell_cycle")?.Rows.Select(row => new CellCycleResultRowViewModel(row)).ToArray() ?? [];
+    public bool HasProliferationResults => result_table("proliferation") is not null;
+    public IReadOnlyList<ProliferationResultRowViewModel> ProliferationResultRows =>
+        result_table("proliferation")?.Rows.Select(row => new ProliferationResultRowViewModel(row)).ToArray() ?? [];
+    public bool HasProliferationGenerationResults => result_table("proliferation_generations") is not null;
+    public IReadOnlyList<ProliferationGenerationResultRowViewModel> ProliferationGenerationResultRows =>
+        result_table("proliferation_generations")?.Rows.Select(row => new ProliferationGenerationResultRowViewModel(row)).ToArray() ?? [];
     public HistogramAxisScaleKind PlatformHistogramAxisScale => Platform.Axis.Transform switch
     {
         PlatformTransformationKind.Logarithm => HistogramAxisScaleKind.Log,
@@ -105,11 +120,12 @@ public abstract class PlatformEditorViewModel : NotifyBase
                 feature.IsSelected = feature.ChannelName == value.Name;
             if (Platform is UnivariatePlatform univariate)
                 univariate.Major = value.Name;
-            Platform.Axis.Transform = Configuration.DefaultPlatformTransformationForChannel(value.Name);
+            Platform.Axis.Transform = default_transformation_for_channel(value.Name);
             reset_x_axis_range();
             Platform.InvalidateFromConfiguration();
             prepare_preview();
             OnPropertyChanged();
+            notify_transformation_properties();
         }
     }
 
@@ -144,8 +160,24 @@ public abstract class PlatformEditorViewModel : NotifyBase
             Platform.Axis.Transform = value;
             AxisMinimum = value == PlatformTransformationKind.Logicle ? -0.01 * AxisMaximum : -0.1 * AxisMaximum;
             display_option_changed(nameof(AxisTransform));
+            notify_transformation_properties();
         }
     }
+
+    public EnumDisplayChoice<PlatformTransformationKind>? SelectedIntensityTransformationChoice
+    {
+        get => IntensityTransformationChoices.FirstOrDefault(choice => choice.Value == AxisTransform);
+        set
+        {
+            if (value is null)
+                return;
+            AxisTransform = value.Value;
+            OnPropertyChanged();
+        }
+    }
+
+    public bool IsLogicleTransformation => AxisTransform == PlatformTransformationKind.Logicle;
+    public bool IsArcsinhTransformation => AxisTransform == PlatformTransformationKind.Arcsinh;
 
     public double AxisMinimum
     {
@@ -228,6 +260,30 @@ public abstract class PlatformEditorViewModel : NotifyBase
         {
             if (Platform is IntensityComparisonPlatform comparison)
                 comparison.ReferenceSample = value ?? "";
+            OnPropertyChanged();
+        }
+    }
+
+    public int IntensityDistributionBinning
+    {
+        get => Platform is IntensityComparisonPlatform comparison ? comparison.DistributionBinning : 100;
+        set
+        {
+            if (Platform is not IntensityComparisonPlatform comparison || comparison.DistributionBinning == value)
+                return;
+            comparison.DistributionBinning = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public double UnivariateArcsinhA
+    {
+        get => Platform is UnivariatePlatform univariate ? univariate.ArcsinhCofactor : 5.0;
+        set
+        {
+            if (Platform is not UnivariatePlatform univariate || univariate.ArcsinhCofactor.Equals(value))
+                return;
+            univariate.ArcsinhCofactor = value;
             OnPropertyChanged();
         }
     }
@@ -332,6 +388,17 @@ public abstract class PlatformEditorViewModel : NotifyBase
         }
     }
 
+    public bool ProliferationFillComponents
+    {
+        get => Platform is not ProliferationPlatform proliferation || proliferation.FillComponents;
+        set
+        {
+            if (Platform is ProliferationPlatform proliferation)
+                proliferation.FillComponents = value;
+            OnPropertyChanged();
+        }
+    }
+
     public int CytoNormQuantileCount
     {
         get => Platform is IntegrationPlatform integration ? integration.CytoNormOptions.QuantileCount : 99;
@@ -386,7 +453,7 @@ public abstract class PlatformEditorViewModel : NotifyBase
         }
     }
 
-    public void Dispose()
+    public virtual void Dispose()
     {
         Platform.PropertyChanged -= platform_changed;
         Platform.Populations.CollectionChanged -= populations_changed;
@@ -395,8 +462,20 @@ public abstract class PlatformEditorViewModel : NotifyBase
         foreach (var row in subscribed_feature_rows) row.PropertyChanged -= feature_row_changed;
     }
 
-    private void populations_changed(object? sender, NotifyCollectionChangedEventArgs e) => resubscribe_population_rows();
-    private void features_changed(object? sender, NotifyCollectionChangedEventArgs e) => resubscribe_feature_rows();
+    private void populations_changed(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        resubscribe_population_rows();
+        refresh_population_color_indices();
+    }
+    private void features_changed(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        resubscribe_feature_rows();
+        OnFeaturesChanged();
+    }
+
+    protected virtual void OnFeaturesChanged()
+    {
+    }
 
     private void resubscribe_population_rows()
     {
@@ -422,8 +501,9 @@ public abstract class PlatformEditorViewModel : NotifyBase
 
     private void population_row_changed(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName != nameof(PlatformPopulationInput.IsSelected))
+        if (e.PropertyName is not (nameof(PlatformPopulationInput.IsSelected) or null or ""))
             return;
+        OnPropertyChanged(nameof(PlotDocument));
         OnPropertyChanged(nameof(PlatformHistogramCurves));
         OnPropertyChanged(nameof(PlatformHistogramYMaximum));
     }
@@ -477,6 +557,7 @@ public abstract class PlatformEditorViewModel : NotifyBase
 
     private void refresh_display_choices()
     {
+        refresh_population_color_indices();
         DisplayChoices.Clear();
         foreach (var item in Platform.Populations
                      .Where(row => row.IsPlatformDropped)
@@ -489,6 +570,32 @@ public abstract class PlatformEditorViewModel : NotifyBase
              !DisplayChoices.Contains(comparison.ReferenceSample)))
             comparison.ReferenceSample = DisplayChoices.FirstOrDefault() ?? "";
         OnPropertyChanged(nameof(IntensityReferenceSample));
+    }
+
+    private void refresh_population_color_indices()
+    {
+        foreach (var row in Platform.Populations)
+            row.PlotColorIndex = -1;
+
+        if (Platform.RowMap.Sources.Count > 0)
+        {
+            for (int source_id = 0; source_id < Platform.RowMap.Sources.Count; source_id++)
+            {
+                var source = Platform.RowMap.Sources[source_id];
+                var row = Platform.Populations.FirstOrDefault(item =>
+                    item.GroupId == source.GroupId &&
+                    item.SampleId == source.SampleId &&
+                    item.GateId == source.GateId &&
+                    item.Region == source.Region);
+                if (row is not null)
+                    row.PlotColorIndex = source_id;
+            }
+            return;
+        }
+
+        int color_index = 0;
+        foreach (var row in Platform.Populations.Where(row => row.IsPlatformDropped))
+            row.PlotColorIndex = color_index++;
     }
 
     private void refresh_channel_choices()
@@ -516,6 +623,13 @@ public abstract class PlatformEditorViewModel : NotifyBase
 
     private void population_selection_changed()
     {
+        if (Platform.Kind != PlatformKind.Integration)
+        {
+            OnPropertyChanged(nameof(PlotDocument));
+            OnPropertyChanged(nameof(PlatformHistogramCurves));
+            OnPropertyChanged(nameof(PlatformHistogramYMaximum));
+            return;
+        }
         refresh_feature_choices();
         prepare_preview(preserve_fit_state: true);
         refresh_choices();
@@ -543,6 +657,7 @@ public abstract class PlatformEditorViewModel : NotifyBase
     {
         if (node is null)
             return;
+        bool had_channel_choices = Platform.Features.Any(feature => feature.IsChannel);
         int added = 0;
         if (node.Kind == ProjectNodeKind.Population && node.Group is not null && node.Sample is not null && node.Population is not null)
             added += add_population(node.Group, node.Sample, node.Population);
@@ -569,6 +684,11 @@ public abstract class PlatformEditorViewModel : NotifyBase
             return;
         }
         refresh_feature_choices();
+        if (!had_channel_choices && Platform.Kind == PlatformKind.IntensityComparison && SelectedChannel is { } initial_channel)
+        {
+            Platform.Axis.Transform = default_transformation_for_channel(initial_channel.Name);
+            notify_transformation_properties();
+        }
         reset_x_axis_range();
         Platform.InvalidateFromConfiguration();
         prepare_preview();
@@ -657,39 +777,8 @@ public abstract class PlatformEditorViewModel : NotifyBase
 
     private void refresh_feature_choices()
     {
-        var selected_sample_ids = Platform.Populations
-            .Where(row => row.IsPlatformDropped)
-            .Select(row => row.SampleId)
-            .Distinct()
-            .ToArray();
-        var samples = Workspace.Groups.SelectMany(group => group.Samples)
-            .Where(sample => selected_sample_ids.Contains(sample.Id))
-            .ToArray();
-        var previous = Platform.Features
-            .Where(feature => feature.IsChannel)
-            .ToDictionary(feature => feature.ChannelName, feature => feature.IsSelected, StringComparer.Ordinal);
-        Platform.Features.Clear();
-        if (samples.Length == 0)
-            return;
-
-        var shared = samples
-            .Select(sample => sample.Channels.Select(channel => channel.Name).ToHashSet(StringComparer.Ordinal))
-            .Aggregate((left, right) =>
-            {
-                left.IntersectWith(right);
-                return left;
-            });
-        foreach (string channel_name in shared.OrderBy(name => name, StringComparer.Ordinal))
-        {
-            var channel = samples[0].Channels.First(channel => channel.Name == channel_name);
-            Platform.Features.Add(new PlatformFeatureSelection
-            {
-                ChannelName = channel.Name,
-                Label = channel.Label,
-                IsChannel = true,
-                IsSelected = !previous.TryGetValue(channel.Name, out bool was_selected) || was_selected
-            });
-        }
+        PlatformInitializer.RefreshFeatures(Workspace, Platform);
+        PlatformInitializer.RefreshTransformations(Workspace, Platform);
         update_feature_selection_states();
         refresh_channel_choices();
     }
@@ -744,8 +833,7 @@ public abstract class PlatformEditorViewModel : NotifyBase
         string? channel_name = Platform.SelectedFeatureNames.FirstOrDefault();
         if (string.IsNullOrWhiteSpace(channel_name))
             return;
-        var sample_ids = Platform.Populations
-            .Where(row => row.IsPlatformDropped)
+        var sample_ids = PlatformInitializer.SelectedPopulationInputs(Platform)
             .Select(row => row.SampleId)
             .Distinct()
             .ToHashSet();
@@ -767,6 +855,23 @@ public abstract class PlatformEditorViewModel : NotifyBase
         OnPropertyChanged(nameof(LogicleT));
     }
 
+    private PlatformTransformationKind default_transformation_for_channel(string channel_name)
+    {
+        var selected_sample_ids = PlatformInitializer.SelectedPopulationInputs(Platform)
+            .Select(row => row.SampleId)
+            .ToHashSet();
+        var sample = Workspace.Groups
+            .SelectMany(group => group.Samples)
+            .FirstOrDefault(item => selected_sample_ids.Contains(item.Id));
+        return Configuration.DefaultCoordinateScaleForChannel(channel_name, Configuration.CytometerNameForSample(sample)) switch
+        {
+            CoordinateScaleKind.Linear => PlatformTransformationKind.Linear,
+            CoordinateScaleKind.Logarithmic => PlatformTransformationKind.Logarithm,
+            CoordinateScaleKind.Arcsinh => PlatformTransformationKind.Arcsinh,
+            _ => PlatformTransformationKind.Logicle
+        };
+    }
+
     private void prepare_preview(bool preserve_fit_state = false)
     {
         if (Platform.Kind == PlatformKind.Integration)
@@ -777,7 +882,11 @@ public abstract class PlatformEditorViewModel : NotifyBase
             string previous_warning = Platform.WarningText;
             int previous_step = Platform.CurrentStep;
             bool preserve = preserve_fit_state && (Platform.ResultTables.Count > 0 || Platform.FitCurves.Count > 0 || Platform.PlatformStatistics.Count > 0);
-            _ = PlatformCatalog.Get(Platform.Kind).Prepare(Workspace, Platform);
+            bool prepared = PlatformCatalog.Get(Platform.Kind).Prepare(Workspace, Platform);
+            if (prepared)
+                refresh_population_color_indices();
+            if (prepared && update_automatic_intensity_range())
+                _ = PlatformCatalog.Get(Platform.Kind).Prepare(Workspace, Platform);
             if (preserve)
             {
                 Platform.Status = previous_status;
@@ -792,6 +901,86 @@ public abstract class PlatformEditorViewModel : NotifyBase
         }
     }
 
+    private bool update_automatic_intensity_range()
+    {
+        if (Platform is not UnivariatePlatform univariate ||
+            Platform.Compensated is not { } matrix ||
+            matrix.GetLength(0) == 0 || matrix.GetLength(1) == 0 ||
+            Platform.RowMap.Sources.Count == 0)
+            return false;
+
+        double observed_minimum = double.PositiveInfinity;
+        double observed_maximum = double.NegativeInfinity;
+        int row_count = Math.Min(matrix.GetLength(0), Platform.RowMap.SourceIds.Length);
+        for (int source_id = 0; source_id < Platform.RowMap.Sources.Count; source_id++)
+        {
+            double population_minimum = double.PositiveInfinity;
+            double population_maximum = double.NegativeInfinity;
+            for (int row = 0; row < row_count; row++)
+            {
+                if (Platform.RowMap.SourceIds[row] != source_id)
+                    continue;
+                double value = matrix[row, 0];
+                if (!double.IsFinite(value))
+                    continue;
+                population_minimum = Math.Min(population_minimum, value);
+                population_maximum = Math.Max(population_maximum, value);
+            }
+
+            if (!double.IsFinite(population_minimum) || !double.IsFinite(population_maximum))
+                continue;
+            observed_minimum = Math.Min(observed_minimum, population_minimum);
+            observed_maximum = Math.Max(observed_maximum, population_maximum);
+        }
+
+        if (!double.IsFinite(observed_minimum) || !double.IsFinite(observed_maximum))
+            return false;
+        if (observed_maximum <= observed_minimum)
+            observed_maximum = observed_minimum + 1;
+
+        double minimum;
+        double maximum;
+        if (Platform.Axis.Transform == PlatformTransformationKind.Linear)
+        {
+            minimum = Math.Min(-0.1, observed_minimum);
+            maximum = Math.Max(1.1, observed_maximum);
+        }
+        else
+        {
+            var scale = new AxisScale
+            {
+                Kind = Platform.Axis.Transform switch
+                {
+                    PlatformTransformationKind.Logarithm => CoordinateScaleKind.Logarithmic,
+                    PlatformTransformationKind.Arcsinh => CoordinateScaleKind.Arcsinh,
+                    _ => CoordinateScaleKind.Logicle
+                },
+                Logicle = Platform.Axis.Logicle,
+                ArcsinhCofactor = univariate.ArcsinhCofactor
+            };
+            double transformed_minimum = scale.Transform(observed_minimum);
+            double transformed_maximum = scale.Transform(observed_maximum);
+            double span = transformed_maximum - transformed_minimum;
+            if (!double.IsFinite(span) || span <= 0)
+                return false;
+            minimum = scale.InverseTransform(transformed_minimum - 0.1 * span);
+            maximum = scale.InverseTransform(transformed_maximum + 0.1 * span);
+        }
+
+        if (!double.IsFinite(minimum) || !double.IsFinite(maximum) || maximum <= minimum)
+            return false;
+        bool changed = !Platform.Axis.Minimum.Equals(minimum) || !Platform.Axis.Maximum.Equals(maximum);
+        if (!changed)
+            return false;
+        Platform.Axis.Minimum = minimum;
+        Platform.Axis.Maximum = maximum;
+        OnPropertyChanged(nameof(AxisMinimum));
+        OnPropertyChanged(nameof(AxisMaximum));
+        OnPropertyChanged(nameof(PlatformHistogramMinimum));
+        OnPropertyChanged(nameof(PlatformHistogramMaximum));
+        return true;
+    }
+
     private async Task run_async()
     {
         try
@@ -799,7 +988,9 @@ public abstract class PlatformEditorViewModel : NotifyBase
             Platform.CancellationRequested = false;
             Platform.IsRunning = true;
             Platform.ProgressFraction = 0;
-            Platform.ProgressText = "Starting";
+            Platform.ProgressText = Platform.Kind == PlatformKind.Integration
+                ? "Preparing integration in the background"
+                : "Starting";
             Platform.Status = PlatformStatus.Running;
             invalidate_commands();
 
@@ -810,6 +1001,12 @@ public abstract class PlatformEditorViewModel : NotifyBase
             Platform.ProgressFraction = 1;
             Platform.ProgressText = "Complete";
             Platform.NotifyIntegrationDataChanged();
+        }
+        catch (OperationCanceledException)
+        {
+            Platform.WarningText = "Integration was cancelled. Completed intermediate results remain available.";
+            Platform.Status = PlatformStatus.Cancelled;
+            Platform.ProgressText = "Cancelled";
         }
         catch (Exception exception)
         {
@@ -882,12 +1079,22 @@ public abstract class PlatformEditorViewModel : NotifyBase
         OnPropertyChanged(nameof(PlatformHistogramYMaximum));
         OnPropertyChanged(nameof(PlatformHistogramXTitle));
         OnPropertyChanged(nameof(PlatformHistogramYTitle));
+        OnPropertyChanged(nameof(HasIntensityComparisonResults));
+        OnPropertyChanged(nameof(IntensityComparisonResultRows));
+        OnPropertyChanged(nameof(HasCellCycleResults));
+        OnPropertyChanged(nameof(CellCycleResultRows));
+        OnPropertyChanged(nameof(HasProliferationResults));
+        OnPropertyChanged(nameof(ProliferationResultRows));
+        OnPropertyChanged(nameof(HasProliferationGenerationResults));
+        OnPropertyChanged(nameof(ProliferationGenerationResultRows));
         if (handling_change || Platform.Kind == PlatformKind.Integration)
             return;
         bool display_change = e.PropertyName is nameof(CellCyclePlatform.DrawModelSum) or
                               nameof(CellCyclePlatform.DrawComponents) or
+                              nameof(CellCyclePlatform.FillComponents) or
                               nameof(ProliferationPlatform.DrawModelSum) or
-                              nameof(ProliferationPlatform.DrawComponents);
+                              nameof(ProliferationPlatform.DrawComponents) or
+                              nameof(ProliferationPlatform.FillComponents);
         bool fit_change = IsFitParameter(e.PropertyName);
         if (!display_change && !fit_change)
             return;
@@ -942,8 +1149,15 @@ public abstract class PlatformEditorViewModel : NotifyBase
     private bool platform_fill_components() => Platform switch
     {
         CellCyclePlatform cell_cycle => cell_cycle.FillComponents,
+        ProliferationPlatform proliferation => proliferation.FillComponents,
         _ => false
     };
+
+    private PlatformResultTable? intensity_comparison_table() =>
+        Platform is IntensityComparisonPlatform ? result_table("intensity_comparison") : null;
+
+    private PlatformResultTable? result_table(string key) =>
+        Platform.ResultTables.FirstOrDefault(table => string.Equals(table.Key, key, StringComparison.Ordinal));
 
     private void set_logicle(LogicleParameters value, string property_name)
     {
@@ -972,6 +1186,18 @@ public abstract class PlatformEditorViewModel : NotifyBase
         {
             handling_change = false;
         }
+    }
+
+    private void notify_transformation_properties()
+    {
+        OnPropertyChanged(nameof(AxisTransform));
+        OnPropertyChanged(nameof(SelectedIntensityTransformationChoice));
+        OnPropertyChanged(nameof(IsLogicleTransformation));
+        OnPropertyChanged(nameof(IsArcsinhTransformation));
+        OnPropertyChanged(nameof(PlatformHistogramAxisScale));
+        OnPropertyChanged(nameof(PlatformHistogramMinimum));
+        OnPropertyChanged(nameof(PlatformHistogramMaximum));
+        OnPropertyChanged(nameof(PlatformHistogramCurves));
     }
 
     private void ensure_identity_metadata_schema()
@@ -1055,6 +1281,7 @@ public abstract class PlatformEditorViewModel : NotifyBase
         value switch
         {
             CellCycleModelKind.DeanJettFox => "Dean-Jett-Fox",
+            PlatformTransformationKind.Logarithm => "Signed log1p",
             _ => split_pascal_case(value.ToString())
         };
 
@@ -1076,8 +1303,228 @@ public sealed record EnumDisplayChoice<T>(T Value, string DisplayLabel) where T 
     public override string ToString() => DisplayLabel;
 }
 
+public abstract class EditablePlatformResultRowViewModel
+{
+    private readonly string[] values;
+
+    protected EditablePlatformResultRowViewModel(string[] values)
+    {
+        this.values = values ?? [];
+    }
+
+    protected string Value(int index) => index >= 0 && index < values.Length ? values[index] : "";
+
+    protected void SetValue(int index, string? value)
+    {
+        if (index >= 0 && index < values.Length)
+            values[index] = value ?? "";
+    }
+}
+
+public sealed class IntensityComparisonResultRowViewModel(string[] values) : EditablePlatformResultRowViewModel(values)
+{
+    public string Sample { get => Value(0); set => SetValue(0, value); }
+    public string Population { get => Value(1); set => SetValue(1, value); }
+    public string Events { get => Value(2); set => SetValue(2, value); }
+    public string Mean { get => Value(3); set => SetValue(3, value); }
+    public string Median { get => Value(4); set => SetValue(4, value); }
+    public string GeometricMean { get => Value(5); set => SetValue(5, value); }
+    public string MeanFold { get => Value(6); set => SetValue(6, value); }
+    public string MedianFold { get => Value(7); set => SetValue(7, value); }
+    public string GeomeanFold { get => Value(8); set => SetValue(8, value); }
+    public string ChiSquareP { get => Value(9); set => SetValue(9, value); }
+    public string NormalityP { get => Value(10); set => SetValue(10, value); }
+    public string ZTestP { get => Value(11); set => SetValue(11, value); }
+    public string MannWhitneyP { get => Value(12); set => SetValue(12, value); }
+    public string KsP { get => Value(13); set => SetValue(13, value); }
+}
+
+public sealed class CellCycleResultRowViewModel(string[] values) : EditablePlatformResultRowViewModel(values)
+{
+    public string Sample { get => Value(0); set => SetValue(0, value); }
+    public string Population { get => Value(1); set => SetValue(1, value); }
+    public string Events { get => Value(2); set => SetValue(2, value); }
+    public string G1Percent { get => Value(3); set => SetValue(3, value); }
+    public string SPercent { get => Value(4); set => SetValue(4, value); }
+    public string G2MPercent { get => Value(5); set => SetValue(5, value); }
+    public string G1Mean { get => Value(6); set => SetValue(6, value); }
+    public string G1CvPercent { get => Value(7); set => SetValue(7, value); }
+    public string G2MMean { get => Value(8); set => SetValue(8, value); }
+    public string G2MCvPercent { get => Value(9); set => SetValue(9, value); }
+    public string G2G1Ratio { get => Value(10); set => SetValue(10, value); }
+}
+
+public sealed class ProliferationResultRowViewModel(string[] values) : EditablePlatformResultRowViewModel(values)
+{
+    public string Sample { get => Value(0); set => SetValue(0, value); }
+    public string Population { get => Value(1); set => SetValue(1, value); }
+    public string Events { get => Value(2); set => SetValue(2, value); }
+    public string Generations { get => Value(3); set => SetValue(3, value); }
+    public string DividedPercent { get => Value(4); set => SetValue(4, value); }
+    public string DivisionIndex { get => Value(5); set => SetValue(5, value); }
+    public string ProliferationIndex { get => Value(6); set => SetValue(6, value); }
+    public string ReplicationIndex { get => Value(7); set => SetValue(7, value); }
+    public string ParentM { get => Value(8); set => SetValue(8, value); }
+    public string DistanceD { get => Value(9); set => SetValue(9, value); }
+    public string PeakSizeS { get => Value(10); set => SetValue(10, value); }
+}
+
+public sealed class ProliferationGenerationResultRowViewModel(string[] values) : EditablePlatformResultRowViewModel(values)
+{
+    public string Sample { get => Value(0); set => SetValue(0, value); }
+    public string Population { get => Value(1); set => SetValue(1, value); }
+    public string Generation { get => Value(2); set => SetValue(2, value); }
+    public string Mean { get => Value(3); set => SetValue(3, value); }
+    public string Area { get => Value(4); set => SetValue(4, value); }
+    public string FractionPercent { get => Value(5); set => SetValue(5, value); }
+    public string PrecursorFrequency { get => Value(6); set => SetValue(6, value); }
+}
+
+public sealed class IntegrationChannelRowViewModel : NotifyBase, IDisposable
+{
+    private static readonly IReadOnlyList<EnumDisplayChoice<PlatformTransformationKind>> normalization_choices =
+    [
+        new(PlatformTransformationKind.Linear, "Linear"),
+        new(PlatformTransformationKind.Logarithm, "Signed log1p"),
+        new(PlatformTransformationKind.Logicle, "Logicle"),
+        new(PlatformTransformationKind.Arcsinh, "Arcsinh")
+    ];
+    private readonly Platform platform;
+    private readonly PlatformFeatureSelection feature;
+    private readonly PlatformChannelTransformation transformation;
+    private readonly Action changed;
+
+    public IntegrationChannelRowViewModel(
+        Platform platform,
+        PlatformFeatureSelection feature,
+        PlatformChannelTransformation transformation,
+        ChannelSemanticKind channel_kind,
+        Action changed)
+    {
+        this.platform = platform;
+        this.feature = feature;
+        this.transformation = transformation;
+        this.changed = changed;
+        ChannelKind = channel_kind;
+        feature.PropertyChanged += feature_changed;
+        platform.PropertyChanged += platform_changed;
+    }
+
+    public IReadOnlyList<EnumDisplayChoice<PlatformTransformationKind>> NormalizationChoices => normalization_choices;
+    public string ChannelName => feature.ChannelName;
+    public string Label => feature.Label;
+    public ChannelSemanticKind ChannelKind { get; }
+    public string ChannelType => ChannelKind.ToString();
+    public bool IsEditable => platform.IsIdle && !platform.IsConfigurationLocked;
+    public bool IsLogicle => transformation.Kind == PlatformTransformationKind.Logicle;
+    public bool IsArcsinh => transformation.Kind == PlatformTransformationKind.Arcsinh;
+    public bool HasNoParameters => !IsLogicle && !IsArcsinh;
+
+    public bool IsSelected
+    {
+        get => feature.IsSelected;
+        set => feature.IsSelected = value;
+    }
+
+    public EnumDisplayChoice<PlatformTransformationKind>? SelectedNormalization
+    {
+        get => normalization_choices.FirstOrDefault(choice => choice.Value == transformation.Kind);
+        set
+        {
+            if (value is null || value.Value == transformation.Kind)
+                return;
+            transformation.Kind = value.Value;
+            mark_changed();
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsLogicle));
+            OnPropertyChanged(nameof(IsArcsinh));
+            OnPropertyChanged(nameof(HasNoParameters));
+        }
+    }
+
+    public double LogicleT
+    {
+        get => transformation.Logicle.T;
+        set => set_logicle(transformation.Logicle with { T = positive(value, transformation.Logicle.T) });
+    }
+
+    public double LogicleW
+    {
+        get => transformation.Logicle.W;
+        set => set_logicle(transformation.Logicle with { W = finite(value, transformation.Logicle.W) });
+    }
+
+    public double LogicleM
+    {
+        get => transformation.Logicle.M;
+        set => set_logicle(transformation.Logicle with { M = positive(value, transformation.Logicle.M) });
+    }
+
+    public double LogicleA
+    {
+        get => transformation.Logicle.A;
+        set => set_logicle(transformation.Logicle with { A = finite(value, transformation.Logicle.A) });
+    }
+
+    public double ArcsinhA
+    {
+        get => transformation.ArcsinhCofactor;
+        set
+        {
+            double next = positive(value, transformation.ArcsinhCofactor);
+            if (transformation.ArcsinhCofactor.Equals(next))
+                return;
+            transformation.ArcsinhCofactor = next;
+            mark_changed();
+            OnPropertyChanged();
+        }
+    }
+
+    public void Dispose()
+    {
+        feature.PropertyChanged -= feature_changed;
+        platform.PropertyChanged -= platform_changed;
+    }
+
+    private void set_logicle(LogicleParameters value)
+    {
+        if (transformation.Logicle.Equals(value))
+            return;
+        transformation.Logicle = value;
+        transformation.Maximum = value.T;
+        mark_changed();
+        OnPropertyChanged(nameof(LogicleT));
+        OnPropertyChanged(nameof(LogicleW));
+        OnPropertyChanged(nameof(LogicleM));
+        OnPropertyChanged(nameof(LogicleA));
+    }
+
+    private void mark_changed()
+    {
+        transformation.IsAutomatic = false;
+        changed();
+    }
+
+    private void feature_changed(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(PlatformFeatureSelection.IsSelected))
+            OnPropertyChanged(nameof(IsSelected));
+    }
+
+    private void platform_changed(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(Platform.IsRunning) or nameof(Platform.IsConfigurationLocked) or null or "")
+            OnPropertyChanged(nameof(IsEditable));
+    }
+
+    private static double finite(double value, double fallback) => double.IsFinite(value) ? value : fallback;
+    private static double positive(double value, double fallback) => double.IsFinite(value) && value > 0 ? value : fallback;
+}
+
 public sealed class IntegrationPlatformEditorViewModel : PlatformEditorViewModel
 {
+    private const int maximum_preview_events_per_population = 20_000;
+    private static readonly ConditionalWeakTable<IntegrationPlatform, IntegrationHistogramCache> histogram_caches = new();
     private static readonly Color[] histogram_palette =
     [
         Color.FromRgb(20, 133, 255),
@@ -1097,9 +1544,11 @@ public sealed class IntegrationPlatformEditorViewModel : PlatformEditorViewModel
     {
         PreviousHistogramChannelCommand = new RelayCommand(_ => move_histogram_channel(-1), _ => can_move_histogram_channel(-1));
         NextHistogramChannelCommand = new RelayCommand(_ => move_histogram_channel(1), _ => can_move_histogram_channel(1));
+        refresh_integration_channel_rows();
         refresh_integration_histogram();
     }
 
+    public ObservableCollection<IntegrationChannelRowViewModel> IntegrationChannelRows { get; } = new();
     public ObservableCollection<HistogramSeries> IntegrationHistogramSeries { get; } = new();
     public ObservableCollection<AxisChoice> IntegrationHistogramChannelChoices { get; } = new();
     public ICommand PreviousHistogramChannelCommand { get; }
@@ -1115,6 +1564,7 @@ public sealed class IntegrationPlatformEditorViewModel : PlatformEditorViewModel
     public double IntegrationHistogramLogicleW { get; private set; } = new LogicleParameters().W;
     public double IntegrationHistogramLogicleM { get; private set; } = new LogicleParameters().M;
     public double IntegrationHistogramLogicleA { get; private set; } = new LogicleParameters().A;
+    public double IntegrationHistogramArcsinhA { get; private set; } = 5.0;
 
     public bool ShowNormalizedHistogram
     {
@@ -1147,29 +1597,83 @@ public sealed class IntegrationPlatformEditorViewModel : PlatformEditorViewModel
         }
     }
 
+    public override void Dispose()
+    {
+        foreach (var row in IntegrationChannelRows)
+            row.Dispose();
+        IntegrationChannelRows.Clear();
+        base.Dispose();
+    }
+
+    protected override void OnFeaturesChanged()
+    {
+        PlatformInitializer.RefreshTransformations(Workspace, Platform);
+        refresh_integration_channel_rows();
+    }
+
+    private void refresh_integration_channel_rows()
+    {
+        foreach (var row in IntegrationChannelRows)
+            row.Dispose();
+        IntegrationChannelRows.Clear();
+        foreach (var feature in Platform.Features.Where(feature => feature.IsChannel))
+        {
+            if (!Platform.Transformations.TryGetValue(feature.ChannelName, out var transformation))
+                continue;
+            IntegrationChannelRows.Add(new IntegrationChannelRowViewModel(
+                Platform,
+                feature,
+                transformation,
+                channel_kind(feature.ChannelName),
+                channel_normalization_changed));
+        }
+    }
+
+    private ChannelSemanticKind channel_kind(string channel_name)
+    {
+        var selected_ids = PlatformInitializer.SelectedPopulationInputs(Platform)
+            .Select(row => row.SampleId)
+            .ToHashSet();
+        var sample = Workspace.Groups.SelectMany(group => group.Samples)
+            .FirstOrDefault(item => selected_ids.Contains(item.Id) && item.Channels.Any(channel => channel.Name == channel_name));
+        return Configuration.ChannelKind(channel_name, Configuration.CytometerNameForSample(sample));
+    }
+
+    private void channel_normalization_changed()
+    {
+        if (Platform.HasIntegrated)
+            Platform.InvalidateFromConfiguration();
+        refresh_integration_histogram();
+    }
+
     protected override void platform_changed(object? sender, PropertyChangedEventArgs e)
     {
         base.platform_changed(sender, e);
         if (e.PropertyName is nameof(Platform.HasIntegrated) or nameof(Platform.HasResults) or nameof(Platform.IsConfigurationLocked) or nameof(Platform.Parameters) or null or "")
+        {
+            refresh_integration_channel_rows();
             refresh_integration_histogram();
+        }
     }
 
     private void refresh_integration_histogram()
     {
         refresh_histogram_channel_choices();
         ensure_histogram_channel();
-        IntegrationHistogramSeries.Clear();
-        if (!HasIntegrationHistogram || selected_histogram_channel is null)
+        if (!HasIntegrationHistogram || selected_histogram_channel is null || Platform is not IntegrationPlatform integration)
         {
+            clear_histogram_series();
             notify_histogram_properties();
             return;
         }
 
-        var matrix = ShowNormalizedHistogram && Platform is MultivariatePlatform { Normalized: not null } multivariate
-            ? multivariate.Normalized
+        bool normalized = ShowNormalizedHistogram && integration.Normalized is not null;
+        var matrix = normalized
+            ? integration.Normalized
             : Platform.Compensated;
         if (matrix is null || Platform.RowMap.Count == 0)
         {
+            clear_histogram_series();
             notify_histogram_properties();
             return;
         }
@@ -1178,88 +1682,96 @@ public sealed class IntegrationPlatformEditorViewModel : PlatformEditorViewModel
         int column = Array.IndexOf(Platform.SelectedFeatureNames, channel_name);
         if (column < 0 || column >= matrix.GetLength(1))
         {
+            clear_histogram_series();
             notify_histogram_properties();
             return;
         }
 
-        update_histogram_axis(channel_name, matrix, column);
-        var value_transform = histogram_value_transform(channel_name);
-        for (int source_id = 0; source_id < Platform.RowMap.Sources.Count; source_id++)
-        {
-            var values = new List<double>();
-            for (int row = 0; row < Platform.RowMap.SourceIds.Length && row < matrix.GetLength(0); row++)
-            {
-                if (Platform.RowMap.SourceIds[row] != source_id)
-                    continue;
-                double value = value_transform(matrix[row, column]);
-                if (double.IsFinite(value))
-                    values.Add(value);
-            }
-
-            if (values.Count == 0)
-                continue;
-
-            IntegrationHistogramSeries.Add(new HistogramSeries
-            {
-                Name = source_label(source_id),
-                Values = values,
-                BinCount = 400,
-                Color = histogram_palette[source_id % histogram_palette.Length]
-            });
-        }
-
-        notify_histogram_properties();
-    }
-
-    private void update_histogram_axis(string channel_name, float[,] matrix, int column)
-    {
-        bool normalized = ShowNormalizedHistogram;
         var scale = histogram_channel_scale(channel_name);
-        double maximum = channel_maximum(channel_name);
-        IntegrationHistogramLogicleT = maximum;
-        IntegrationHistogramLogicleW = Platform.Axis.Logicle.W;
-        IntegrationHistogramLogicleM = Platform.Axis.Logicle.M;
-        IntegrationHistogramLogicleA = Platform.Axis.Logicle.A;
+        double channel_maximum = channel_maximum_for(channel_name);
+        var transformation = Platform.Transformations.TryGetValue(channel_name, out var configured) ? configured : null;
+        IntegrationHistogramLogicleT = transformation?.Logicle.T ?? channel_maximum;
+        IntegrationHistogramLogicleW = transformation?.Logicle.W ?? Platform.Axis.Logicle.W;
+        IntegrationHistogramLogicleM = transformation?.Logicle.M ?? Platform.Axis.Logicle.M;
+        IntegrationHistogramLogicleA = transformation?.Logicle.A ?? Platform.Axis.Logicle.A;
+        IntegrationHistogramArcsinhA = transformation?.ArcsinhCofactor ?? 5.0;
+        IntegrationHistogramAxisScale = scale;
 
-        if (scale == HistogramAxisScaleKind.Linear)
-        {
-            IntegrationHistogramAxisScale = HistogramAxisScaleKind.Linear;
-            if (normalized)
-            {
-                IntegrationHistogramMinimum = normalized_observed_minimum(channel_name);
-                IntegrationHistogramMaximum = normalized_observed_maximum(channel_name);
-            }
-            else
-            {
-                IntegrationHistogramMinimum = -0.1 * maximum;
-                IntegrationHistogramMaximum = 1.1 * maximum;
-            }
-            return;
-        }
-
-        if (scale == HistogramAxisScaleKind.Log)
-        {
-            IntegrationHistogramAxisScale = HistogramAxisScaleKind.Log;
-            var log_observed = observed_real_range(matrix, column, ShowNormalizedHistogram ? value => Math.Pow(10, value) : null);
-            double log_minimum = Math.Log10(Math.Max(log_observed.Minimum, double.Epsilon));
-            double log_maximum = Math.Log10(Math.Max(log_observed.Maximum, double.Epsilon));
-            double log_span = log_maximum - log_minimum;
-            if (!double.IsFinite(log_span) || log_span <= 0)
-                log_span = 1;
-            IntegrationHistogramMinimum = Math.Pow(10, log_minimum - log_span * 0.1);
-            IntegrationHistogramMaximum = Math.Pow(10, log_maximum + log_span * 0.1);
-            return;
-        }
-
-        IntegrationHistogramAxisScale = HistogramAxisScaleKind.Logicle;
-        var transform = new LogicleTransform(new LogicleParameters(
+        var cache = histogram_caches.GetValue(integration, _ => new IntegrationHistogramCache());
+        var series = cache.GetSeries(
+            integration,
+            matrix,
+            column,
+            normalized,
+            scale,
             IntegrationHistogramLogicleT,
             IntegrationHistogramLogicleW,
             IntegrationHistogramLogicleM,
-            IntegrationHistogramLogicleA));
-        var observed = observed_real_range(matrix, column, ShowNormalizedHistogram ? value => transform.InverseTransform(value) : null);
-        double transformed_minimum = transform.Transform(observed.Minimum);
-        double transformed_maximum = transform.Transform(observed.Maximum);
+            IntegrationHistogramLogicleA,
+            IntegrationHistogramArcsinhA,
+            histogram_value_transform(normalized, scale),
+            source_label,
+            histogram_palette,
+            maximum_preview_events_per_population);
+        replace_histogram_series(series);
+        update_histogram_axis(channel_maximum, normalized, scale, series);
+        notify_histogram_properties();
+    }
+
+    private void clear_histogram_series()
+    {
+        if (IntegrationHistogramSeries.Count > 0)
+            IntegrationHistogramSeries.Clear();
+    }
+
+    private void replace_histogram_series(IReadOnlyList<HistogramSeries> series)
+    {
+        if (IntegrationHistogramSeries.SequenceEqual(series))
+            return;
+        IntegrationHistogramSeries.Clear();
+        foreach (var item in series)
+            IntegrationHistogramSeries.Add(item);
+    }
+
+    private void update_histogram_axis(
+        double channel_maximum,
+        bool normalized,
+        HistogramAxisScaleKind scale_kind,
+        IReadOnlyList<HistogramSeries> series)
+    {
+        var observed = observed_real_range(series, channel_maximum);
+        if (scale_kind == HistogramAxisScaleKind.Linear)
+        {
+            if (normalized)
+            {
+                IntegrationHistogramMinimum = Math.Min(-0.1, observed.Minimum);
+                IntegrationHistogramMaximum = Math.Max(1.1, observed.Maximum);
+            }
+            else
+            {
+                IntegrationHistogramMinimum = -0.1 * channel_maximum;
+                IntegrationHistogramMaximum = 1.1 * channel_maximum;
+            }
+            return;
+        }
+
+        var scale = new AxisScale
+        {
+            Kind = scale_kind switch
+            {
+                HistogramAxisScaleKind.Log => CoordinateScaleKind.Logarithmic,
+                HistogramAxisScaleKind.Arcsinh => CoordinateScaleKind.Arcsinh,
+                _ => CoordinateScaleKind.Logicle
+            },
+            Logicle = new LogicleParameters(
+                IntegrationHistogramLogicleT,
+                IntegrationHistogramLogicleW,
+                IntegrationHistogramLogicleM,
+                IntegrationHistogramLogicleA),
+            ArcsinhCofactor = IntegrationHistogramArcsinhA
+        };
+        double transformed_minimum = scale.Transform(observed.Minimum);
+        double transformed_maximum = scale.Transform(observed.Maximum);
         double transformed_span = transformed_maximum - transformed_minimum;
         if (!double.IsFinite(transformed_span) || transformed_span <= 0)
         {
@@ -1267,27 +1779,25 @@ public sealed class IntegrationPlatformEditorViewModel : PlatformEditorViewModel
             transformed_maximum = 1.1;
             transformed_span = 1.2;
         }
-        IntegrationHistogramMinimum = transform.InverseTransform(transformed_minimum - transformed_span * 0.1);
-        IntegrationHistogramMaximum = transform.InverseTransform(transformed_maximum + transformed_span * 0.1);
+        IntegrationHistogramMinimum = scale.InverseTransform(transformed_minimum - transformed_span * 0.1);
+        IntegrationHistogramMaximum = scale.InverseTransform(transformed_maximum + transformed_span * 0.1);
     }
 
-    private (double Minimum, double Maximum) observed_real_range(float[,] matrix, int column, Func<double, double>? transform = null)
+    private static (double Minimum, double Maximum) observed_real_range(IReadOnlyList<HistogramSeries> series, double fallback_maximum)
     {
         double minimum = double.PositiveInfinity;
         double maximum = double.NegativeInfinity;
-        for (int row = 0; row < matrix.GetLength(0); row++)
+        foreach (var item in series)
         {
-            double value = matrix[row, column];
-            if (transform is not null)
-                value = transform(value);
-            if (!double.IsFinite(value))
+            var sorted = item.SortedValues;
+            if (sorted is null || sorted.Count == 0)
                 continue;
-            minimum = Math.Min(minimum, value);
-            maximum = Math.Max(maximum, value);
+            minimum = Math.Min(minimum, sorted[0]);
+            maximum = Math.Max(maximum, sorted[^1]);
         }
 
         if (!double.IsFinite(minimum) || !double.IsFinite(maximum))
-            return (0, channel_maximum(selected_histogram_channel?.Name ?? ""));
+            return (0, fallback_maximum);
         if (maximum <= minimum)
             maximum = minimum + 1;
         return (minimum, maximum);
@@ -1295,27 +1805,27 @@ public sealed class IntegrationPlatformEditorViewModel : PlatformEditorViewModel
 
     private HistogramAxisScaleKind histogram_channel_scale(string channel_name)
     {
-        if (Platform.Axis.Transform == PlatformTransformationKind.Logarithm)
-            return HistogramAxisScaleKind.Log;
-        if (Platform.Axis.Transform == PlatformTransformationKind.Arcsinh)
-            return HistogramAxisScaleKind.Arcsinh;
-        return Configuration.DefaultCoordinateScaleForChannel(channel_name) switch
+        var kind = Platform.Transformations.TryGetValue(channel_name, out var transformation)
+            ? transformation.Kind
+            : Configuration.DefaultPlatformTransformationForChannel(channel_name);
+        return kind switch
         {
-            CoordinateScaleKind.Logicle => HistogramAxisScaleKind.Logicle,
-            CoordinateScaleKind.Logarithmic => HistogramAxisScaleKind.Log,
-            CoordinateScaleKind.Arcsinh => HistogramAxisScaleKind.Arcsinh,
+            PlatformTransformationKind.Logicle => HistogramAxisScaleKind.Logicle,
+            PlatformTransformationKind.Logarithm => HistogramAxisScaleKind.Log,
+            PlatformTransformationKind.Arcsinh => HistogramAxisScaleKind.Arcsinh,
             _ => HistogramAxisScaleKind.Linear
         };
     }
 
-    private Func<double, double> histogram_value_transform(string channel_name)
+    private Func<double, double> histogram_value_transform(bool normalized, HistogramAxisScaleKind scale)
     {
-        if (!ShowNormalizedHistogram)
+        if (!normalized)
             return value => value;
 
-        var scale = histogram_channel_scale(channel_name);
         if (scale == HistogramAxisScaleKind.Log)
-            return value => Math.Pow(10, value);
+            return value => Math.Sign(value) * (Math.Pow(10, Math.Abs(value)) - 1.0);
+        if (scale == HistogramAxisScaleKind.Arcsinh)
+            return value => IntegrationHistogramArcsinhA * Math.Sinh(value);
         if (scale == HistogramAxisScaleKind.Logicle)
         {
             var transform = new LogicleTransform(new LogicleParameters(
@@ -1329,37 +1839,7 @@ public sealed class IntegrationPlatformEditorViewModel : PlatformEditorViewModel
         return value => value;
     }
 
-    private double normalized_observed_minimum(string channel_name)
-    {
-        if (Platform is not MultivariatePlatform { Normalized: not null } multivariate)
-            return -0.1;
-        int column = Array.IndexOf(Platform.SelectedFeatureNames, channel_name);
-        if (column < 0)
-            return -0.1;
-        double minimum = Enumerable.Range(0, multivariate.Normalized.GetLength(0))
-            .Select(row => (double)multivariate.Normalized[row, column])
-            .Where(double.IsFinite)
-            .DefaultIfEmpty(-0.1)
-            .Min();
-        return Math.Min(-0.1, minimum);
-    }
-
-    private double normalized_observed_maximum(string channel_name)
-    {
-        if (Platform is not MultivariatePlatform { Normalized: not null } multivariate)
-            return 1.1;
-        int column = Array.IndexOf(Platform.SelectedFeatureNames, channel_name);
-        if (column < 0)
-            return 1.1;
-        double maximum = Enumerable.Range(0, multivariate.Normalized.GetLength(0))
-            .Select(row => (double)multivariate.Normalized[row, column])
-            .Where(double.IsFinite)
-            .DefaultIfEmpty(1.1)
-            .Max();
-        return Math.Max(1.1, maximum);
-    }
-
-    private double channel_maximum(string channel_name)
+    private double channel_maximum_for(string channel_name)
     {
         var sample_ids = Platform.RowMap.Sources.Select(source => source.SampleId).ToHashSet();
         return Workspace.Groups
@@ -1438,6 +1918,126 @@ public sealed class IntegrationPlatformEditorViewModel : PlatformEditorViewModel
         SelectedIntegrationHistogramChannel = IntegrationHistogramChannelChoices.FirstOrDefault(choice => choice.Name == name);
     }
 
+    private sealed class IntegrationHistogramCache
+    {
+        private int[]? source_ids;
+        private int matrix_row_count = -1;
+        private int[][] sampled_rows = [];
+        private readonly Dictionary<IntegrationHistogramCacheKey, HistogramSeries[]> series = new();
+
+        public IReadOnlyList<HistogramSeries> GetSeries(
+            IntegrationPlatform platform,
+            float[,] current_matrix,
+            int column,
+            bool normalized,
+            HistogramAxisScaleKind scale,
+            double logicle_t,
+            double logicle_w,
+            double logicle_m,
+            double logicle_a,
+            double arcsinh_a,
+            Func<double, double> value_transform,
+            Func<int, string> source_label,
+            IReadOnlyList<Color> colors,
+            int maximum_events)
+        {
+            ensure_samples(platform, current_matrix, maximum_events);
+            var key = new IntegrationHistogramCacheKey(
+                current_matrix,
+                column,
+                normalized,
+                scale,
+                logicle_t,
+                logicle_w,
+                logicle_m,
+                logicle_a,
+                arcsinh_a);
+            if (series.TryGetValue(key, out var cached))
+                return cached;
+
+            var created = new List<HistogramSeries>();
+            for (int source_id = 0; source_id < sampled_rows.Length; source_id++)
+            {
+                var values = sampled_rows[source_id]
+                    .Select(row => value_transform(current_matrix[row, column]))
+                    .Where(double.IsFinite)
+                    .ToArray();
+                if (values.Length == 0)
+                    continue;
+                Array.Sort(values);
+                created.Add(new HistogramSeries
+                {
+                    Name = source_label(source_id),
+                    Values = values,
+                    SortedValues = values,
+                    BinCount = 500,
+                    Color = colors[source_id % colors.Count]
+                });
+            }
+
+            cached = created.ToArray();
+            series[key] = cached;
+            return cached;
+        }
+
+        private void ensure_samples(IntegrationPlatform platform, float[,] current_matrix, int maximum_events)
+        {
+            if (ReferenceEquals(source_ids, platform.RowMap.SourceIds) &&
+                matrix_row_count == current_matrix.GetLength(0) &&
+                sampled_rows.Length == platform.RowMap.Sources.Count)
+                return;
+
+            source_ids = platform.RowMap.SourceIds;
+            matrix_row_count = current_matrix.GetLength(0);
+            series.Clear();
+            sampled_rows = new int[platform.RowMap.Sources.Count][];
+            int initial_capacity = Math.Min(
+                maximum_events,
+                Math.Max(16, current_matrix.GetLength(0) / Math.Max(1, sampled_rows.Length)));
+            var reservoirs = Enumerable.Range(0, sampled_rows.Length)
+                .Select(_ => new List<int>(initial_capacity))
+                .ToArray();
+            var seen = new int[sampled_rows.Length];
+            var random = Enumerable.Range(0, sampled_rows.Length)
+                .Select(source_id => new Random(HashCode.Combine(platform.Id, source_id, current_matrix.GetLength(0))))
+                .ToArray();
+
+            int row_count = Math.Min(source_ids.Length, current_matrix.GetLength(0));
+            for (int row = 0; row < row_count; row++)
+            {
+                int source_id = source_ids[row];
+                if (source_id < 0 || source_id >= reservoirs.Length)
+                    continue;
+                int count = ++seen[source_id];
+                var reservoir = reservoirs[source_id];
+                if (reservoir.Count < maximum_events)
+                {
+                    reservoir.Add(row);
+                    continue;
+                }
+
+                int replacement = random[source_id].Next(count);
+                if (replacement < maximum_events)
+                    reservoir[replacement] = row;
+            }
+
+            for (int source_id = 0; source_id < sampled_rows.Length; source_id++)
+                sampled_rows[source_id] = reservoirs[source_id].ToArray();
+        }
+
+    }
+
+    private readonly record struct IntegrationHistogramCacheKey(
+        float[,] Matrix,
+        int Column,
+        bool Normalized,
+        HistogramAxisScaleKind Scale,
+        double LogicleT,
+        double LogicleW,
+        double LogicleM,
+        double LogicleA,
+        double ArcsinhA);
+
     private void notify_histogram_properties()
     {
         OnPropertyChanged(nameof(HasIntegrationHistogram));
@@ -1452,6 +2052,7 @@ public sealed class IntegrationPlatformEditorViewModel : PlatformEditorViewModel
         OnPropertyChanged(nameof(IntegrationHistogramLogicleW));
         OnPropertyChanged(nameof(IntegrationHistogramLogicleM));
         OnPropertyChanged(nameof(IntegrationHistogramLogicleA));
+        OnPropertyChanged(nameof(IntegrationHistogramArcsinhA));
         if (PreviousHistogramChannelCommand is RelayCommand previous)
             previous.RaiseCanExecuteChanged();
         if (NextHistogramChannelCommand is RelayCommand next)
@@ -1462,18 +2063,24 @@ public sealed class IntegrationPlatformEditorViewModel : PlatformEditorViewModel
 public sealed class CellCyclePlatformEditorViewModel : PlatformEditorViewModel
 {
     public CellCyclePlatformEditorViewModel(FlowWorkspace workspace, Platform platform) : base(workspace, platform) { }
-    protected override bool IsFitParameter(string? property_name) => property_name is nameof(CellCyclePlatform.Model);
+    protected override bool IsFitParameter(string? property_name) => property_name is
+        nameof(CellCyclePlatform.Model) or nameof(UnivariatePlatform.ArcsinhCofactor);
 }
 
 public sealed class ProliferationPlatformEditorViewModel : PlatformEditorViewModel
 {
     public ProliferationPlatformEditorViewModel(FlowWorkspace workspace, Platform platform) : base(workspace, platform) { }
     protected override bool IsFitParameter(string? property_name) =>
-        property_name is nameof(ProliferationPlatform.MaxGenerations) or nameof(ProliferationPlatform.PeakProminence);
+        property_name is nameof(ProliferationPlatform.MaxGenerations) or
+            nameof(ProliferationPlatform.PeakProminence) or
+            nameof(UnivariatePlatform.ArcsinhCofactor);
 }
 
 public sealed class IntensityComparisonPlatformEditorViewModel : PlatformEditorViewModel
 {
     public IntensityComparisonPlatformEditorViewModel(FlowWorkspace workspace, Platform platform) : base(workspace, platform) { }
-    protected override bool IsFitParameter(string? property_name) => property_name is nameof(IntensityComparisonPlatform.ReferenceSample);
+    protected override bool IsFitParameter(string? property_name) => property_name is
+        nameof(IntensityComparisonPlatform.ReferenceSample) or
+        nameof(IntensityComparisonPlatform.DistributionBinning) or
+        nameof(UnivariatePlatform.ArcsinhCofactor);
 }

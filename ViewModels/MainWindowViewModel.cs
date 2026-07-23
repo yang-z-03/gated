@@ -5503,7 +5503,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         foreach (var platform in Workspace.Platforms)
         {
             var platform_node = create_project_node(ProjectNodeKind.Platform, platform.Name, $"workspace:platform:{platform.Id}", platform: platform, count: platform.RowMap.Count, depth: 2);
-            foreach (var output in PlatformCatalog.Get(platform.Kind).LayoutOutputs)
+            foreach (var output in PlatformCatalog.Get(platform.Kind).LayoutOutputs(platform))
                 platform_node.Children.Add(create_project_node(ProjectNodeKind.PlatformOutput, output.Title, $"workspace:platform:{platform.Id}:output:{output.Key}", platform: platform, platform_output: output, depth: 3));
             jobs_node.Children.Add(platform_node);
         }
@@ -6117,11 +6117,6 @@ public sealed partial class MainWindowViewModel : NotifyBase
         ensure_default_layout();
         if (request?.Node is not { } node)
             return;
-        if (node.Kind == ProjectNodeKind.Platform && node.Platform is not null)
-        {
-            add_platform_page_elements(node.Platform, request.PagePoint);
-            return;
-        }
         if (node.Kind == ProjectNodeKind.PlatformOutput && node.Platform is not null && node.PlatformOutput is not null)
         {
             add_platform_page_output(node.Platform, node.PlatformOutput, request.PagePoint);
@@ -6232,22 +6227,15 @@ public sealed partial class MainWindowViewModel : NotifyBase
         StatusText = $"Added page plot: {element.Title}";
     }
 
-    private void add_platform_page_elements(Platform platform, Point page_point)
-    {
-        var outputs = PlatformCatalog.Get(platform.Kind).LayoutOutputs.Where(output => output.IsDefault).ToArray();
-        if (outputs.Length == 0)
-        {
-            StatusText = "The selected platform does not declare a default layout output.";
-            return;
-        }
-        for (int index = 0; index < outputs.Length; index++)
-            add_platform_page_output(platform, outputs[index], new Point(page_point.X + index * 285, page_point.Y), refresh: false);
-        refresh_project_tree();
-        StatusText = $"Added default platform outputs: {platform.Name}";
-    }
-
     private void add_platform_page_output(Platform platform, PlatformLayoutOutput output, Point page_point, bool refresh = true)
     {
+        if (!PlatformCatalog.Get(platform.Kind).LayoutOutputs(platform)
+                .Any(item => item.Key == output.Key && item.Kind == output.Kind))
+        {
+            StatusText = "The selected platform output is not currently available.";
+            return;
+        }
+
         PagePlotElement element;
         if (output.Kind == PlatformLayoutOutputKind.Plot)
         {
@@ -6338,15 +6326,18 @@ public sealed partial class MainWindowViewModel : NotifyBase
         StatusText = $"Added statistic table column: {statistic_name(node.StatisticDefinition!)}";
     }
 
-    public bool CanAddProjectNodeToLayout(ProjectNode? node) =>
-        node?.Kind is ProjectNodeKind.Group
+    public bool CanAddProjectNodeToLayout(ProjectNode? node)
+    {
+        if (node is { Kind: ProjectNodeKind.PlatformOutput, Platform: not null, PlatformOutput: not null })
+            return PlatformCatalog.Get(node.Platform.Kind).LayoutOutputs(node.Platform)
+                .Any(output => output.Key == node.PlatformOutput.Key && output.Kind == node.PlatformOutput.Kind);
+        return node?.Kind is ProjectNodeKind.Group
             or ProjectNodeKind.Sample
             or ProjectNodeKind.GateFolder
             or ProjectNodeKind.Gate
             or ProjectNodeKind.GatePopulationSlot
-            or ProjectNodeKind.Population
-            or ProjectNodeKind.Platform
-            or ProjectNodeKind.PlatformOutput;
+            or ProjectNodeKind.Population;
+    }
 
     public void AddProjectNodeToLayout(ProjectNode node, PageLayout layout)
     {

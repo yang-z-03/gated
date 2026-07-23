@@ -6,18 +6,34 @@
              x:Class="gated.Controls.PlatformPopulationGrid"
              x:Name="root"
              x:DataType="platforms:PlatformEditorViewModel">
+  <UserControl.Resources>
+    <controls:PlatformPopulationColorConverter x:Key="PlatformPopulationColorConverter" />
+  </UserControl.Resources>
   <DataGrid Classes="ControlSampleGrid"
             AutoGenerateColumns="False"
             CanUserReorderColumns="False"
+            CanUserResizeColumns="True"
             GridLinesVisibility="Horizontal"
             ItemsSource="{Binding Platform.Populations}"
+            ScrollViewer.HorizontalScrollBarVisibility="Disabled"
             controls:PlatformPopulationDropBehavior.Command="{Binding DropPopulationCommand}">
     <DataGrid.Columns>
-      <DataGridCheckBoxColumn Header="Show" Binding="{Binding IsSelected, Mode=TwoWay}" Width="56" />
-      <DataGridTextColumn Header="Group" Binding="{Binding GroupName}" IsReadOnly="True" Width="110" />
-      <DataGridTextColumn Header="Sample" Binding="{Binding SampleName}" IsReadOnly="True" Width="130" />
-      <DataGridTextColumn Header="Population" Binding="{Binding PopulationName}" IsReadOnly="True" Width="*" MinWidth="120" />
-      <DataGridTextColumn Header="Events" Binding="{Binding EventCount}" IsReadOnly="True" Width="80" />
+      <DataGridCheckBoxColumn Binding="{Binding IsSelected, Mode=TwoWay}" Width="Auto" CanUserResize="False" />
+      <DataGridTextColumn Header="Group" Binding="{Binding GroupName}" IsReadOnly="True" Width="Auto" MinWidth="72" />
+      <DataGridTextColumn Header="Sample" Binding="{Binding SampleName}" IsReadOnly="True" Width="Auto" MinWidth="110" />
+      <DataGridTemplateColumn Header="Population" Width="*" MinWidth="100">
+        <DataGridTemplateColumn.CellTemplate>
+          <DataTemplate>
+            <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center" Margin="12,0">
+              <Border Width="10" Height="10" CornerRadius="5"
+                      IsVisible="{Binding ShowPopulationColors, ElementName=root}"
+                      Background="{Binding PlotColorIndex, Converter={StaticResource PlatformPopulationColorConverter}}" />
+              <TextBlock VerticalAlignment="Center" Text="{Binding PopulationName}" TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+          </DataTemplate>
+        </DataGridTemplateColumn.CellTemplate>
+      </DataGridTemplateColumn>
+      <DataGridTextColumn Header="Events" Binding="{Binding EventCount}" IsReadOnly="True" Width="Auto" MinWidth="66" />
       <DataGridTemplateColumn Width="52" CanUserResize="False">
         <DataGridTemplateColumn.CellTemplate>
           <DataTemplate>
