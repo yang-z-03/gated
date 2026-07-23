@@ -17,6 +17,7 @@ using gated.Controls;
 using gated.Models;
 using gated.Reduction;
 using gated.Services;
+using gated.ViewModels.Platforms;
 using PythonWorkspaceContext = gated.Python.PythonWorkspaceContext;
 
 namespace gated.ViewModels;
@@ -58,7 +59,8 @@ public sealed partial class MainWindowViewModel : NotifyBase
     private bool is_spillover_calculating;
     private bool is_spillover_preparing_row_caches;
     private PageLayout? selected_page_layout;
-    private Platform? selected_integration_job;
+    private Platform? selected_platform;
+    private PlatformEditorViewModel? selected_platform_editor;
     private MainWindowViewState view_state = MainWindowViewState.Analysis;
     private bool suppress_analysis_switch_for_context_selection;
     private bool syncing_metadata;
@@ -89,7 +91,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
     private bool show_python_error_logs = true;
     private bool show_python_fatal_logs = true;
     private PythonScriptDefinition? selected_integration_macro;
-    private Platform? subscribed_integration_job;
+    private Platform? subscribed_platform;
     private bool is_python_script_dirty;
     private bool syncing_python_script;
     private bool is_python_script_running;
@@ -163,9 +165,9 @@ public sealed partial class MainWindowViewModel : NotifyBase
 
     public ICommand CreateGroupCommand { get; }
     public ICommand CreateLayoutCommand { get; }
-    public ICommand CreateIntegrationJobCommand { get; }
+    public ICommand CreatePlatformCommand { get; }
     public ICommand RenameWorkspaceCommand { get; }
-    public ICommand RenameIntegrationJobCommand { get; }
+    public ICommand RenamePlatformCommand { get; }
     public ICommand RenameGroupCommand { get; }
     public ICommand RenameGateCommand { get; }
     public ICommand RenameLayoutCommand { get; }
@@ -256,9 +258,9 @@ public sealed partial class MainWindowViewModel : NotifyBase
         ReloadScriptRepositories();
         CreateGroupCommand = new RelayCommand(_ => create_group());
         CreateLayoutCommand = new RelayCommand(_ => _ = create_layout_async());
-        CreateIntegrationJobCommand = new RelayCommand(parameter => _ = create_platform_async(PlatformJobInitializer.KindFromParameter(parameter)), _ => Workspace.Groups.Any(group => group.Samples.Count > 0));
+        CreatePlatformCommand = new RelayCommand(parameter => _ = create_platform_async(PlatformInitializer.KindFromParameter(parameter)), _ => Workspace.Groups.Any(group => group.Samples.Count > 0));
         RenameWorkspaceCommand = new RelayCommand(_ => _ = rename_workspace_async());
-        RenameIntegrationJobCommand = new RelayCommand(_ => _ = rename_selected_integration_job_async(), _ => selected_integration_job is not null);
+        RenamePlatformCommand = new RelayCommand(_ => _ = rename_selected_platform_async(), _ => selected_platform is not null);
         RenameGroupCommand = new RelayCommand(_ => _ = rename_selected_group_async(), _ => selected_group is not null);
         RenameGateCommand = new RelayCommand(_ => _ = rename_selected_gate_async(), _ => selected_gate is not null);
         RenameLayoutCommand = new RelayCommand(_ => _ = rename_selected_layout_async(), _ => selected_page_layout is not null);
@@ -1000,7 +1002,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         {
             if (value)
             {
-                SelectedIntegrationJob = null;
+                SelectedPlatform = null;
                 set_view_state(MainWindowViewState.Layout, "Page editor: drag gate definitions or sample populations onto the canvas");
             }
             else if (IsPageEditorMode)
@@ -1008,7 +1010,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         }
     }
 
-    public bool IsIntegrationJobMode => ViewState == MainWindowViewState.Platform;
+    public bool IsPlatformMode => ViewState == MainWindowViewState.Platform;
     public bool IsSpilloverCompensationMode
     {
         get => ViewState == MainWindowViewState.SpilloverCompensation;
@@ -1016,7 +1018,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         {
             if (value)
             {
-                SelectedIntegrationJob = null;
+                SelectedPlatform = null;
                 set_view_state(MainWindowViewState.SpilloverCompensation, "Spillover compensation");
             }
             else if (IsSpilloverCompensationMode)
@@ -1031,7 +1033,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         {
             if (value)
             {
-                SelectedIntegrationJob = null;
+                SelectedPlatform = null;
                 set_view_state(MainWindowViewState.MassCompensation, "Mass compensation");
             }
             else if (IsMassCompensationMode)
@@ -1046,7 +1048,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         {
             if (value)
             {
-                SelectedIntegrationJob = null;
+                SelectedPlatform = null;
                 set_view_state(MainWindowViewState.Metadata, "Workspace sample metadata");
             }
             else if (IsWorkspaceMetadataMode)
@@ -1061,7 +1063,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         {
             if (value)
             {
-                SelectedIntegrationJob = null;
+                SelectedPlatform = null;
                 set_view_state(MainWindowViewState.GroupMetadata, "Grouping metadata");
             }
             else if (IsGroupMetadataMode)
@@ -1076,7 +1078,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         {
             if (value)
             {
-                SelectedIntegrationJob = null;
+                SelectedPlatform = null;
                 set_view_state(MainWindowViewState.Code, "Python script editor");
             }
             else if (IsPythonScriptEditorMode)
@@ -1102,7 +1104,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         OnPropertyChanged(nameof(IsPageEditorMode));
         OnPropertyChanged(nameof(IsPythonScriptEditorMode));
         OnPropertyChanged(nameof(IsWorkspaceMetadataMode));
-        OnPropertyChanged(nameof(IsIntegrationJobMode));
+        OnPropertyChanged(nameof(IsPlatformMode));
         OnPropertyChanged(nameof(IsGroupMetadataMode));
         OnPropertyChanged(nameof(IsSpilloverCompensationMode));
         OnPropertyChanged(nameof(IsMassCompensationMode));
@@ -1121,7 +1123,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         if (!await TryLeavePythonScriptEditorAsync())
             return;
 
-        SelectedIntegrationJob = null;
+        SelectedPlatform = null;
         set_view_state(MainWindowViewState.Analysis, "Analysis view");
     }
 
@@ -1130,7 +1132,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         if (!await TryLeavePythonScriptEditorAsync())
             return;
 
-        SelectedIntegrationJob = null;
+        SelectedPlatform = null;
         set_view_state(MainWindowViewState.Layout, "Page editor: drag gate definitions or sample populations onto the canvas");
     }
     public int LayoutRefreshRevision
@@ -1598,14 +1600,14 @@ public sealed partial class MainWindowViewModel : NotifyBase
         Workspace.QualityControl = loaded.QualityControl;
         Workspace.Groups.Clear();
         Workspace.PageLayouts.Clear();
-        Workspace.IntegrationJobs.Clear();
+        Workspace.Platforms.Clear();
         Workspace.MetadataColumns.Clear();
         foreach (var group in loaded.Groups)
             Workspace.Groups.Add(group);
         foreach (var layout in loaded.PageLayouts)
             Workspace.PageLayouts.Add(layout);
-        foreach (var job in loaded.IntegrationJobs)
-            Workspace.IntegrationJobs.Add(job);
+        foreach (var job in loaded.Platforms)
+            Workspace.Platforms.Add(job);
         foreach (var column in loaded.MetadataColumns)
             Workspace.MetadataColumns[column.Key] = column.Value;
         ensure_default_layout();
@@ -1618,7 +1620,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         SelectedGate = null;
         SelectedPopulation = null;
         SelectedCompensation = null;
-        SelectedIntegrationJob = null;
+        SelectedPlatform = null;
         SelectedPageLayout = Workspace.PageLayouts.FirstOrDefault();
         SelectedPageElement = selected_page_layout?.Elements.LastOrDefault();
         next_gate_number = Math.Max(1, count_gates(Workspace.Groups.SelectMany(group => group.Gates)) + 1);
@@ -1647,7 +1649,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         Workspace.QualityControl = "";
         Workspace.Groups.Clear();
         Workspace.PageLayouts.Clear();
-        Workspace.IntegrationJobs.Clear();
+        Workspace.Platforms.Clear();
         Workspace.MetadataColumns.Clear();
         ensure_default_layout();
         groups_pending_root_view_initialization.Clear();
@@ -1658,7 +1660,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         SelectedGate = null;
         SelectedPopulation = null;
         SelectedCompensation = null;
-        SelectedIntegrationJob = null;
+        SelectedPlatform = null;
         SelectedPageLayout = Workspace.PageLayouts.FirstOrDefault();
         SelectedPageElement = null;
         next_gate_number = 1;
@@ -1827,7 +1829,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
             refresh_selection_sidebars();
             refresh_workspace_sample_metadata();
             if (metadata_changed)
-                invalidate_integration_jobs_from_metadata();
+                invalidate_platforms_from_metadata();
             OnPropertyChanged(nameof(PlotGate));
             OnPropertyChanged(nameof(PlotPopulation));
             refresh_plot_gates();
@@ -2292,7 +2294,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 await rename_selected_layout_async();
                 break;
             case ProjectNodeKind.Platform:
-                await rename_selected_integration_job_async();
+                await rename_selected_platform_async();
                 break;
             case ProjectNodeKind.StatisticDefinition:
             case ProjectNodeKind.StatisticValue:
@@ -2575,9 +2577,14 @@ public sealed partial class MainWindowViewModel : NotifyBase
             }
             group_to_recalculate = null;
         }
-        else if (selected_node?.Kind == ProjectNodeKind.Platform && selected_integration_job is not null)
+        else if (selected_node?.Kind == ProjectNodeKind.Platform && selected_platform is not null)
         {
-            Workspace.IntegrationJobs.Remove(selected_integration_job);
+            foreach (var layout in Workspace.PageLayouts)
+            for (int index = layout.Elements.Count - 1; index >= 0; index--)
+                if (layout.Elements[index] is PlatformPlotElement { Platform: { } platform } && ReferenceEquals(platform, selected_platform) ||
+                    layout.Elements[index] is PlatformStatisticTableElement { Platform: { } table_platform } && ReferenceEquals(table_platform, selected_platform))
+                    layout.Elements.RemoveAt(index);
+            Workspace.Platforms.Remove(selected_platform);
             group_to_recalculate = null;
         }
         else if (selected_node?.Kind == ProjectNodeKind.Layout && selected_page_layout is not null)
@@ -2622,6 +2629,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
             return;
         }
 
+        prune_stale_platform_inputs();
         group_to_recalculate?.RecalculateSamples();
         SelectedNode = null;
         refresh_project_tree();
@@ -2641,7 +2649,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
             ProjectNodeKind.ControlSample => selected_group is not null && selected_control_sample is not null,
             ProjectNodeKind.Gate or ProjectNodeKind.GatePopulationSlot or ProjectNodeKind.Population => selected_group is not null && selected_gate is not null,
             ProjectNodeKind.Group => selected_group is not null,
-            ProjectNodeKind.Platform => selected_integration_job is not null,
+            ProjectNodeKind.Platform => selected_platform is not null,
             ProjectNodeKind.Layout => selected_page_layout is not null,
             ProjectNodeKind.Compensation => selected_group is not null && selected_compensation is not null,
             ProjectNodeKind.Embedding => selected_sample is not null &&
@@ -2650,6 +2658,43 @@ public sealed partial class MainWindowViewModel : NotifyBase
             ProjectNodeKind.StatisticDefinition or ProjectNodeKind.StatisticValue => selected_group is not null && selected_statistic_definition() is not null,
             _ => false
         };
+
+    private void prune_stale_platform_inputs()
+    {
+        foreach (var platform in Workspace.Platforms)
+        {
+            bool changed = false;
+            for (int index = platform.Populations.Count - 1; index >= 0; index--)
+            {
+                var input = platform.Populations[index];
+                var group = Workspace.Groups.FirstOrDefault(item => item.Id == input.GroupId);
+                var sample = group?.Samples.FirstOrDefault(item => item.Id == input.SampleId);
+                bool exists = sample is not null &&
+                    (!input.IsPopulation || find_population_by_id(sample.Populations, input.GateId, input.Region) is not null);
+                if (exists)
+                    continue;
+                platform.Populations.RemoveAt(index);
+                changed = true;
+            }
+            if (changed)
+            {
+                PlatformInitializer.RefreshFeatures(Workspace, platform);
+                platform.InvalidateFromConfiguration();
+            }
+        }
+    }
+
+    private static PopulationResult? find_population_by_id(IEnumerable<PopulationResult> populations, Guid gate_id, PopulationRegion region)
+    {
+        foreach (var population in populations)
+        {
+            if (population.Gate.Id == gate_id && population.Region == region)
+                return population;
+            if (find_population_by_id(population.Children, gate_id, region) is { } child)
+                return child;
+        }
+        return null;
+    }
 
     private bool can_drop_project_node(object? parameter)
     {
@@ -2795,7 +2840,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         if (selected_group is null)
             return;
 
-        SelectedIntegrationJob = null;
+        SelectedPlatform = null;
         IsWorkspaceMetadataMode = false;
         SelectedSample = null;
         SelectedPopulation = null;
@@ -3746,7 +3791,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
     {
         if (node is null)
         {
-            SelectedIntegrationJob = null;
+            SelectedPlatform = null;
             if (ViewState is MainWindowViewState.Metadata or MainWindowViewState.GroupMetadata)
                 set_view_state(MainWindowViewState.Analysis, "Analysis view");
             SelectedGroup = null;
@@ -3787,7 +3832,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         switch (node.Kind)
         {
             case ProjectNodeKind.Workspace:
-                SelectedIntegrationJob = null;
+                SelectedPlatform = null;
                 IsWorkspaceMetadataMode = false;
                 SelectedGroup = Workspace.Groups.FirstOrDefault();
                 SelectedSample = selected_group?.Samples.FirstOrDefault();
@@ -3798,7 +3843,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 break;
             case ProjectNodeKind.Metadata:
                 IsPageEditorMode = false;
-                SelectedIntegrationJob = null;
+                SelectedPlatform = null;
                 IsWorkspaceMetadataMode = true;
                 refresh_workspace_sample_metadata();
                 SelectedGroup = Workspace.Groups.FirstOrDefault();
@@ -3809,19 +3854,19 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 StatusText = "Workspace sample metadata";
                 break;
             case ProjectNodeKind.LayoutFolder:
-                SelectedIntegrationJob = null;
+                SelectedPlatform = null;
                 IsWorkspaceMetadataMode = false;
                 SelectedPageLayout = Workspace.PageLayouts.FirstOrDefault();
                 IsPageEditorMode = true;
                 break;
             case ProjectNodeKind.Layout:
-                SelectedIntegrationJob = null;
+                SelectedPlatform = null;
                 SelectedPageLayout = node.Layout;
                 IsPageEditorMode = true;
                 break;
-            case ProjectNodeKind.IntegrationJobFolder:
+            case ProjectNodeKind.PlatformFolder:
                 IsPageEditorMode = false;
-                SelectedIntegrationJob = Workspace.IntegrationJobs.FirstOrDefault();
+                SelectedPlatform = Workspace.Platforms.FirstOrDefault();
                 SelectedGroup = Workspace.Groups.FirstOrDefault();
                 SelectedSample = selected_group?.Samples.FirstOrDefault();
                 SelectedPopulation = null;
@@ -3829,8 +3874,9 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 SelectedCompensation = null;
                 break;
             case ProjectNodeKind.Platform:
+            case ProjectNodeKind.PlatformOutput:
                 IsPageEditorMode = false;
-                SelectedIntegrationJob = node.Platform;
+                SelectedPlatform = node.Platform;
                 SelectedGroup = Workspace.Groups.FirstOrDefault();
                 SelectedSample = selected_group?.Samples.FirstOrDefault();
                 SelectedPopulation = null;
@@ -3839,7 +3885,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 StatusText = node.Platform?.StatusText ?? "Platform";
                 break;
             case ProjectNodeKind.GateFolder:
-                SelectedIntegrationJob = null;
+                SelectedPlatform = null;
                 IsWorkspaceMetadataMode = false;
                 if (node.Group is not null)
                     SelectedGroup = node.Group;
@@ -3852,7 +3898,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 needs_statistics_refresh = true;
                 break;
             case ProjectNodeKind.CompensationFolder:
-                SelectedIntegrationJob = null;
+                SelectedPlatform = null;
                 IsWorkspaceMetadataMode = false;
                 if (node.Group is not null)
                     SelectedGroup = node.Group;
@@ -3860,7 +3906,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 SelectedControlSample = null;
                 break;
             case ProjectNodeKind.ControlFolder:
-                SelectedIntegrationJob = null;
+                SelectedPlatform = null;
                 IsWorkspaceMetadataMode = false;
                 if (node.Group is not null)
                     SelectedGroup = node.Group;
@@ -3873,7 +3919,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 refresh_spillover_workspace();
                 break;
             case ProjectNodeKind.SpilloverCompensation:
-                SelectedIntegrationJob = null;
+                SelectedPlatform = null;
                 IsWorkspaceMetadataMode = false;
                 if (node.Group is not null)
                     SelectedGroup = node.Group;
@@ -3886,7 +3932,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 refresh_spillover_workspace();
                 break;
             case ProjectNodeKind.MassCompensation:
-                SelectedIntegrationJob = null;
+                SelectedPlatform = null;
                 IsWorkspaceMetadataMode = false;
                 if (node.Group is not null)
                     SelectedGroup = node.Group;
@@ -3899,7 +3945,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 IsMassCompensationMode = true;
                 break;
             case ProjectNodeKind.ControlSample:
-                SelectedIntegrationJob = null;
+                SelectedPlatform = null;
                 if (node.Group is not null)
                     SelectedGroup = node.Group;
                 SelectedSample = null;
@@ -3909,7 +3955,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 SelectedCompensation = null;
                 break;
             case ProjectNodeKind.SpectralUnmixing:
-                SelectedIntegrationJob = null;
+                SelectedPlatform = null;
                 IsWorkspaceMetadataMode = false;
                 if (node.Group is not null)
                     SelectedGroup = node.Group;
@@ -3922,7 +3968,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 IsSpectralUnmixingMode = true;
                 break;
             case ProjectNodeKind.MassNormalization:
-                SelectedIntegrationJob = null;
+                SelectedPlatform = null;
                 IsWorkspaceMetadataMode = false;
                 if (node.Group is not null)
                     SelectedGroup = node.Group;
@@ -3935,7 +3981,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 IsMassNormalizationMode = true;
                 break;
             case ProjectNodeKind.IndexDemultiplex:
-                SelectedIntegrationJob = null;
+                SelectedPlatform = null;
                 IsWorkspaceMetadataMode = false;
                 if (node.Group is not null)
                     SelectedGroup = node.Group;
@@ -3948,7 +3994,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 IsIndexDemultiplexMode = true;
                 break;
             case ProjectNodeKind.Compensation:
-                SelectedIntegrationJob = null;
+                SelectedPlatform = null;
                 IsWorkspaceMetadataMode = false;
                 if (node.Group is not null)
                     SelectedGroup = node.Group;
@@ -3956,7 +4002,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 SelectedControlSample = null;
                 break;
             case ProjectNodeKind.Sample:
-                SelectedIntegrationJob = null;
+                SelectedPlatform = null;
                 IsWorkspaceMetadataMode = false;
                 if (node.Group is not null)
                     SelectedGroup = node.Group;
@@ -3968,7 +4014,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 needs_plot_refresh = true;
                 break;
             case ProjectNodeKind.Embedding:
-                SelectedIntegrationJob = null;
+                SelectedPlatform = null;
                 IsWorkspaceMetadataMode = false;
                 if (node.Group is not null)
                     SelectedGroup = node.Group;
@@ -3981,7 +4027,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
                     : $"Embedding: {node.EmbeddingName}";
                 break;
             case ProjectNodeKind.StatisticDefinition:
-                SelectedIntegrationJob = null;
+                SelectedPlatform = null;
                 IsWorkspaceMetadataMode = false;
                 if (node.Group is not null)
                     SelectedGroup = node.Group;
@@ -3996,7 +4042,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 needs_statistics_refresh = true;
                 break;
             case ProjectNodeKind.StatisticValue:
-                SelectedIntegrationJob = null;
+                SelectedPlatform = null;
                 IsWorkspaceMetadataMode = false;
                 if (node.Group is not null)
                     SelectedGroup = node.Group;
@@ -4011,7 +4057,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 needs_statistics_refresh = true;
                 break;
             case ProjectNodeKind.Gate:
-                SelectedIntegrationJob = null;
+                SelectedPlatform = null;
                 IsWorkspaceMetadataMode = false;
                 if (node.Group is not null)
                     SelectedGroup = node.Group;
@@ -4027,7 +4073,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 needs_statistics_refresh = true;
                 break;
             case ProjectNodeKind.GatePopulationSlot:
-                SelectedIntegrationJob = null;
+                SelectedPlatform = null;
                 IsWorkspaceMetadataMode = false;
                 if (node.Group is not null)
                     SelectedGroup = node.Group;
@@ -4041,7 +4087,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 needs_statistics_refresh = true;
                 break;
             case ProjectNodeKind.Population:
-                SelectedIntegrationJob = null;
+                SelectedPlatform = null;
                 IsWorkspaceMetadataMode = false;
                 if (node.Group is not null)
                     SelectedGroup = node.Group;
@@ -4056,7 +4102,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 break;
             case ProjectNodeKind.Group:
                 IsPageEditorMode = false;
-                SelectedIntegrationJob = null;
+                SelectedPlatform = null;
                 IsGroupMetadataMode = true;
                 if (node.Group is not null)
                     SelectedGroup = node.Group;
@@ -4573,7 +4619,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         {
             if (value)
             {
-                SelectedIntegrationJob = null;
+                SelectedPlatform = null;
                 set_view_state(MainWindowViewState.SpectralUnmixing, "Spectral unmixing");
             }
             else if (IsSpectralUnmixingMode)
@@ -4588,7 +4634,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         {
             if (value)
             {
-                SelectedIntegrationJob = null;
+                SelectedPlatform = null;
                 set_view_state(MainWindowViewState.MassNormalization, "Mass normalization");
             }
             else if (IsMassNormalizationMode)
@@ -4603,7 +4649,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         {
             if (value)
             {
-                SelectedIntegrationJob = null;
+                SelectedPlatform = null;
                 set_view_state(MainWindowViewState.IndexDemultiplex, "Index demultiplex");
             }
             else if (IsIndexDemultiplexMode)
@@ -5453,9 +5499,14 @@ public sealed partial class MainWindowViewModel : NotifyBase
         foreach (var layout in Workspace.PageLayouts)
             layouts_node.Children.Add(create_project_node(ProjectNodeKind.Layout, layout.Name, $"workspace:layout:{layout.Id}", layout: layout, count: layout.Elements.Count, depth: 2));
         workspace_node.Children.Add(layouts_node);
-        var jobs_node = create_project_node(ProjectNodeKind.IntegrationJobFolder, "Platforms", "workspace:integration-jobs", depth: 1);
-        foreach (var job in Workspace.IntegrationJobs)
-            jobs_node.Children.Add(create_project_node(ProjectNodeKind.Platform, job.Name, $"workspace:integration-job:{job.Id}", integration_job: job, count: job.RowMap.Count, depth: 2));
+        var jobs_node = create_project_node(ProjectNodeKind.PlatformFolder, "Platforms", "workspace:platforms", depth: 1);
+        foreach (var platform in Workspace.Platforms)
+        {
+            var platform_node = create_project_node(ProjectNodeKind.Platform, platform.Name, $"workspace:platform:{platform.Id}", platform: platform, count: platform.RowMap.Count, depth: 2);
+            foreach (var output in PlatformCatalog.Get(platform.Kind).LayoutOutputs)
+                platform_node.Children.Add(create_project_node(ProjectNodeKind.PlatformOutput, output.Title, $"workspace:platform:{platform.Id}:output:{output.Key}", platform: platform, platform_output: output, depth: 3));
+            jobs_node.Children.Add(platform_node);
+        }
         workspace_node.Children.Add(jobs_node);
         foreach (var group in Workspace.Groups)
         {
@@ -5579,14 +5630,15 @@ public sealed partial class MainWindowViewModel : NotifyBase
         CompensationMatrix? compensation = null,
         ControlSample? control_sample = null,
         PageLayout? layout = null,
-        Platform? integration_job = null,
+        Platform? platform = null,
+        PlatformLayoutOutput? platform_output = null,
         string? embedding_name = null,
         PopulationRegion population_region = PopulationRegion.Primary,
         int? count = null,
         bool is_applied_compensation = false,
         int depth = 0)
     {
-        return new ProjectNode(kind, name, key, group, sample, gate, population, statistic_definition, statistic_result, compensation, control_sample, layout, integration_job, embedding_name, population_region, count, is_applied_compensation, depth)
+        return new ProjectNode(kind, name, key, group, sample, gate, population, statistic_definition, statistic_result, compensation, control_sample, layout, platform, platform_output, embedding_name, population_region, count, is_applied_compensation, depth)
         {
             IsExpanded = project_expansion_state.TryGetValue(key, out bool is_expanded) ? is_expanded : default_project_node_expanded(kind)
         };
@@ -5914,8 +5966,8 @@ public sealed partial class MainWindowViewModel : NotifyBase
             RefreshSelectedLayoutCommand,
             DeleteSelectedCommand,
             CloseWorkspaceCommand,
-            CreateIntegrationJobCommand,
-            RenameIntegrationJobCommand,
+            CreatePlatformCommand,
+            RenamePlatformCommand,
             ApplyWorkspaceMetadataCommand,
             SelectPreviousEquivalentSampleCommand,
             SelectNextEquivalentSampleCommand,
@@ -6070,6 +6122,11 @@ public sealed partial class MainWindowViewModel : NotifyBase
             add_platform_page_elements(node.Platform, request.PagePoint);
             return;
         }
+        if (node.Kind == ProjectNodeKind.PlatformOutput && node.Platform is not null && node.PlatformOutput is not null)
+        {
+            add_platform_page_output(node.Platform, node.PlatformOutput, request.PagePoint);
+            return;
+        }
         if (node.Kind == ProjectNodeKind.StatisticDefinition && node.StatisticDefinition is not null && node.Group is not null)
         {
             add_or_extend_statistic_table(node, request.PagePoint);
@@ -6177,55 +6234,55 @@ public sealed partial class MainWindowViewModel : NotifyBase
 
     private void add_platform_page_elements(Platform platform, Point page_point)
     {
-        bool has_graphics = platform_has_layout_graphics(platform);
-        bool has_statistics = platform_has_layout_statistics(platform);
-        if (!has_graphics && !has_statistics)
+        var outputs = PlatformCatalog.Get(platform.Kind).LayoutOutputs.Where(output => output.IsDefault).ToArray();
+        if (outputs.Length == 0)
         {
-            StatusText = "The selected platform cannot be placed onto a layout canvas.";
+            StatusText = "The selected platform does not declare a default layout output.";
             return;
         }
+        for (int index = 0; index < outputs.Length; index++)
+            add_platform_page_output(platform, outputs[index], new Point(page_point.X + index * 285, page_point.Y), refresh: false);
+        refresh_project_tree();
+        StatusText = $"Added default platform outputs: {platform.Name}";
+    }
 
-        PlatformPlotElement? plot = null;
-        if (has_graphics)
+    private void add_platform_page_output(Platform platform, PlatformLayoutOutput output, Point page_point, bool refresh = true)
+    {
+        PagePlotElement element;
+        if (output.Kind == PlatformLayoutOutputKind.Plot)
         {
-            plot = new PlatformPlotElement
+            element = new PlatformPlotElement
             {
                 Platform = platform,
-                PlotKey = "",
+                OutputKey = output.Key,
                 X = Math.Max(0, page_point.X - 130),
                 Y = Math.Max(0, page_point.Y - 98),
                 Size = 260,
                 Width = 260,
                 Height = 195,
-                Title = platform.Name
+                Title = $"{platform.Name} — {output.Title}"
             };
-            PageElements.Add(plot);
         }
-
-        PlatformStatisticTableElement? table = null;
-        if (has_statistics)
+        else
         {
-            table = new PlatformStatisticTableElement
+            var table = new PlatformStatisticTableElement
             {
                 Platform = platform,
-                ParentElementId = plot?.Id,
-                X = plot is null ? Math.Max(0, page_point.X - 160) : plot.X + plot.Width + 18,
-                Y = plot?.Y ?? Math.Max(0, page_point.Y - 100),
+                OutputKey = output.Key,
+                X = Math.Max(0, page_point.X - 160),
+                Y = Math.Max(0, page_point.Y - 100),
                 Size = 240,
-                Width = platform_layout_table_width(platform),
-                Height = platform_layout_table_height(platform),
-                Title = $"{platform.Name} statistics"
+                Title = $"{platform.Name} — {output.Title}"
             };
-            PageElements.Add(table);
+            table.Width = table.MinimumWidth;
+            table.Height = table.MinimumHeight;
+            element = table;
         }
-
-        SelectedPageElement = plot ?? (PagePlotElement?)table;
-        refresh_project_tree();
-        StatusText = has_graphics && has_statistics
-            ? $"Added platform plot and statistics: {platform.Name}"
-            : has_graphics
-                ? $"Added platform plot: {platform.Name}"
-                : $"Added platform statistics: {platform.Name}";
+        PageElements.Add(element);
+        SelectedPageElement = element;
+        if (refresh)
+            refresh_project_tree();
+        StatusText = $"Added platform output: {output.Title}";
     }
 
     private static bool platform_has_layout_graphics(Platform platform)
@@ -6288,7 +6345,8 @@ public sealed partial class MainWindowViewModel : NotifyBase
             or ProjectNodeKind.Gate
             or ProjectNodeKind.GatePopulationSlot
             or ProjectNodeKind.Population
-            or ProjectNodeKind.Platform;
+            or ProjectNodeKind.Platform
+            or ProjectNodeKind.PlatformOutput;
 
     public void AddProjectNodeToLayout(ProjectNode node, PageLayout layout)
     {
@@ -8425,8 +8483,9 @@ public enum ProjectNodeKind
     Metadata,
     LayoutFolder,
     Layout,
-    IntegrationJobFolder,
+    PlatformFolder,
     Platform,
+    PlatformOutput,
     Group,
     GateFolder,
     Gate,
@@ -8465,6 +8524,7 @@ public sealed class ProjectNode : NotifyBase
     public ControlSample? ControlSample { get; }
     public PageLayout? Layout { get; }
     public Platform? Platform { get; }
+    public PlatformLayoutOutput? PlatformOutput { get; }
     public string? EmbeddingName { get; }
     public PopulationRegion PopulationRegion { get; }
     public int? Count { get; }
@@ -8485,7 +8545,8 @@ public sealed class ProjectNode : NotifyBase
         CompensationMatrix? compensation = null,
         ControlSample? control_sample = null,
         PageLayout? layout = null,
-        Platform? integration_job = null,
+        Platform? platform = null,
+        PlatformLayoutOutput? platform_output = null,
         string? embedding_name = null,
         PopulationRegion population_region = PopulationRegion.Primary,
         int? count = null,
@@ -8504,7 +8565,8 @@ public sealed class ProjectNode : NotifyBase
         Compensation = compensation;
         ControlSample = control_sample;
         Layout = layout;
-        Platform = integration_job;
+        Platform = platform;
+        PlatformOutput = platform_output;
         EmbeddingName = embedding_name;
         PopulationRegion = population_region;
         Count = count;
@@ -8544,8 +8606,9 @@ public sealed class ProjectNode : NotifyBase
         ProjectNodeKind.Metadata => "avares://gated/Resources/table-edit.svg",
         ProjectNodeKind.LayoutFolder => "avares://gated/Resources/table-edit.svg",
         ProjectNodeKind.Layout => "avares://gated/Resources/table-edit.svg",
-        ProjectNodeKind.IntegrationJobFolder => "avares://gated/Resources/embedding.svg",
+        ProjectNodeKind.PlatformFolder => "avares://gated/Resources/embedding.svg",
         ProjectNodeKind.Platform => "avares://gated/Resources/embedding.svg",
+        ProjectNodeKind.PlatformOutput => PlatformOutput?.Kind == PlatformLayoutOutputKind.Table ? "avares://gated/Resources/table-edit.svg" : "avares://gated/Resources/embedding.svg",
         ProjectNodeKind.Group => "avares://gated/Resources/group.svg",
         ProjectNodeKind.GateFolder => "avares://gated/Resources/gates.svg",
         ProjectNodeKind.Gate => "avares://gated/Resources/gate.svg",
@@ -8581,8 +8644,9 @@ public sealed class ProjectNode : NotifyBase
         ProjectNodeKind.Metadata => "M",
         ProjectNodeKind.LayoutFolder => "L",
         ProjectNodeKind.Layout => "P",
-        ProjectNodeKind.IntegrationJobFolder => "J",
+        ProjectNodeKind.PlatformFolder => "P",
         ProjectNodeKind.Platform => "J",
+        ProjectNodeKind.PlatformOutput => PlatformOutput?.Kind == PlatformLayoutOutputKind.Table ? "T" : "P",
         ProjectNodeKind.Group => "G",
         ProjectNodeKind.GateFolder => "F",
         ProjectNodeKind.Gate => "g",

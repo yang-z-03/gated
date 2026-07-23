@@ -224,7 +224,7 @@ public sealed class PlatformPlotElement : PagePlotElement
     public override double MinimumWidth => 160;
     public override double MinimumHeight => 120;
     public Platform? Platform { get; init; }
-    public string PlotKey { get; init; } = "";
+    public string OutputKey { get; init; } = "";
 }
 
 public sealed class PlatformStatisticTableElement : PagePlotElement
@@ -235,7 +235,7 @@ public sealed class PlatformStatisticTableElement : PagePlotElement
     {
         get
         {
-            var table = Platform?.ResultTables.FirstOrDefault();
+            var table = Platform is null ? null : gated.ViewModels.Platforms.PlatformCatalog.Get(Platform.Kind).CreatePresentation(Platform).Table(OutputKey);
             if (table is null)
                 return 160;
             return Math.Clamp(20 + table.Columns.Sum(column => Math.Clamp((column?.Length ?? 0) * 7.0 + 22, 54, 190)), 160, 1600);
@@ -245,12 +245,13 @@ public sealed class PlatformStatisticTableElement : PagePlotElement
     {
         get
         {
-            var table = Platform?.ResultTables.FirstOrDefault();
+            var table = Platform is null ? null : gated.ViewModels.Platforms.PlatformCatalog.Get(Platform.Kind).CreatePresentation(Platform).Table(OutputKey);
             int rows = table?.Rows.Count ?? Math.Max(1, Platform?.PlatformStatistics.Count ?? 0);
             return 48 + (rows + 1) * 20;
         }
     }
     public Platform? Platform { get; init; }
+    public string OutputKey { get; init; } = "";
 }
 
 public sealed class StatisticTableColumn

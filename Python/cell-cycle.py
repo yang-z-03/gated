@@ -244,10 +244,10 @@ def _main():
             _fmt(g2_mu / max(g1_mu, 1e-9)),
         ])
         label = _source_label(first)
-        platform.set_plot_series(f"fit_{source_id}", f"{label} fit", x.tolist(), fit["model"].tolist(), major, "Normalized frequency")
-        platform.set_plot_series(f"component_g1_{source_id}", f"{label} G1", x.tolist(), fit["g1"].tolist(), major, "Normalized frequency")
-        platform.set_plot_series(f"component_s_{source_id}", f"{label} S", x.tolist(), fit["s"].tolist(), major, "Normalized frequency")
-        platform.set_plot_series(f"component_g2m_{source_id}", f"{label} G2/M", x.tolist(), fit["g2"].tolist(), major, "Normalized frequency")
+        platform.set_plot_series(f"fit_{source_id}", f"{label} fit", x.tolist(), fit["model"].tolist(), major, "Normalized frequency", source_id, "fit")
+        platform.set_plot_series(f"component_g1_{source_id}", f"{label} G1", x.tolist(), fit["g1"].tolist(), major, "Normalized frequency", source_id, "component")
+        platform.set_plot_series(f"component_s_{source_id}", f"{label} S", x.tolist(), fit["s"].tolist(), major, "Normalized frequency", source_id, "component")
+        platform.set_plot_series(f"component_g2m_{source_id}", f"{label} G2/M", x.tolist(), fit["g2"].tolist(), major, "Normalized frequency", source_id, "component")
 
     columns = ["Sample", "Population", "Events", "G1 %", "S %", "G2/M %", "G1 mean", "G1 CV %", "G2/M mean", "G2/M CV %", "G2/G1 ratio"]
     platform.set_result_table("cell_cycle", "Cell cycle", columns, rows)

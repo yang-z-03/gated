@@ -12,7 +12,7 @@
         <TextBlock Foreground="{DynamicResource AppBrushWarningText}" TextWrapping="Wrap" Text="{Binding Platform.WarningText}" />
       </Border>
       <Border Height="360" Margin="0 0 60 0" ClipToBounds="True">
-        <controls:PlatformResultPlotView Platform="{Binding Platform}" />
+        <controls:HistogramView Curves="{Binding PlatformHistogramCurves}" Minimum="{Binding PlatformHistogramMinimum}" Maximum="{Binding PlatformHistogramMaximum}" AxisScale="{Binding PlatformHistogramAxisScale}" LogicleTopOfScale="{Binding LogicleT}" LogicleLinearizationWidth="{Binding LogicleW}" LogicleDecades="{Binding LogicleM}" LogicleNegativeDecades="{Binding LogicleA}" YMaximum="{Binding PlatformHistogramYMaximum}" XTitle="{Binding PlatformHistogramXTitle}" YTitle="{Binding PlatformHistogramYTitle}" IsGatingEnabled="False" />
       </Border>
       <Grid ColumnDefinitions="100,170,*" ColumnSpacing="8">
         <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Fit on channel" VerticalAlignment="Center"/>
@@ -21,9 +21,7 @@
         </ComboBox>
       </Grid>
       <Border Height="210" BorderBrush="{DynamicResource AppBrushBorder3}" BorderThickness="1" CornerRadius="8" Background="{DynamicResource AppBrushBackground3}" ClipToBounds="True">
-        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Margin="8">
-          <controls:PlatformPopulationFitTableView Platform="{Binding Platform}" SelectionChangedCommand="{Binding SelectionChangedCommand}" DropCommand="{Binding DropPopulationCommand}" IsReadOnly="{Binding IsReadOnly}" />
-        </ScrollViewer>
+        <controls:PlatformPopulationGrid />
       </Border>
       <Expander Header="Transformation" IsExpanded="True">
         <StackPanel Margin="0,8,0,12" Spacing="8">

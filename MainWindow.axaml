@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:controls="using:gated.Controls"
         xmlns:shared="using:gated.Shared"
+        xmlns:platforms="using:gated.ViewModels.Platforms"
         x:Class="gated.MainWindow"
         x:CompileBindings="False"
         Width="1500" Height="850"
@@ -463,13 +464,12 @@
                 <MenuItem x:Name="edit_python_statistics_menu" Header="Edit Python statistics" />
                 <Separator />
                 <MenuItem Header="Create platform">
-                    <MenuItem Header="Integration" Command="{Binding CreateIntegrationJobCommand}" CommandParameter="Integration" />
-                    <MenuItem Header="Cell cycle" Command="{Binding CreateIntegrationJobCommand}" CommandParameter="CellCycle" />
-                    <MenuItem Header="Proliferation" Command="{Binding CreateIntegrationJobCommand}" CommandParameter="Proliferation" />
-                    <MenuItem Header="Intensity comparison" Command="{Binding CreateIntegrationJobCommand}" CommandParameter="IntensityComparison" />
-                    <!-- <MenuItem Header="Kinetics" Command="{Binding CreateIntegrationJobCommand}" CommandParameter="Kinetics" /> -->
+                    <MenuItem Header="Integration" Command="{Binding CreatePlatformCommand}" CommandParameter="Integration" />
+                    <MenuItem Header="Cell cycle" Command="{Binding CreatePlatformCommand}" CommandParameter="CellCycle" />
+                    <MenuItem Header="Proliferation" Command="{Binding CreatePlatformCommand}" CommandParameter="Proliferation" />
+                    <MenuItem Header="Intensity comparison" Command="{Binding CreatePlatformCommand}" CommandParameter="IntensityComparison" />
                 </MenuItem>
-                <MenuItem Header="Rename platform" Command="{Binding RenameIntegrationJobCommand}" InputGesture="F2"/>
+                <MenuItem Header="Rename platform" Command="{Binding RenamePlatformCommand}" InputGesture="F2"/>
                 <MenuItem Header="Delete platform" Command="{Binding DeleteSelectedCommand}" InputGesture="Delete"/>
             </MenuItem>
             <MenuItem Header="_Help">
@@ -2277,10 +2277,24 @@
             </Grid>
 
             <Grid Grid.Column="2"
-                  IsVisible="{Binding IsIntegrationJobMode}"
+                  IsVisible="{Binding IsPlatformMode}"
                   Background="{DynamicResource AppBrushBackground1}">
-                <controls:PlatformEditorHost Workspace="{Binding Workspace}"
-                                             Platform="{Binding SelectedIntegrationJob}" />
+                <ContentControl Content="{Binding SelectedPlatformEditor}">
+                    <ContentControl.DataTemplates>
+                        <DataTemplate DataType="{x:Type platforms:IntegrationPlatformEditorViewModel}">
+                            <controls:IntegrationPlatformView />
+                        </DataTemplate>
+                        <DataTemplate DataType="{x:Type platforms:CellCyclePlatformEditorViewModel}">
+                            <controls:CellCyclePlatformView />
+                        </DataTemplate>
+                        <DataTemplate DataType="{x:Type platforms:ProliferationPlatformEditorViewModel}">
+                            <controls:ProliferationPlatformView />
+                        </DataTemplate>
+                        <DataTemplate DataType="{x:Type platforms:IntensityComparisonPlatformEditorViewModel}">
+                            <controls:IntensityComparisonPlatformView />
+                        </DataTemplate>
+                    </ContentControl.DataTemplates>
+                </ContentControl>
             </Grid>
 
             <Grid Grid.Column="2"

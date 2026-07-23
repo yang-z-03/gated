@@ -8,7 +8,7 @@ using gated.Reduction;
 
 namespace gated.Models;
 
-public enum IntegrationJobStatus
+public enum PlatformStatus
 {
     Draft,
     Ready,
@@ -24,8 +24,7 @@ public enum PlatformKind
     Integration,
     CellCycle,
     Proliferation,
-    IntensityComparison,
-    Kinetics
+    IntensityComparison
 }
 
 public enum PlatformTransformationKind
@@ -40,12 +39,6 @@ public enum CellCycleModelKind
 {
     WatsonPragmatic,
     DeanJettFox
-}
-
-public enum KineticsFitKind
-{
-    Linear,
-    Exponential
 }
 
 public enum PlatformFitCurveKind
@@ -68,16 +61,12 @@ public static class PlatformParameterKeys
     public const string FillComponents = "fill_components";
     public const string MaxGenerations = "max_generations";
     public const string PeakProminence = "peak_prominence";
-    public const string Fit = "fit";
-    public const string TimeWindowCount = "time_window_count";
-    public const string ChangePointZ = "change_point_z";
-    public const string MinSegmentWindows = "min_segment_windows";
     public const string ReferenceSample = "reference_sample";
 }
 
 public sealed class PlatformRunState : NotifyBase
 {
-    private IntegrationJobStatus status = IntegrationJobStatus.Draft;
+    private PlatformStatus status = PlatformStatus.Draft;
     private string warning_text = "";
     private int current_step;
     private bool is_running;
@@ -85,7 +74,7 @@ public sealed class PlatformRunState : NotifyBase
     private string progress_text = "";
     private bool cancellation_requested;
 
-    public IntegrationJobStatus Status
+    public PlatformStatus Status
     {
         get => status;
         set
@@ -242,7 +231,7 @@ public abstract class Platform : NotifyBase
         set => SetField(ref name, string.IsNullOrWhiteSpace(value) ? "Platform" : value.Trim(), nameof(Name));
     }
 
-    public IntegrationJobStatus Status
+    public PlatformStatus Status
     {
         get => RunState.Status;
         set
@@ -328,8 +317,8 @@ public abstract class Platform : NotifyBase
 
     public string StatusText => RunState.StatusText;
 
-    public ObservableCollection<IntegrationJobPopulationSelection> Populations { get; } = new();
-    public ObservableCollection<IntegrationJobFeatureSelection> Features { get; } = new();
+    public ObservableCollection<PlatformPopulationInput> Populations { get; } = new();
+    public ObservableCollection<PlatformFeatureSelection> Features { get; } = new();
     public ObservableCollection<PlatformResultTable> ResultTables { get; } = new();
     public ObservableCollection<PlatformPlotSeries> PlotSeries { get; } = new();
     public ObservableCollection<PlatformFitCurve> FitCurves { get; } = new();
@@ -340,11 +329,10 @@ public abstract class Platform : NotifyBase
         PlatformKind.CellCycle => "avares://gated/Python/cell-cycle.py",
         PlatformKind.Proliferation => "avares://gated/Python/proliferation.py",
         PlatformKind.IntensityComparison => "avares://gated/Python/intensity-comparison.py",
-        PlatformKind.Kinetics => "avares://gated/Python/kinetics.py",
         _ => ""
     };
 
-    public IntegrationJobRowMap RowMap { get; } = new();
+    public PlatformRowMap RowMap { get; } = new();
     public float[,]? Matrix
     {
         get => Data.Matrix;
@@ -381,7 +369,7 @@ public abstract class Platform : NotifyBase
         ClearFitResults();
         CurrentStep = Math.Min(CurrentStep, 3);
         WarningText = "Configuration changed. Rerun this platform before downstream steps.";
-        Status = IntegrationJobStatus.Warning;
+        Status = PlatformStatus.Warning;
     }
 
     protected virtual void OnConfigurationInvalidated()
@@ -404,7 +392,7 @@ public abstract class Platform : NotifyBase
         ClearFitResults();
         CurrentStep = Math.Min(CurrentStep, 3);
         WarningText = warning_text;
-        Status = IntegrationJobStatus.Warning;
+        Status = PlatformStatus.Warning;
     }
 
     public string[] SelectedFeatureNames => Features
@@ -562,67 +550,6 @@ public abstract class UnivariatePlatform : Platform
     }
 }
 
-public abstract class BivariatePlatform : Platform
-{
-    private string major = "";
-    private string minor = "";
-    private double[,] trend = new double[0, 0];
-    private double[] binned = [];
-    private double[] smoothed = [];
-    private readonly PlatformSmoothingOptions smoothing = new();
-
-    public PlatformSmoothingOptions Smoothing => smoothing;
-
-    public string Major
-    {
-        get => major;
-        set => SetField(ref major, value ?? "");
-    }
-
-    public string Minor
-    {
-        get => minor;
-        set => SetField(ref minor, value ?? "");
-    }
-
-    public double[,] Trend
-    {
-        get => trend;
-        set => SetField(ref trend, value ?? new double[0, 0]);
-    }
-
-    public double[] Binned
-    {
-        get => binned;
-        set => SetField(ref binned, value ?? []);
-    }
-
-    public double[] Smoothed
-    {
-        get => smoothed;
-        set => SetField(ref smoothed, value ?? []);
-    }
-
-    public int SmoothingWindow
-    {
-        get => smoothing.HalfWindow;
-        set => smoothing.HalfWindow = value;
-    }
-
-    public bool EnableSmoothing
-    {
-        get => smoothing.Enabled;
-        set => smoothing.Enabled = value;
-    }
-
-    protected override void OnConfigurationInvalidated()
-    {
-        Trend = new double[0, 0];
-        Binned = [];
-        Smoothed = [];
-    }
-}
-
 public abstract class MultivariatePlatform : Platform
 {
     public float[,]? Normalized { get; set; }
@@ -726,42 +653,6 @@ public sealed class IntensityComparisonPlatform : UnivariatePlatform
     }
 }
 
-public sealed class KineticsPlatform : BivariatePlatform
-{
-    public float[] TimeValues { get; set; } = [];
-    public override PlatformKind Kind => PlatformKind.Kinetics;
-
-    public KineticsFitKind Fit
-    {
-        get => get_enum_parameter(PlatformParameterKeys.Fit, KineticsFitKind.Linear);
-        set => set_parameter(PlatformParameterKeys.Fit, value.ToString(), nameof(Fit));
-    }
-
-    public int TimeWindowCount
-    {
-        get => get_int_parameter(PlatformParameterKeys.TimeWindowCount, 64, 4, 1000);
-        set => set_parameter(PlatformParameterKeys.TimeWindowCount, Math.Clamp(value, 4, 1000), nameof(TimeWindowCount));
-    }
-
-    public double ChangePointZ
-    {
-        get => get_double_parameter(PlatformParameterKeys.ChangePointZ, 3.0, 0.1, 20.0);
-        set => set_parameter(PlatformParameterKeys.ChangePointZ, Math.Clamp(value, 0.1, 20.0), nameof(ChangePointZ));
-    }
-
-    public int MinSegmentWindows
-    {
-        get => get_int_parameter(PlatformParameterKeys.MinSegmentWindows, 5, 2, 500);
-        set => set_parameter(PlatformParameterKeys.MinSegmentWindows, Math.Clamp(value, 2, 500), nameof(MinSegmentWindows));
-    }
-
-    protected override void OnConfigurationInvalidated()
-    {
-        base.OnConfigurationInvalidated();
-        TimeValues = [];
-    }
-}
-
 public sealed class PlatformChannelTransformation : NotifyBase
 {
     private PlatformTransformationKind kind = PlatformTransformationKind.Linear;
@@ -794,18 +685,6 @@ public sealed class PlatformChannelTransformation : NotifyBase
     }
 }
 
-public static class PlatformFactory
-{
-    public static Platform Create(PlatformKind kind) => kind switch
-    {
-        PlatformKind.CellCycle => new CellCyclePlatform(),
-        PlatformKind.Proliferation => new ProliferationPlatform(),
-        PlatformKind.IntensityComparison => new IntensityComparisonPlatform(),
-        PlatformKind.Kinetics => new KineticsPlatform(),
-        _ => new IntegrationPlatform()
-    };
-}
-
 public sealed class PlatformResultTable
 {
     public string Key { get; init; } = "";
@@ -820,8 +699,17 @@ public sealed class PlatformPlotSeries
     public string Title { get; init; } = "";
     public string XLabel { get; init; } = "";
     public string YLabel { get; init; } = "";
+    public int SourceId { get; init; } = -1;
+    public PlatformSeriesRole Role { get; init; } = PlatformSeriesRole.Observed;
     public double[] X { get; init; } = [];
     public double[] Y { get; init; } = [];
+}
+
+public enum PlatformSeriesRole
+{
+    Observed,
+    Fit,
+    Component
 }
 
 public sealed class PlatformFitCurve
@@ -831,6 +719,7 @@ public sealed class PlatformFitCurve
     public string XLabel { get; init; } = "";
     public string YLabel { get; init; } = "";
     public int SourceId { get; init; } = -1;
+    public PlatformSeriesRole Role { get; init; } = PlatformSeriesRole.Fit;
     public PlatformFitCurveKind Kind { get; init; }
     public PlatformTransformationKind FitTransformation { get; init; } = PlatformTransformationKind.Linear;
     public LogicleParameters FitLogicle { get; init; } = new();
@@ -847,7 +736,7 @@ public sealed class PlatformStatisticResult
     public string Value { get; init; } = "";
 }
 
-public sealed class IntegrationJobPopulationSelection : NotifyBase
+public sealed class PlatformPopulationInput : NotifyBase
 {
     private bool is_selected = true;
     private bool is_expanded = true;
@@ -874,6 +763,7 @@ public sealed class IntegrationJobPopulationSelection : NotifyBase
     public string GroupName { get; init; } = "";
     public string SampleName { get; init; } = "";
     public string PopulationName { get; init; } = "";
+    public int EventCount { get; set; }
     public int Depth { get; init; }
     public bool HasChildren { get; init; }
     public bool IsPopulation { get; init; } = true;
@@ -911,7 +801,7 @@ public sealed class IntegrationJobPopulationSelection : NotifyBase
     public string DisplayName => IsPopulation ? PopulationName : $"{GroupName} / {SampleName}";
 }
 
-public sealed class IntegrationJobFeatureSelection : NotifyBase
+public sealed class PlatformFeatureSelection : NotifyBase
 {
     private bool is_selected = true;
     private bool is_enabled = true;
@@ -959,14 +849,14 @@ public sealed class IntegrationJobFeatureSelection : NotifyBase
     public string DisplayName => IsChannel ? ChannelName : GroupName;
 }
 
-public sealed class IntegrationJobRowMap
+public sealed class PlatformRowMap
 {
-    public List<IntegrationJobRowMapSource> Sources { get; } = new();
+    public List<PlatformRowMapSource> Sources { get; } = new();
     public int[] SourceIds { get; private set; } = [];
     public int[] EventIndices { get; private set; } = [];
     public int Count => EventIndices.Length;
 
-    public void Set(IEnumerable<IntegrationJobRowMapSource> sources, int[] source_ids, int[] event_indices)
+    public void Set(IEnumerable<PlatformRowMapSource> sources, int[] source_ids, int[] event_indices)
     {
         if (source_ids.Length != event_indices.Length)
             throw new ArgumentException("Row map source ids and event indices must have the same length.");
@@ -980,7 +870,7 @@ public sealed class IntegrationJobRowMap
     public void Clear() => Set([], [], []);
 }
 
-public sealed class IntegrationJobRowMapSource
+public sealed class PlatformRowMapSource
 {
     public Guid GroupId { get; init; }
     public Guid SampleId { get; init; }

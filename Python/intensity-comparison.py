@@ -247,6 +247,8 @@ def _main():
             frequency.tolist(),
             major,
             "Frequency",
+            item["source_id"],
+            "observed",
         )
 
     platform.set_statistic("Reference", reference["label"])

@@ -2504,7 +2504,7 @@ public sealed class FlowWorkspace : NotifyBase
 
     public ObservableCollection<FlowGroup> Groups { get; } = new();
     public ObservableCollection<PageLayout> PageLayouts { get; } = new();
-    public ObservableCollection<Platform> IntegrationJobs { get; } = new();
+    public ObservableCollection<Platform> Platforms { get; } = new();
     public ObservableCollection<string> RecentFilePaths { get; } = new();
     public Dictionary<string, MetadataColumnKind> MetadataColumns { get; } = new(StringComparer.Ordinal);
 

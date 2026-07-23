@@ -6,11 +6,11 @@ using gated.Reduction;
 
 namespace gated.Services;
 
-public sealed class IntegrationJobRunner
+public sealed class PlatformInputMaterializer
 {
     private readonly FlowWorkspace workspace;
 
-    public IntegrationJobRunner(FlowWorkspace workspace)
+    public PlatformInputMaterializer(FlowWorkspace workspace)
     {
         this.workspace = workspace;
     }
@@ -28,13 +28,11 @@ public sealed class IntegrationJobRunner
         job.Matrix = raw;
         if (job is IntegrationPlatform integration)
             integration.BatchIds = batches;
-        if (job is KineticsPlatform kinetics)
-            kinetics.TimeValues = build_time_values(kinetics);
         if (job is MultivariatePlatform multivariate && job.Kind != PlatformKind.Integration)
             multivariate.Normalized = null;
         update_platform_api_data(job);
         job.WarningText = "";
-        job.Status = IntegrationJobStatus.Ready;
+        job.Status = PlatformStatus.Ready;
         job.CurrentStep = Math.Max(job.CurrentStep, 3);
         job.NotifyIntegrationDataChanged();
         return true;
@@ -46,7 +44,7 @@ public sealed class IntegrationJobRunner
             return false;
 
         report(job, 0, "Applying logicle normalization");
-        job.Status = IntegrationJobStatus.Running;
+        job.Status = PlatformStatus.Running;
         var integration = job as IntegrationPlatform
             ?? throw new InvalidOperationException("Integration can only run on an integration platform.");
         var pipeline = new ReductionPipeline(job.Compensated!);
@@ -74,7 +72,7 @@ public sealed class IntegrationJobRunner
 
         report(job, 1, "Integration complete");
         job.WarningText = "";
-        job.Status = IntegrationJobStatus.Ready;
+        job.Status = PlatformStatus.Ready;
         job.CurrentStep = Math.Max(job.CurrentStep, 4);
         job.NotifyIntegrationDataChanged();
         return true;
@@ -85,20 +83,16 @@ public sealed class IntegrationJobRunner
         out float[,] raw,
         out float[,] source,
         out int[] batches,
-        out IntegrationJobRowMap row_map,
+        out PlatformRowMap row_map,
         out string warning)
     {
         raw = new float[0, 0];
         source = new float[0, 0];
         batches = [];
-        row_map = new IntegrationJobRowMap();
+        row_map = new PlatformRowMap();
         warning = "";
 
-        var selected_populations = job.Populations
-            .Where(item => job.Kind == PlatformKind.Integration
-                ? item.IsSelected && item.IsEnabled && !item.IsIndeterminate
-                : item.IsPlatformDropped && item.IsPopulation)
-            .ToArray();
+        var selected_populations = job.Populations.Where(item => item.IsPlatformDropped).ToArray();
         if (selected_populations.Length == 0)
         {
             warning = job.Kind == PlatformKind.Integration
@@ -114,7 +108,7 @@ public sealed class IntegrationJobRunner
             return false;
         }
 
-        var rows = new List<(FlowSample Sample, IntegrationJobPopulationSelection Selection, int EventIndex)>();
+        var rows = new List<(FlowSample Sample, PlatformPopulationInput Selection, int EventIndex)>();
         var seen_events = new HashSet<(Guid SampleId, int EventIndex)>();
         foreach (var selection in selected_populations)
         {
@@ -157,7 +151,7 @@ public sealed class IntegrationJobRunner
             source = new float[rows.Count, selected_features.Length];
             raw = new float[rows.Count, selected_features.Length];
             batches = new int[rows.Count];
-            var model_row_map_sources = new List<IntegrationJobRowMapSource>();
+            var model_row_map_sources = new List<PlatformRowMapSource>();
             var model_row_map_source_lookup = new Dictionary<(Guid GroupId, Guid SampleId, Guid GateId, PopulationRegion Region), int>();
             var model_row_map_source_ids = new int[rows.Count];
             var model_row_map_event_indices = new int[rows.Count];
@@ -205,7 +199,7 @@ public sealed class IntegrationJobRunner
         source = new float[rows.Count, selected_features.Length];
         raw = new float[rows.Count, selected_features.Length];
         batches = new int[rows.Count];
-        var row_map_sources = new List<IntegrationJobRowMapSource>();
+        var row_map_sources = new List<PlatformRowMapSource>();
         var row_map_source_lookup = new Dictionary<(Guid GroupId, Guid SampleId, Guid GateId, PopulationRegion Region), int>();
         var row_map_source_ids = new int[rows.Count];
         var row_map_event_indices = new int[rows.Count];
@@ -218,12 +212,12 @@ public sealed class IntegrationJobRunner
     }
 
     private static void fill_source_rows(
-        IReadOnlyList<(FlowSample Sample, IntegrationJobPopulationSelection Selection, int EventIndex)> rows,
+        IReadOnlyList<(FlowSample Sample, PlatformPopulationInput Selection, int EventIndex)> rows,
         IReadOnlyList<string> selected_features,
         float[,] raw,
         float[,] source,
         int[] batches,
-        List<IntegrationJobRowMapSource> row_map_sources,
+        List<PlatformRowMapSource> row_map_sources,
         Dictionary<(Guid GroupId, Guid SampleId, Guid GateId, PopulationRegion Region), int> row_map_source_lookup,
         int[] row_map_source_ids,
         int[] row_map_event_indices,
@@ -260,7 +254,7 @@ public sealed class IntegrationJobRunner
             {
                 source_id = row_map_sources.Count;
                 row_map_source_lookup[source_key] = source_id;
-                row_map_sources.Add(new IntegrationJobRowMapSource
+                row_map_sources.Add(new PlatformRowMapSource
                 {
                     GroupId = source_key.GroupId,
                     SampleId = source_key.SampleId,
@@ -319,8 +313,6 @@ public sealed class IntegrationJobRunner
         job.Transformed = transformed_matrix(job);
         if (job is UnivariatePlatform univariate)
             update_univariate_data(job, univariate);
-        if (job is BivariatePlatform bivariate)
-            update_bivariate_data(job, bivariate);
         foreach (var series in job.PlotSeries)
             job.Series[series.Key] = series;
         foreach (var curve in job.FitCurves)
@@ -394,30 +386,6 @@ public sealed class IntegrationJobRunner
         platform.Smoothed = smooth(platform.Histogram, platform.EnableSmoothing ? platform.SmoothingWindow : 0);
     }
 
-    private static void update_bivariate_data(Platform job, BivariatePlatform platform)
-    {
-        platform.Major = "Time";
-        platform.Minor = job.SelectedFeatureNames.FirstOrDefault() ?? "";
-        var matrix = job.Transformed ?? job.Compensated;
-        if (platform is not KineticsPlatform kinetics || matrix is null || matrix.GetLength(1) == 0 || kinetics.TimeValues.Length != matrix.GetLength(0))
-        {
-            platform.Trend = new double[0, 0];
-            platform.Binned = [];
-            platform.Smoothed = [];
-            return;
-        }
-
-        var trend = new double[matrix.GetLength(0), 2];
-        for (int row = 0; row < matrix.GetLength(0); row++)
-        {
-            trend[row, 0] = kinetics.TimeValues[row];
-            trend[row, 1] = matrix[row, 0];
-        }
-        platform.Trend = trend;
-        platform.Binned = binned_average(trend, kinetics.TimeWindowCount);
-        platform.Smoothed = smooth(platform.Binned, platform.EnableSmoothing ? platform.SmoothingWindow : 0);
-    }
-
     private static double[] column_values(float[,] matrix, int column)
     {
         var values = new double[matrix.GetLength(0)];
@@ -476,71 +444,8 @@ public sealed class IntegrationJobRunner
         return result;
     }
 
-    private static double[] binned_average(double[,] trend, int bins)
-    {
-        bins = Math.Clamp(bins, 1, 1000);
-        var result = new double[bins];
-        var counts = new int[bins];
-        if (trend.GetLength(0) == 0)
-            return result;
-        double minimum = Enumerable.Range(0, trend.GetLength(0)).Select(row => trend[row, 0]).Where(double.IsFinite).DefaultIfEmpty(0).Min();
-        double maximum = Enumerable.Range(0, trend.GetLength(0)).Select(row => trend[row, 0]).Where(double.IsFinite).DefaultIfEmpty(1).Max();
-        if (maximum <= minimum)
-            maximum = minimum + 1;
-        for (int row = 0; row < trend.GetLength(0); row++)
-        {
-            double x = trend[row, 0];
-            double y = trend[row, 1];
-            if (!double.IsFinite(x) || !double.IsFinite(y))
-                continue;
-            int bin = Math.Clamp((int)Math.Floor((x - minimum) / (maximum - minimum) * bins), 0, bins - 1);
-            result[bin] += y;
-            counts[bin]++;
-        }
-        for (int index = 0; index < bins; index++)
-            if (counts[index] > 0)
-                result[index] /= counts[index];
-        return result;
-    }
-
     private FlowSample? find_sample(Guid sample_id) =>
         workspace.Groups.SelectMany(group => group.Samples).FirstOrDefault(sample => sample.Id == sample_id);
-
-    private float[] build_time_values(Platform job)
-    {
-        var result = new float[job.RowMap.Count];
-        for (int row = 0; row < result.Length; row++)
-        {
-            int source_id = job.RowMap.SourceIds[row];
-            var source = source_id >= 0 && source_id < job.RowMap.Sources.Count ? job.RowMap.Sources[source_id] : null;
-            var sample = source is null ? null : find_sample(source.SampleId);
-            int channel_index = sample is null ? -1 : time_channel_index(sample);
-            int event_index = job.RowMap.EventIndices[row];
-            result[row] = sample is not null &&
-                          channel_index >= 0 &&
-                          event_index >= 0 &&
-                          event_index < sample.EventCount
-                ? sample.CompensatedEvents[event_index, channel_index]
-                : float.NaN;
-        }
-
-        return result;
-    }
-
-    private static int time_channel_index(FlowSample sample)
-    {
-        for (int index = 0; index < sample.Channels.Count; index++)
-        {
-            var channel = sample.Channels[index];
-            if (string.Equals(channel.Name, "Time", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(channel.Label, "Time", StringComparison.OrdinalIgnoreCase) ||
-                channel.Name.Contains("Time", StringComparison.OrdinalIgnoreCase) ||
-                channel.Label.Contains("Time", StringComparison.OrdinalIgnoreCase))
-                return index;
-        }
-
-        return -1;
-    }
 
     private static PopulationResult? find_population(FlowSample? sample, Guid gate_id, PopulationRegion region)
     {
@@ -566,7 +471,7 @@ public sealed class IntegrationJobRunner
     private static void set_warning(Platform job, string warning)
     {
         job.WarningText = warning;
-        job.Status = IntegrationJobStatus.Warning;
+        job.Status = PlatformStatus.Warning;
     }
 
     private static float[,]? copy(float[,]? matrix) => matrix is null ? null : (float[,])matrix.Clone();

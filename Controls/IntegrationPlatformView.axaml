@@ -13,19 +13,17 @@
       </Border>
       <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Select populations and channels" />
       <Grid ColumnDefinitions="*,*" ColumnSpacing="14">
-        <Border Height="300" BorderBrush="{DynamicResource SemiColorBorder}" BorderThickness="1" CornerRadius="6" Background="{DynamicResource AppBrushBackground3}" Padding="8" ClipToBounds="True">
-          <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-            <controls:IntegrationJobPopulationTreeView Nodes="{Binding Platform.Populations}"
-                                                       SelectionChangedCommand="{Binding SelectionChangedCommand}"
-                                                       IsReadOnly="{Binding IsSelectionReadOnly}" />
-          </ScrollViewer>
+        <Border Height="300" BorderBrush="{DynamicResource SemiColorBorder}" BorderThickness="1" CornerRadius="6" Background="{DynamicResource AppBrushBackground3}" ClipToBounds="True">
+          <controls:PlatformPopulationGrid />
         </Border>
-        <Border Grid.Column="1" Height="300" BorderBrush="{DynamicResource SemiColorBorder}" BorderThickness="1" CornerRadius="6" Background="{DynamicResource AppBrushBackground3}" Padding="8" ClipToBounds="True">
-          <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-            <controls:IntegrationJobFeatureListView Items="{Binding Platform.Features}"
-                                                    SelectionChangedCommand="{Binding FeatureSelectionChangedCommand}"
-                                                    IsReadOnly="{Binding IsSelectionReadOnly}" />
-          </ScrollViewer>
+        <Border Grid.Column="1" Height="300" BorderBrush="{DynamicResource SemiColorBorder}" BorderThickness="1" CornerRadius="6" Background="{DynamicResource AppBrushBackground3}" ClipToBounds="True">
+          <DataGrid Classes="ControlSampleGrid" AutoGenerateColumns="False" IsReadOnly="{Binding IsSelectionReadOnly}" ItemsSource="{Binding Platform.Features}">
+            <DataGrid.Columns>
+              <DataGridCheckBoxColumn Header="Use" Binding="{Binding IsSelected, Mode=TwoWay}" Width="55" />
+              <DataGridTextColumn Header="Channel" Binding="{Binding ChannelName}" IsReadOnly="True" Width="*" />
+              <DataGridTextColumn Header="Label" Binding="{Binding Label}" IsReadOnly="True" Width="*" />
+            </DataGrid.Columns>
+          </DataGrid>
         </Border>
       </Grid>
       <StackPanel Spacing="8">

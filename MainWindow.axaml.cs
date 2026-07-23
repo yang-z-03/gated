@@ -1911,17 +1911,17 @@ public partial class MainWindow : Window
                     click_menu_item("Export as SVG ...", export_page_svg_click));
                 break;
 
-            case ProjectNodeKind.IntegrationJobFolder:
+            case ProjectNodeKind.PlatformFolder:
                 add_menu_items(menu,
-                    command_menu_item("Create integration", view_model.CreateIntegrationJobCommand, "Integration"),
-                    command_menu_item("Create cell cycle model", view_model.CreateIntegrationJobCommand, "CellCycle"),
-                    command_menu_item("Create proliferation model", view_model.CreateIntegrationJobCommand, "Proliferation"),
-                    command_menu_item("Create intensity comparison", view_model.CreateIntegrationJobCommand, "IntensityComparison"));
+                    command_menu_item("Create integration", view_model.CreatePlatformCommand, "Integration"),
+                    command_menu_item("Create cell cycle model", view_model.CreatePlatformCommand, "CellCycle"),
+                    command_menu_item("Create proliferation model", view_model.CreatePlatformCommand, "Proliferation"),
+                    command_menu_item("Create intensity comparison", view_model.CreatePlatformCommand, "IntensityComparison"));
                 break;
 
             case ProjectNodeKind.Platform:
                 add_menu_items(menu,
-                    command_menu_item("Rename platform ...", view_model.RenameIntegrationJobCommand),
+                    command_menu_item("Rename platform ...", view_model.RenamePlatformCommand),
                     command_menu_item("Delete platform", view_model.DeleteSelectedCommand));
                 break;
 
@@ -2225,10 +2225,10 @@ public partial class MainWindow : Window
 
     private MenuItem build_create_platform_context_menu() =>
         parent_menu_item("Create platform",
-            command_menu_item("Integration", view_model.CreateIntegrationJobCommand, "Integration"),
-            command_menu_item("Cell cycle", view_model.CreateIntegrationJobCommand, "CellCycle"),
-            command_menu_item("Proliferation", view_model.CreateIntegrationJobCommand, "Proliferation"),
-            command_menu_item("Intensity comparison", view_model.CreateIntegrationJobCommand, "IntensityComparison"));
+            command_menu_item("Integration", view_model.CreatePlatformCommand, "Integration"),
+            command_menu_item("Cell cycle", view_model.CreatePlatformCommand, "CellCycle"),
+            command_menu_item("Proliferation", view_model.CreatePlatformCommand, "Proliferation"),
+            command_menu_item("Intensity comparison", view_model.CreatePlatformCommand, "IntensityComparison"));
 
     private MenuItem channel_context_menu(string header, IEnumerable<AxisChoice> choices, AxisChoice? selected, EventHandler<RoutedEventArgs> click)
     {

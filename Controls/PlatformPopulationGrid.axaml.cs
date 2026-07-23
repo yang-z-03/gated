@@ -2,9 +2,9 @@ using Avalonia.Controls;
 
 namespace gated.Controls;
 
-public partial class KineticsPlatformView : UserControl
+public partial class PlatformPopulationGrid : UserControl
 {
-    public KineticsPlatformView()
+    public PlatformPopulationGrid()
     {
         InitializeComponent();
     }

@@ -1,0 +1,36 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:gated.Controls"
+             xmlns:platforms="clr-namespace:gated.ViewModels.Platforms"
+             xmlns:shared="using:gated.Shared"
+             x:Class="gated.Controls.PlatformPopulationGrid"
+             x:Name="root"
+             x:DataType="platforms:PlatformEditorViewModel">
+  <DataGrid Classes="ControlSampleGrid"
+            AutoGenerateColumns="False"
+            CanUserReorderColumns="False"
+            GridLinesVisibility="Horizontal"
+            ItemsSource="{Binding Platform.Populations}"
+            controls:PlatformPopulationDropBehavior.Command="{Binding DropPopulationCommand}">
+    <DataGrid.Columns>
+      <DataGridCheckBoxColumn Header="Show" Binding="{Binding IsSelected, Mode=TwoWay}" Width="56" />
+      <DataGridTextColumn Header="Group" Binding="{Binding GroupName}" IsReadOnly="True" Width="110" />
+      <DataGridTextColumn Header="Sample" Binding="{Binding SampleName}" IsReadOnly="True" Width="130" />
+      <DataGridTextColumn Header="Population" Binding="{Binding PopulationName}" IsReadOnly="True" Width="*" MinWidth="120" />
+      <DataGridTextColumn Header="Events" Binding="{Binding EventCount}" IsReadOnly="True" Width="80" />
+      <DataGridTemplateColumn Width="52" CanUserResize="False">
+        <DataGridTemplateColumn.CellTemplate>
+          <DataTemplate>
+            <Button Classes="Small"
+                    HorizontalAlignment="Center"
+                    Command="{Binding #root.DataContext.RemovePopulationCommand}"
+                    CommandParameter="{Binding}"
+                    ToolTip.Tip="Remove input population">
+              <shared:ThemeIcon Width="15" Height="15" Icon="delete.svg" />
+            </Button>
+          </DataTemplate>
+        </DataGridTemplateColumn.CellTemplate>
+      </DataGridTemplateColumn>
+    </DataGrid.Columns>
+  </DataGrid>
+</UserControl>

@@ -185,7 +185,7 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
             or ProjectNodeKind.Metadata
             or ProjectNodeKind.LayoutFolder
             or ProjectNodeKind.Layout
-            or ProjectNodeKind.IntegrationJobFolder
+            or ProjectNodeKind.PlatformFolder
             or ProjectNodeKind.Platform
             or ProjectNodeKind.Group
             or ProjectNodeKind.Sample
@@ -344,7 +344,7 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
             ProjectNodeKind.Group => "group.svg",
             ProjectNodeKind.LayoutFolder or ProjectNodeKind.Layout => "table-edit.svg",
             ProjectNodeKind.Embedding => "embedding.svg",
-            ProjectNodeKind.IntegrationJobFolder => "platform.svg",
+            ProjectNodeKind.PlatformFolder => "platform.svg",
             ProjectNodeKind.Platform => "integration.svg",
             ProjectNodeKind.GateFolder => "gates.svg",
             ProjectNodeKind.Gate => "gate.svg",

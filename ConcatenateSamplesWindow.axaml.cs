@@ -14,7 +14,7 @@ public sealed record ConcatenateEventSource(FlowSample Sample, int[]? EventIndic
 public partial class ConcatenateSamplesWindow : Window
 {
     private FlowGroup group = null!;
-    private readonly ObservableCollection<IntegrationJobPopulationSelection> rows = new();
+    private readonly ObservableCollection<PlatformPopulationInput> rows = new();
 
     public ConcatenateSamplesWindow()
     {
@@ -38,7 +38,7 @@ public partial class ConcatenateSamplesWindow : Window
         foreach (var sample in group.Samples)
         {
             var sample_key = Guid.NewGuid();
-            rows.Add(new IntegrationJobPopulationSelection
+            rows.Add(new PlatformPopulationInput
             {
                 RowKey = sample_key,
                 GroupId = group.Id,
@@ -60,7 +60,7 @@ public partial class ConcatenateSamplesWindow : Window
     private void append_population_row(FlowSample sample, PopulationResult population, Guid parent_key, int depth)
     {
         var row_key = Guid.NewGuid();
-        rows.Add(new IntegrationJobPopulationSelection
+        rows.Add(new PlatformPopulationInput
         {
             RowKey = row_key,
             ParentKey = parent_key,

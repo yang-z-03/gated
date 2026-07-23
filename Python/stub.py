@@ -328,8 +328,8 @@ class Platform:
         '''Writes a named table result that can be rendered in layouts.'''
         ...
 
-    def set_plot_series(self, key: str, title: str, x: np.ndarray, y: np.ndarray, x_label: str = "", y_label: str = ""):
-        '''Writes a named x/y plot series result that can be rendered in layouts.'''
+    def set_plot_series(self, key: str, title: str, x: np.ndarray, y: np.ndarray, x_label: str = "", y_label: str = "", source_id: int = -1, role: str = "observed"):
+        '''Writes a named x/y result. role is observed, fit, or component.'''
         ...
 
     def set_fit_curve(self, key: str, title: str, kind: str, source_id: int, parameters: list[float], normalizer: float = 1.0, x_label: str = "", y_label: str = ""):
@@ -355,15 +355,6 @@ class Platform:
 class UnivariatePlatform(Platform):
     major: str
     histogram: np.ndarray
-    smoothed: np.ndarray
-    smoothing_window: int
-    enable_smoothing: bool
-
-class BivariatePlatform(Platform):
-    major: str
-    minor: str
-    trend: np.ndarray
-    binned: np.ndarray
     smoothed: np.ndarray
     smoothing_window: int
     enable_smoothing: bool

@@ -30,7 +30,7 @@
 
         <Border Grid.Row="2" BorderBrush="{DynamicResource AppBrushBorder3}" BorderThickness="1" CornerRadius="6" Background="{DynamicResource AppBrushBackground3}" ClipToBounds="True">
             <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Margin="8">
-                <controls:IntegrationJobPopulationTreeView x:Name="populationTree" />
+                <controls:PopulationSelectionTreeView x:Name="populationTree" />
             </ScrollViewer>
         </Border>
 

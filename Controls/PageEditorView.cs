@@ -21,6 +21,7 @@ using Avalonia.Platform;
 using Avalonia.Threading;
 using gated.Models;
 using gated.ViewModels;
+using gated.ViewModels.Platforms;
 
 namespace gated.Controls;
 
@@ -475,9 +476,13 @@ public sealed class PageEditorView : Control
     private void draw_platform_plot(DrawingContext context, PlatformPlotElement element, Rect bounds)
     {
         draw_centered_text_in_band(context, element.Title, new Rect(bounds.Left, bounds.Top, bounds.Width, title_space), 13, Colors.Black, bolded: true);
-        var series = PlatformResultPlotView.CreateDisplaySeries(element.Platform);
-        if (!string.IsNullOrWhiteSpace(element.PlotKey))
-            series = series.Where(item => item.Key == element.PlotKey).ToArray();
+        var presentation = element.Platform is null
+            ? PlatformPresentation.Empty
+            : PlatformCatalog.Get(element.Platform.Kind).CreatePresentation(element.Platform);
+        var document = !string.IsNullOrWhiteSpace(element.OutputKey)
+            ? presentation.Plot(element.OutputKey)
+            : presentation.Plots.FirstOrDefault();
+        var series = document?.Series.ToArray() ?? [];
         bool has_data = series.Length > 0 && series.Any(item => item.X.Length > 0 && item.Y.Length > 0);
         if (!has_data)
             series = platform_dummy_series(element.Platform);
@@ -507,7 +512,7 @@ public sealed class PageEditorView : Control
         foreach (var plot in series)
         {
             int count = Math.Min(plot.X.Length, plot.Y.Length);
-            var pen = platform_plot_pen(plot.Key);
+            var pen = platform_plot_pen(plot);
             Point? previous = null;
             for (int index = 0; index < count; index++)
             {
@@ -525,7 +530,7 @@ public sealed class PageEditorView : Control
 
     private void draw_platform_statistic_table(DrawingContext context, PlatformStatisticTableElement element, Rect bounds)
     {
-        var (columns, rows, colors) = platform_statistic_table_data(element.Platform);
+        var (columns, rows, colors) = platform_statistic_table_data(element.Platform, element.OutputKey);
         draw_table(context, bounds, element.Title, columns, rows, colors);
     }
 
@@ -670,10 +675,8 @@ public sealed class PageEditorView : Control
         }
 
         context.DrawRectangle(null, spine_pen, plot_rect);
-        string x_label = series.FirstOrDefault()?.XLabel ?? (element.Platform?.Kind == PlatformKind.Kinetics ? "Time" : "Intensity");
-        string y_label = element.Platform?.Kind == PlatformKind.Kinetics
-            ? series.FirstOrDefault()?.YLabel ?? element.Platform.SelectedFeatureNames.FirstOrDefault() ?? "Signal"
-            : "Frequency";
+        string x_label = series.FirstOrDefault()?.XLabel ?? "Intensity";
+        string y_label = series.FirstOrDefault()?.YLabel ?? "Frequency";
         draw_centered_text_in_band(context, x_label, new Rect(plot_rect.Left, bounds.Bottom - bottom_axis_label_space, plot_rect.Width, bottom_axis_label_space), 11, Colors.Black);
         draw_vertical_centered_text(context, y_label, new Point(bounds.Left + left_axis_label_space / 2, plot_rect.Top + plot_rect.Height / 2), 11, Colors.Black);
     }
@@ -682,16 +685,10 @@ public sealed class PageEditorView : Control
     {
         double minimum;
         double maximum;
-        if (platform?.Kind == PlatformKind.Kinetics)
+        if (platform?.Axis.Transform == PlatformTransformationKind.Logicle)
         {
-            minimum = 0;
-            maximum = 1;
-        }
-        else if (platform?.Axis.Transform == PlatformTransformationKind.Logicle)
-        {
-            var transform = new LogicleTransform(platform.Axis.Logicle);
-            minimum = transform.Transform(platform.Axis.Minimum);
-            maximum = transform.Transform(platform.Axis.Maximum);
+            minimum = platform.Axis.Minimum;
+            maximum = platform.Axis.Maximum;
         }
         else
         {
@@ -706,8 +703,8 @@ public sealed class PageEditorView : Control
             new PlatformPlotSeries
             {
                 Key = "dummy",
-                XLabel = platform?.Kind == PlatformKind.Kinetics ? "Time" : platform?.SelectedFeatureNames.FirstOrDefault() ?? "Intensity",
-                YLabel = platform?.Kind == PlatformKind.Kinetics ? platform.SelectedFeatureNames.FirstOrDefault() ?? "Signal" : "Frequency",
+                XLabel = platform?.SelectedFeatureNames.FirstOrDefault() ?? "Intensity",
+                YLabel = "Frequency",
                 X = [minimum, maximum],
                 Y = [0, 1]
             }
@@ -722,7 +719,7 @@ public sealed class PageEditorView : Control
 
     private static IEnumerable<(double Position, string Label)> platform_x_ticks(Platform? platform, double minimum, double maximum, bool major)
     {
-        if (platform?.Axis.Transform == PlatformTransformationKind.Logicle && platform.Kind != PlatformKind.Kinetics)
+        if (platform?.Axis.Transform == PlatformTransformationKind.Logicle)
         {
             var transform = new LogicleTransform(platform.Axis.Logicle);
             var axis = new AxisSettings
@@ -734,9 +731,8 @@ public sealed class PageEditorView : Control
             var ticks = major ? Configuration.MajorAxisTicks(axis) : Configuration.MinorAxisTicks(axis);
             foreach (double raw in ticks)
             {
-                double transformed = transform.Transform(raw);
-                if (transformed >= minimum && transformed <= maximum)
-                    yield return (transformed, Configuration.FormatAxisValue(raw));
+                if (raw >= minimum && raw <= maximum)
+                    yield return (raw, Configuration.FormatAxisValue(raw));
             }
             yield break;
         }
@@ -747,11 +743,11 @@ public sealed class PageEditorView : Control
             yield return (value, Configuration.FormatAxisValue(value));
     }
 
-    private static Pen platform_plot_pen(string key)
+    private static Pen platform_plot_pen(PlatformPlotSeries series)
     {
-        bool is_component = key.Contains("component", StringComparison.OrdinalIgnoreCase) || key.Contains("generation", StringComparison.OrdinalIgnoreCase);
-        bool is_sum = key.StartsWith("fit_", StringComparison.OrdinalIgnoreCase) || key.Contains("_fit_", StringComparison.OrdinalIgnoreCase);
-        Color color = PlatformPalette.ColorForSeriesKey(key);
+        bool is_component = series.Role == PlatformSeriesRole.Component;
+        bool is_sum = series.Role == PlatformSeriesRole.Fit;
+        Color color = PlatformPalette.ColorForSeriesKey(series.Key);
         if (is_sum)
             color = Color.FromRgb((byte)Math.Max(0, color.R - 42), (byte)Math.Max(0, color.G - 42), (byte)Math.Max(0, color.B - 42));
         var pen = new Pen(new SolidColorBrush(color), is_component ? 1.2 : is_sum ? 2.0 : 1.2);
@@ -760,9 +756,12 @@ public sealed class PageEditorView : Control
         return pen;
     }
 
-    private (string[] Columns, string[][] Rows, Color?[] Colors) platform_statistic_table_data(Platform? platform)
+    private (string[] Columns, string[][] Rows, Color?[] Colors) platform_statistic_table_data(Platform? platform, string output_key)
     {
-        var table = platform?.ResultTables.FirstOrDefault();
+        var table = platform is null
+            ? null
+            : PlatformCatalog.Get(platform.Kind).CreatePresentation(platform).Table(output_key) ??
+              PlatformCatalog.Get(platform.Kind).CreatePresentation(platform).Tables.FirstOrDefault();
         if (platform is null || table is null)
         {
             var rows = platform?.PlatformStatistics.Select(item => new[] { item.Name, item.Value }).ToArray() ?? [];
@@ -772,7 +771,7 @@ public sealed class PageEditorView : Control
         var rows_with_colors = table.Rows
             .Select(row => (Row: row, Color: platform_table_row_color(platform, row)))
             .ToArray();
-        return (table.Columns, rows_with_colors.Select(item => item.Row).ToArray(), rows_with_colors.Select(item => item.Color).ToArray());
+        return (table.Columns.ToArray(), rows_with_colors.Select(item => item.Row).ToArray(), rows_with_colors.Select(item => item.Color).ToArray());
     }
 
     private static Color? platform_table_row_color(Platform platform, string[] row)
@@ -782,7 +781,7 @@ public sealed class PageEditorView : Control
         for (int index = 0; index < platform.Populations.Count; index++)
         {
             var population = platform.Populations[index];
-            if (!population.IsPopulation || !population.IsPlatformDropped)
+            if (!population.IsPlatformDropped)
                 continue;
             if (!string.Equals(population.SampleName, row[0], StringComparison.Ordinal) ||
                 !string.Equals(population.PopulationName, row[1], StringComparison.Ordinal))
@@ -793,7 +792,7 @@ public sealed class PageEditorView : Control
         return null;
     }
 
-    private static int platform_source_index(Platform platform, IntegrationJobPopulationSelection row)
+    private static int platform_source_index(Platform platform, PlatformPopulationInput row)
     {
         for (int index = 0; index < platform.RowMap.Sources.Count; index++)
         {
@@ -811,7 +810,6 @@ public sealed class PageEditorView : Control
         platform switch
         {
             UnivariatePlatform univariate => univariate.Smoothing.HalfWindow,
-            BivariatePlatform bivariate => bivariate.Smoothing.HalfWindow,
             _ => 0
         };
 
@@ -819,7 +817,6 @@ public sealed class PageEditorView : Control
         platform switch
         {
             UnivariatePlatform univariate => univariate.Smoothing.Enabled,
-            BivariatePlatform bivariate => bivariate.Smoothing.Enabled,
             _ => false
         };
 
@@ -935,6 +932,7 @@ public sealed class PageEditorView : Control
         element switch
         {
             PlatformPlotElement platform_plot when platform_plot.Platform is { } platform => string.Join("|",
+                platform_plot.OutputKey,
                 platform.Status,
                 platform.Axis.Transform,
                 platform.Axis.Minimum,
@@ -953,8 +951,9 @@ public sealed class PageEditorView : Control
                 string.Join(";", platform.PlotSeries.Select(plot => $"{plot.Key}:{plot.X.Length}:{plot.Y.Length}:{plot.X.FirstOrDefault():G6}:{plot.Y.FirstOrDefault():G6}:{plot.X.LastOrDefault():G6}:{plot.Y.LastOrDefault():G6}")),
                 platform.FitCurves.Count,
                 string.Join(";", platform.FitCurves.Select(curve => $"{curve.Key}:{curve.Kind}:{curve.SourceId}:{curve.Normalizer:G6}:{string.Join(",", curve.Parameters.Select(value => value.ToString("G6", CultureInfo.InvariantCulture)))}")),
-                string.Join(",", platform.Populations.Where(row => row.IsPopulation && row.IsPlatformDropped).Select(row => row.IsSelected))),
+                string.Join(",", platform.Populations.Where(row => row.IsPlatformDropped).Select(row => row.IsSelected))),
             PlatformStatisticTableElement platform_table when platform_table.Platform is { } platform => string.Join("|",
+                platform_table.OutputKey,
                 platform.ResultTables.Count,
                 string.Join(";", platform.ResultTables.Select(table => $"{table.Key}:{string.Join(",", table.Columns)}:{string.Join("/", table.Rows.Select(row => string.Join(",", row)))}")),
                 platform.PlatformStatistics.Count,

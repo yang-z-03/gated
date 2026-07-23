@@ -15,14 +15,14 @@ using System.Windows.Input;
 
 namespace gated.Controls;
 
-public sealed class IntegrationJobPopulationTreeView : Control
+public sealed class PopulationSelectionTreeView : Control
 {
     public static readonly StyledProperty<INotifyCollectionChanged?> NodesProperty =
-        AvaloniaProperty.Register<IntegrationJobPopulationTreeView, INotifyCollectionChanged?>(nameof(Nodes));
+        AvaloniaProperty.Register<PopulationSelectionTreeView, INotifyCollectionChanged?>(nameof(Nodes));
     public static readonly StyledProperty<ICommand?> SelectionChangedCommandProperty =
-        AvaloniaProperty.Register<IntegrationJobPopulationTreeView, ICommand?>(nameof(SelectionChangedCommand));
+        AvaloniaProperty.Register<PopulationSelectionTreeView, ICommand?>(nameof(SelectionChangedCommand));
     public static readonly StyledProperty<bool> IsReadOnlyProperty =
-        AvaloniaProperty.Register<IntegrationJobPopulationTreeView, bool>(nameof(IsReadOnly));
+        AvaloniaProperty.Register<PopulationSelectionTreeView, bool>(nameof(IsReadOnly));
 
     private const double header_height = 30;
     private const double row_height = 25;
@@ -30,11 +30,11 @@ public sealed class IntegrationJobPopulationTreeView : Control
     private const double chevron_width = 21;
     private const double icon_width = 16;
     private INotifyCollectionChanged? subscribed_nodes;
-    private IntegrationJobPopulationSelection[] subscribed_rows = [];
+    private PlatformPopulationInput[] subscribed_rows = [];
 
-    static IntegrationJobPopulationTreeView()
+    static PopulationSelectionTreeView()
     {
-        AffectsRender<IntegrationJobPopulationTreeView>(NodesProperty, SelectionChangedCommandProperty, IsReadOnlyProperty);
+        AffectsRender<PopulationSelectionTreeView>(NodesProperty, SelectionChangedCommandProperty, IsReadOnlyProperty);
     }
 
     public INotifyCollectionChanged? Nodes
@@ -109,7 +109,7 @@ public sealed class IntegrationJobPopulationTreeView : Control
             draw_row(context, rows[index], index);
     }
 
-    private void draw_row(DrawingContext context, IntegrationJobPopulationSelection row, int index)
+    private void draw_row(DrawingContext context, PlatformPopulationInput row, int index)
     {
         double top = header_height + index * row_height;
         var row_rect = new Rect(4, top + 1, Math.Max(0, Bounds.Width - 8), row_height - 2);
@@ -193,7 +193,7 @@ public sealed class IntegrationJobPopulationTreeView : Control
         foreach (var root in all.Where(row => row.ParentKey is null))
             apply_descendant_states(root, inherited_selected: false);
 
-        bool apply_descendant_states(IntegrationJobPopulationSelection row, bool inherited_selected)
+        bool apply_descendant_states(PlatformPopulationInput row, bool inherited_selected)
         {
             bool selected = row.IsSelected;
             if (inherited_selected)
@@ -226,12 +226,12 @@ public sealed class IntegrationJobPopulationTreeView : Control
         }
     }
 
-    private IntegrationJobPopulationSelection[] rows() =>
+    private PlatformPopulationInput[] rows() =>
         Nodes is System.Collections.IEnumerable enumerable
-            ? enumerable.OfType<IntegrationJobPopulationSelection>().ToArray()
+            ? enumerable.OfType<PlatformPopulationInput>().ToArray()
             : [];
 
-    private IntegrationJobPopulationSelection[] visible_rows()
+    private PlatformPopulationInput[] visible_rows()
     {
         var all = rows();
         return all.Where((row, index) =>

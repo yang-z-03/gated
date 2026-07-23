@@ -5,13 +5,14 @@ using System.Linq;
 using Avalonia;
 using gated.Models;
 using gated.Reduction;
+using gated.ViewModels.Platforms;
 
 namespace gated.Services;
 
 public sealed class WorkspaceBinarySerializer
 {
     private const uint magic = 0x44544731;
-    private const int version = 52;
+    private const int version = 53;
     private const int minimum_supported_version = 42;
     [ThreadStatic] private static int reading_version;
 
@@ -27,7 +28,7 @@ public sealed class WorkspaceBinarySerializer
         foreach (var group in workspace.Groups)
             write_group(writer, group);
 
-        write_integration_jobs(writer, workspace);
+        write_platforms(writer, workspace);
         write_page_layouts(writer, workspace);
         write_recent_file_paths(writer, workspace);
         write_metadata_columns(writer, workspace);
@@ -56,7 +57,10 @@ public sealed class WorkspaceBinarySerializer
         for (int index = 0; index < group_count; index++)
             workspace.Groups.Add(read_group(reader, file_version));
 
-        read_integration_jobs(reader, workspace);
+        if (file_version >= 53)
+            read_platforms(reader, workspace);
+        else
+            skip_legacy_platforms(reader);
         read_page_layouts(reader, workspace, file_version);
         read_recent_file_paths(reader, workspace);
         read_metadata_columns(reader, workspace);
@@ -1203,10 +1207,10 @@ public sealed class WorkspaceBinarySerializer
         }
     }
 
-    private static void write_integration_jobs(BinaryWriter writer, FlowWorkspace workspace)
+    private static void write_platforms(BinaryWriter writer, FlowWorkspace workspace)
     {
-        writer.Write(workspace.IntegrationJobs.Count);
-        foreach (var job in workspace.IntegrationJobs)
+        writer.Write(workspace.Platforms.Count);
+        foreach (var job in workspace.Platforms)
         {
             writer.Write(job.Id.ToByteArray());
             writer.Write((int)job.Kind);
@@ -1215,10 +1219,20 @@ public sealed class WorkspaceBinarySerializer
             write_string(writer, job.WarningText);
             writer.Write(job.CurrentStep);
 
+            writer.Write((int)job.Axis.Transform);
+            writer.Write(job.Axis.Minimum);
+            writer.Write(job.Axis.Maximum);
             write_logicle_parameters(writer, job.Axis.Logicle);
-            write_cytonorm_options(writer, job is IntegrationPlatform integration ? integration.CytoNormOptions : new CytoNormOptions());
-            write_string(writer, job is IntegrationPlatform integration_job ? integration_job.BatchColumnName : "");
-            write_platform_options(writer, job);
+
+            using (var payload_stream = new MemoryStream())
+            using (var payload_writer = new BinaryWriter(payload_stream))
+            {
+                payload_writer.Write(1);
+                PlatformCatalog.Get(job.Kind).WritePayload(payload_writer, job);
+                payload_writer.Flush();
+                writer.Write(checked((int)payload_stream.Length));
+                writer.Write(payload_stream.GetBuffer(), 0, checked((int)payload_stream.Length));
+            }
 
             writer.Write(job.Populations.Count);
             foreach (var selection in job.Populations)
@@ -1242,6 +1256,7 @@ public sealed class WorkspaceBinarySerializer
                 writer.Write(selection.IsExpanded);
                 writer.Write(selection.IsPopulation);
                 writer.Write(selection.IsPlatformDropped);
+                writer.Write(selection.EventCount);
             }
 
             writer.Write(job.Features.Count);
@@ -1285,33 +1300,39 @@ public sealed class WorkspaceBinarySerializer
         }
     }
 
-    private static void read_integration_jobs(BinaryReader reader, FlowWorkspace workspace)
+    private static void read_platforms(BinaryReader reader, FlowWorkspace workspace)
     {
         int job_count = reader.ReadInt32();
         for (int index = 0; index < job_count; index++)
         {
             var id = new Guid(reader.ReadBytes(16));
             var kind = (PlatformKind)reader.ReadInt32();
-            var job = PlatformFactory.Create(kind);
+            var job = PlatformCatalog.Get(kind).CreateModel();
             job.Id = id;
             job.Name = read_string(reader);
-            job.Status = (IntegrationJobStatus)reader.ReadInt32();
+            job.Status = (PlatformStatus)reader.ReadInt32();
             job.WarningText = read_string(reader);
             job.CurrentStep = reader.ReadInt32();
+            job.Axis.Transform = (PlatformTransformationKind)reader.ReadInt32();
+            job.Axis.Minimum = reader.ReadDouble();
+            job.Axis.Maximum = reader.ReadDouble();
             job.Axis.Logicle = read_logicle_parameters(reader);
-            var cytonorm_options = read_cytonorm_options(reader);
-            string batch_column_name = read_string(reader);
-            if (job is IntegrationPlatform integration)
+            int payload_length = reader.ReadInt32();
+            if (payload_length < 0 || payload_length > reader.BaseStream.Length - reader.BaseStream.Position)
+                throw new InvalidDataException("Invalid platform implementation payload length.");
+            using (var payload_stream = new MemoryStream(reader.ReadBytes(payload_length), writable: false))
+            using (var payload_reader = new BinaryReader(payload_stream))
             {
-                integration.CytoNormOptions = cytonorm_options;
-                integration.BatchColumnName = batch_column_name;
+                int payload_version = payload_reader.ReadInt32();
+                if (payload_version != 1)
+                    throw new NotSupportedException($"Unsupported platform payload version: {payload_version}.");
+                PlatformCatalog.Get(kind).ReadPayload(payload_reader, job, payload_version);
             }
-            read_platform_options(reader, job);
 
             int population_count = reader.ReadInt32();
             for (int item = 0; item < population_count; item++)
             {
-                job.Populations.Add(new IntegrationJobPopulationSelection
+                job.Populations.Add(new PlatformPopulationInput
                 {
                     RowKey = new Guid(reader.ReadBytes(16)),
                     ParentKey = reader.ReadBoolean() ? new Guid(reader.ReadBytes(16)) : null,
@@ -1329,14 +1350,15 @@ public sealed class WorkspaceBinarySerializer
                     HasChildren = reader.ReadBoolean(),
                     IsExpanded = reader.ReadBoolean(),
                     IsPopulation = reader.ReadBoolean(),
-                    IsPlatformDropped = reader.ReadBoolean()
+                    IsPlatformDropped = reader.ReadBoolean(),
+                    EventCount = reader.ReadInt32()
                 });
             }
 
             int feature_count = reader.ReadInt32();
             for (int item = 0; item < feature_count; item++)
             {
-                job.Features.Add(new IntegrationJobFeatureSelection
+                job.Features.Add(new PlatformFeatureSelection
                 {
                     RowKey = new Guid(reader.ReadBytes(16)),
                     ParentKey = reader.ReadBoolean() ? new Guid(reader.ReadBytes(16)) : null,
@@ -1354,10 +1376,10 @@ public sealed class WorkspaceBinarySerializer
             }
 
             int source_count = reader.ReadInt32();
-            var row_map_sources = new List<IntegrationJobRowMapSource>(source_count);
+            var row_map_sources = new List<PlatformRowMapSource>(source_count);
             for (int row = 0; row < source_count; row++)
             {
-                row_map_sources.Add(new IntegrationJobRowMapSource
+                row_map_sources.Add(new PlatformRowMapSource
                 {
                     GroupId = new Guid(reader.ReadBytes(16)),
                     SampleId = new Guid(reader.ReadBytes(16)),
@@ -1379,114 +1401,162 @@ public sealed class WorkspaceBinarySerializer
             job.Transformed = read_float_matrix(reader);
             _ = read_string(reader);
             read_platform_results(reader, job);
-            workspace.IntegrationJobs.Add(job);
+            workspace.Platforms.Add(job);
         }
     }
 
-    private static void write_platform_options(BinaryWriter writer, Platform job)
+    private static void skip_legacy_platforms(BinaryReader reader)
     {
-        writer.Write((int)job.Axis.Transform);
-        writer.Write((int)(job is CellCyclePlatform cell_cycle ? cell_cycle.Model : CellCycleModelKind.WatsonPragmatic));
-        writer.Write(job is not CellCyclePlatform cell_cycle_sum || cell_cycle_sum.DrawModelSum);
-        writer.Write(job is not CellCyclePlatform cell_cycle_components || cell_cycle_components.DrawComponents);
-        writer.Write(job is not CellCyclePlatform cell_cycle_fill || cell_cycle_fill.FillComponents);
-        writer.Write(platform_smoothing(job).HalfWindow);
-        writer.Write(platform_smoothing(job).Enabled);
-        writer.Write(job is not ProliferationPlatform proliferation_sum || proliferation_sum.DrawModelSum);
-        writer.Write(job is not ProliferationPlatform proliferation_components || proliferation_components.DrawComponents);
-        writer.Write(job is ProliferationPlatform proliferation ? proliferation.MaxGenerations : 8);
-        writer.Write(job is ProliferationPlatform proliferation_prominence ? proliferation_prominence.PeakProminence : 0.03);
-        writer.Write((int)(job is KineticsPlatform kinetics ? kinetics.Fit : KineticsFitKind.Linear));
-        writer.Write(job is KineticsPlatform kinetics_windows ? kinetics_windows.TimeWindowCount : 64);
-        writer.Write(job is KineticsPlatform kinetics_change ? kinetics_change.ChangePointZ : 3.0);
-        writer.Write(job is KineticsPlatform kinetics_segment ? kinetics_segment.MinSegmentWindows : 5);
-        write_string(writer, job is IntensityComparisonPlatform comparison ? comparison.ReferenceSample : "");
-        writer.Write(job.Axis.Minimum);
-        writer.Write(job.Axis.Maximum);
-        write_platform_parameters(writer, job);
-    }
+        int platform_count = reader.ReadInt32();
+        if (platform_count < 0)
+            throw new InvalidDataException("Invalid legacy platform count.");
+        for (int index = 0; index < platform_count; index++)
+        {
+            _ = reader.ReadBytes(16);
+            _ = reader.ReadInt32();
+            _ = read_string(reader);
+            _ = reader.ReadInt32();
+            _ = read_string(reader);
+            _ = reader.ReadInt32();
+            _ = read_logicle_parameters(reader);
+            _ = read_cytonorm_options(reader);
+            _ = read_string(reader);
+            skip_legacy_platform_options(reader);
 
-    private static PlatformSmoothingOptions platform_smoothing(Platform job) =>
-        try_platform_smoothing(job) ?? new PlatformSmoothingOptions();
+            int population_count = reader.ReadInt32();
+            for (int item = 0; item < population_count; item++)
+            {
+                _ = reader.ReadBytes(16);
+                if (reader.ReadBoolean()) _ = reader.ReadBytes(16);
+                _ = reader.ReadBytes(16);
+                _ = reader.ReadBytes(16);
+                _ = reader.ReadBytes(16);
+                _ = reader.ReadInt32();
+                _ = read_string(reader);
+                _ = read_string(reader);
+                _ = read_string(reader);
+                _ = reader.ReadBoolean();
+                _ = reader.ReadBoolean();
+                _ = reader.ReadBoolean();
+                _ = reader.ReadInt32();
+                _ = reader.ReadBoolean();
+                _ = reader.ReadBoolean();
+                _ = reader.ReadBoolean();
+                _ = reader.ReadBoolean();
+            }
 
-    private static PlatformSmoothingOptions? try_platform_smoothing(Platform job) =>
-        job switch
-        {
-            UnivariatePlatform univariate => univariate.Smoothing,
-            BivariatePlatform bivariate => bivariate.Smoothing,
-            _ => null
-        };
+            int feature_count = reader.ReadInt32();
+            for (int item = 0; item < feature_count; item++)
+            {
+                _ = reader.ReadBytes(16);
+                if (reader.ReadBoolean()) _ = reader.ReadBytes(16);
+                _ = read_string(reader);
+                _ = read_string(reader);
+                _ = reader.ReadBoolean();
+                _ = reader.ReadBoolean();
+                _ = reader.ReadBoolean();
+                _ = reader.ReadBoolean();
+                _ = read_string(reader);
+                _ = reader.ReadInt32();
+                _ = reader.ReadBoolean();
+                _ = reader.ReadBoolean();
+            }
 
-    private static void read_platform_options(BinaryReader reader, Platform job)
-    {
-        job.Axis.Transform = (PlatformTransformationKind)reader.ReadInt32();
-        var cell_cycle_model = (CellCycleModelKind)reader.ReadInt32();
-        bool cell_cycle_draw_sum = reader.ReadBoolean();
-        bool cell_cycle_draw_components = reader.ReadBoolean();
-        bool cell_cycle_fill_components = reader.ReadBoolean();
-        if (job is CellCyclePlatform cell_cycle)
-        {
-            cell_cycle.Model = cell_cycle_model;
-            cell_cycle.DrawModelSum = cell_cycle_draw_sum;
-            cell_cycle.DrawComponents = cell_cycle_draw_components;
-            cell_cycle.FillComponents = cell_cycle_fill_components;
-        }
-        int smoothing_half_window = reader.ReadInt32();
-        bool smoothing_enabled = reader.ReadBoolean();
-        if (try_platform_smoothing(job) is { } smoothing)
-        {
-            smoothing.HalfWindow = smoothing_half_window;
-            smoothing.Enabled = smoothing_enabled;
-        }
-        bool proliferation_draw_sum = reader.ReadBoolean();
-        bool proliferation_draw_components = reader.ReadBoolean();
-        int proliferation_max_generations = reader.ReadInt32();
-        double proliferation_peak_prominence = reader.ReadDouble();
-        if (job is ProliferationPlatform proliferation)
-        {
-            proliferation.DrawModelSum = proliferation_draw_sum;
-            proliferation.DrawComponents = proliferation_draw_components;
-            proliferation.MaxGenerations = proliferation_max_generations;
-            proliferation.PeakProminence = proliferation_peak_prominence;
-        }
-        var kinetics_fit = (KineticsFitKind)reader.ReadInt32();
-        int kinetics_windows = reader.ReadInt32();
-        double kinetics_change = reader.ReadDouble();
-        int kinetics_segment = reader.ReadInt32();
-        if (job is KineticsPlatform kinetics)
-        {
-            kinetics.Fit = kinetics_fit;
-            kinetics.TimeWindowCount = kinetics_windows;
-            kinetics.ChangePointZ = kinetics_change;
-            kinetics.MinSegmentWindows = kinetics_segment;
-        }
-        string reference_sample = read_string(reader);
-        if (job is IntensityComparisonPlatform comparison)
-            comparison.ReferenceSample = reference_sample;
-        job.Axis.Minimum = reader.ReadDouble();
-        job.Axis.Maximum = reader.ReadDouble();
-        read_platform_parameters(reader, job);
-    }
-
-    private static void write_platform_parameters(BinaryWriter writer, Platform job)
-    {
-        writer.Write(job.Parameters.Count);
-        foreach (var parameter in job.Parameters.OrderBy(parameter => parameter.Key, StringComparer.Ordinal))
-        {
-            write_string(writer, parameter.Key);
-            write_string(writer, Platform.ParameterToJson(parameter.Value));
+            int source_count = reader.ReadInt32();
+            for (int item = 0; item < source_count; item++)
+            {
+                _ = reader.ReadBytes(16);
+                _ = reader.ReadBytes(16);
+                _ = reader.ReadBytes(16);
+                _ = reader.ReadInt32();
+            }
+            _ = read_int_array(reader);
+            _ = read_int_array(reader);
+            _ = read_float_matrix(reader);
+            _ = read_float_matrix(reader);
+            _ = read_int_array(reader);
+            _ = read_float_matrix(reader);
+            _ = read_float_matrix(reader);
+            _ = read_float_matrix(reader);
+            _ = read_string(reader);
+            skip_legacy_platform_results(reader);
         }
     }
 
-    private static void read_platform_parameters(BinaryReader reader, Platform job)
+    private static void skip_legacy_platform_options(BinaryReader reader)
     {
-        job.Parameters.Clear();
-        int count = reader.ReadInt32();
-        for (int index = 0; index < count; index++)
+        _ = reader.ReadInt32();
+        _ = reader.ReadInt32();
+        _ = reader.ReadBoolean();
+        _ = reader.ReadBoolean();
+        _ = reader.ReadBoolean();
+        _ = reader.ReadInt32();
+        _ = reader.ReadBoolean();
+        _ = reader.ReadBoolean();
+        _ = reader.ReadBoolean();
+        _ = reader.ReadInt32();
+        _ = reader.ReadDouble();
+        _ = reader.ReadInt32();
+        _ = reader.ReadInt32();
+        _ = reader.ReadDouble();
+        _ = reader.ReadInt32();
+        _ = read_string(reader);
+        _ = reader.ReadDouble();
+        _ = reader.ReadDouble();
+        int parameter_count = reader.ReadInt32();
+        for (int item = 0; item < parameter_count; item++)
         {
-            string key = read_string(reader);
-            string value = read_string(reader);
-            job.Parameters[key] = Platform.ParameterFromJson(value);
+            _ = read_string(reader);
+            _ = read_string(reader);
+        }
+    }
+
+    private static void skip_legacy_platform_results(BinaryReader reader)
+    {
+        int table_count = reader.ReadInt32();
+        for (int table = 0; table < table_count; table++)
+        {
+            _ = read_string(reader);
+            _ = read_string(reader);
+            _ = read_string_array(reader);
+            int row_count = reader.ReadInt32();
+            for (int row = 0; row < row_count; row++) _ = read_string_array(reader);
+        }
+
+        int series_count = reader.ReadInt32();
+        for (int series = 0; series < series_count; series++)
+        {
+            _ = read_string(reader);
+            _ = read_string(reader);
+            _ = read_string(reader);
+            _ = read_string(reader);
+            _ = read_double_array(reader);
+            _ = read_double_array(reader);
+        }
+
+        int curve_count = reader.ReadInt32();
+        for (int curve = 0; curve < curve_count; curve++)
+        {
+            _ = read_string(reader);
+            _ = read_string(reader);
+            _ = read_string(reader);
+            _ = read_string(reader);
+            _ = reader.ReadInt32();
+            _ = reader.ReadInt32();
+            _ = reader.ReadInt32();
+            _ = read_logicle_parameters(reader);
+            _ = reader.ReadDouble();
+            _ = read_double_array(reader);
+            _ = read_string_array(reader);
+            _ = read_double_array(reader);
+            _ = reader.ReadDouble();
+        }
+
+        int statistic_count = reader.ReadInt32();
+        for (int statistic = 0; statistic < statistic_count; statistic++)
+        {
+            _ = read_string(reader);
+            _ = read_string(reader);
         }
     }
 
@@ -1516,6 +1586,8 @@ public sealed class WorkspaceBinarySerializer
             write_string(writer, series.Title);
             write_string(writer, series.XLabel);
             write_string(writer, series.YLabel);
+            writer.Write(series.SourceId);
+            writer.Write((int)series.Role);
             write_double_array(writer, series.X);
             write_double_array(writer, series.Y);
         }
@@ -1528,6 +1600,7 @@ public sealed class WorkspaceBinarySerializer
             write_string(writer, curve.XLabel);
             write_string(writer, curve.YLabel);
             writer.Write(curve.SourceId);
+            writer.Write((int)curve.Role);
             writer.Write((int)curve.Kind);
             writer.Write((int)curve.FitTransformation);
             write_logicle_parameters(writer, curve.FitLogicle);
@@ -1572,6 +1645,8 @@ public sealed class WorkspaceBinarySerializer
                 Title = read_string(reader),
                 XLabel = read_string(reader),
                 YLabel = read_string(reader),
+                SourceId = reader.ReadInt32(),
+                Role = (PlatformSeriesRole)reader.ReadInt32(),
                 X = read_double_array(reader) ?? [],
                 Y = read_double_array(reader) ?? []
             });
@@ -1587,6 +1662,7 @@ public sealed class WorkspaceBinarySerializer
                 XLabel = read_string(reader),
                 YLabel = read_string(reader),
                 SourceId = reader.ReadInt32(),
+                Role = (PlatformSeriesRole)reader.ReadInt32(),
                 Kind = (PlatformFitCurveKind)reader.ReadInt32(),
                 FitTransformation = (PlatformTransformationKind)reader.ReadInt32(),
                 FitLogicle = read_logicle_parameters(reader),
@@ -1597,8 +1673,7 @@ public sealed class WorkspaceBinarySerializer
                 Intercept = reader.ReadDouble()
             };
             job.FitCurves.Add(curve);
-            if (curve.Key.Contains("component", StringComparison.OrdinalIgnoreCase) ||
-                curve.Key.Contains("generation", StringComparison.OrdinalIgnoreCase))
+            if (curve.Role == PlatformSeriesRole.Component)
             {
                 if (!job.Components.TryGetValue(curve.Key, out var components))
                 {
@@ -1654,8 +1729,11 @@ public sealed class WorkspaceBinarySerializer
             }
             else if (element.ElementKind is PageElementKind.PlatformPlot or PageElementKind.PlatformStatisticTable)
             {
-                writer.Write(item.PlatformIndex);
-                write_string(writer, element is PlatformPlotElement platform_plot ? platform_plot.PlotKey : "");
+                var platform = element is PlatformPlotElement platform_plot_element
+                    ? platform_plot_element.Platform
+                    : ((PlatformStatisticTableElement)element).Platform;
+                writer.Write((platform?.Id ?? Guid.Empty).ToByteArray());
+                write_string(writer, element is PlatformPlotElement platform_plot ? platform_plot.OutputKey : element is PlatformStatisticTableElement platform_table ? platform_table.OutputKey : "");
             }
             else
             {
@@ -1711,6 +1789,7 @@ public sealed class WorkspaceBinarySerializer
             bool has_population = false;
             var population_region = PopulationRegion.Primary;
             int platform_index_value = -1;
+            Guid platform_id = Guid.Empty;
             string platform_plot_key = "";
             if (element_kind == PageElementKind.FlowPlot)
             {
@@ -1725,7 +1804,10 @@ public sealed class WorkspaceBinarySerializer
             }
             else if (element_kind is PageElementKind.PlatformPlot or PageElementKind.PlatformStatisticTable)
             {
-                platform_index_value = reader.ReadInt32();
+                if (file_version >= 53)
+                    platform_id = new Guid(reader.ReadBytes(16));
+                else
+                    platform_index_value = reader.ReadInt32();
                 platform_plot_key = read_string(reader);
             }
             else
@@ -1803,14 +1885,17 @@ public sealed class WorkspaceBinarySerializer
             }
             else if (element_kind == PageElementKind.PlatformPlot)
             {
-                if (platform_index_value < 0 || platform_index_value >= workspace.IntegrationJobs.Count)
+                var platform = file_version >= 53
+                    ? workspace.Platforms.FirstOrDefault(item => item.Id == platform_id)
+                    : platform_index_value >= 0 && platform_index_value < workspace.Platforms.Count ? workspace.Platforms[platform_index_value] : null;
+                if (platform is null)
                     continue;
                 element = new PlatformPlotElement
                 {
                     Id = element_id,
                     ParentElementId = parent_element_id,
-                    Platform = workspace.IntegrationJobs[platform_index_value],
-                    PlotKey = platform_plot_key,
+                    Platform = platform,
+                    OutputKey = platform_plot_key,
                     XAxis = x_axis,
                     YAxis = y_axis,
                     DotColor = create_dot_color_settings(dot_color_channel, dot_color_palette, dot_color_use_log_scale, dot_color_available_minimum, dot_color_available_maximum, dot_color_range_minimum, dot_color_range_maximum)
@@ -1818,13 +1903,17 @@ public sealed class WorkspaceBinarySerializer
             }
             else if (element_kind == PageElementKind.PlatformStatisticTable)
             {
-                if (platform_index_value < 0 || platform_index_value >= workspace.IntegrationJobs.Count)
+                var platform = file_version >= 53
+                    ? workspace.Platforms.FirstOrDefault(item => item.Id == platform_id)
+                    : platform_index_value >= 0 && platform_index_value < workspace.Platforms.Count ? workspace.Platforms[platform_index_value] : null;
+                if (platform is null)
                     continue;
                 element = new PlatformStatisticTableElement
                 {
                     Id = element_id,
                     ParentElementId = parent_element_id,
-                    Platform = workspace.IntegrationJobs[platform_index_value],
+                    Platform = platform,
+                    OutputKey = platform_plot_key,
                     XAxis = x_axis,
                     YAxis = y_axis,
                     DotColor = create_dot_color_settings(dot_color_channel, dot_color_palette, dot_color_use_log_scale, dot_color_available_minimum, dot_color_available_maximum, dot_color_range_minimum, dot_color_range_maximum)
@@ -2014,8 +2103,8 @@ public sealed class WorkspaceBinarySerializer
     private static int platform_index(FlowWorkspace workspace, PagePlotElement element) =>
         element switch
         {
-            PlatformPlotElement plot => plot.Platform is null ? -1 : workspace.IntegrationJobs.IndexOf(plot.Platform),
-            PlatformStatisticTableElement table => table.Platform is null ? -1 : workspace.IntegrationJobs.IndexOf(table.Platform),
+            PlatformPlotElement plot => plot.Platform is null ? -1 : workspace.Platforms.IndexOf(plot.Platform),
+            PlatformStatisticTableElement table => table.Platform is null ? -1 : workspace.Platforms.IndexOf(table.Platform),
             _ => -1
         };
 

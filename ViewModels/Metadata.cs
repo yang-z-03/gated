@@ -34,7 +34,7 @@ public sealed partial class MainWindowViewModel
         {
             commit_metadata_row(e.Row);
             refresh_batch_column_choices();
-            invalidate_integration_jobs_from_metadata();
+            invalidate_platforms_from_metadata();
         }
         finally
         {
@@ -119,7 +119,7 @@ public sealed partial class MainWindowViewModel
             if (!Workspace.MetadataColumns.ContainsKey(display_name))
                 Workspace.MetadataColumns[display_name] = Workspace.MetadataColumns[old_name];
             Workspace.MetadataColumns.Remove(old_name);
-            foreach (var integration in Workspace.IntegrationJobs.OfType<IntegrationPlatform>()
+            foreach (var integration in Workspace.Platforms.OfType<IntegrationPlatform>()
                          .Where(integration => integration.BatchColumnName == old_name))
                 integration.BatchColumnName = display_name;
         }
@@ -165,7 +165,7 @@ public sealed partial class MainWindowViewModel
             foreach (DataRow row in table.Rows)
                 commit_metadata_row(row);
             refresh_batch_column_choices();
-            invalidate_integration_jobs_from_metadata();
+            invalidate_platforms_from_metadata();
         }
         finally
         {
@@ -199,10 +199,10 @@ public sealed partial class MainWindowViewModel
         sync_identity_metadata();
     }
 
-    private void invalidate_integration_jobs_from_metadata()
+    private void invalidate_platforms_from_metadata()
     {
-        foreach (var job in Workspace.IntegrationJobs.Where(job => job.HasIntegrated))
-            job.InvalidateFromConfiguration();
+        foreach (var platform in Workspace.Platforms.Where(platform => platform.HasIntegrated))
+            platform.InvalidateFromConfiguration();
         raise_command_states();
     }
 

@@ -55,7 +55,7 @@ public sealed class Workspace
     }
 
     public PyObject groupings => PythonObjects.List(Model.Groups.Select(group => new Grouping(Model, group)));
-    public PyObject platforms => PythonObjects.Dict(Model.IntegrationJobs.Select(job => KeyValuePair.Create(job.Name, Platform.Wrap(Model, job))));
+    public PyObject platforms => PythonObjects.Dict(Model.Platforms.Select(job => KeyValuePair.Create(job.Name, Platform.Wrap(Model, job))));
     public PyObject storage => PythonExtensionRuntime.WithGil(Model.GetPythonStorage);
 
     public Grouping add_grouping(string name)
@@ -240,7 +240,6 @@ public class Platform
         model switch
         {
             Models.UnivariatePlatform univariate => new UnivariatePlatform(workspace, univariate),
-            Models.BivariatePlatform bivariate => new BivariatePlatform(workspace, bivariate),
             Models.MultivariatePlatform multivariate => new MultivariatePlatform(workspace, multivariate),
             _ => new Platform(workspace, model)
         };
@@ -289,16 +288,20 @@ public class Platform
         }
     }
 
-    public void set_plot_series(string key, string title, PyObject x, PyObject y, string x_label = "", string y_label = "")
+    public void set_plot_series(string key, string title, PyObject x, PyObject y, string x_label = "", string y_label = "", int source_id = -1, string role = "observed")
     {
         using (Py.GIL())
         {
+            if (!Enum.TryParse(role, ignoreCase: true, out PlatformSeriesRole series_role))
+                throw new ArgumentException($"Unknown platform series role '{role}'. Expected observed, fit, or component.", nameof(role));
             var series = new PlatformPlotSeries
             {
                 Key = string.IsNullOrWhiteSpace(key) ? "plot" : key,
                 Title = string.IsNullOrWhiteSpace(title) ? "Plot" : title,
                 XLabel = x_label ?? "",
                 YLabel = y_label ?? "",
+                SourceId = source_id,
+                Role = series_role,
                 X = PlatformPythonHelpers.DoubleArray(x),
                 Y = PlatformPythonHelpers.DoubleArray(y)
             };
@@ -324,6 +327,7 @@ public class Platform
                 Title = string.IsNullOrWhiteSpace(title) ? "Fit" : title,
                 Kind = curve_kind,
                 SourceId = source_id,
+                Role = PlatformSeriesRole.Fit,
                 Parameters = PlatformPythonHelpers.DoubleArray(parameters),
                 Normalizer = double.IsFinite(normalizer) && normalizer > 0 ? normalizer : 1.0,
                 XLabel = x_label ?? "",
@@ -342,19 +346,19 @@ public class Platform
 
     public void add_component_normal(string key, double mu, double sigma, double amplitude)
     {
-        var curve = create_curve(key, key, PlatformFitCurveKind.Gaussian, -1, [amplitude, mu, sigma]);
+        var curve = create_curve(key, key, PlatformFitCurveKind.Gaussian, -1, [amplitude, mu, sigma], role: PlatformSeriesRole.Component);
         add_component_curve(key, curve);
     }
 
     public void add_component_gamma(string key, double alpha, double beta, double amplitude)
     {
-        var curve = create_curve(key, key, PlatformFitCurveKind.Gamma, -1, [alpha, beta, amplitude]);
+        var curve = create_curve(key, key, PlatformFitCurveKind.Gamma, -1, [alpha, beta, amplitude], role: PlatformSeriesRole.Component);
         add_component_curve(key, curve);
     }
 
     public void add_component_exponential(string key, double slope, double expn, double intercept)
     {
-        var curve = create_curve(key, key, PlatformFitCurveKind.Exponential, -1, [slope, expn, intercept]);
+        var curve = create_curve(key, key, PlatformFitCurveKind.Exponential, -1, [slope, expn, intercept], role: PlatformSeriesRole.Component);
         add_component_curve(key, curve);
     }
 
@@ -391,6 +395,7 @@ public class Platform
         PlatformFitCurveKind kind,
         int source_id,
         double[] parameters,
+        PlatformSeriesRole role = PlatformSeriesRole.Fit,
         double normalizer = 1.0,
         string x_label = "",
         string y_label = "",
@@ -403,6 +408,7 @@ public class Platform
             Title = string.IsNullOrWhiteSpace(title) ? key : title,
             Kind = kind,
             SourceId = source_id,
+            Role = role,
             Parameters = parameters,
             Normalizer = double.IsFinite(normalizer) && normalizer > 0 ? normalizer : 1.0,
             XLabel = x_label,
@@ -562,7 +568,7 @@ public class Platform
 
     private IEnumerable<PlatformPopulation> platform_populations() =>
         Model.Populations
-            .Where(row => Model.Kind == PlatformKind.Integration ? row.IsSelected : row.IsPopulation && row.IsPlatformDropped)
+            .Where(row => row.IsPlatformDropped)
             .Select(row => new PlatformPopulation(row));
 
     private IEnumerable<KeyValuePair<string, ViewOptions>> build_transformations()
@@ -619,24 +625,6 @@ public sealed class UnivariatePlatform : Platform
     public bool enable_smoothing => model.EnableSmoothing;
 }
 
-public sealed class BivariatePlatform : Platform
-{
-    private readonly Models.BivariatePlatform model;
-
-    internal BivariatePlatform(FlowWorkspace workspace, Models.BivariatePlatform model) : base(workspace, model)
-    {
-        this.model = model;
-    }
-
-    public string major => model.Major;
-    public string minor => model.Minor;
-    public PyObject trend => PythonArrayConverter.ToNumpy(model.Trend);
-    public PyObject binned => PythonArrayConverter.ToNumpy(model.Binned);
-    public PyObject smoothed => PythonArrayConverter.ToNumpy(model.Smoothed);
-    public int smoothing_window => model.SmoothingWindow;
-    public bool enable_smoothing => model.EnableSmoothing;
-}
-
 public sealed class MultivariatePlatform : Platform
 {
     private readonly Models.MultivariatePlatform model;
@@ -674,9 +662,9 @@ public sealed class ViewOptions
 
 public sealed class PlatformPopulation
 {
-    private readonly IntegrationJobPopulationSelection model;
+    private readonly PlatformPopulationInput model;
 
-    internal PlatformPopulation(IntegrationJobPopulationSelection model)
+    internal PlatformPopulation(PlatformPopulationInput model)
     {
         this.model = model;
     }

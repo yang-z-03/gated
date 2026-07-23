@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Linq;
 using System.Threading.Tasks;
@@ -19,15 +20,22 @@ public abstract class PlatformEditorViewModel : NotifyBase
     private bool handling_change;
     private AxisChoice? selected_channel;
     private string retained_batch_column_name = "";
+    private readonly HashSet<PlatformPopulationInput> subscribed_population_rows = [];
+    private readonly HashSet<PlatformFeatureSelection> subscribed_feature_rows = [];
 
     protected PlatformEditorViewModel(FlowWorkspace workspace, Platform platform)
     {
         Workspace = workspace;
         Platform = platform;
         Platform.PropertyChanged += platform_changed;
+        Platform.Populations.CollectionChanged += populations_changed;
+        Platform.Features.CollectionChanged += features_changed;
+        resubscribe_population_rows();
+        resubscribe_feature_rows();
         SelectionChangedCommand = new RelayCommand(_ => population_selection_changed());
         FeatureSelectionChangedCommand = new RelayCommand(_ => feature_selection_changed());
-        DropPopulationCommand = new RelayCommand(parameter => drop_population(parameter as ProjectNode), _ => IsEditable);
+        DropPopulationCommand = new RelayCommand(parameter => drop_population(parameter as ProjectNode), parameter => IsEditable && can_drop_population(parameter as ProjectNode));
+        RemovePopulationCommand = new RelayCommand(parameter => remove_population(parameter as PlatformPopulationInput), _ => IsEditable);
         RunCommand = new RelayCommand(_ => _ = run_async(), _ => can_run());
         RunLeidenCommand = new RelayCommand(_ => _ = run_integration_script_async("avares://gated/Python/leiden.py", "Leiden"), _ => can_run_integration_script());
         RunUmapCommand = new RelayCommand(_ => _ = run_integration_script_async("avares://gated/Python/umap.py", "UMAP"), _ => can_run_integration_script());
@@ -41,33 +49,48 @@ public abstract class PlatformEditorViewModel : NotifyBase
     public ObservableCollection<AxisChoice> ChannelChoices { get; } = new();
     public ObservableCollection<PlatformTransformationKind> TransformationChoices { get; } = new(Enum.GetValues<PlatformTransformationKind>());
     public ObservableCollection<EnumDisplayChoice<CellCycleModelKind>> CellCycleModelChoices { get; } = new(enum_choices<CellCycleModelKind>());
-    public ObservableCollection<KineticsFitKind> KineticsFitChoices { get; } = new(Enum.GetValues<KineticsFitKind>());
     public ObservableCollection<EnumDisplayChoice<CytoNormGoal>> CytoNormGoalChoices { get; } = new(enum_choices<CytoNormGoal>());
     public ObservableCollection<string> BatchColumnChoices { get; } = new();
     public ObservableCollection<string> DisplayChoices { get; } = new();
     public ICommand SelectionChangedCommand { get; }
     public ICommand FeatureSelectionChangedCommand { get; }
     public ICommand DropPopulationCommand { get; }
+    public ICommand RemovePopulationCommand { get; }
     public ICommand RunCommand { get; }
     public ICommand RunLeidenCommand { get; }
     public ICommand RunUmapCommand { get; }
     public ICommand CancelCommand { get; }
-    public virtual bool UsesPopulationDrop => Platform.Kind != PlatformKind.Integration;
-    public virtual bool EnablesDataSmoothing => Platform.Kind != PlatformKind.Kinetics;
+    public virtual bool UsesPopulationDrop => true;
+    public virtual bool EnablesDataSmoothing => true;
     public virtual string RunCaption => Platform.Kind == PlatformKind.Integration ? "Integrate" : "Run model";
     public bool IsEditable => Platform.IsIdle && !Platform.IsConfigurationLocked;
     public bool IsReadOnly => !IsEditable;
     public bool IsSelectionReadOnly => Platform.Kind == PlatformKind.Integration
-        ? Platform.IsRunning || (Platform.Status == IntegrationJobStatus.Complete && Platform.HasIntegrated)
+        ? Platform.IsRunning || (Platform.Status == PlatformStatus.Complete && Platform.HasIntegrated)
         : IsReadOnly;
     public bool HasWarning => Platform.HasWarning;
-    public string KindName => Platform.Kind switch
+    public string KindName => PlatformCatalog.Get(Platform.Kind).EditorTitle;
+    public PlatformPlotDocument? PlotDocument => PlatformCatalog.Get(Platform.Kind).CreatePresentation(Platform).Plots.FirstOrDefault();
+    public IReadOnlyList<HistogramCurveSeries> PlatformHistogramCurves => PlotDocument?.Series.Select(series => new HistogramCurveSeries
     {
-        PlatformKind.CellCycle => "Univariate cell cycle modeling",
-        PlatformKind.Proliferation => "Proliferation modeling",
-        PlatformKind.IntensityComparison => "Population intensity comparison",
-        PlatformKind.Kinetics => "Kinetics analysis",
-        _ => "Integration"
+        Name = series.Title,
+        Points = series.X.Zip(series.Y, (x, y) => new HistogramPoint(x, y)).ToArray(),
+        Color = PlatformPalette.ColorForSeriesKey(series.Key),
+        Thickness = series.Role == PlatformSeriesRole.Fit ? 2.2 : 1.4,
+        IsDashed = series.Role == PlatformSeriesRole.Component,
+        FillOpacity = series.Role == PlatformSeriesRole.Component && platform_fill_components() ? 0.12 : 0
+    }).ToArray() ?? [];
+    public double PlatformHistogramMinimum => PlotDocument?.Minimum ?? Platform.Axis.Minimum;
+    public double PlatformHistogramMaximum => PlotDocument?.Maximum ?? Platform.Axis.Maximum;
+    public double PlatformHistogramYMaximum => Math.Max(0.01, (PlotDocument?.Series.SelectMany(series => series.Y).Where(double.IsFinite).DefaultIfEmpty(1).Max() ?? 1) * 1.1);
+    public string PlatformHistogramXTitle => PlotDocument?.XLabel ?? "Intensity";
+    public string PlatformHistogramYTitle => PlotDocument?.YLabel ?? "Normalized frequency";
+    public HistogramAxisScaleKind PlatformHistogramAxisScale => Platform.Axis.Transform switch
+    {
+        PlatformTransformationKind.Logarithm => HistogramAxisScaleKind.Log,
+        PlatformTransformationKind.Logicle => HistogramAxisScaleKind.Logicle,
+        PlatformTransformationKind.Arcsinh => HistogramAxisScaleKind.Arcsinh,
+        _ => HistogramAxisScaleKind.Linear
     };
 
     public AxisChoice? SelectedChannel
@@ -82,8 +105,6 @@ public abstract class PlatformEditorViewModel : NotifyBase
                 feature.IsSelected = feature.ChannelName == value.Name;
             if (Platform is UnivariatePlatform univariate)
                 univariate.Major = value.Name;
-            if (Platform is BivariatePlatform bivariate)
-                bivariate.Minor = value.Name;
             Platform.Axis.Transform = Configuration.DefaultPlatformTransformationForChannel(value.Name);
             reset_x_axis_range();
             Platform.InvalidateFromConfiguration();
@@ -311,50 +332,6 @@ public abstract class PlatformEditorViewModel : NotifyBase
         }
     }
 
-    public int KineticsTimeWindowCount
-    {
-        get => Platform is KineticsPlatform kinetics ? kinetics.TimeWindowCount : 64;
-        set
-        {
-            if (Platform is KineticsPlatform kinetics)
-                kinetics.TimeWindowCount = value;
-            OnPropertyChanged();
-        }
-    }
-
-    public KineticsFitKind KineticsFit
-    {
-        get => Platform is KineticsPlatform kinetics ? kinetics.Fit : KineticsFitKind.Linear;
-        set
-        {
-            if (Platform is KineticsPlatform kinetics)
-                kinetics.Fit = value;
-            OnPropertyChanged();
-        }
-    }
-
-    public double KineticsChangePointZ
-    {
-        get => Platform is KineticsPlatform kinetics ? kinetics.ChangePointZ : 3.0;
-        set
-        {
-            if (Platform is KineticsPlatform kinetics)
-                kinetics.ChangePointZ = value;
-            OnPropertyChanged();
-        }
-    }
-
-    public int KineticsMinSegmentWindows
-    {
-        get => Platform is KineticsPlatform kinetics ? kinetics.MinSegmentWindows : 5;
-        set
-        {
-            if (Platform is KineticsPlatform kinetics)
-                kinetics.MinSegmentWindows = value;
-            OnPropertyChanged();
-        }
-    }
-
     public int CytoNormQuantileCount
     {
         get => Platform is IntegrationPlatform integration ? integration.CytoNormOptions.QuantileCount : 99;
@@ -412,6 +389,49 @@ public abstract class PlatformEditorViewModel : NotifyBase
     public void Dispose()
     {
         Platform.PropertyChanged -= platform_changed;
+        Platform.Populations.CollectionChanged -= populations_changed;
+        Platform.Features.CollectionChanged -= features_changed;
+        foreach (var row in subscribed_population_rows) row.PropertyChanged -= population_row_changed;
+        foreach (var row in subscribed_feature_rows) row.PropertyChanged -= feature_row_changed;
+    }
+
+    private void populations_changed(object? sender, NotifyCollectionChangedEventArgs e) => resubscribe_population_rows();
+    private void features_changed(object? sender, NotifyCollectionChangedEventArgs e) => resubscribe_feature_rows();
+
+    private void resubscribe_population_rows()
+    {
+        foreach (var row in subscribed_population_rows.Where(row => !Platform.Populations.Contains(row)).ToArray())
+        {
+            row.PropertyChanged -= population_row_changed;
+            subscribed_population_rows.Remove(row);
+        }
+        foreach (var row in Platform.Populations.Where(row => subscribed_population_rows.Add(row)))
+            row.PropertyChanged += population_row_changed;
+    }
+
+    private void resubscribe_feature_rows()
+    {
+        foreach (var row in subscribed_feature_rows.Where(row => !Platform.Features.Contains(row)).ToArray())
+        {
+            row.PropertyChanged -= feature_row_changed;
+            subscribed_feature_rows.Remove(row);
+        }
+        foreach (var row in Platform.Features.Where(row => subscribed_feature_rows.Add(row)))
+            row.PropertyChanged += feature_row_changed;
+    }
+
+    private void population_row_changed(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(PlatformPopulationInput.IsSelected))
+            return;
+        OnPropertyChanged(nameof(PlatformHistogramCurves));
+        OnPropertyChanged(nameof(PlatformHistogramYMaximum));
+    }
+
+    private void feature_row_changed(object? sender, PropertyChangedEventArgs e)
+    {
+        if (Platform.Kind == PlatformKind.Integration && e.PropertyName == nameof(PlatformFeatureSelection.IsSelected))
+            feature_selection_changed();
     }
 
     protected virtual bool IsFitParameter(string? property_name) => false;
@@ -459,7 +479,7 @@ public abstract class PlatformEditorViewModel : NotifyBase
     {
         DisplayChoices.Clear();
         foreach (var item in Platform.Populations
-                     .Where(row => row.IsPopulation && row.IsPlatformDropped)
+                     .Where(row => row.IsPlatformDropped)
                      .Select(row => $"{row.SampleName} - {row.PopulationName}")
                      .Distinct(StringComparer.Ordinal))
             DisplayChoices.Add(item);
@@ -496,10 +516,6 @@ public abstract class PlatformEditorViewModel : NotifyBase
 
     private void population_selection_changed()
     {
-        if (Platform.Kind == PlatformKind.Integration)
-            update_integration_population_states();
-        else
-            update_modeling_population_states();
         refresh_feature_choices();
         prepare_preview(preserve_fit_state: true);
         refresh_choices();
@@ -525,30 +541,33 @@ public abstract class PlatformEditorViewModel : NotifyBase
 
     private void drop_population(ProjectNode? node)
     {
-        if (node is null || Platform.Kind == PlatformKind.Integration)
+        if (node is null)
             return;
-
-        if (node.Kind == ProjectNodeKind.Population && node.Sample is not null && node.Gate is not null && node.Population is not null)
+        int added = 0;
+        if (node.Kind == ProjectNodeKind.Population && node.Group is not null && node.Sample is not null && node.Population is not null)
+            added += add_population(node.Group, node.Sample, node.Population);
+        else if (node.Kind == ProjectNodeKind.Sample && node.Group is not null && node.Sample is not null)
+            added += add_all_events(node.Group, node.Sample);
+        else if (node.Kind is ProjectNodeKind.Gate or ProjectNodeKind.GatePopulationSlot && node.Group is not null && node.Gate is not null)
         {
-            foreach (var row in Platform.Populations.Where(row =>
-                         row.IsPopulation &&
-                         row.SampleId == node.Sample.Id &&
-                         row.GateId == node.Gate.Id &&
-                         row.Region == node.Population.Region))
-                mark_dropped(row);
+            var region = node.Kind == ProjectNodeKind.GatePopulationSlot ? node.PopulationRegion : PopulationRegion.Primary;
+            foreach (var sample in node.Group.Samples)
+                if (find_population(sample.Populations, node.Gate.Id, region) is { } population)
+                    added += add_population(node.Group, sample, population);
         }
-        else if (node.Kind == ProjectNodeKind.Sample && node.Sample is not null)
+        else if (node.Kind == ProjectNodeKind.GateFolder && node.Group is not null)
         {
-            foreach (var row in Platform.Populations.Where(row => row.IsPopulation && row.SampleId == node.Sample.Id && row.Depth <= 1))
-                mark_dropped(row);
-        }
-        else if (node.Kind == ProjectNodeKind.Gate && node.Gate is not null)
-        {
-            foreach (var row in Platform.Populations.Where(row => row.IsPopulation && row.GateId == node.Gate.Id))
-                mark_dropped(row);
+            foreach (var sample in node.Group.Samples)
+            foreach (var population in flatten_populations(sample.Populations))
+                added += add_population(node.Group, sample, population);
         }
 
-        update_modeling_population_states();
+        if (added == 0)
+        {
+            Platform.WarningText = "The dropped item did not contain any new calculated populations.";
+            Platform.Status = PlatformStatus.Warning;
+            return;
+        }
         refresh_feature_choices();
         reset_x_axis_range();
         Platform.InvalidateFromConfiguration();
@@ -557,18 +576,89 @@ public abstract class PlatformEditorViewModel : NotifyBase
         invalidate_commands();
     }
 
-    private static void mark_dropped(IntegrationJobPopulationSelection row)
+    private bool can_drop_population(ProjectNode? node) =>
+        node?.Kind is ProjectNodeKind.Population or ProjectNodeKind.Sample or ProjectNodeKind.Gate or ProjectNodeKind.GatePopulationSlot or ProjectNodeKind.GateFolder;
+
+    private int add_all_events(FlowGroup group, FlowSample sample)
     {
-        row.IsPlatformDropped = true;
-        row.IsSelected = true;
+        if (has_population(group.Id, sample.Id, Guid.Empty, PopulationRegion.Primary))
+            return 0;
+        Platform.Populations.Add(new PlatformPopulationInput
+        {
+            GroupId = group.Id,
+            SampleId = sample.Id,
+            GroupName = group.Name,
+            SampleName = sample.Name,
+            PopulationName = "All events",
+            EventCount = sample.EventCount,
+            IsPopulation = false,
+            IsPlatformDropped = true,
+            IsSelected = true
+        });
+        return 1;
+    }
+
+    private int add_population(FlowGroup group, FlowSample sample, PopulationResult population)
+    {
+        if (has_population(group.Id, sample.Id, population.Gate.Id, population.Region))
+            return 0;
+        Platform.Populations.Add(new PlatformPopulationInput
+        {
+            GroupId = group.Id,
+            SampleId = sample.Id,
+            GateId = population.Gate.Id,
+            Region = population.Region,
+            GroupName = group.Name,
+            SampleName = sample.Name,
+            PopulationName = population.DisplayName,
+            EventCount = population.EventCount,
+            IsPopulation = true,
+            IsPlatformDropped = true,
+            IsSelected = true
+        });
+        return 1;
+    }
+
+    private bool has_population(Guid group_id, Guid sample_id, Guid gate_id, PopulationRegion region) =>
+        Platform.Populations.Any(row => row.GroupId == group_id && row.SampleId == sample_id && row.GateId == gate_id && row.Region == region);
+
+    private void remove_population(PlatformPopulationInput? row)
+    {
+        if (row is null || !Platform.Populations.Remove(row))
+            return;
+        refresh_feature_choices();
+        Platform.InvalidateFromConfiguration();
+        prepare_preview();
+        refresh_choices();
+        invalidate_commands();
+    }
+
+    private static IEnumerable<PopulationResult> flatten_populations(IEnumerable<PopulationResult> populations)
+    {
+        foreach (var population in populations)
+        {
+            yield return population;
+            foreach (var child in flatten_populations(population.Children))
+                yield return child;
+        }
+    }
+
+    private static PopulationResult? find_population(IEnumerable<PopulationResult> populations, Guid gate_id, PopulationRegion region)
+    {
+        foreach (var population in populations)
+        {
+            if (population.Gate.Id == gate_id && population.Region == region)
+                return population;
+            if (find_population(population.Children, gate_id, region) is { } child)
+                return child;
+        }
+        return null;
     }
 
     private void refresh_feature_choices()
     {
         var selected_sample_ids = Platform.Populations
-            .Where(row => Platform.Kind == PlatformKind.Integration
-                ? row.IsSelected && row.IsEnabled && !row.IsIndeterminate
-                : row.IsPopulation && row.IsPlatformDropped)
+            .Where(row => row.IsPlatformDropped)
             .Select(row => row.SampleId)
             .Distinct()
             .ToArray();
@@ -578,25 +668,9 @@ public abstract class PlatformEditorViewModel : NotifyBase
         var previous = Platform.Features
             .Where(feature => feature.IsChannel)
             .ToDictionary(feature => feature.ChannelName, feature => feature.IsSelected, StringComparer.Ordinal);
-        var previous_expanded = Platform.Features.ToDictionary(feature => feature.ChannelName, feature => feature.IsExpanded, StringComparer.Ordinal);
-        var previous_root = Platform.Features.FirstOrDefault(feature => !feature.IsChannel);
-        bool previous_root_selected = previous_root?.IsSelected ?? true;
-        bool previous_root_expanded = previous_root?.IsExpanded ?? true;
         Platform.Features.Clear();
         if (samples.Length == 0)
             return;
-
-        var root_key = Guid.NewGuid();
-        Platform.Features.Add(new IntegrationJobFeatureSelection
-        {
-            RowKey = root_key,
-            GroupName = "Shared feature channels",
-            Depth = 0,
-            HasChildren = true,
-            IsChannel = false,
-            IsSelected = previous_root_selected,
-            IsExpanded = previous_root_expanded
-        });
 
         var shared = samples
             .Select(sample => sample.Channels.Select(channel => channel.Name).ToHashSet(StringComparer.Ordinal))
@@ -608,15 +682,12 @@ public abstract class PlatformEditorViewModel : NotifyBase
         foreach (string channel_name in shared.OrderBy(name => name, StringComparer.Ordinal))
         {
             var channel = samples[0].Channels.First(channel => channel.Name == channel_name);
-            Platform.Features.Add(new IntegrationJobFeatureSelection
+            Platform.Features.Add(new PlatformFeatureSelection
             {
-                ParentKey = root_key,
                 ChannelName = channel.Name,
                 Label = channel.Label,
-                Depth = 1,
                 IsChannel = true,
-                IsSelected = !previous.TryGetValue(channel.Name, out bool was_selected) || was_selected,
-                IsExpanded = !previous_expanded.TryGetValue(channel.Name, out bool was_expanded) || was_expanded
+                IsSelected = !previous.TryGetValue(channel.Name, out bool was_selected) || was_selected
             });
         }
         update_feature_selection_states();
@@ -642,7 +713,7 @@ public abstract class PlatformEditorViewModel : NotifyBase
         {
             row.IsEnabled = true;
             row.IsIndeterminate = false;
-            if (!row.IsPlatformDropped || !row.IsPopulation)
+            if (!row.IsPlatformDropped)
                 row.IsSelected = false;
         }
     }
@@ -651,15 +722,11 @@ public abstract class PlatformEditorViewModel : NotifyBase
     {
         if (Platform.Kind == PlatformKind.Integration)
         {
-            var rows = Platform.Features.ToArray();
-            apply_hierarchy_states(
-                rows,
-                row => row.RowKey,
-                row => row.ParentKey,
-                row => row.IsSelected,
-                (row, value) => row.IsSelected = value,
-                (row, value) => row.IsEnabled = value,
-                (row, value) => row.IsIndeterminate = value);
+            foreach (var feature in Platform.Features)
+            {
+                feature.IsEnabled = true;
+                feature.IsIndeterminate = false;
+            }
             return;
         }
         string? selected_name = Platform.Features.FirstOrDefault(feature => feature.IsChannel && feature.IsSelected)?.ChannelName ??
@@ -678,7 +745,7 @@ public abstract class PlatformEditorViewModel : NotifyBase
         if (string.IsNullOrWhiteSpace(channel_name))
             return;
         var sample_ids = Platform.Populations
-            .Where(row => row.IsPopulation && row.IsPlatformDropped)
+            .Where(row => row.IsPlatformDropped)
             .Select(row => row.SampleId)
             .Distinct()
             .ToHashSet();
@@ -710,7 +777,7 @@ public abstract class PlatformEditorViewModel : NotifyBase
             string previous_warning = Platform.WarningText;
             int previous_step = Platform.CurrentStep;
             bool preserve = preserve_fit_state && (Platform.ResultTables.Count > 0 || Platform.FitCurves.Count > 0 || Platform.PlatformStatistics.Count > 0);
-            _ = new IntegrationJobRunner(Workspace).Prepare(Platform);
+            _ = PlatformCatalog.Get(Platform.Kind).Prepare(Workspace, Platform);
             if (preserve)
             {
                 Platform.Status = previous_status;
@@ -721,7 +788,7 @@ public abstract class PlatformEditorViewModel : NotifyBase
         catch (Exception exception)
         {
             Platform.WarningText = exception.Message;
-            Platform.Status = IntegrationJobStatus.Warning;
+            Platform.Status = PlatformStatus.Warning;
         }
     }
 
@@ -733,29 +800,13 @@ public abstract class PlatformEditorViewModel : NotifyBase
             Platform.IsRunning = true;
             Platform.ProgressFraction = 0;
             Platform.ProgressText = "Starting";
-            Platform.Status = IntegrationJobStatus.Running;
+            Platform.Status = PlatformStatus.Running;
             invalidate_commands();
 
-            if (Platform.Kind == PlatformKind.Integration)
-            {
-                await Dispatcher.UIThread.InvokeAsync(() => new IntegrationJobRunner(Workspace).RunIntegration(Platform));
-            }
-            else
-            {
-                bool prepared = new IntegrationJobRunner(Workspace).Prepare(Platform);
-                if (!prepared || string.IsNullOrWhiteSpace(Platform.ResourcePath))
-                    return;
-                Platform.ProgressText = "Running platform script";
-                await Task.Run(() => gated.Python.PythonExtensionRuntime.ExecutePlatformScript(
-                    Platform.ResourcePath,
-                    Workspace,
-                    Platform,
-                    $"platform:{Platform.Id}",
-                    Platform.Name));
-            }
+            await PlatformCatalog.Get(Platform.Kind).ExecuteAsync(Workspace, Platform);
 
             Platform.WarningText = "";
-            Platform.Status = IntegrationJobStatus.Complete;
+            Platform.Status = PlatformStatus.Complete;
             Platform.ProgressFraction = 1;
             Platform.ProgressText = "Complete";
             Platform.NotifyIntegrationDataChanged();
@@ -763,7 +814,7 @@ public abstract class PlatformEditorViewModel : NotifyBase
         catch (Exception exception)
         {
             Platform.WarningText = exception.Message;
-            Platform.Status = IntegrationJobStatus.Failed;
+            Platform.Status = PlatformStatus.Failed;
         }
         finally
         {
@@ -783,7 +834,7 @@ public abstract class PlatformEditorViewModel : NotifyBase
             Platform.IsRunning = true;
             Platform.ProgressFraction = 0;
             Platform.ProgressText = $"Running {label}";
-            Platform.Status = IntegrationJobStatus.Running;
+            Platform.Status = PlatformStatus.Running;
             invalidate_commands();
 
             await Task.Run(() => gated.Python.PythonExtensionRuntime.ExecutePlatformScript(
@@ -794,7 +845,7 @@ public abstract class PlatformEditorViewModel : NotifyBase
                 $"Platform: {Platform.Name}"));
 
             Platform.WarningText = "";
-            Platform.Status = IntegrationJobStatus.Complete;
+            Platform.Status = PlatformStatus.Complete;
             Platform.ProgressFraction = 1;
             Platform.ProgressText = $"{label} complete";
             Platform.NotifyIntegrationDataChanged();
@@ -802,7 +853,7 @@ public abstract class PlatformEditorViewModel : NotifyBase
         catch (Exception exception)
         {
             Platform.WarningText = exception.Message;
-            Platform.Status = IntegrationJobStatus.Failed;
+            Platform.Status = PlatformStatus.Failed;
         }
         finally
         {
@@ -816,7 +867,7 @@ public abstract class PlatformEditorViewModel : NotifyBase
     {
         Platform.CancellationRequested = true;
         if (!Platform.IsRunning)
-            Platform.Status = IntegrationJobStatus.Cancelled;
+            Platform.Status = PlatformStatus.Cancelled;
         Platform.WarningText = "Cancellation requested. Completed intermediate results remain available.";
     }
 
@@ -826,6 +877,11 @@ public abstract class PlatformEditorViewModel : NotifyBase
         OnPropertyChanged(nameof(IsEditable));
         OnPropertyChanged(nameof(IsReadOnly));
         OnPropertyChanged(nameof(IsSelectionReadOnly));
+        OnPropertyChanged(nameof(PlotDocument));
+        OnPropertyChanged(nameof(PlatformHistogramCurves));
+        OnPropertyChanged(nameof(PlatformHistogramYMaximum));
+        OnPropertyChanged(nameof(PlatformHistogramXTitle));
+        OnPropertyChanged(nameof(PlatformHistogramYTitle));
         if (handling_change || Platform.Kind == PlatformKind.Integration)
             return;
         bool display_change = e.PropertyName is nameof(CellCyclePlatform.DrawModelSum) or
@@ -861,6 +917,8 @@ public abstract class PlatformEditorViewModel : NotifyBase
             umap.RaiseCanExecuteChanged();
         if (DropPopulationCommand is RelayCommand drop)
             drop.RaiseCanExecuteChanged();
+        if (RemovePopulationCommand is RelayCommand remove)
+            remove.RaiseCanExecuteChanged();
         if (CancelCommand is RelayCommand cancel)
             cancel.RaiseCanExecuteChanged();
     }
@@ -878,9 +936,14 @@ public abstract class PlatformEditorViewModel : NotifyBase
         Platform switch
         {
             UnivariatePlatform univariate => univariate.Smoothing,
-            BivariatePlatform bivariate => bivariate.Smoothing,
             _ => null
         };
+
+    private bool platform_fill_components() => Platform switch
+    {
+        CellCyclePlatform cell_cycle => cell_cycle.FillComponents,
+        _ => false
+    };
 
     private void set_logicle(LogicleParameters value, string property_name)
     {
@@ -1413,14 +1476,4 @@ public sealed class IntensityComparisonPlatformEditorViewModel : PlatformEditorV
 {
     public IntensityComparisonPlatformEditorViewModel(FlowWorkspace workspace, Platform platform) : base(workspace, platform) { }
     protected override bool IsFitParameter(string? property_name) => property_name is nameof(IntensityComparisonPlatform.ReferenceSample);
-}
-
-public sealed class KineticsPlatformEditorViewModel : PlatformEditorViewModel
-{
-    public KineticsPlatformEditorViewModel(FlowWorkspace workspace, Platform platform) : base(workspace, platform) { }
-    protected override bool IsFitParameter(string? property_name) =>
-        property_name is nameof(KineticsPlatform.Fit) or
-                         nameof(KineticsPlatform.TimeWindowCount) or
-                         nameof(KineticsPlatform.ChangePointZ) or
-                         nameof(KineticsPlatform.MinSegmentWindows);
 }

@@ -238,8 +238,10 @@ def _main():
                 components[generation].tolist(),
                 major,
                 "Normalized frequency",
+                source_id,
+                "component",
             )
-        platform.set_plot_series(f"fit_{source_id}", f"{label} fit", x.tolist(), model.tolist(), major, "Normalized frequency")
+        platform.set_plot_series(f"fit_{source_id}", f"{label} fit", x.tolist(), model.tolist(), major, "Normalized frequency", source_id, "fit")
 
     platform.set_result_table(
         "proliferation",

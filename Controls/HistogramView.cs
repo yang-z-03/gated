@@ -180,10 +180,14 @@ public sealed class HistogramCurveSeries : NotifyBase
     private Color color = gated.Shared.ThemeResources.AppColor("Theme6");
     private string name = "";
     private double thickness = 1.6;
+    private bool is_dashed;
+    private double fill_opacity;
     public IReadOnlyList<HistogramPoint> Points { get => points; set => SetField(ref points, value ?? []); }
     public Color Color { get => color; set => SetField(ref color, value); }
     public string Name { get => name; set => SetField(ref name, value ?? ""); }
     public double Thickness { get => thickness; set => SetField(ref thickness, Math.Max(0.5, value)); }
+    public bool IsDashed { get => is_dashed; set => SetField(ref is_dashed, value); }
+    public double FillOpacity { get => fill_opacity; set => SetField(ref fill_opacity, Math.Clamp(value, 0, 1)); }
 }
 
 public enum HistogramAnnotationOrientation { Vertical, Horizontal }
@@ -648,7 +652,7 @@ public sealed class HistogramView : Control
     {
         if (Curves is null) return;
         foreach (var curve in Curves)
-            draw_xy_line(context, curve.Points, curve.Color, curve.Thickness);
+            draw_xy_line(context, curve.Points, curve.Color, curve.Thickness, curve.IsDashed, curve.FillOpacity);
     }
 
     private void draw_models(DrawingContext context)
@@ -672,17 +676,26 @@ public sealed class HistogramView : Control
         }
     }
 
-    private void draw_xy_line(DrawingContext context, IReadOnlyList<HistogramPoint> source, Color color, double thickness)
+    private void draw_xy_line(DrawingContext context, IReadOnlyList<HistogramPoint> source, Color color, double thickness, bool dashed = false, double fill_opacity = 0)
     {
         var finite = source.Where(point => double.IsFinite(point.X) && double.IsFinite(point.Y)).ToArray();
         if (finite.Length < 2) return;
         var geometry = new StreamGeometry();
         using (var path = geometry.Open())
         {
-            path.BeginFigure(new Point(data_to_screen(finite[0].X), y_data_to_screen(finite[0].Y)), false);
+            path.BeginFigure(new Point(data_to_screen(finite[0].X), y_data_to_screen(finite[0].Y)), fill_opacity > 0);
             foreach (var point in finite.Skip(1)) path.LineTo(new Point(data_to_screen(point.X), y_data_to_screen(point.Y)));
+            if (fill_opacity > 0)
+            {
+                path.LineTo(new Point(data_to_screen(finite[^1].X), y_data_to_screen(YMinimum)));
+                path.LineTo(new Point(data_to_screen(finite[0].X), y_data_to_screen(YMinimum)));
+                path.EndFigure(true);
+            }
         }
-        context.DrawGeometry(null, new Pen(new SolidColorBrush(color), thickness), geometry);
+        var fill = fill_opacity > 0
+            ? new SolidColorBrush(Color.FromArgb((byte)Math.Round(255 * fill_opacity), color.R, color.G, color.B))
+            : null;
+        context.DrawGeometry(fill, new Pen(new SolidColorBrush(color), thickness, dashed ? DashStyle.Dash : null), geometry);
     }
 
     private void draw_annotations(DrawingContext context)
