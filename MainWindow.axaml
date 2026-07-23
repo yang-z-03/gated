@@ -1782,7 +1782,7 @@
                                         <DataGridTemplateColumn.CellTemplate><DataTemplate><StackPanel Classes="IconRow" Orientation="Horizontal" Spacing="7"><shared:ThemeIcon Width="15" Height="15" Icon="{Binding SampleIcon}" /><TextBlock Text="{Binding SampleName}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" /></StackPanel></DataTemplate></DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
                                     <DataGridTemplateColumn Header="Single-staining isotope" Width="240" MinWidth="130">
-                                        <DataGridTemplateColumn.CellTemplate><DataTemplate><ComboBox Classes="Small" HorizontalAlignment="Stretch" ItemsSource="{Binding IsotopeChoices}" SelectedItem="{Binding SelectedChoice, Mode=TwoWay}" /></DataTemplate></DataGridTemplateColumn.CellTemplate>
+                                        <DataGridTemplateColumn.CellTemplate><DataTemplate><ComboBox Classes="Small" HorizontalAlignment="Stretch" ItemsSource="{Binding IsotopeChoices}" SelectedValueBinding="{Binding ChannelName}" SelectedValue="{Binding SourceChannelName, Mode=TwoWay}" /></DataTemplate></DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
                                     <DataGridTemplateColumn Width="52" CanUserResize="False">
                                         <DataGridTemplateColumn.CellTemplate><DataTemplate><Button Classes="Small" HorizontalAlignment="Center" Command="{Binding RemoveCommand}" CommandParameter="{Binding}" ToolTip.Tip="Remove control tube"><shared:ThemeIcon Width="15" Height="15" Icon="{Binding RemoveIcon}" /></Button></DataTemplate></DataGridTemplateColumn.CellTemplate>

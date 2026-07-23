@@ -306,9 +306,15 @@ public sealed class MassCompensationRowViewModel : NotifyBase
         get => State.SourceChannelName;
         set
         {
-            value ??= "";
+            // ItemsSource refreshes can briefly publish an empty SelectedValue. That is a
+            // binding transition, not a user edit, and must not erase the saved isotope or
+            // invalidate an otherwise unchanged calculated matrix.
+            if (string.IsNullOrWhiteSpace(value)) return;
             if (State.SourceChannelName == value) return;
-            State.SourceChannelName = value; OnPropertyChanged(); owner.SourceChanged();
+            State.SourceChannelName = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(SelectedChoice));
+            owner.SourceChanged();
         }
     }
     public MassChannelChoice? SelectedChoice

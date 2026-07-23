@@ -6900,13 +6900,40 @@ public sealed partial class MainWindowViewModel : NotifyBase
 
     private void refresh_spillover_choices()
     {
-        SpilloverParameterChoices.Clear();
-        SpilloverParameterChoices.Add(SpilloverControlRowViewModel.BlankParameterName);
-        if (selected_group is null)
+        var desired = new List<string> { SpilloverControlRowViewModel.BlankParameterName };
+        if (selected_group is not null)
+            desired.AddRange(compensable_channels(selected_group).Select(channel => channel.Name));
+
+        // This collection is shared by every row ComboBox. Clearing it causes Avalonia to
+        // write a transient null SelectedItem back to each row, even when the choices did
+        // not actually change. Keep equal collections untouched and reconcile real changes
+        // in place so existing selections remain present throughout the refresh.
+        if (SpilloverParameterChoices.SequenceEqual(desired, StringComparer.Ordinal))
             return;
 
-        foreach (var channel in compensable_channels(selected_group))
-            SpilloverParameterChoices.Add(channel.Name);
+        for (int index = 0; index < desired.Count; index++)
+        {
+            if (index < SpilloverParameterChoices.Count &&
+                string.Equals(SpilloverParameterChoices[index], desired[index], StringComparison.Ordinal))
+                continue;
+
+            int existing_index = -1;
+            for (int candidate = index + 1; candidate < SpilloverParameterChoices.Count; candidate++)
+            {
+                if (!string.Equals(SpilloverParameterChoices[candidate], desired[index], StringComparison.Ordinal))
+                    continue;
+                existing_index = candidate;
+                break;
+            }
+
+            if (existing_index >= 0)
+                SpilloverParameterChoices.Move(existing_index, index);
+            else
+                SpilloverParameterChoices.Insert(index, desired[index]);
+        }
+
+        while (SpilloverParameterChoices.Count > desired.Count)
+            SpilloverParameterChoices.RemoveAt(SpilloverParameterChoices.Count - 1);
     }
 
     private void refresh_spillover_rows()
@@ -8261,10 +8288,7 @@ public sealed class SpilloverControlRowViewModel : NotifyBase
         set
         {
             if (string.IsNullOrWhiteSpace(value))
-            {
-                OnPropertyChanged();
                 return;
-            }
             if (state.ParameterName == value)
                 return;
             state.ParameterName = value;
