@@ -116,3 +116,7 @@ rm -r ./Installer/obj
 rm "./artifacts/$gatedArtifactPrefix-win-x64.msi"
 mv ./artifacts/Installer.msi "./artifacts/$gatedArtifactPrefix-win-x64.msi"
 rm ./artifacts/Installer*
+
+# debug build
+
+dotnet build ./gated.csproj
