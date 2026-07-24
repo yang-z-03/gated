@@ -272,6 +272,8 @@ class ViewOptions:
     '''
     min: float
     max: float
+    transformed_min: float
+    transformed_max: float
     t: float
     w: float
     m: float

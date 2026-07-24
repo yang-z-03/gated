@@ -397,7 +397,7 @@ public sealed class SpectralUnmixingViewModel : NotifyBase
             var progress = new Progress<SpectralApplyProgress>(update =>
             {
                 ApplyProgress = Math.Clamp(update.Fraction * 100, 0, 100);
-                ApplyProgressText = $"{update.Detail} — {ApplyProgress:0}%";
+                ApplyProgressText = $"{update.Detail} - {ApplyProgress:0}%";
                 Status = ApplyProgressText;
             });
             var preparation = await Task.Run(() => service.PrepareApply(source, target, progress));
@@ -1177,7 +1177,7 @@ public sealed class SpectralControlRowViewModel : NotifyBase
 
         if (IsBackground)
         {
-            maximum_channel_choices[0].DisplayName = "—";
+            maximum_channel_choices[0].DisplayName = "-";
             while (maximum_channel_choices.Count > 1)
                 maximum_channel_choices.RemoveAt(maximum_channel_choices.Count - 1);
             OnPropertyChanged(nameof(MaximumChannelChoices));

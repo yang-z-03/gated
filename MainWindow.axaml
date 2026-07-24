@@ -19,13 +19,6 @@
     <Window.Resources>
         <shared:CoordinateScaleIconConverter x:Key="CoordinateScaleIconConverter" />
         <shared:CoordinateScaleToolTipConverter x:Key="CoordinateScaleToolTipConverter" />
-        <LinearGradientBrush x:Key="AxisTitleComboTextFadeMask"
-                             StartPoint="0%,0%"
-                             EndPoint="100%,0%">
-            <GradientStop Color="Black" Offset="0" />
-            <GradientStop Color="Black" Offset="0.82" />
-            <GradientStop Color="Transparent" Offset="1" />
-        </LinearGradientBrush>
     </Window.Resources>
 
     <Window.Styles>
@@ -334,6 +327,10 @@
                 <Separator />
                 <MenuItem Header="Append samples to groups" Click="open_fcs_menu_item_click" />
                 <MenuItem Header="Add control samples ..." Click="add_control_samples_menu_item_click" />
+                <Separator />
+                <MenuItem Header="Index demultiplex" Command="{Binding OpenIndexDemultiplexCommand}" />
+                <MenuItem Header="Mass cytometry bead normalization" Command="{Binding OpenMassNormalizationCommand}" />
+                <Separator />
                 <MenuItem Header="Delete selected samples" Command="{Binding DeleteSelectedCommand}" InputGesture="Delete"/>
                 <MenuItem Header="Delete selected embedding" Command="{Binding DeleteSelectedCommand}" InputGesture="Delete"/>
                 <MenuItem Header="Concatenate" Click="concatenate_samples_menu_item_click" />
@@ -352,6 +349,8 @@
                 <MenuItem Header="Contour" ToggleType="Radio" IsChecked="{Binding IsContourPlotMode, Mode=OneWay}" Click="contour_menu_item_click" />
                 <MenuItem Header="Zebra" ToggleType="Radio" IsChecked="{Binding IsZebraPlotMode, Mode=OneWay}" Click="zebra_menu_item_click" />
                 <MenuItem Header="Histogram" ToggleType="Radio" IsChecked="{Binding IsHistogramPlotMode, Mode=OneWay}" Click="histogram_menu_item_click" />
+                <Separator />
+                <MenuItem Header="Swap axis" Command="{Binding SwapEditorAxesCommand}" IsEnabled="{Binding IsYAxisEnabled}" />
                 <Separator />
                 <MenuItem Header="Show outlier points" ToggleType="CheckBox" IsChecked="{Binding ShowOutlierPoints, Mode=TwoWay}" />
                 <MenuItem Header="Draw large dots" ToggleType="CheckBox" IsChecked="{Binding DrawLargeDots, Mode=TwoWay}" />
@@ -421,14 +420,14 @@
                 </MenuItem>
             </MenuItem>
             <MenuItem Header="_Gating" IsEnabled="{Binding IsDefaultAnalysisMode}">
-                <MenuItem Header="View" ToggleType="Radio" IsChecked="{Binding IsViewTool, Mode=OneWay}" Click="view_tool_menu_item_click" />
-                <MenuItem Header="Polygon gate" ToggleType="Radio" IsEnabled="{Binding CanCreateTwoDimensionalGate}" IsChecked="{Binding IsPolygonTool, Mode=OneWay}" Click="polygon_tool_menu_item_click" />
-                <MenuItem Header="Rectangle gate" ToggleType="Radio" IsEnabled="{Binding CanCreateTwoDimensionalGate}" IsChecked="{Binding IsRectangleTool, Mode=OneWay}" Click="rectangle_tool_menu_item_click" />
-                <MenuItem Header="Quad gate" ToggleType="Radio" IsEnabled="{Binding CanCreateTwoDimensionalGate}" IsChecked="{Binding IsQuadrantTool, Mode=OneWay}" Click="quadrant_tool_menu_item_click" />
+                <MenuItem Header="View" InputGesture="V" ToggleType="Radio" IsChecked="{Binding IsViewTool, Mode=OneWay}" Click="view_tool_menu_item_click" />
+                <MenuItem Header="Polygon gate" InputGesture="P" ToggleType="Radio" IsEnabled="{Binding CanCreateTwoDimensionalGate}" IsChecked="{Binding IsPolygonTool, Mode=OneWay}" Click="polygon_tool_menu_item_click" />
+                <MenuItem Header="Rectangle gate" InputGesture="R" ToggleType="Radio" IsEnabled="{Binding CanCreateTwoDimensionalGate}" IsChecked="{Binding IsRectangleTool, Mode=OneWay}" Click="rectangle_tool_menu_item_click" />
+                <MenuItem Header="Quad gate" InputGesture="Q" ToggleType="Radio" IsEnabled="{Binding CanCreateTwoDimensionalGate}" IsChecked="{Binding IsQuadrantTool, Mode=OneWay}" Click="quadrant_tool_menu_item_click" />
                 <MenuItem Header="Curly quad gate" ToggleType="Radio" IsEnabled="{Binding CanCreateTwoDimensionalGate}" IsChecked="{Binding IsCurlyQuadrantTool, Mode=OneWay}" Click="curly_quadrant_tool_menu_item_click" />
                 <MenuItem Header="Offset quad gate" ToggleType="Radio" IsEnabled="{Binding CanCreateTwoDimensionalGate}" IsChecked="{Binding IsOffsetQuadrantTool, Mode=OneWay}" Click="offset_quadrant_tool_menu_item_click" />
-                <MenuItem Header="Threshold gate" ToggleType="Radio" IsEnabled="{Binding CanCreateOneDimensionalGate}" IsChecked="{Binding IsThresholdTool, Mode=OneWay}" Click="threshold_tool_menu_item_click" />
-                <MenuItem Header="Range gate" ToggleType="Radio" IsEnabled="{Binding CanCreateOneDimensionalGate}" IsChecked="{Binding IsRangeTool, Mode=OneWay}" Click="range_tool_menu_item_click" />
+                <MenuItem Header="Threshold gate" InputGesture="T" ToggleType="Radio" IsEnabled="{Binding CanCreateOneDimensionalGate}" IsChecked="{Binding IsThresholdTool, Mode=OneWay}" Click="threshold_tool_menu_item_click" />
+                <MenuItem Header="Range gate" InputGesture="G" ToggleType="Radio" IsEnabled="{Binding CanCreateOneDimensionalGate}" IsChecked="{Binding IsRangeTool, Mode=OneWay}" Click="range_tool_menu_item_click" />
                 <Separator />
                 <MenuItem Header="Merge" Command="{Binding AddMergeGateCommand}" />
                 <MenuItem Header="Exclude" Command="{Binding AddExcludeGateCommand}" />
@@ -440,7 +439,10 @@
             <MenuItem Header="_Compensation">
                 <MenuItem Header="Apply selected compensation" Command="{Binding ApplyCompensationCommand}"/>
                 <MenuItem Header="Compensation table editor ..." Command="{Binding EditCompensationCommand}" InputGesture="Ctrl + P"/>
+                <Separator />
                 <MenuItem Header="Auto-compensation" Command="{Binding OpenSpilloverCompensationCommand}"/>
+                <MenuItem Header="Spectral unmixing" Command="{Binding OpenSpectralUnmixingCommand}" />
+                <MenuItem Header="Mass compensation" Command="{Binding OpenMassCompensationCommand}" />
             </MenuItem>
             <MenuItem Header="_Statistics">
                 <MenuItem Header="Mean" Command="{Binding AddMeanStatisticCommand}" />
@@ -686,13 +688,10 @@
                                               SelectedItem="{Binding SelectedXAxisChoice, Mode=TwoWay}">
                                         <ComboBox.SelectionBoxItemTemplate>
                                             <DataTemplate>
-                                                <Border ClipToBounds="True"
-                                                        OpacityMask="{StaticResource AxisTitleComboTextFadeMask}">
-                                                    <TextBlock Text="{Binding DisplayLabel}"
-                                                               Foreground="{DynamicResource SemiColorText1}"
-                                                               TextTrimming="None"
-                                                               VerticalAlignment="Center" />
-                                                </Border>
+                                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                                    <TextBlock IsVisible="{Binding HasLabel}" Foreground="{DynamicResource SemiColorText0}" FontWeight="SemiBold" Text="{Binding Label}" />
+                                                    <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="{Binding Name}" />
+                                                </StackPanel>
                                             </DataTemplate>
                                         </ComboBox.SelectionBoxItemTemplate>
                                         <ComboBox.ItemTemplate>
@@ -752,13 +751,10 @@
                                                   SelectedItem="{Binding SelectedYAxisChoice, Mode=TwoWay}">
                                             <ComboBox.SelectionBoxItemTemplate>
                                                 <DataTemplate>
-                                                    <Border ClipToBounds="True"
-                                                            OpacityMask="{StaticResource AxisTitleComboTextFadeMask}">
-                                                        <TextBlock Text="{Binding DisplayLabel}"
-                                                                   Foreground="{DynamicResource SemiColorText1}"
-                                                                   TextTrimming="None"
-                                                                   VerticalAlignment="Center" />
-                                                    </Border>
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <TextBlock IsVisible="{Binding HasLabel}" Foreground="{DynamicResource SemiColorText0}" FontWeight="SemiBold" Text="{Binding Label}" />
+                                                        <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="{Binding Name}" />
+                                                    </StackPanel>
                                                 </DataTemplate>
                                             </ComboBox.SelectionBoxItemTemplate>
                                             <ComboBox.ItemTemplate>
@@ -2304,8 +2300,8 @@
                               VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="24"
                                 Spacing="14"
-                                MaxWidth="650"
-                                MinWidth="650"
+                                MaxWidth="750"
+                                MinWidth="750"
                                 HorizontalAlignment="Center">
                         <StackPanel Margin="0 12 0 0">
                             <TextBlock Foreground="{DynamicResource SemiColorText1}" Text="Workspace sample metadata" />
@@ -2336,8 +2332,8 @@
                                 BorderBrush="{DynamicResource AppBrushBorder3}"
                                 BorderThickness="1"
                                 CornerRadius="8"
+                                Padding="4"
                                 Background="{DynamicResource AppBrushBackground3}"
-                                Padding="8"
                                 ClipToBounds="True">
                             <DataGrid x:Name="workspace_metadata_grid"
                                       AutoGenerateColumns="False"
@@ -2423,8 +2419,8 @@
                               VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="24"
                                 Spacing="14"
-                                MaxWidth="650"
-                                MinWidth="650"
+                                MaxWidth="750"
+                                MinWidth="750"
                                 HorizontalAlignment="Center">
                         <StackPanel Margin="0 12 0 0">
                             <TextBlock Foreground="{DynamicResource SemiColorText1}" Text="Grouping channel metadata" />
@@ -2434,8 +2430,8 @@
                                 BorderBrush="{DynamicResource AppBrushBorder3}"
                                 BorderThickness="1"
                                 CornerRadius="8"
+                                Padding="4"
                                 Background="{DynamicResource AppBrushBackground3}"
-                                Padding="8"
                                 ClipToBounds="True">
                             <DataGrid AutoGenerateColumns="False"
                                       CanUserReorderColumns="False"

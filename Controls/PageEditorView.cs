@@ -70,7 +70,14 @@ public sealed class PageEditorView : Control
     private const double scrollbar_minimum_thumb = 36;
     private const double a4_width = 793.7;
     private const double a4_height = 1122.5;
+    private const double table_row_height = 20;
+    private const double table_column_resize_tolerance = 4;
+    private static readonly Cursor table_column_resize_cursor = new(StandardCursorType.SizeWestEast);
+    private static readonly Cursor default_cursor = new(StandardCursorType.Arrow);
     private PagePlotElement? captured_element;
+    private PlatformStatisticTableElement? resized_table_element;
+    private int resized_table_source_index = -1;
+    private double resized_table_start_width;
     private Point drag_start_page;
     private Point drag_start_viewport;
     private Vector drag_start_scroll_offset;
@@ -198,6 +205,14 @@ public sealed class PageEditorView : Control
         InvalidateVisual();
     }
 
+    public IReadOnlyList<PlatformTableColumnLayout> EnsurePlatformTableColumnLayouts(PlatformStatisticTableElement element)
+    {
+        var (columns, rows, _) = platform_statistic_table_data(element.Platform, element.OutputKey);
+        var table = table_rect_for(element.Bounds);
+        var defaults = table_column_widths(columns, rows, table.Width);
+        return element.EnsureColumnLayouts(columns, defaults);
+    }
+
     private async Task refresh_render_caches_sequentially_async(IReadOnlyList<LayoutCacheWorkItem> work_items, CancellationToken token)
     {
         foreach (var item in work_items)
@@ -283,6 +298,20 @@ public sealed class PageEditorView : Control
             return;
         }
 
+        if (element is PlatformStatisticTableElement table_element &&
+            try_table_column_boundary_at(table_element, point, out int source_index, out double column_width))
+        {
+            resized_table_element = table_element;
+            resized_table_source_index = source_index;
+            resized_table_start_width = column_width;
+            drag_start_page = point;
+            Cursor = table_column_resize_cursor;
+            e.Pointer.Capture(this);
+            e.Handled = true;
+            InvalidateVisual();
+            return;
+        }
+
         captured_element = element;
         drag_start_page = point;
         drag_start_viewport = viewport_point;
@@ -308,10 +337,25 @@ public sealed class PageEditorView : Control
             return;
         }
 
-        if (captured_element is null)
+        var viewport_point = e.GetPosition(this);
+        var point = to_page_point(viewport_point);
+        if (resized_table_element is not null)
+        {
+            double requested_width = resized_table_start_width + point.X - drag_start_page.X;
+            resized_table_element.SetColumnWidth(resized_table_source_index, requested_width);
+            remove_element_caches(resized_table_element.Id);
+            Cursor = table_column_resize_cursor;
+            InvalidateVisual();
+            e.Handled = true;
             return;
+        }
 
-        var point = to_page_point(e.GetPosition(this));
+        if (captured_element is null)
+        {
+            Cursor = table_column_boundary_at(point) ? table_column_resize_cursor : default_cursor;
+            return;
+        }
+
         if (resizing)
         {
             if (is_free_aspect_element(captured_element))
@@ -344,14 +388,24 @@ public sealed class PageEditorView : Control
     {
         base.OnPointerReleased(e);
         captured_element = null;
+        resized_table_element = null;
+        resized_table_source_index = -1;
         resizing = false;
         resize_corner = ResizeCorner.None;
         scroll_drag_kind = ScrollDragKind.None;
         active_vertical_snap_guide = null;
         active_horizontal_snap_guide = null;
+        Cursor = default_cursor;
         e.Pointer.Capture(null);
         update_content_extent();
         InvalidateVisual();
+    }
+
+    protected override void OnPointerExited(PointerEventArgs e)
+    {
+        base.OnPointerExited(e);
+        if (captured_element is null && resized_table_element is null && scroll_drag_kind == ScrollDragKind.None)
+            Cursor = default_cursor;
     }
 
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
@@ -560,7 +614,29 @@ public sealed class PageEditorView : Control
     private void draw_platform_statistic_table(DrawingContext context, PlatformStatisticTableElement element, Rect bounds)
     {
         var (columns, rows, colors) = platform_statistic_table_data(element.Platform, element.OutputKey);
-        draw_table(context, bounds, element.Title, columns, rows, colors);
+        var table = table_rect_for(bounds);
+        var defaults = table_column_widths(columns, rows, table.Width);
+        var visible_layouts = element.EnsureColumnLayouts(columns, defaults)
+            .Where(layout => layout.IsVisible && layout.SourceIndex >= 0 && layout.SourceIndex < columns.Length)
+            .OrderBy(layout => layout.SourceIndex)
+            .ToArray();
+        if (visible_layouts.Length == 0)
+            return;
+
+        var visible_columns = visible_layouts.Select(layout => columns[layout.SourceIndex]).ToArray();
+        var visible_rows = rows
+            .Select(row => visible_layouts.Select(layout => layout.SourceIndex < row.Length ? row[layout.SourceIndex] : "").ToArray())
+            .ToArray();
+        int color_marker_column = Array.FindIndex(visible_layouts, layout => layout.SourceIndex == 0);
+        draw_table(
+            context,
+            bounds,
+            element.Title,
+            visible_columns,
+            visible_rows,
+            colors,
+            visible_layouts.Select(layout => layout.Width).ToArray(),
+            color_marker_column);
     }
 
     private void draw_statistic_table(DrawingContext context, StatisticTableElement element, Rect bounds)
@@ -607,46 +683,78 @@ public sealed class PageEditorView : Control
           result.PythonCallableName == definition.PythonCallableName &&
           result.PythonParametersJson == definition.PythonParametersJson));
 
-    private void draw_table(DrawingContext context, Rect bounds, string title, IReadOnlyList<string> columns, IReadOnlyList<string[]> rows, IReadOnlyList<Color?>? row_colors)
+    private void draw_table(
+        DrawingContext context,
+        Rect bounds,
+        string title,
+        IReadOnlyList<string> columns,
+        IReadOnlyList<string[]> rows,
+        IReadOnlyList<Color?>? row_colors,
+        IReadOnlyList<double>? requested_column_widths = null,
+        int color_marker_column = -1)
     {
         draw_centered_text_in_band(context, title, new Rect(bounds.Left, bounds.Top, bounds.Width, title_space), 13, Colors.Black, bolded: true);
-        var table = new Rect(bounds.Left + 10, bounds.Top + title_space, Math.Max(1, bounds.Width - 20), Math.Max(1, bounds.Height - title_space - 10));
+        var table = table_rect_for(bounds);
         int column_count = Math.Max(1, columns.Count);
-        double row_height = 20;
-        var column_widths = table_column_widths(columns, rows, table.Width);
+        var column_widths = requested_column_widths is not null && requested_column_widths.Count == column_count
+            ? requested_column_widths.Select(width => Math.Clamp(width, 36, 600)).ToArray()
+            : table_column_widths(columns, rows, table.Width);
         var border_pen = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("PlotText4")), 0.8);
         var header_brush = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("PlotText2"));
         var alternate_brush = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("PlotText1"));
         var table_width = column_widths.Sum();
-        context.DrawRectangle(null, border_pen, new Rect(table.Left, table.Top, table_width, Math.Min(table.Height, row_height * (rows.Count + 1))));
-        double left = table.Left;
-        for (int column = 0; column < column_count; column++)
+        using (context.PushClip(table))
         {
-            var cell = new Rect(left, table.Top, column_widths[column], row_height);
-            context.FillRectangle(header_brush, cell);
-            context.DrawRectangle(null, border_pen, cell);
-            draw_text(context, columns[column], new Point(cell.Left + 5, cell.Top + 3), 11, Colors.Black, bolded: true);
-            left += column_widths[column];
-        }
-
-        int visible_rows = Math.Min(rows.Count, Math.Max(0, (int)((table.Height - row_height) / row_height)));
-        for (int row = 0; row < visible_rows; row++)
-        {
-            left = table.Left;
-            if (row % 2 == 1)
-                context.FillRectangle(alternate_brush, new Rect(table.Left, table.Top + (row + 1) * row_height, table_width, row_height));
+            context.DrawRectangle(null, border_pen, new Rect(table.Left, table.Top, table_width, Math.Min(table.Height, table_row_height * (rows.Count + 1))));
+            double left = table.Left;
             for (int column = 0; column < column_count; column++)
             {
-                var cell = new Rect(left, table.Top + (row + 1) * row_height, column_widths[column], row_height);
+                var cell = new Rect(left, table.Top, column_widths[column], table_row_height);
+                context.FillRectangle(header_brush, cell);
                 context.DrawRectangle(null, border_pen, cell);
-                string value = column < rows[row].Length ? rows[row][column] : "";
-                if (column == 0 && row_colors is not null && row < row_colors.Count && row_colors[row] is { } color)
-                    context.DrawRectangle(new SolidColorBrush(color), null, new Rect(cell.Left + 6, cell.Top + 5, 12, 10), 2);
-                draw_text(context, value, new Point(cell.Left + (column == 0 && row_colors is not null ? 24 : 5), cell.Top + 3), 11, Colors.Black);
+                draw_table_cell_text(context, columns[column], cell, 5, bolded: true);
                 left += column_widths[column];
+            }
+
+            int visible_rows = Math.Min(rows.Count, Math.Max(0, (int)((table.Height - table_row_height) / table_row_height)));
+            for (int row = 0; row < visible_rows; row++)
+            {
+                left = table.Left;
+                if (row % 2 == 1)
+                    context.FillRectangle(alternate_brush, new Rect(table.Left, table.Top + (row + 1) * table_row_height, table_width, table_row_height));
+                for (int column = 0; column < column_count; column++)
+                {
+                    var cell = new Rect(left, table.Top + (row + 1) * table_row_height, column_widths[column], table_row_height);
+                    context.DrawRectangle(null, border_pen, cell);
+                    string value = column < rows[row].Length ? rows[row][column] : "";
+                    bool has_marker = column == color_marker_column &&
+                                      row_colors is not null &&
+                                      row < row_colors.Count &&
+                                      row_colors[row].HasValue;
+                    if (has_marker && row_colors![row] is { } color)
+                        context.DrawRectangle(new SolidColorBrush(color), null, new Rect(cell.Left + 6, cell.Top + 5, 12, 10), 2);
+                    draw_table_cell_text(context, value, cell, has_marker ? 24 : 5, bolded: false);
+                    left += column_widths[column];
+                }
             }
         }
     }
+
+    private void draw_table_cell_text(DrawingContext context, string text, Rect cell, double left_padding, bool bolded)
+    {
+        double available_width = cell.Width - left_padding - 5;
+        if (available_width <= 1)
+            return;
+        var formatted = create_formatted_text(text, 11, Colors.Black, bolded);
+        formatted.MaxTextWidth = available_width;
+        formatted.MaxLineCount = 1;
+        formatted.Trimming = TextTrimming.CharacterEllipsis;
+        using (context.PushClip(new Rect(cell.Left + left_padding, cell.Top, available_width, cell.Height)))
+            context.DrawText(formatted, new Point(cell.Left + left_padding, cell.Top + 3));
+    }
+
+    private static Rect table_rect_for(Rect bounds) =>
+        new(bounds.Left + 10, bounds.Top + title_space, Math.Max(1, bounds.Width - 20), Math.Max(1, bounds.Height - title_space - 10));
 
     private void draw_platform_axes_and_grid(
         DrawingContext context,
@@ -664,8 +772,11 @@ public sealed class PageEditorView : Control
         var minor_pen = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("PlotBorder3")), 0.8);
         var major_grid_pen = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("PlotText3")), 0.8);
         var minor_grid_pen = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("PlotText1")), 0.6);
+        var minor_y_ticks = platform_y_ticks(min_y, max_y, major: false).ToArray();
+        var major_y_ticks = platform_y_ticks(min_y, max_y, major: true).ToArray();
+        double y_tick_interval = tick_interval(major_y_ticks, max_y - min_y);
 
-        foreach (double tick in platform_y_ticks(min_y, max_y, major: false))
+        foreach (double tick in minor_y_ticks)
         {
             double y = plot_rect.Bottom - (tick - min_y) / (max_y - min_y) * plot_rect.Height;
             if (element.ShowGridlines)
@@ -673,7 +784,7 @@ public sealed class PageEditorView : Control
             context.DrawLine(minor_pen, new Point(plot_rect.Left - 3, y), new Point(plot_rect.Left, y));
             context.DrawLine(minor_pen, new Point(plot_rect.Right, y), new Point(plot_rect.Right + 3, y));
         }
-        foreach (double tick in platform_y_ticks(min_y, max_y, major: true))
+        foreach (double tick in major_y_ticks)
         {
             double y = plot_rect.Bottom - (tick - min_y) / (max_y - min_y) * plot_rect.Height;
             if (element.ShowGridlines)
@@ -681,7 +792,7 @@ public sealed class PageEditorView : Control
             context.DrawLine(major_pen, new Point(plot_rect.Left - 5, y), new Point(plot_rect.Left, y));
             context.DrawLine(major_pen, new Point(plot_rect.Right, y), new Point(plot_rect.Right + 5, y));
             if (element.ShowTickLabels)
-                draw_right_aligned_text(context, Configuration.FormatAxisValue(tick), new Point(plot_rect.Left - 7, y - 6), 9, Colors.Black);
+                draw_right_aligned_text(context, Configuration.FormatAxisValue(tick, y_tick_interval), new Point(plot_rect.Left - 7, y - 6), 9, Colors.Black);
         }
 
         foreach (var tick in platform_x_ticks(document, major: false))
@@ -712,6 +823,18 @@ public sealed class PageEditorView : Control
     {
         var axis = new AxisSettings { Minimum = minimum, Maximum = maximum, ScaleKind = CoordinateScaleKind.Linear };
         return major ? Configuration.MajorAxisTicks(axis) : Configuration.MinorAxisTicks(axis);
+    }
+
+    private static double tick_interval(IReadOnlyList<double> ticks, double fallback)
+    {
+        double interval = double.PositiveInfinity;
+        for (int index = 1; index < ticks.Count; index++)
+        {
+            double difference = Math.Abs(ticks[index] - ticks[index - 1]);
+            if (difference > 0 && double.IsFinite(difference))
+                interval = Math.Min(interval, difference);
+        }
+        return double.IsFinite(interval) ? interval : Math.Abs(fallback);
     }
 
     private static IEnumerable<(double Position, string Label)> platform_x_ticks(PlatformPlotDocument document, bool major)
@@ -770,8 +893,11 @@ public sealed class PageEditorView : Control
             var population = platform.Populations[index];
             if (!population.IsPlatformDropped)
                 continue;
-            if (!string.Equals(population.SampleName, row[0], StringComparison.Ordinal) ||
-                !string.Equals(population.PopulationName, row[1], StringComparison.Ordinal))
+            bool population_matches = string.Equals(population.PopulationName, row[1], StringComparison.Ordinal) ||
+                                      (!population.IsPopulation &&
+                                       (string.Equals(population.SampleName, row[1], StringComparison.Ordinal) ||
+                                        string.Equals("All events", row[1], StringComparison.OrdinalIgnoreCase)));
+            if (!string.Equals(population.SampleName, row[0], StringComparison.Ordinal) || !population_matches)
                 continue;
             int source_index = platform_source_index(platform, population);
             return PlatformPalette.ColorForIndex(source_index >= 0 ? source_index : index);
@@ -830,6 +956,41 @@ public sealed class PageEditorView : Control
             ProliferationPlatform proliferation => proliferation.FillComponents,
             _ => false
         };
+
+    private bool table_column_boundary_at(Point point)
+    {
+        foreach (var element in PageElements.Reverse().OfType<PlatformStatisticTableElement>())
+            if (element.Bounds.Contains(point) && try_table_column_boundary_at(element, point, out _, out _))
+                return true;
+        return false;
+    }
+
+    private bool try_table_column_boundary_at(
+        PlatformStatisticTableElement element,
+        Point point,
+        out int source_index,
+        out double column_width)
+    {
+        source_index = -1;
+        column_width = 0;
+        var table = table_rect_for(element.Bounds);
+        var (_, rows, _) = platform_statistic_table_data(element.Platform, element.OutputKey);
+        double rendered_height = Math.Min(table.Height, table_row_height * (rows.Length + 1));
+        if (point.Y < table.Top || point.Y > table.Top + rendered_height)
+            return false;
+
+        double boundary = table.Left;
+        foreach (var layout in EnsurePlatformTableColumnLayouts(element).Where(item => item.IsVisible).OrderBy(item => item.SourceIndex))
+        {
+            boundary += layout.Width;
+            if (Math.Abs(point.X - boundary) > table_column_resize_tolerance)
+                continue;
+            source_index = layout.SourceIndex;
+            column_width = layout.Width;
+            return true;
+        }
+        return false;
+    }
 
     private double[] table_column_widths(IReadOnlyList<string> columns, IReadOnlyList<string[]> rows, double minimum_total_width)
     {
@@ -950,6 +1111,9 @@ public sealed class PageEditorView : Control
                 string.Join(",", platform.Populations.Where(row => row.IsPlatformDropped).Select(row => row.IsSelected))),
             PlatformStatisticTableElement platform_table when platform_table.Platform is { } platform => string.Join("|",
                 platform_table.OutputKey,
+                string.Join(";", platform_table.ColumnLayouts
+                    .OrderBy(layout => layout.SourceIndex)
+                    .Select(layout => $"{layout.SourceIndex}:{layout.Name}:{layout.Width:G6}:{layout.IsVisible}")),
                 platform.ResultTables.Count,
                 string.Join(";", platform.ResultTables.Select(table => $"{table.Key}:{string.Join(",", table.Columns)}:{string.Join("/", table.Rows.Select(row => string.Join(",", row)))}")),
                 platform.PlatformStatistics.Count,

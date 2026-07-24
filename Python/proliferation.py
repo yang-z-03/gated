@@ -4,14 +4,23 @@ import numpy as np
 from scipy import optimize, signal
 from scipy.integrate import trapezoid
 
-_BINS = 400
+_BINS = 500
 _MAX_FLOWFIT_PEAKS = 20
+_MIN_GENERATION_FRACTION = 0.001
+_MAX_PEAK_WIDTH_TO_DISTANCE = 0.45
+_MAX_INTERVAL_DISTORTION = 0.10
 
 
 def _fmt(value):
     if value is None or not np.isfinite(value):
         return ""
     return f"{float(value):.6g}"
+
+
+def _fmt_generation(value):
+    if value is None or not np.isfinite(value):
+        return ""
+    return f"{float(value):.4g}"
 
 
 def _source_label(row):
@@ -47,7 +56,7 @@ def _histogram(values, x_min, x_max):
 
 
 def _detect_peaks(x, y, max_generations, prominence):
-    distance = max(2, len(x) // max(max_generations * 2, 4))
+    distance = max(2, len(x) // max(max_generations * 4, 8))
     threshold = max(prominence * max(float(np.max(y)), 1e-9), 1e-9)
     peaks, properties = signal.find_peaks(y, prominence=threshold, distance=distance)
     if peaks.size == 0:
@@ -71,13 +80,18 @@ def _estimate_parent_size(x, y, parent_position, distance):
     return max(math.sqrt(max(variance, 0.0)), x[1] - x[0])
 
 
-def _flowfit_components(x, heights, parent_position, peak_size, generation_distance):
+def _flowfit_components(x, heights, parent_position, peak_size, generation_distance, interval_scales=None):
     peak_size = max(abs(float(peak_size)), 1e-9)
     generation_distance = max(abs(float(generation_distance)), 1e-9)
+    interval_scales = np.ones(max(len(heights) - 1, 0), dtype=float) if interval_scales is None else np.asarray(interval_scales, dtype=float)
     components = []
     means = []
+    mean = float(parent_position)
     for generation, height in enumerate(heights):
-        mean = parent_position - generation * generation_distance
+        if generation > 0:
+            interval_scale = float(interval_scales[generation - 1]) if generation - 1 < interval_scales.size else 1.0
+            interval_scale = min(max(interval_scale, 1.0 - _MAX_INTERVAL_DISTORTION), 1.0 + _MAX_INTERVAL_DISTORTION)
+            mean -= generation_distance * interval_scale
         means.append(mean)
         components.append((float(height) ** 2) * np.exp(-((x - mean) ** 2) / (2.0 * peak_size ** 2)))
     model = np.sum(components, axis=0) if components else np.zeros_like(x, dtype=float)
@@ -94,12 +108,12 @@ def _flowfit_initial_parameters(x, y, max_generations, prominence, x_min, x_max)
     if prominent_peaks.size == 0:
         prominent_peaks = peaks
     parent_index = int(prominent_peaks[np.argmax(x[prominent_peaks])])
-    if peaks.size > 1:
-        lower_peaks = [int(peak) for peak in prominent_peaks if x[peak] < x[parent_index]]
-        if lower_peaks:
-            detected_distance = x[parent_index] - x[max(lower_peaks)]
-            if detected_distance > x[1] - x[0]:
-                estimated_distance = float(detected_distance)
+    if prominent_peaks.size > 1:
+        detected_positions = np.sort(x[prominent_peaks])
+        detected_spacings = np.diff(detected_positions)
+        detected_spacings = detected_spacings[detected_spacings > 2.0 * (x[1] - x[0])]
+        if detected_spacings.size:
+            estimated_distance = float(np.median(detected_spacings))
     parent_position = float(x[parent_index])
     parent_size = _estimate_parent_size(x, y, parent_position, estimated_distance)
     real_space = max(parent_position - x_min, estimated_distance)
@@ -116,41 +130,59 @@ def _fit_flowfit_generations(x, y, max_generations, prominence, x_min, x_max):
     )
     n = len(heights0)
 
+    bin_width = max(float(x[1] - x[0]), 1e-9)
+    distance0 = min(max(float(distance0), 2.0 * bin_width), x_max - x_min)
+    size0 = min(max(float(size0), 0.5 * bin_width), distance0 * _MAX_PEAK_WIDTH_TO_DISTANCE)
+    width_ratio0 = min(max(size0 / distance0, 0.01), _MAX_PEAK_WIDTH_TO_DISTANCE)
+    parent_lower = max(x_min, parent0 - 0.6 * distance0)
+    parent_upper = min(x_max, parent0 + 0.6 * distance0)
+    distance_lower = max(2.0 * bin_width, 0.65 * distance0)
+    distance_upper = min(x_max - x_min, 1.35 * distance0)
+
     def unpack(p):
         heights = p[:n]
         parent_position = p[n]
-        peak_size = math.exp(p[n + 1])
         generation_distance = math.exp(p[n + 2])
-        return heights, parent_position, peak_size, generation_distance
+        width_ratio = math.exp(p[n + 1])
+        peak_size = max(0.5 * bin_width, generation_distance * width_ratio)
+        interval_scales = np.exp(p[n + 3:])
+        return heights, parent_position, peak_size, generation_distance, interval_scales
 
     def model(p):
-        heights, parent_position, peak_size, generation_distance = unpack(p)
-        return _flowfit_components(x, heights, parent_position, peak_size, generation_distance)[4]
+        heights, parent_position, peak_size, generation_distance, interval_scales = unpack(p)
+        return _flowfit_components(x, heights, parent_position, peak_size, generation_distance, interval_scales)[4]
 
     def residual(p):
-        weight = 1.0 / np.sqrt(np.maximum(y, 1.0 / max(len(y), 1)))
-        return (model(p) - y) * weight
+        peak = max(float(np.max(y)), 1e-12)
+        weight = 0.25 + 0.75 * np.sqrt(np.maximum(y, 0.0) / peak)
+        interval_scales = unpack(p)[4]
+        regularization = (interval_scales - 1.0) * peak * 0.5
+        return np.concatenate([(model(p) - y) * weight, regularization])
 
-    p0 = np.concatenate([heights0, [parent0, math.log(size0), math.log(distance0)]])
+    p0 = np.concatenate([heights0, [parent0, math.log(width_ratio0), math.log(distance0)], np.zeros(max(n - 1, 0))])
     height_upper = max(math.sqrt(max(float(np.max(y)), 1e-9)) * 10.0, 1.0)
     lower = np.concatenate([
         -np.full(n, height_upper),
-        [x_min, math.log(max(x[1] - x[0], 1e-9)), math.log(max(x[1] - x[0], 1e-9))],
+        [parent_lower, math.log(0.01), math.log(distance_lower)],
+        np.full(max(n - 1, 0), math.log(1.0 - _MAX_INTERVAL_DISTORTION)),
     ])
     upper = np.concatenate([
         np.full(n, height_upper),
-        [x_max, math.log(max(x_max - x_min, x[1] - x[0])), math.log(max(x_max - x_min, x[1] - x[0]))],
+        [parent_upper, math.log(_MAX_PEAK_WIDTH_TO_DISTANCE), math.log(max(distance_upper, distance_lower))],
+        np.full(max(n - 1, 0), math.log(1.0 + _MAX_INTERVAL_DISTORTION)),
     ])
     result = optimize.least_squares(residual, p0, bounds=(lower, upper), max_nfev=100000)
-    heights, parent_position, peak_size, generation_distance = unpack(result.x)
+    heights, parent_position, peak_size, generation_distance, interval_scales = unpack(result.x)
     means, peak_size, generation_distance, components, fitted = _flowfit_components(
-        x, heights, parent_position, peak_size, generation_distance
+        x, heights, parent_position, peak_size, generation_distance, interval_scales
     )
     return means, peak_size, generation_distance, components, fitted
 
 
 def _generation_counts(x, components):
     areas = np.asarray([trapezoid(component, x) for component in components], dtype=float)
+    coordinate_span = float(x[-1] - x[0] + (x[1] - x[0])) if len(x) > 1 else 1.0
+    areas /= max(coordinate_span, 1e-12)
     areas = np.maximum(areas, 0.0)
     total = float(np.sum(areas))
     fractions = areas / total if total > 0 else np.zeros_like(areas)
@@ -169,8 +201,8 @@ def _main():
     major = getattr(platform, "major", channel) or channel
     options = platform.transformations.get(major, None)
     values_for_range = transformed[:, 0][np.isfinite(transformed[:, 0])]
-    x_min = float(options.min) if options is not None else float(np.nanmin(values_for_range))
-    x_max = float(options.max) if options is not None else float(np.nanmax(values_for_range))
+    x_min = float(getattr(options, "transformed_min", options.min)) if options is not None else float(np.nanmin(values_for_range))
+    x_max = float(getattr(options, "transformed_max", options.max)) if options is not None else float(np.nanmax(values_for_range))
     if not np.isfinite(x_min) or not np.isfinite(x_max) or x_max <= x_min:
         x_min, x_max = float(np.min(values_for_range)), float(np.max(values_for_range))
     if x_max <= x_min:
@@ -194,12 +226,20 @@ def _main():
         if values.size < 20:
             continue
 
-        x, y = _histogram(values, x_min, x_max)
+        display_span = x_max - x_min
+        # Use display-bin coordinates: scale-invariant like normalized data, but numerically
+        # well-conditioned for sub-bin peak widths and generation-spacing optimization.
+        display_bin_values = (values - x_min) / display_span * _BINS
+        x, y = _histogram(display_bin_values, 0.0, float(_BINS))
         fit_y = _smooth(y, half_window) if smoothing_enabled else y
-        means, peak_size, generation_distance, components, model = _fit_flowfit_generations(
-            x, fit_y, max_generations, prominence, x_min, x_max
+        bin_means, bin_peak_size, bin_generation_distance, components, model = _fit_flowfit_generations(
+            x, fit_y, max_generations, prominence, 0.0, float(_BINS)
         )
         areas, fractions = _generation_counts(x, components)
+        means = x_min + bin_means / _BINS * display_span
+        peak_size = bin_peak_size / _BINS * display_span
+        generation_distance = bin_generation_distance / _BINS * display_span
+        detected = fractions >= _MIN_GENERATION_FRACTION
         divided_fraction = float(np.sum(fractions[1:])) if fractions.size > 1 else 0.0
         division_index = float(np.sum(np.arange(fractions.size) * fractions))
         precursor = np.asarray([areas[i] / (2.0 ** i) for i in range(areas.size)], dtype=float)
@@ -211,7 +251,7 @@ def _main():
             str(first.get("sample", "")),
             str(first.get("population", "")),
             str(int(values.size)),
-            str(int(len(areas))),
+            str(int(np.count_nonzero(detected))),
             _fmt(divided_fraction * 100.0),
             _fmt(division_index),
             _fmt(proliferation_index),
@@ -222,14 +262,16 @@ def _main():
         ])
 
         for generation, (area, fraction, mean) in enumerate(zip(areas, fractions, means)):
+            if fraction < _MIN_GENERATION_FRACTION:
+                continue
             generation_rows.append([
                 str(first.get("sample", "")),
                 str(first.get("population", "")),
                 str(generation),
-                _fmt(mean),
-                _fmt(area),
-                _fmt(fraction * 100.0),
-                _fmt(area / (2.0 ** generation)),
+                _fmt_generation(mean),
+                _fmt_generation(area),
+                _fmt_generation(fraction * 100.0),
+                _fmt_generation(area / (2.0 ** generation)),
             ])
             amplitude = float(np.max(components[generation])) if len(components[generation]) else 0.0
             platform.set_fit_curve(

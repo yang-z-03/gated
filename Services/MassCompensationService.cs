@@ -10,7 +10,7 @@ public sealed record MassChannelDescriptor(string ChannelName, string ElementSym
     public string DisplayName => $"{ElementSymbol}{MassNumber}";
     public override string ToString() => string.Equals(ChannelName, DisplayName, StringComparison.OrdinalIgnoreCase)
         ? DisplayName
-        : $"{DisplayName} — {ChannelName}";
+        : $"{DisplayName} - {ChannelName}";
 }
 
 public sealed record MassCompensationControlInput(ControlSample Sample, string SourceChannelName);

@@ -178,6 +178,10 @@ public sealed partial class MainWindowViewModel : NotifyBase
     public ICommand EditCompensationCommand { get; }
     public ICommand ReapplyCompensationCommand { get; }
     public ICommand OpenSpilloverCompensationCommand { get; }
+    public ICommand OpenSpectralUnmixingCommand { get; }
+    public ICommand OpenMassCompensationCommand { get; }
+    public ICommand OpenIndexDemultiplexCommand { get; }
+    public ICommand OpenMassNormalizationCommand { get; }
     public ICommand RecalculateSelectedGroupCommand { get; }
     public ICommand RecalculateSelectedGateCommand { get; }
     public ICommand RecalculateSelectedStatisticCommand { get; }
@@ -271,6 +275,10 @@ public sealed partial class MainWindowViewModel : NotifyBase
         EditCompensationCommand = new RelayCommand(_ => _ = edit_selected_compensation_async(), _ => selected_group is not null && selected_compensation is not null);
         ReapplyCompensationCommand = new RelayCommand(_ => reapply_selected_group_compensation(), _ => selected_group is not null);
         OpenSpilloverCompensationCommand = new RelayCommand(_ => open_spillover_compensation_panel(), _ => selected_group is not null);
+        OpenSpectralUnmixingCommand = new RelayCommand(_ => _ = open_selected_group_control_async("spectral"), _ => selected_group is not null);
+        OpenMassCompensationCommand = new RelayCommand(_ => _ = open_selected_group_control_async("mass-compensation"), _ => selected_group is not null);
+        OpenIndexDemultiplexCommand = new RelayCommand(_ => _ = open_selected_group_control_async("index-demultiplex"), _ => selected_group is not null);
+        OpenMassNormalizationCommand = new RelayCommand(_ => _ = open_selected_group_control_async("mass-normalization"), _ => selected_group is not null);
         RecalculateSelectedGroupCommand = new RelayCommand(_ => RecalculateSelectedGroup(), _ => selected_group is not null);
         RecalculateSelectedGateCommand = new RelayCommand(_ => RecalculateEditedGate(selected_gate), _ => selected_group is not null);
         RecalculateSelectedStatisticCommand = new RelayCommand(_ => recalculate_selected_statistic(), _ => selected_group is not null && selected_statistic_definition() is not null);
@@ -1266,7 +1274,10 @@ public sealed partial class MainWindowViewModel : NotifyBase
     }
 
     public bool HasSelectedPageElement => SelectedPageElement is not null;
-    public bool CanEditSelectedPageTitle => selected_page_element is { ElementKind: PageElementKind.FlowPlot or PageElementKind.PlatformPlot };
+    public bool CanEditSelectedPageTitle => selected_page_element is
+    {
+        ElementKind: PageElementKind.FlowPlot or PageElementKind.PlatformPlot or PageElementKind.PlatformStatisticTable
+    };
     public bool CanEditSelectedPageWidth => selected_page_element is not null;
     public bool CanEditSelectedPageHeight => selected_page_element is { HasFixedHeight: false };
     public bool CanEditSelectedPagePlotMode => selected_page_element?.ElementKind == PageElementKind.FlowPlot;
@@ -5940,6 +5951,16 @@ public sealed partial class MainWindowViewModel : NotifyBase
         SelectedNode = node;
     }
 
+    private async Task open_selected_group_control_async(string control_key)
+    {
+        if (selected_group is null)
+            return;
+
+        var node = find_project_node($"group:{selected_group.Id}:controls:{control_key}");
+        if (node is not null)
+            await select_project_node_async(node);
+    }
+
     private void raise_command_states()
     {
         foreach (var command in new[]
@@ -5955,6 +5976,10 @@ public sealed partial class MainWindowViewModel : NotifyBase
             EditCompensationCommand,
             ReapplyCompensationCommand,
             OpenSpilloverCompensationCommand,
+            OpenSpectralUnmixingCommand,
+            OpenMassCompensationCommand,
+            OpenIndexDemultiplexCommand,
+            OpenMassNormalizationCommand,
             RecalculateSelectedGroupCommand,
             RecalculateSelectedGateCommand,
             RecalculateSelectedStatisticCommand,
@@ -6248,7 +6273,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 Size = 260,
                 Width = 260,
                 Height = 195,
-                Title = $"{platform.Name} — {output.Title}"
+                Title = $"{platform.Name} - {output.Title}"
             };
         }
         else
@@ -6260,7 +6285,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 X = Math.Max(0, page_point.X - 160),
                 Y = Math.Max(0, page_point.Y - 100),
                 Size = 240,
-                Title = $"{platform.Name} — {output.Title}"
+                Title = $"{platform.Name} - {output.Title}"
             };
             table.Width = table.MinimumWidth;
             table.Height = table.MinimumHeight;

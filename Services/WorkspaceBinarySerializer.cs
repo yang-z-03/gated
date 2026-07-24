@@ -12,7 +12,7 @@ namespace gated.Services;
 public sealed class WorkspaceBinarySerializer
 {
     private const uint magic = 0x44544731;
-    private const int version = 53;
+    private const int version = 54;
     private const int minimum_supported_version = 42;
     [ThreadStatic] private static int reading_version;
 
@@ -1770,6 +1770,8 @@ public sealed class WorkspaceBinarySerializer
             writer.Write(element.DotColor.RangeMaximum);
             if (element is StatisticTableElement statistic_table)
                 write_statistic_table_columns(writer, workspace, statistic_table);
+            else if (element is PlatformStatisticTableElement platform_table)
+                write_platform_table_column_layouts(writer, platform_table);
         }
     }
 
@@ -1953,6 +1955,8 @@ public sealed class WorkspaceBinarySerializer
             initialize_dot_color_range(element, reset_selection: file_version < 43);
             if (element is StatisticTableElement statistic_table)
                 read_statistic_table_columns(reader, workspace, statistic_table);
+            else if (element is PlatformStatisticTableElement platform_table && file_version >= 54)
+                read_platform_table_column_layouts(reader, platform_table);
             layout.Elements.Add(element);
         }
         workspace.PageLayouts.Add(layout);
@@ -2064,6 +2068,33 @@ public sealed class WorkspaceBinarySerializer
             }
             writer.Write(statistic_index);
             write_string(writer, column.Title);
+        }
+    }
+
+    private static void write_platform_table_column_layouts(BinaryWriter writer, PlatformStatisticTableElement table)
+    {
+        writer.Write(table.ColumnLayouts.Count);
+        foreach (var layout in table.ColumnLayouts.OrderBy(item => item.SourceIndex))
+        {
+            writer.Write(layout.SourceIndex);
+            write_string(writer, layout.Name);
+            writer.Write(layout.Width);
+            writer.Write(layout.IsVisible);
+        }
+    }
+
+    private static void read_platform_table_column_layouts(BinaryReader reader, PlatformStatisticTableElement table)
+    {
+        int count = reader.ReadInt32();
+        for (int index = 0; index < count; index++)
+        {
+            table.ColumnLayouts.Add(new PlatformTableColumnLayout
+            {
+                SourceIndex = reader.ReadInt32(),
+                Name = read_string(reader),
+                Width = reader.ReadDouble(),
+                IsVisible = reader.ReadBoolean()
+            });
         }
     }
 

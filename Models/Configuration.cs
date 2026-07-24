@@ -482,6 +482,18 @@ public static class Configuration
         return value.ToString(Math.Abs(value) < 1 ? "0.##" : "0.#", CultureInfo.InvariantCulture);
     }
 
+    public static string FormatAxisValue(double value, double tick_interval)
+    {
+        tick_interval = Math.Abs(tick_interval);
+        if (!double.IsFinite(value) || !double.IsFinite(tick_interval) || tick_interval <= 0 || tick_interval >= 1)
+            return FormatAxisValue(value);
+
+        int decimal_places = Math.Max(1, (int)(-Math.Floor(Math.Log10(tick_interval))) + 1);
+        if (decimal_places > 8)
+            return value.ToString("0.##E0", CultureInfo.InvariantCulture);
+        return value.ToString($"0.{new string('#', decimal_places)}", CultureInfo.InvariantCulture);
+    }
+
     private static CytometerPreferenceStore load_store()
     {
         try

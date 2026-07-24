@@ -658,6 +658,8 @@ public sealed class ViewOptions
 
     public double min => options?.Minimum ?? platform?.Axis.Minimum ?? 0;
     public double max => options?.Maximum ?? platform?.Axis.Maximum ?? 0;
+    public double transformed_min => transform(min);
+    public double transformed_max => transform(max);
     public double t => options?.Logicle.T ?? platform?.Axis.Logicle.T ?? 0;
     public double w => options?.Logicle.W ?? platform?.Axis.Logicle.W ?? 0;
     public double m => options?.Logicle.M ?? platform?.Axis.Logicle.M ?? 0;
@@ -669,6 +671,14 @@ public sealed class ViewOptions
         PlatformTransformationKind.Logicle => "logicle",
         PlatformTransformationKind.Arcsinh => "arcsinh",
         _ => "linear"
+    };
+
+    private double transform(double value) => (options?.Kind ?? platform?.Axis.Transform ?? PlatformTransformationKind.Linear) switch
+    {
+        PlatformTransformationKind.Logicle => new LogicleTransform(options?.Logicle ?? platform?.Axis.Logicle ?? new LogicleParameters()).Transform(value),
+        PlatformTransformationKind.Logarithm => Math.Sign(value) * Math.Log10(1.0 + Math.Abs(value)),
+        PlatformTransformationKind.Arcsinh => Math.Asinh(value / Math.Max(arcsinh_a, double.Epsilon)),
+        _ => value
     };
 }
 

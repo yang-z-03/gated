@@ -10,7 +10,7 @@
     <StaticResource x:Key="MenuFlyoutCornerRadius" ResourceKey="SemiBorderRadiusMedium" />
     <x:Double x:Key="MenuFlyoutMinHeight">16</x:Double>
     <x:Double x:Key="MenuFlyoutMinWidth">100</x:Double>
-    <x:Double x:Key="MenuFlyoutMaxHeight">600</x:Double>
+    <x:Double x:Key="MenuFlyoutMaxHeight">800</x:Double>
     <x:Double x:Key="MenuFlyoutMaxWidth">600</x:Double>
     <StaticResource x:Key="MenuFlyoutFontSize" ResourceKey="SemiFontSizeRegular" />
     <StaticResource x:Key="MenuFlyoutFontWeight" ResourceKey="SemiFontWeightRegular" />

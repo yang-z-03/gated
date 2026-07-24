@@ -644,7 +644,7 @@ public sealed class PlatformSystemTests
     }
 
     [Fact]
-    public void Version_53_round_trip_preserves_platform_payload_roles_and_output_keys()
+    public void Version_54_round_trip_preserves_platform_payload_roles_and_output_keys()
     {
         var workspace = new FlowWorkspace { Name = "Platform round trip" };
         var platform = new ProliferationPlatform { Name = "Proliferation 1", MaxGenerations = 12 };
@@ -685,7 +685,7 @@ public sealed class PlatformSystemTests
             using (var reader = new BinaryReader(File.OpenRead(path)))
             {
                 _ = reader.ReadUInt32();
-                Assert.Equal(53, reader.ReadInt32());
+                Assert.Equal(54, reader.ReadInt32());
             }
             var loaded = new WorkspaceBinarySerializer().Load(path);
             var loaded_platform = Assert.IsType<ProliferationPlatform>(Assert.Single(loaded.Platforms));
@@ -705,7 +705,7 @@ public sealed class PlatformSystemTests
     }
 
     [Fact]
-    public void Version_53_round_trips_each_registered_implementation_payload()
+    public void Version_54_round_trips_each_registered_implementation_payload()
     {
         var workspace = new FlowWorkspace { Name = "All platforms" };
         var integration = new IntegrationPlatform

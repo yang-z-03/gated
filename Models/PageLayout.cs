@@ -235,6 +235,10 @@ public sealed class PlatformStatisticTableElement : PagePlotElement
     {
         get
         {
+            var visible_layouts = ColumnLayouts.Where(layout => layout.IsVisible).ToArray();
+            if (visible_layouts.Length > 0)
+                return Math.Clamp(20 + visible_layouts.Sum(layout => layout.Width), 160, 1600);
+
             var table = Platform is null ? null : gated.ViewModels.Platforms.PlatformCatalog.Get(Platform.Kind).CreatePresentation(Platform).Table(OutputKey);
             if (table is null)
                 return 160;
@@ -252,6 +256,75 @@ public sealed class PlatformStatisticTableElement : PagePlotElement
     }
     public Platform? Platform { get; init; }
     public string OutputKey { get; init; } = "";
+    public ObservableCollection<PlatformTableColumnLayout> ColumnLayouts { get; } = new();
+
+    public IReadOnlyList<PlatformTableColumnLayout> EnsureColumnLayouts(
+        IReadOnlyList<string> columns,
+        IReadOnlyList<double>? default_widths = null)
+    {
+        for (int source_index = 0; source_index < columns.Count; source_index++)
+        {
+            var layout = ColumnLayouts.FirstOrDefault(item => item.SourceIndex == source_index);
+            if (layout is null)
+            {
+                double width = default_widths is not null && source_index < default_widths.Count
+                    ? default_widths[source_index]
+                    : 90;
+                ColumnLayouts.Add(new PlatformTableColumnLayout
+                {
+                    SourceIndex = source_index,
+                    Name = columns[source_index] ?? "",
+                    Width = width
+                });
+            }
+            else if (!string.Equals(layout.Name, columns[source_index], StringComparison.Ordinal))
+            {
+                layout.Name = columns[source_index] ?? "";
+            }
+        }
+
+        foreach (var stale in ColumnLayouts.Where(item => item.SourceIndex < 0 || item.SourceIndex >= columns.Count).ToArray())
+            ColumnLayouts.Remove(stale);
+
+        return ColumnLayouts.OrderBy(item => item.SourceIndex).ToArray();
+    }
+
+    public void SetColumnWidth(int source_index, double width)
+    {
+        var layout = ColumnLayouts.FirstOrDefault(item => item.SourceIndex == source_index);
+        if (layout is null || Math.Abs(layout.Width - width) < 0.05)
+            return;
+        layout.Width = width;
+        Width = MinimumWidth;
+        OnPropertyChanged(nameof(ColumnLayouts));
+    }
+
+    public bool SetColumnVisibility(int source_index, bool is_visible)
+    {
+        var layout = ColumnLayouts.FirstOrDefault(item => item.SourceIndex == source_index);
+        if (layout is null || layout.IsVisible == is_visible)
+            return false;
+        if (!is_visible && ColumnLayouts.Count(item => item.IsVisible) <= 1)
+            return false;
+        layout.IsVisible = is_visible;
+        Width = MinimumWidth;
+        OnPropertyChanged(nameof(ColumnLayouts));
+        return true;
+    }
+}
+
+public sealed class PlatformTableColumnLayout
+{
+    private double width = 90;
+
+    public int SourceIndex { get; init; }
+    public string Name { get; set; } = "";
+    public double Width
+    {
+        get => width;
+        set => width = Math.Round(Math.Clamp(double.IsFinite(value) ? value : 90, 36, 600), 1);
+    }
+    public bool IsVisible { get; set; } = true;
 }
 
 public sealed class StatisticTableColumn

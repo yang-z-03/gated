@@ -74,15 +74,26 @@
                                 </MultiBinding>
                             </TextBlock.IsVisible>
                         </TextBlock>
-                        <ContentPresenter
-                            Name="ContentPresenter"
+                        <Border
+                            Name="SelectionBoxMask"
                             Grid.Column="0"
                             Margin="{TemplateBinding Padding}"
-                            HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
-                            VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
-                            Content="{TemplateBinding SelectionBoxItem}"
-                            ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
-                            IsVisible="{TemplateBinding IsEditable, Converter={x:Static BoolConverters.Not}}" />
+                            ClipToBounds="True"
+                            IsVisible="{TemplateBinding IsEditable, Converter={x:Static BoolConverters.Not}}">
+                            <Border.OpacityMask>
+                                <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,0%">
+                                    <GradientStop Color="White" Offset="0" />
+                                    <GradientStop Color="White" Offset="0.88" />
+                                    <GradientStop Color="Transparent" Offset="1" />
+                                </LinearGradientBrush>
+                            </Border.OpacityMask>
+                            <ContentPresenter
+                                Name="ContentPresenter"
+                                HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                                Content="{TemplateBinding SelectionBoxItem}"
+                                ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}" />
+                        </Border>
                         <TextBox
                             Name="PART_EditableTextBox"
                             Grid.Column="0"

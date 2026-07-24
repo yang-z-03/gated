@@ -24,6 +24,7 @@ using Avalonia.Interactivity;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml.MarkupExtensions;
+using Avalonia.VisualTree;
 using gated.Services;
 
 namespace gated;
@@ -507,6 +508,9 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (try_activate_gating_shortcut(e))
+            return;
+
         if (e.KeyModifiers == KeyModifiers.None && e.Key == Key.Delete)
         {
             if (view_model.IsPageEditorMode)
@@ -533,6 +537,38 @@ public partial class MainWindow : Window
                 view_model.RenameSelectedNodeCommand.Execute(null);
             }
         }
+    }
+
+    private bool try_activate_gating_shortcut(Avalonia.Input.KeyEventArgs e)
+    {
+        if (e.KeyModifiers != KeyModifiers.None || !view_model.IsDefaultAnalysisMode || is_keyboard_input_control(e.Source))
+            return false;
+
+        GatingTool? tool = e.Key switch
+        {
+            Key.V => GatingTool.View,
+            Key.P when view_model.CanCreateTwoDimensionalGate => GatingTool.Polygon,
+            Key.R when view_model.CanCreateTwoDimensionalGate => GatingTool.Rectangle,
+            Key.Q when view_model.CanCreateTwoDimensionalGate => GatingTool.Quadrant,
+            Key.T when view_model.CanCreateOneDimensionalGate => GatingTool.Threshold,
+            Key.G when view_model.CanCreateOneDimensionalGate => GatingTool.Range,
+            _ => null
+        };
+        if (tool is null)
+            return false;
+
+        view_model.ActiveTool = tool.Value;
+        e.Handled = true;
+        return true;
+    }
+
+    private static bool is_keyboard_input_control(object? source)
+    {
+        if (source is not Visual visual)
+            return false;
+
+        return visual is TextBox or NumericUpDown or ComboBox ||
+               visual.GetVisualAncestors().Any(ancestor => ancestor is TextBox or NumericUpDown or ComboBox);
     }
 
     private static void execute_shortcut_command(System.Windows.Input.ICommand command, Avalonia.Input.KeyEventArgs e)
@@ -1819,12 +1855,50 @@ public partial class MainWindow : Window
 
     private void page_editor_element_context_requested(object? sender, PageElementContextRequestedEventArgs e)
     {
-        if (e.Element.ElementKind != PageElementKind.FlowPlot)
+        var menu = e.Element switch
+        {
+            PlatformStatisticTableElement table => build_layout_platform_table_context_menu(table),
+            { ElementKind: PageElementKind.FlowPlot } => build_layout_plot_element_context_menu(e.Element),
+            _ => null
+        };
+        if (menu is null)
             return;
-
-        var menu = build_layout_plot_element_context_menu(e.Element);
         page_editor.ContextMenu = menu;
         menu.Open(page_editor);
+    }
+
+    private ContextMenu build_layout_platform_table_context_menu(PlatformStatisticTableElement element)
+    {
+        view_model.SelectedPageElement = element;
+        var menu = new ContextMenu
+        {
+            DataContext = view_model,
+            Placement = PlacementMode.Pointer
+        };
+        var columns_menu = new MenuItem { Header = "Columns" };
+        foreach (var layout in page_editor.EnsurePlatformTableColumnLayouts(element))
+        {
+            var item = new MenuItem
+            {
+                Header = string.IsNullOrWhiteSpace(layout.Name) ? $"Column {layout.SourceIndex + 1}" : layout.Name,
+                ToggleType = MenuItemToggleType.CheckBox,
+                IsChecked = layout.IsVisible
+            };
+            item.Click += (_, _) =>
+            {
+                element.SetColumnVisibility(layout.SourceIndex, !layout.IsVisible);
+                item.IsChecked = layout.IsVisible;
+                page_editor.RefreshElementRenderCache(element);
+            };
+            columns_menu.Items.Add(item);
+        }
+
+        add_menu_items(menu,
+            columns_menu,
+            new Separator(),
+            click_menu_item("Refresh", (_, _) => page_editor.RefreshElementRenderCache(element)),
+            command_menu_item("Delete", view_model.DeletePageElementCommand));
+        return menu;
     }
 
     private ContextMenu build_layout_plot_element_context_menu(PagePlotElement element)

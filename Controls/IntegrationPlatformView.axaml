@@ -51,7 +51,7 @@
                         <TextBlock VerticalAlignment="Center" Text="a" />
                         <TextBox Classes="Small" Width="64" Text="{Binding ArcsinhA}" IsEnabled="{Binding IsEditable}" />
                       </StackPanel>
-                      <TextBlock VerticalAlignment="Center" Foreground="{DynamicResource SemiColorText2}" Text="—" IsVisible="{Binding HasNoParameters}" />
+                      <TextBlock VerticalAlignment="Center" Foreground="{DynamicResource SemiColorText2}" Text="NA" IsVisible="{Binding HasNoParameters}" />
                     </Grid>
                   </DataTemplate>
                 </DataGridTemplateColumn.CellTemplate>

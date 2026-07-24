@@ -224,7 +224,7 @@ public sealed class MassNormalizationViewModel : NotifyBase
             var progress = new Progress<MassNormalizationProgress>(update =>
             {
                 ApplyProgress = Math.Clamp(update.Fraction * 100, 0, 100);
-                ApplyProgressText = $"{update.Detail} — {ApplyProgress:0}%";
+                ApplyProgressText = $"{update.Detail} - {ApplyProgress:0}%";
                 Status = ApplyProgressText;
             });
             var preparation = await Task.Run(() => service.PrepareApply(group, target, progress));
@@ -431,7 +431,7 @@ public sealed record MassGatePlotViewModel(
     double XMaximum,
     double YMaximum)
 {
-    public string Title => $"{MassNumber} — {XChannel} / {YChannel}";
+    public string Title => $"{MassNumber} - {XChannel} / {YChannel}";
     public AxisScale XScale { get; } = new() { Kind = CoordinateScaleKind.Arcsinh };
     public AxisScale YScale { get; } = new() { Kind = CoordinateScaleKind.Arcsinh };
 }

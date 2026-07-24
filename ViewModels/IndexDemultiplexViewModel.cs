@@ -401,7 +401,7 @@ public sealed class IndexDemultiplexViewModel : NotifyBase
             var progress = new Progress<IndexDemultiplexProgress>(update =>
             {
                 ApplyProgress = Math.Clamp(update.Fraction * 100, 0, 100);
-                ApplyProgressText = $"{update.Detail} — {ApplyProgress:0}%";
+                ApplyProgressText = $"{update.Detail} - {ApplyProgress:0}%";
                 Status = ApplyProgressText;
             });
             var preparation = await Task.Run(
@@ -577,7 +577,7 @@ public sealed class IndexDemultiplexViewModel : NotifyBase
     internal string ChannelThresholdText(string channel_name)
     {
         double? value = selected_row?.State.Cutoffs.FirstOrDefault(cutoff => cutoff.ChannelName == channel_name)?.Cutoff;
-        return value.HasValue && double.IsFinite(value.Value) ? Configuration.FormatAxisValue(value.Value) : "—";
+        return value.HasValue && double.IsFinite(value.Value) ? Configuration.FormatAxisValue(value.Value) : "-";
     }
 
     private void refresh_channel_rows()
