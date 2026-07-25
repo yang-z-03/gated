@@ -67,6 +67,8 @@ public partial class MainWindow : Window
         view_model.RequestChoiceInputAsync = show_choice_input_dialog;
         view_model.RequestMultipleChoiceInputAsync = show_multiple_choice_input_dialog;
         view_model.RequestBooleanGateInputAsync = show_boolean_gate_input_dialog;
+        view_model.RequestAddSamplesAsync = open_fcs_files_async;
+        view_model.RequestApplicationExitAsync = request_application_close_async;
         view_model.RequestCompensationEditorAsync = show_compensation_editor_dialog;
         view_model.RequestMessageAsync = show_message_dialog;
         view_model.RequestConfirmationAsync = show_confirmation_dialog;
@@ -183,8 +185,9 @@ public partial class MainWindow : Window
 
     private void configure_platform_window_chrome()
     {
-        ExtendClientAreaChromeHints = Avalonia.Platform.ExtendClientAreaChromeHints.Default;
-        SystemDecorations = SystemDecorations.Full;
+        WindowDecorations = OperatingSystem.IsWindows()
+            ? Avalonia.Controls.WindowDecorations.BorderOnly
+            : Avalonia.Controls.WindowDecorations.Full;
         ExtendClientAreaTitleBarHeightHint = 0;
 
         if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
@@ -295,10 +298,17 @@ public partial class MainWindow : Window
 
     private void update_recent_items_menu()
     {
-        recent_items_menu.Items.Clear();
+        populate_recent_items(recent_items_menu.Items);
+        if (startup_recent_button.Flyout is MenuFlyout flyout)
+            populate_recent_items(flyout.Items);
+    }
+
+    private void populate_recent_items(ItemCollection items)
+    {
+        items.Clear();
         if (view_model.RecentFilePaths.Count == 0)
         {
-            recent_items_menu.Items.Add(new MenuItem { Header = "(No recent items)", IsEnabled = false });
+            items.Add(new MenuItem { Header = "(No recent items)", IsEnabled = false });
         }
         else
         {
@@ -311,18 +321,18 @@ public partial class MainWindow : Window
                 };
                 ToolTip.SetTip(item, path);
                 item.Click += recent_file_menu_item_click;
-                recent_items_menu.Items.Add(item);
+                items.Add(item);
             }
         }
 
-        recent_items_menu.Items.Add(new Separator());
+        items.Add(new Separator());
         var clear_item = new MenuItem
         {
             Header = "Clear file history",
             IsEnabled = view_model.RecentFilePaths.Count > 0
         };
         clear_item.Click += clear_recent_files_menu_item_click;
-        recent_items_menu.Items.Add(clear_item);
+        items.Add(clear_item);
     }
 
     private void update_script_repository_menus()
@@ -413,14 +423,14 @@ public partial class MainWindow : Window
     private static void update_metadata_columns(DataGrid grid, System.Data.DataTable table)
     {
         grid.Columns.Clear();
-        grid.ItemsSource = table.DefaultView;
+        grid.ItemsSource = table.DefaultView.Cast<System.Data.DataRowView>()
+            .Select(row => new DataRowViewAdapter(row))
+            .ToArray();
         foreach (System.Data.DataColumn column in table.Columns)
         {
             if (column.ColumnName.StartsWith("__", StringComparison.Ordinal))
                 continue;
-            // Use a parser-safe alias which the DataRowView accessor resolves back
-            // to the real column name (including FCS names such as "$DATE").
-            var binding = new Binding(DataRowViewPropertyAccessorPlugin.BindingPropertyName(column))
+            var binding = new Binding($"Cells[{column.Ordinal}].Value")
             {
                 Mode = column.ColumnName is "Group" or "Sample" ? BindingMode.OneWay : BindingMode.TwoWay,
                 UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged
@@ -705,11 +715,14 @@ public partial class MainWindow : Window
                 return;
         }
 
-        var choice = await show_workspace_exit_dialog();
-        if (choice == ScriptSaveChoice.Cancel)
-            return;
-        if (choice == ScriptSaveChoice.Save && !await save_workspace_async())
-            return;
+        if (workspace_requires_save_choice())
+        {
+            var choice = await show_workspace_exit_dialog();
+            if (choice == ScriptSaveChoice.Cancel)
+                return;
+            if (choice == ScriptSaveChoice.Save && !await save_workspace_async())
+                return;
+        }
 
         view_model.CloseWorkspace();
         current_workspace_path = null;
@@ -757,6 +770,21 @@ public partial class MainWindow : Window
     private async void about_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         await new AboutWindow().ShowDialog(this);
+    }
+
+    private async void workspace_help_button_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo("https://github.com/yang-z-03/gated#readme")
+            {
+                UseShellExecute = true
+            });
+        }
+        catch (Exception exception)
+        {
+            await show_message_dialog("Open help failed", exception.Message);
+        }
     }
 
     private async void preferences_menu_item_click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -1596,6 +1624,9 @@ public partial class MainWindow : Window
 
         if (!await view_model.TryLeavePythonScriptEditorAsync())
             return false;
+
+        if (!workspace_requires_save_choice())
+            return true;
 
         ScriptSaveChoice choice;
         try
@@ -3296,14 +3327,24 @@ public partial class MainWindow : Window
                 return;
         }
 
-        close_prompt_active = true;
-        var choice = await show_workspace_exit_dialog();
-        close_prompt_active = false;
+        if (workspace_requires_save_choice())
+        {
+            ScriptSaveChoice choice;
+            try
+            {
+                close_prompt_active = true;
+                choice = await show_workspace_exit_dialog();
+            }
+            finally
+            {
+                close_prompt_active = false;
+            }
 
-        if (choice == ScriptSaveChoice.Cancel)
-            return;
-        if (choice == ScriptSaveChoice.Save && !await save_workspace_async())
-            return;
+            if (choice == ScriptSaveChoice.Cancel)
+                return;
+            if (choice == ScriptSaveChoice.Save && !await save_workspace_async())
+                return;
+        }
 
         WindowPlacementStore.Save(this, current_project_tree_width(), current_statistics_panel_height());
         close_confirmed = true;
@@ -3312,6 +3353,8 @@ public partial class MainWindow : Window
             desktop.Shutdown();
         else this.Close();
     }
+
+    private bool workspace_requires_save_choice() => view_model.Workspace.Groups.Count > 0;
 
     private Task<ScriptSaveChoice> show_workspace_exit_dialog() =>
         show_workspace_exit_dialog(

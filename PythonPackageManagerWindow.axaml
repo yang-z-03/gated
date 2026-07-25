@@ -182,19 +182,19 @@
               ColumnDefinitions="*,120,150,Auto,Auto"
               ColumnSpacing="8">
             <TextBox x:Name="packageNameBox"
-                     Watermark="Package name"
+                     PlaceholderText="Package name"
                      Classes="Small"
                      FontFamily="{DynamicResource SemiFontFamilyFixed}"
                      FontSize="13" />
             <TextBox x:Name="versionConditionBox"
                      Grid.Column="1"
-                     Watermark="Version, e.g. &gt;=1.0"
+                     PlaceholderText="Version, e.g. &gt;=1.0"
                      Classes="Small"
                      FontFamily="{DynamicResource SemiFontFamilyFixed}"
                      FontSize="13" />
             <TextBox x:Name="indexUrlBox"
                      Grid.Column="2"
-                     Watermark="Index URL"
+                     PlaceholderText="Index URL"
                      Classes="Small"
                      FontSize="13" />
             <Button x:Name="installCustomButton"

@@ -240,7 +240,7 @@
                                                     </DataTemplate>
                                                 </ItemsControl.ItemTemplate>
                                             </ItemsControl>
-                                            <TextBox Classes="Small" Width="70" Watermark="Mass"
+                                            <TextBox Classes="Small" Width="70" PlaceholderText="Mass"
                                                      Text="{Binding PendingMass, Mode=TwoWay}"
                                                      KeyDown="isotope_mass_editor_key_down"
                                                      LostFocus="isotope_mass_editor_lost_focus" />

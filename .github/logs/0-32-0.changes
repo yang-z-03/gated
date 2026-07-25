@@ -1,0 +1,9 @@
+Version 0.32.0
+
+- Migration to Avalonia 12
+- Restructured platform API, platform layout implemented
+- Lines and text annotations in layout controls
+- Full support of cytometer preference, mass cytometry and spectral cytometry
+- Normalization of time and batches by multi-element beads
+- Index demultiplexer
+- Various convenience functions

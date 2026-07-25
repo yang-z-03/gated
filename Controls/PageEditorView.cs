@@ -507,7 +507,11 @@ public sealed class PageEditorView : Control
         visual.Measure(export_size);
         visual.Arrange(new Rect(export_size));
         bitmap.Render(visual);
-        bitmap.Save(file_path);
+        BitmapEncoderOptions encoder = Path.GetExtension(file_path).Equals(".jpg", StringComparison.OrdinalIgnoreCase) ||
+                                       Path.GetExtension(file_path).Equals(".jpeg", StringComparison.OrdinalIgnoreCase)
+            ? JpegBitmapEncoderOptions.Default
+            : PngBitmapEncoderOptions.Default;
+        bitmap.Save(file_path, encoder);
     }
 
     public void SaveSvg(string file_path)
@@ -3299,7 +3303,7 @@ public sealed class PageEditorView : Control
             return;
 
         using var stream = new MemoryStream();
-        bitmap.Save(stream);
+        bitmap.Save(stream, PngBitmapEncoderOptions.Default);
         string encoded = Convert.ToBase64String(stream.ToArray());
         Rect plot = plot_rect_for(new Rect(0, 0, element.Size, element.Size), element.ShowTickLabels);
         svg.AppendLine($"""<image x="{plot.X.ToString(CultureInfo.InvariantCulture)}" y="{plot.Y.ToString(CultureInfo.InvariantCulture)}" width="{plot.Width.ToString(CultureInfo.InvariantCulture)}" height="{plot.Height.ToString(CultureInfo.InvariantCulture)}" href="data:image/png;base64,{encoded}" preserveAspectRatio="none"/>""");
@@ -3309,7 +3313,7 @@ public sealed class PageEditorView : Control
     {
         var bitmap = get_element_bitmap(element);
         using var stream = new MemoryStream();
-        bitmap.Save(stream);
+        bitmap.Save(stream, PngBitmapEncoderOptions.Default);
         string encoded = Convert.ToBase64String(stream.ToArray());
         svg.AppendLine($"""<image x="0" y="0" width="{element.Width.ToString(CultureInfo.InvariantCulture)}" height="{element.Height.ToString(CultureInfo.InvariantCulture)}" href="data:image/png;base64,{encoded}" preserveAspectRatio="none"/>""");
     }

@@ -22,7 +22,7 @@ namespace gated.Python;
 public static class PythonExtensionRuntime
 {
     private static readonly object gate = new();
-    private static readonly TimeSpan shutdown_python_timeout = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan shutdown_python_timeout = TimeSpan.FromSeconds(0.1);
     private static readonly TimeSpan shutdown_thread_join_timeout = TimeSpan.FromMilliseconds(250);
     // PythonNet is initialized and used only on caller_thread. The language server
     // owns its request queue, then marshals Python/Jedi work to caller_thread.

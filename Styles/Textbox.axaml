@@ -70,7 +70,7 @@
                                         HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
                                         VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
                                         Opacity="0.5"
-                                        Text="{TemplateBinding Watermark}"
+                                        Text="{TemplateBinding PlaceholderText}"
                                         TextAlignment="{TemplateBinding TextAlignment}"
                                         TextWrapping="{TemplateBinding TextWrapping}">
                                         <TextBlock.IsVisible>
@@ -349,7 +349,7 @@
                                         HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
                                         VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
                                         Opacity="0.5"
-                                        Text="{TemplateBinding Watermark}"
+                                        Text="{TemplateBinding PlaceholderText}"
                                         TextAlignment="{TemplateBinding TextAlignment}"
                                         TextWrapping="{TemplateBinding TextWrapping}">
                                         <TextBlock.IsVisible>
@@ -565,7 +565,7 @@
                                     HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
                                     VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
                                     Opacity="0.5"
-                                    Text="{TemplateBinding Watermark}"
+                                    Text="{TemplateBinding PlaceholderText}"
                                     TextAlignment="{TemplateBinding TextAlignment}"
                                     TextWrapping="{TemplateBinding TextWrapping}">
                                     <TextBlock.IsVisible>

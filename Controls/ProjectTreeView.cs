@@ -41,6 +41,7 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
     private INotifyCollectionChanged? subscribed_nodes;
     private ProjectNode[] subscribed_project_nodes = [];
     private ProjectNode? pressed_node;
+    private PointerPressedEventArgs? drag_trigger_event;
     private Point pressed_point;
     private bool drag_started;
     private bool pressed_chevron;
@@ -119,6 +120,7 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
         }
 
         pressed_node = node;
+        drag_trigger_event = e;
         pressed_point = point;
         drag_started = false;
 
@@ -154,9 +156,11 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
         PageEditorView.DraggedProjectNode = pressed_node;
         var data = new DataTransfer();
         data.Add(DataTransferItem.CreateText(PageEditorView.ProjectNodePayload(pressed_node)));
-        await DragDrop.DoDragDropAsync(e, data, DragDropEffects.Copy | DragDropEffects.Move);
+        if (drag_trigger_event is not null)
+            await DragDrop.DoDragDropAsync(drag_trigger_event, data, DragDropEffects.Copy | DragDropEffects.Move);
         PageEditorView.DraggedProjectNode = null;
         pressed_node = null;
+        drag_trigger_event = null;
     }
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
@@ -165,6 +169,7 @@ public sealed class ProjectTreeView : Control, ICustomHitTest
         if (pressed_node is not null && !drag_started && !pressed_chevron)
             select_node(pressed_node);
         pressed_node = null;
+        drag_trigger_event = null;
         drag_started = false;
         pressed_chevron = false;
     }

@@ -430,7 +430,7 @@ public partial class PreferencesWindow : Window
     private async Task<string?> prompt(string title, string placeholder)
     {
         var dialog = create_bead_dialog(title, 390);
-        var input = new TextBox { Watermark = placeholder };
+        var input = new TextBox { PlaceholderText = placeholder };
         var cancel = new Button { Content = "Cancel", MinWidth = 80, IsCancel = true };
         var ok = new Button { Content = "OK", MinWidth = 80, IsDefault = true };
         cancel.Classes.Add("Small");

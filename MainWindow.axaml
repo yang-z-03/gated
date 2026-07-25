@@ -9,8 +9,7 @@
         MinWidth="1275" MinHeight="700"
         Title="Gated"
 
-        ExtendClientAreaChromeHints="Default"
-        SystemDecorations="Full"
+        WindowDecorations="BorderOnly"
         ExtendClientAreaToDecorationsHint="True"
         ExtendClientAreaTitleBarHeightHint="0"
         WindowStartupLocation="CenterScreen"
@@ -19,9 +18,21 @@
     <Window.Resources>
         <shared:CoordinateScaleIconConverter x:Key="CoordinateScaleIconConverter" />
         <shared:CoordinateScaleToolTipConverter x:Key="CoordinateScaleToolTipConverter" />
+        <ControlTheme x:Key="StartupRecentMenuFlyoutPresenterTheme"
+                      TargetType="MenuFlyoutPresenter"
+                      BasedOn="{StaticResource {x:Type MenuFlyoutPresenter}}">
+            <Setter Property="MaxHeight" Value="300" />
+            <Setter Property="Margin" Value="-5 5 5 0" />
+        </ControlTheme>
     </Window.Resources>
 
     <Window.Styles>
+        <Style Selector="Button.WorkspaceStartAction">
+            <Setter Property="Width" Value="80" />
+            <Setter Property="Height" Value="92" />
+            <Setter Property="Padding" Value="12,10" />
+            <Setter Property="CornerRadius" Value="8" />
+        </Style>
         <Style Selector="RadioButton.GateToolButton">
             <Setter Property="Width" Value="44" />
             <Setter Property="Height" Value="44" />
@@ -556,37 +567,64 @@
             <Grid Grid.Column="2"
                   IsVisible="{Binding IsWorkspaceOverviewMode}"
                   Background="{DynamicResource AppBrushBackground1}">
-                <Border MaxWidth="620"
-                        Margin="48"
-                        Padding="44"
-                        HorizontalAlignment="Center"
-                        VerticalAlignment="Center"
-                        BorderBrush="{DynamicResource AppBrushBorder3}"
-                        BorderThickness="1"
-                        CornerRadius="12"
-                        Background="{DynamicResource AppBrushBackground3}">
-                    <StackPanel Spacing="14">
-                        <TextBlock HorizontalAlignment="Center"
-                                   FontSize="28"
-                                   FontWeight="SemiBold"
-                                   Foreground="{DynamicResource SemiColorText0}"
-                                   Text="Welcome to Gated" />
-                        <TextBlock MaxWidth="500"
-                                   HorizontalAlignment="Center"
-                                   TextAlignment="Center"
-                                   TextWrapping="Wrap"
-                                   Foreground="{DynamicResource SemiColorText2}"
-                                   Text="Select a grouping, sample, or population from the workspace tree to continue your analysis." />
-                        <Border Margin="0,10,0,0"
-                                Padding="10,7"
+                <StackPanel Margin="48"
+                            Spacing="26"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center">
+                    <TextBlock MaxWidth="560"
+                               HorizontalAlignment="Center"
+                               TextAlignment="Center"
+                               TextWrapping="Wrap"
+                               FontSize="16"
+                               FontWeight="Regular"
+                               Foreground="{DynamicResource SemiColorText0}"
+                               Text="Add samples and groupings to begin analysis" />
+
+                    <StackPanel Orientation="Horizontal"
                                 HorizontalAlignment="Center"
-                                CornerRadius="6"
-                                Background="{DynamicResource AppBrushBackground4}">
-                            <TextBlock Foreground="{DynamicResource SemiColorText2}"
-                                       Text="{Binding WorkspaceFileVersionText}" />
-                        </Border>
+                                Spacing="14">
+                        <Button Classes="WorkspaceStartAction"
+                                Command="{Binding AddSamplesCommand}">
+                            <StackPanel Spacing="9"
+                                        HorizontalAlignment="Center">
+                                <shared:ThemeIcon Width="30" Height="30" HorizontalAlignment="Center" Icon="add-fcs.svg" />
+                                <TextBlock HorizontalAlignment="Center" Text="Add" />
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="startup_recent_button"
+                                Classes="WorkspaceStartAction">
+                            <Button.Flyout>
+                                <MenuFlyout Placement="BottomEdgeAlignedLeft"
+                                            FlyoutPresenterTheme="{StaticResource StartupRecentMenuFlyoutPresenterTheme}" />
+                            </Button.Flyout>
+                            <StackPanel Spacing="9"
+                                        HorizontalAlignment="Center">
+                                <shared:ThemeIcon Width="30" Height="30" HorizontalAlignment="Center" Icon="recent.svg" />
+                                <TextBlock HorizontalAlignment="Center" Text="Recent" />
+                            </StackPanel>
+                        </Button>
+                        <Button Classes="WorkspaceStartAction"
+                                Click="workspace_help_button_click">
+                            <StackPanel Spacing="9"
+                                        HorizontalAlignment="Center">
+                                <shared:ThemeIcon Width="30" Height="30" HorizontalAlignment="Center" Icon="help.svg" />
+                                <TextBlock HorizontalAlignment="Center" Text="Help" />
+                            </StackPanel>
+                        </Button>
+                        <Button Classes="WorkspaceStartAction"
+                                Command="{Binding ExitApplicationCommand}">
+                            <StackPanel Spacing="9"
+                                        HorizontalAlignment="Center">
+                                <shared:ThemeIcon Width="30" Height="30" HorizontalAlignment="Center" Icon="exit.svg" />
+                                <TextBlock HorizontalAlignment="Center" Text="Exit" />
+                            </StackPanel>
+                        </Button>
                     </StackPanel>
-                </Border>
+
+                    <TextBlock HorizontalAlignment="Center"
+                               Foreground="{DynamicResource SemiColorText3}"
+                               Text="{Binding WorkspaceFileVersionText}" />
+                </StackPanel>
             </Grid>
 
             <Grid Grid.Column="2"
@@ -2093,7 +2131,7 @@
                                 <DataGrid.Columns>
                                     <DataGridTemplateColumn Header="Control sample" Width="165" MinWidth="120"><DataGridTemplateColumn.CellTemplate><DataTemplate><StackPanel Classes="IconRow" Orientation="Horizontal" Spacing="7"><shared:ThemeIcon Width="15" Height="15" Icon="{Binding SampleIcon}" /><TextBlock Text="{Binding SampleName}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" /></StackPanel></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
                                     <DataGridTemplateColumn Header="Unmixing molecule" Width="155" MinWidth="100"><DataGridTemplateColumn.CellTemplate><DataTemplate><TextBox Classes="Small" HorizontalAlignment="Stretch" Text="{Binding MoleculeName, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" /></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
-                                    <DataGridTemplateColumn Header="Maximum channel" Width="150" MinWidth="100"><DataGridTemplateColumn.CellTemplate><DataTemplate><ComboBox Classes="Small" HorizontalAlignment="Stretch" ItemsSource="{Binding MaximumChannelChoices}" SelectedItem="{Binding MaximumChannel, Mode=TwoWay}" IsEnabled="{Binding !IsBackground}"><ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" /></DataTemplate></ComboBox.ItemTemplate></ComboBox></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+                                    <DataGridTemplateColumn Header="Maximum channel" Width="150" MinWidth="100"><DataGridTemplateColumn.CellTemplate><DataTemplate><ComboBox Classes="Small" Margin="4 0 0 0" HorizontalAlignment="Stretch" ItemsSource="{Binding MaximumChannelChoices}" SelectedItem="{Binding MaximumChannel, Mode=TwoWay}" IsEnabled="{Binding !IsBackground}"><ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" /></DataTemplate></ComboBox.ItemTemplate></ComboBox></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
                                     <DataGridTemplateColumn Header="Population" Width="*" MinWidth="130"><DataGridTemplateColumn.CellTemplate><DataTemplate><StackPanel Classes="IconRow" Orientation="Horizontal" Spacing="7"><shared:ThemeIcon Width="15" Height="15" Icon="{Binding PopulationIcon}" /><TextBlock Text="{Binding PositivePercentText}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" /></StackPanel></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
                                     <DataGridTemplateColumn Width="52" CanUserResize="False"><DataGridTemplateColumn.CellTemplate><DataTemplate><Button Classes="Small" HorizontalAlignment="Center" Command="{Binding RemoveCommand}" CommandParameter="{Binding}" ToolTip.Tip="Remove control"><shared:ThemeIcon Width="15" Height="15" Icon="{Binding RemoveIcon}" /></Button></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
                                 </DataGrid.Columns>
@@ -2254,9 +2292,9 @@
                                       ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto">
                                 <DataGrid.Columns>
                                     <DataGridTemplateColumn Header="Sample" Width="165" MinWidth="120"><DataGridTemplateColumn.CellTemplate><DataTemplate><StackPanel Classes="IconRow" Orientation="Horizontal" Spacing="7"><shared:ThemeIcon Width="15" Height="15" Icon="{Binding SampleIcon}" /><TextBlock Text="{Binding SampleName}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" /></StackPanel></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
-                                    <DataGridTemplateColumn Header="Bead type" Width="120" MinWidth="90"><DataGridTemplateColumn.CellTemplate><DataTemplate><ComboBox Classes="Small" HorizontalAlignment="Stretch" ItemsSource="{Binding BeadTypes}" SelectedItem="{Binding SelectedBeadType, Mode=TwoWay}" /></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
-                                    <DataGridTemplateColumn Header="Bead lot" Width="120" MinWidth="90"><DataGridTemplateColumn.CellTemplate><DataTemplate><ComboBox Classes="Small" HorizontalAlignment="Stretch" ItemsSource="{Binding BeadLots}" SelectedItem="{Binding SelectedBeadLot, Mode=TwoWay}" /></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
-                                    <DataGridTemplateColumn Header="DNA channel" Width="110" MinWidth="90"><DataGridTemplateColumn.CellTemplate><DataTemplate><ComboBox Classes="Small" HorizontalAlignment="Stretch" ItemsSource="{Binding DnaChannels}" SelectedItem="{Binding DnaChannel, Mode=TwoWay}" /></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+                                    <DataGridTemplateColumn Header="Bead type" Width="120" MinWidth="90"><DataGridTemplateColumn.CellTemplate><DataTemplate><ComboBox Classes="Small" Margin="4 0 0 0" HorizontalAlignment="Stretch" ItemsSource="{Binding BeadTypes}" SelectedItem="{Binding SelectedBeadType, Mode=TwoWay}" /></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+                                    <DataGridTemplateColumn Header="Bead lot" Width="120" MinWidth="90"><DataGridTemplateColumn.CellTemplate><DataTemplate><ComboBox Classes="Small" Margin="4 0 0 0" HorizontalAlignment="Stretch" ItemsSource="{Binding BeadLots}" SelectedItem="{Binding SelectedBeadLot, Mode=TwoWay}" /></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+                                    <DataGridTemplateColumn Header="DNA channel" Width="110" MinWidth="90"><DataGridTemplateColumn.CellTemplate><DataTemplate><ComboBox Classes="Small" Margin="4 0 0 0" HorizontalAlignment="Stretch" ItemsSource="{Binding DnaChannels}" SelectedItem="{Binding DnaChannel, Mode=TwoWay}" /></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
                                     <DataGridTemplateColumn Header="Bead detection" Width="*" MinWidth="150"><DataGridTemplateColumn.CellTemplate><DataTemplate><StackPanel Classes="IconRow" Orientation="Horizontal" Spacing="7"><shared:ThemeIcon Width="15" Height="15" Icon="{Binding PopulationIcon}" /><TextBlock Text="{Binding PopulationText}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" /></StackPanel></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
                                     <DataGridTemplateColumn Width="52" CanUserResize="False"><DataGridTemplateColumn.CellTemplate><DataTemplate><Button Classes="Small" HorizontalAlignment="Center" Command="{Binding RemoveCommand}" CommandParameter="{Binding}" ToolTip.Tip="Remove sample"><shared:ThemeIcon Width="15" Height="15" Icon="{Binding RemoveIcon}" /></Button></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
                                 </DataGrid.Columns>
@@ -2506,8 +2544,7 @@
                                       HorizontalAlignment="Stretch"
                                       VerticalAlignment="Stretch"
                                       HorizontalScrollBarVisibility="Auto"
-                                      VerticalScrollBarVisibility="Auto"
-                                      ItemsSource="{Binding WorkspaceMetadataTableView}" />
+                                      VerticalScrollBarVisibility="Auto" />
                         </Border>
 
                         <Button Classes="Small" HorizontalAlignment="Left" Command="{Binding ApplyWorkspaceMetadataCommand}">

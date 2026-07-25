@@ -189,6 +189,8 @@ public sealed partial class MainWindowViewModel : NotifyBase
     public IndexDemultiplexViewModel DemultiplexPanel { get; }
 
     public ICommand CreateGroupCommand { get; }
+    public ICommand AddSamplesCommand { get; }
+    public ICommand ExitApplicationCommand { get; }
     public ICommand CreateLayoutCommand { get; }
     public ICommand CreatePlatformCommand { get; }
     public ICommand RenameWorkspaceCommand { get; }
@@ -267,6 +269,8 @@ public sealed partial class MainWindowViewModel : NotifyBase
     public Func<string, IReadOnlyList<AxisChoice>, Task<string?>>? RequestChoiceInputAsync { get; set; }
     public Func<string, IReadOnlyList<AxisChoice>, Task<IReadOnlyList<string>?>>? RequestMultipleChoiceInputAsync { get; set; }
     public Func<string, IReadOnlyList<BooleanPopulationChoice>, Task<BooleanGateSelection?>>? RequestBooleanGateInputAsync { get; set; }
+    public Func<Task>? RequestAddSamplesAsync { get; set; }
+    public Func<Task>? RequestApplicationExitAsync { get; set; }
     public Func<CompensationMatrix, Task<bool>>? RequestCompensationEditorAsync { get; set; }
     public Func<string, string, Task>? RequestMessageAsync { get; set; }
     public Func<string, string, Task<bool>>? RequestConfirmationAsync { get; set; }
@@ -286,6 +290,8 @@ public sealed partial class MainWindowViewModel : NotifyBase
             Workspace.RecentFilePaths.Add(path);
         ReloadScriptRepositories();
         CreateGroupCommand = new RelayCommand(_ => create_group());
+        AddSamplesCommand = new RelayCommand(_ => _ = RequestAddSamplesAsync?.Invoke());
+        ExitApplicationCommand = new RelayCommand(_ => _ = RequestApplicationExitAsync?.Invoke());
         CreateLayoutCommand = new RelayCommand(_ => _ = create_layout_async());
         CreatePlatformCommand = new RelayCommand(parameter => _ = create_platform_async(PlatformInitializer.KindFromParameter(parameter)), _ => Workspace.Groups.Any(group => group.Samples.Count > 0));
         RenameWorkspaceCommand = new RelayCommand(_ => _ = rename_workspace_async());
@@ -367,6 +373,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         SwapEditorAxesCommand = new RelayCommand(_ => swap_editor_axes());
         ensure_default_layout();
         refresh_project_tree();
+        SelectedNode = project_roots.FirstOrDefault();
         refresh_selection_sidebars();
         refresh_plot_gates();
         refresh_selected_statistics();
@@ -1069,7 +1076,8 @@ public sealed partial class MainWindowViewModel : NotifyBase
     public bool IsWorkspaceOverviewMode => ViewState == MainWindowViewState.WorkspaceOverview;
     public bool IsPlatformOverviewMode => ViewState == MainWindowViewState.PlatformOverview;
     public bool IsPlatformMode => ViewState == MainWindowViewState.Platform;
-    public string WorkspaceFileVersionText => $"{WorkspaceBinarySerializer.CurrentVersion}";
+    public string WorkspaceFileVersionText =>
+        $"Version {UpdateManager.GetCurrentVersion()} (Workspace Version {WorkspaceBinarySerializer.CurrentVersion})";
     public bool IsSpilloverCompensationMode
     {
         get => ViewState == MainWindowViewState.SpilloverCompensation;

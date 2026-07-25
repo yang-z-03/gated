@@ -1,6 +1,7 @@
 <ResourceDictionary
     xmlns="https://github.com/avaloniaui"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:gated.Controls">
     <Design.PreviewWith>
         <StackPanel Margin="20">
             <ComboBoxItem>Hello World</ComboBoxItem>
@@ -74,26 +75,26 @@
                                 </MultiBinding>
                             </TextBlock.IsVisible>
                         </TextBlock>
-                        <Border
+                        <controls:OverflowFadeBorder
                             Name="SelectionBoxMask"
                             Grid.Column="0"
                             Margin="{TemplateBinding Padding}"
                             ClipToBounds="True"
                             IsVisible="{TemplateBinding IsEditable, Converter={x:Static BoolConverters.Not}}">
-                            <Border.OpacityMask>
+                            <controls:OverflowFadeBorder.OverflowOpacityMask>
                                 <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,0%">
                                     <GradientStop Color="White" Offset="0" />
                                     <GradientStop Color="White" Offset="0.88" />
                                     <GradientStop Color="Transparent" Offset="1" />
                                 </LinearGradientBrush>
-                            </Border.OpacityMask>
+                            </controls:OverflowFadeBorder.OverflowOpacityMask>
                             <ContentPresenter
                                 Name="ContentPresenter"
                                 HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
                                 VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
                                 Content="{TemplateBinding SelectionBoxItem}"
                                 ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}" />
-                        </Border>
+                        </controls:OverflowFadeBorder>
                         <TextBox
                             Name="PART_EditableTextBox"
                             Grid.Column="0"
@@ -103,7 +104,7 @@
                             VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
                             Foreground="{TemplateBinding Foreground}"
                             Text="{TemplateBinding Text, Mode=TwoWay}"
-                            Watermark="{TemplateBinding PlaceholderText}"
+                            PlaceholderText="{TemplateBinding PlaceholderText}"
                             IsVisible="{TemplateBinding IsEditable}" />
 
                         <Button

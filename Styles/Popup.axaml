@@ -13,7 +13,7 @@
                 <LayoutTransformControl LayoutTransform="{TemplateBinding Transform}">
                     <Panel>
                         <Border Name="PART_TransparencyFallback" IsHitTestVisible="False" />
-                        <VisualLayerManager IsPopup="True">
+                        <VisualLayerManager>
                             <LayoutTransformControl Name="PART_LayoutTransform">
                                 <ContentPresenter
                                     Name="PART_ContentPresenter"
@@ -33,7 +33,7 @@
         <Setter Property="Template">
             <ControlTemplate>
                 <LayoutTransformControl LayoutTransform="{TemplateBinding Transform}">
-                    <VisualLayerManager IsPopup="True">
+                    <VisualLayerManager>
                         <LayoutTransformControl Name="PART_LayoutTransform">
                             <ContentPresenter
                                 Name="PART_ContentPresenter"
