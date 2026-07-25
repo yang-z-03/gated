@@ -973,8 +973,8 @@
 
   <!-- 0.32.0 -->
   <version major="0" minor="32" patch="0" platform="windows" minimal="7" arch="x64">
-      <archive href="https://github.com/yang-z-03/gated/releases/download/0-32-0/gated-0-32-0-win-x64.zip" extract="."/>
-      <msi href="https://github.com/yang-z-03/gated/releases/download/0-32-0/gated-0-32-0-win-x64.msi" extract="."/>
+      <archive href="https://github.com/yang-z-03/gated/releases/download/0-32/gated-0-32-0-win-x64.zip" extract="."/>
+      <msi href="https://github.com/yang-z-03/gated/releases/download/0-32/gated-0-32-0-win-x64.msi" extract="."/>
       <require type="package" name="python" major="3" minor="13" override_if_exist="false" href="https://github.com/yang-z-03/gated/releases/download/0-26/python-3-13.zip" extract="./python">
           <require type="python-package" name="docstring_parser" version="==0.18.0"/>
           <require type="python-package" name="jedi" version="==0.20.0"/>
