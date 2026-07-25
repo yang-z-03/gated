@@ -154,7 +154,10 @@ public partial class MainWindow : Window
         var active = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Background4"));
         var inactive = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text4"));
         mainModeAnalysisText.Foreground = view_model.ViewState is MainWindowViewState.Analysis
+            or MainWindowViewState.WorkspaceOverview
+            or MainWindowViewState.PlatformOverview
             or MainWindowViewState.Metadata
+            or MainWindowViewState.GroupMetadata
             or MainWindowViewState.Platform
             or MainWindowViewState.SpilloverCompensation
             or MainWindowViewState.MassCompensation
@@ -1859,12 +1862,25 @@ public partial class MainWindow : Window
         {
             PlatformStatisticTableElement table => build_layout_platform_table_context_menu(table),
             { ElementKind: PageElementKind.FlowPlot } => build_layout_plot_element_context_menu(e.Element),
+            PageAnnotationElement annotation => build_layout_annotation_context_menu(annotation),
             _ => null
         };
         if (menu is null)
             return;
         page_editor.ContextMenu = menu;
         menu.Open(page_editor);
+    }
+
+    private ContextMenu build_layout_annotation_context_menu(PageAnnotationElement element)
+    {
+        view_model.SelectedPageElement = element;
+        var menu = new ContextMenu
+        {
+            DataContext = view_model,
+            Placement = PlacementMode.Pointer
+        };
+        add_menu_items(menu, command_menu_item("Delete", view_model.DeletePageElementCommand));
+        return menu;
     }
 
     private ContextMenu build_layout_platform_table_context_menu(PlatformStatisticTableElement element)
@@ -2177,11 +2193,17 @@ public partial class MainWindow : Window
                 break;
         }
 
-        if (build_add_to_layout_context_menu(node) is { } add_to_layout_menu)
+        var layout_menus = new MenuItem?[]
+        {
+            build_add_sample_populations_to_layout_context_menu(node),
+            build_add_to_layout_context_menu(node)
+        }.Where(item => item is not null).Cast<MenuItem>().ToArray();
+        if (layout_menus.Length > 0)
         {
             if (menu.Items.Count > 0)
                 menu.Items.Add(new Separator());
-            menu.Items.Add(add_to_layout_menu);
+            foreach (var layout_menu in layout_menus)
+                menu.Items.Add(layout_menu);
         }
 
         return menu;
@@ -2205,6 +2227,30 @@ public partial class MainWindow : Window
                 Tag = layout
             };
             item.Click += (_, _) => view_model.AddProjectNodeToLayout(node, layout);
+            menu.Items.Add(item);
+        }
+
+        return menu;
+    }
+
+    private MenuItem? build_add_sample_populations_to_layout_context_menu(ProjectNode node)
+    {
+        if (!view_model.CanAddSamplePopulationsToLayout(node) || view_model.Workspace.PageLayouts.Count == 0)
+            return null;
+
+        var menu = new MenuItem
+        {
+            Header = "Add sample populations to layout",
+            DataContext = view_model
+        };
+        foreach (var layout in view_model.Workspace.PageLayouts)
+        {
+            var item = new MenuItem
+            {
+                Header = layout.Name,
+                Tag = layout
+            };
+            item.Click += (_, _) => view_model.AddSamplePopulationsToLayout(node, layout);
             menu.Items.Add(item);
         }
 

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using Avalonia;
+using Avalonia.Media;
 
 namespace gated.Models;
 
@@ -25,7 +26,42 @@ public enum PageElementKind
     FlowPlot,
     PlatformPlot,
     StatisticTable,
-    PlatformStatisticTable
+    PlatformStatisticTable,
+    LineAnnotation,
+    TextAnnotation
+}
+
+public enum PageEditorTool
+{
+    Select,
+    Line,
+    Text
+}
+
+public enum PageLineStrokeStyle
+{
+    Solid,
+    Dash,
+    Dot,
+    DashDot
+}
+
+public enum PageLineEndStyle
+{
+    None,
+    Arrow,
+    Circle,
+    Diamond
+}
+
+public enum PageTextWeight
+{
+    Light,
+    Normal,
+    Medium,
+    SemiBold,
+    Bold,
+    Black
 }
 
 public class PagePlotElement : NotifyBase
@@ -310,6 +346,117 @@ public sealed class PlatformStatisticTableElement : PagePlotElement
         Width = MinimumWidth;
         OnPropertyChanged(nameof(ColumnLayouts));
         return true;
+    }
+}
+
+public abstract class PageAnnotationElement : PagePlotElement
+{
+    private Color color = Colors.Black;
+
+    public Color Color
+    {
+        get => color;
+        set
+        {
+            if (!SetField(ref color, value, nameof(Color)))
+                return;
+            OnPropertyChanged(nameof(ColorBrush));
+        }
+    }
+
+    public IBrush ColorBrush => new SolidColorBrush(Color);
+}
+
+public sealed class PageLineElement : PageAnnotationElement
+{
+    private double stroke_width = 2;
+    private PageLineStrokeStyle stroke_style;
+    private PageLineEndStyle start_end_style;
+    private PageLineEndStyle end_end_style = PageLineEndStyle.Arrow;
+    private bool start_at_minimum_x = true;
+    private bool start_at_minimum_y = true;
+
+    public override PageElementKind ElementKind => PageElementKind.LineAnnotation;
+    public override double MinimumWidth => 8;
+    public override double MinimumHeight => 8;
+
+    public double StrokeWidth
+    {
+        get => stroke_width;
+        set => SetField(ref stroke_width, Math.Round(Math.Clamp(value, 0.5, 32), 1), nameof(StrokeWidth));
+    }
+
+    public PageLineStrokeStyle StrokeStyle
+    {
+        get => stroke_style;
+        set => SetField(ref stroke_style, value, nameof(StrokeStyle));
+    }
+
+    public PageLineEndStyle StartEndStyle
+    {
+        get => start_end_style;
+        set => SetField(ref start_end_style, value, nameof(StartEndStyle));
+    }
+
+    public PageLineEndStyle EndEndStyle
+    {
+        get => end_end_style;
+        set => SetField(ref end_end_style, value, nameof(EndEndStyle));
+    }
+
+    public bool StartAtMinimumX
+    {
+        get => start_at_minimum_x;
+        set => SetField(ref start_at_minimum_x, value, nameof(StartAtMinimumX));
+    }
+
+    public bool StartAtMinimumY
+    {
+        get => start_at_minimum_y;
+        set => SetField(ref start_at_minimum_y, value, nameof(StartAtMinimumY));
+    }
+}
+
+public sealed class PageTextElement : PageAnnotationElement
+{
+    private string text = "Text";
+    private double font_size = 13;
+    private string font_family = "Roboto";
+    private PageTextWeight font_weight = PageTextWeight.Normal;
+    private double line_height_ratio = 1.5;
+
+    public override PageElementKind ElementKind => PageElementKind.TextAnnotation;
+    public override double MinimumWidth => 40;
+    public override double MinimumHeight => 20;
+
+    public string Text
+    {
+        get => text;
+        set => SetField(ref text, value ?? "", nameof(Text));
+    }
+
+    public double FontSize
+    {
+        get => font_size;
+        set => SetField(ref font_size, Math.Round(Math.Clamp(value, 6, 144), 1), nameof(FontSize));
+    }
+
+    public string FontFamily
+    {
+        get => font_family;
+        set => SetField(ref font_family, string.IsNullOrWhiteSpace(value) ? "Roboto" : value.Trim(), nameof(FontFamily));
+    }
+
+    public PageTextWeight FontWeight
+    {
+        get => font_weight;
+        set => SetField(ref font_weight, value, nameof(FontWeight));
+    }
+
+    public double LineHeightRatio
+    {
+        get => line_height_ratio;
+        set => SetField(ref line_height_ratio, Math.Round(Math.Clamp(value, 0.5, 4), 2), nameof(LineHeightRatio));
     }
 }
 

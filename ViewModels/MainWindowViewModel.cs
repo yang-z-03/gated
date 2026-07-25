@@ -25,6 +25,8 @@ namespace gated.ViewModels;
 public enum MainWindowViewState
 {
     Analysis,
+    WorkspaceOverview,
+    PlatformOverview,
     Layout,
     Code,
     Metadata,
@@ -67,6 +69,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
     private int layout_refresh_revision;
     private PlotMode selected_plot_mode = PlotMode.Density;
     private GatingTool active_tool = GatingTool.View;
+    private PageEditorTool active_page_tool = PageEditorTool.Select;
     private bool show_outlier_points = true;
     private bool draw_large_dots;
     private bool show_gridlines = true;
@@ -150,10 +153,32 @@ public sealed partial class MainWindowViewModel : NotifyBase
     private readonly ObservableCollection<PagePlotElement> empty_page_elements = new();
     public ObservableCollection<CoordinateScaleKind> CoordinateScaleChoices { get; } = new(Enum.GetValues<CoordinateScaleKind>());
     public ObservableCollection<PlotMode> PlotModeChoices { get; } = new(Enum.GetValues<PlotMode>());
+    public ObservableCollection<PageLineStrokeStyle> PageLineStrokeStyleChoices { get; } = new(Enum.GetValues<PageLineStrokeStyle>());
+    public ObservableCollection<PageLineEndStyle> PageLineEndStyleChoices { get; } = new(Enum.GetValues<PageLineEndStyle>());
+    public ObservableCollection<PageTextWeight> PageTextWeightChoices { get; } = new(Enum.GetValues<PageTextWeight>());
+    public ObservableCollection<string> PageTextFontFamilyChoices { get; } = new(system_font_family_choices());
     public ObservableCollection<PlotColorMap> PlotColorMapChoices { get; } = new(PlotColorMaps.All);
     public ObservableCollection<PythonScriptDefinition> MacroScripts { get; } = new();
     public ObservableCollection<PythonScriptDefinition> StatisticScripts { get; } = new();
     public ObservableCollection<string> RecentFilePaths => Workspace.RecentFilePaths;
+
+    private static IEnumerable<string> system_font_family_choices()
+    {
+        try
+        {
+            return new[] { "Roboto" }
+                .Concat(FontManager.Current.SystemFonts.Select(font => font.Name))
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Distinct(StringComparer.CurrentCultureIgnoreCase)
+                .OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase)
+                .ToArray();
+        }
+        catch
+        {
+            return ["Roboto", "Arial", "Segoe UI"];
+        }
+    }
+
     public DataView StatisticTableView => statistic_table.DefaultView;
     public DataTable StatisticTable => statistic_table;
     public DataView WorkspaceMetadataTableView => workspace_metadata_table.DefaultView;
@@ -322,7 +347,13 @@ public sealed partial class MainWindowViewModel : NotifyBase
         MarkSpilloverPreviewOutdatedCommand = new RelayCommand(_ => spillover_gate_committed());
         NewSpilloverGatePresetCommand = new RelayCommand(_ => new_spillover_gate_preset(), _ => selected_group is not null);
         RemoveChannelCommand = new RelayCommand(parameter => remove_channel(parameter as ChannelRow), parameter => can_remove_channel(parameter as ChannelRow));
-        AddPageElementCommand = new RelayCommand(parameter => add_page_element(parameter as PageDropRequest));
+        AddPageElementCommand = new RelayCommand(parameter =>
+        {
+            if (parameter is PageAnnotationRequest annotation_request)
+                add_page_annotation(annotation_request);
+            else
+                add_page_element(parameter as PageDropRequest);
+        });
         DeletePageElementCommand = new RelayCommand(_ => delete_selected_page_element(), _ => selected_page_element is not null);
         ApplyWorkspaceMetadataCommand = new RelayCommand(_ => CommitWorkspaceSampleMetadata(), _ => IsWorkspaceMetadataMode);
         AddStringMetadataColumnCommand = new RelayCommand(_ => _ = add_metadata_column_async(MetadataColumnKind.String));
@@ -694,9 +725,9 @@ public sealed partial class MainWindowViewModel : NotifyBase
     public bool IsLayoutContourPlotMode { get => selected_page_element?.PlotMode == PlotMode.Contour; set { if (value && selected_page_element is not null) { selected_page_element.PlotMode = PlotMode.Contour; refresh_selected_page_menu_state(); } } }
     public bool IsLayoutZebraPlotMode { get => selected_page_element?.PlotMode == PlotMode.Zebra; set { if (value && selected_page_element is not null) { selected_page_element.PlotMode = PlotMode.Zebra; refresh_selected_page_menu_state(); } } }
     public bool IsLayoutHistogramPlotMode { get => selected_page_element?.PlotMode == PlotMode.Histogram; set { if (value && selected_page_element is not null) { selected_page_element.PlotMode = PlotMode.Histogram; refresh_selected_page_menu_state(); } } }
-    public bool ShowSelectedPageDensityStyleOptions => selected_page_element?.PlotMode == PlotMode.Density;
-    public bool ShowSelectedPageDotplotStyleOptions => selected_page_element?.PlotMode == PlotMode.Dotplot;
-    public bool ShowSelectedPageContourDensityStyleOptions => selected_page_element?.PlotMode is PlotMode.Zebra or PlotMode.Contour;
+    public bool ShowSelectedPageDensityStyleOptions => selected_page_element is { ElementKind: PageElementKind.FlowPlot, PlotMode: PlotMode.Density };
+    public bool ShowSelectedPageDotplotStyleOptions => selected_page_element is { ElementKind: PageElementKind.FlowPlot, PlotMode: PlotMode.Dotplot };
+    public bool ShowSelectedPageContourDensityStyleOptions => selected_page_element is { ElementKind: PageElementKind.FlowPlot, PlotMode: PlotMode.Zebra or PlotMode.Contour };
     public bool IsLayoutXAxisLinearScale { get => selected_page_element?.XAxis.ScaleKind == CoordinateScaleKind.Linear; set { if (value && selected_page_element is not null) { selected_page_element.XAxis.ScaleKind = CoordinateScaleKind.Linear; refresh_selected_page_menu_state(); } } }
     public bool IsLayoutXAxisLogicleScale { get => selected_page_element?.XAxis.ScaleKind == CoordinateScaleKind.Logicle; set { if (value && selected_page_element is not null) { selected_page_element.XAxis.ScaleKind = CoordinateScaleKind.Logicle; refresh_selected_page_menu_state(); } } }
     public bool IsLayoutXAxisLogScale { get => selected_page_element?.XAxis.ScaleKind == CoordinateScaleKind.Logarithmic; set { if (value && selected_page_element is not null) { selected_page_element.XAxis.ScaleKind = CoordinateScaleKind.Logarithmic; refresh_selected_page_menu_state(); } } }
@@ -705,6 +736,23 @@ public sealed partial class MainWindowViewModel : NotifyBase
     public bool IsLayoutYAxisLogicleScale { get => selected_page_element?.YAxis.ScaleKind == CoordinateScaleKind.Logicle; set { if (value && selected_page_element is not null) { selected_page_element.YAxis.ScaleKind = CoordinateScaleKind.Logicle; refresh_selected_page_menu_state(); } } }
     public bool IsLayoutYAxisLogScale { get => selected_page_element?.YAxis.ScaleKind == CoordinateScaleKind.Logarithmic; set { if (value && selected_page_element is not null) { selected_page_element.YAxis.ScaleKind = CoordinateScaleKind.Logarithmic; refresh_selected_page_menu_state(); } } }
     public bool IsLayoutYAxisArcsinhScale { get => selected_page_element?.YAxis.ScaleKind == CoordinateScaleKind.Arcsinh; set { if (value && selected_page_element is not null) { selected_page_element.YAxis.ScaleKind = CoordinateScaleKind.Arcsinh; refresh_selected_page_menu_state(); } } }
+
+    public PageEditorTool ActivePageTool
+    {
+        get => active_page_tool;
+        set
+        {
+            if (!SetField(ref active_page_tool, value))
+                return;
+            OnPropertyChanged(nameof(IsLayoutSelectTool));
+            OnPropertyChanged(nameof(IsLayoutLineTool));
+            OnPropertyChanged(nameof(IsLayoutTextTool));
+        }
+    }
+
+    public bool IsLayoutSelectTool { get => ActivePageTool == PageEditorTool.Select; set { if (value) ActivePageTool = PageEditorTool.Select; } }
+    public bool IsLayoutLineTool { get => ActivePageTool == PageEditorTool.Line; set { if (value) ActivePageTool = PageEditorTool.Line; } }
+    public bool IsLayoutTextTool { get => ActivePageTool == PageEditorTool.Text; set { if (value) ActivePageTool = PageEditorTool.Text; } }
 
     public GatingTool ActiveTool
     {
@@ -1018,7 +1066,10 @@ public sealed partial class MainWindowViewModel : NotifyBase
         }
     }
 
+    public bool IsWorkspaceOverviewMode => ViewState == MainWindowViewState.WorkspaceOverview;
+    public bool IsPlatformOverviewMode => ViewState == MainWindowViewState.PlatformOverview;
     public bool IsPlatformMode => ViewState == MainWindowViewState.Platform;
+    public string WorkspaceFileVersionText => $"{WorkspaceBinarySerializer.CurrentVersion}";
     public bool IsSpilloverCompensationMode
     {
         get => ViewState == MainWindowViewState.SpilloverCompensation;
@@ -1109,6 +1160,8 @@ public sealed partial class MainWindowViewModel : NotifyBase
         view_state = value;
         OnPropertyChanged(nameof(ViewState));
         OnPropertyChanged(nameof(IsDefaultAnalysisMode));
+        OnPropertyChanged(nameof(IsWorkspaceOverviewMode));
+        OnPropertyChanged(nameof(IsPlatformOverviewMode));
         OnPropertyChanged(nameof(IsPageEditorMode));
         OnPropertyChanged(nameof(IsPythonScriptEditorMode));
         OnPropertyChanged(nameof(IsWorkspaceMetadataMode));
@@ -1261,6 +1314,11 @@ public sealed partial class MainWindowViewModel : NotifyBase
             OnPropertyChanged(nameof(CanEditSelectedPageFlowOptions));
             OnPropertyChanged(nameof(CanEditSelectedPageGridTickOptions));
             OnPropertyChanged(nameof(CanEditSelectedPageAxes));
+            OnPropertyChanged(nameof(IsSelectedPagePlotElement));
+            OnPropertyChanged(nameof(IsSelectedPageAnnotation));
+            OnPropertyChanged(nameof(IsSelectedPageLineAnnotation));
+            OnPropertyChanged(nameof(IsSelectedPageTextAnnotation));
+            OnPropertyChanged(nameof(SelectedPageAnnotationColor));
             OnPropertyChanged(nameof(SelectedPageXAxisChoice));
             OnPropertyChanged(nameof(SelectedPageYAxisChoice));
             OnPropertyChanged(nameof(SelectedPageDotColorChoice));
@@ -1281,6 +1339,22 @@ public sealed partial class MainWindowViewModel : NotifyBase
     public bool CanEditSelectedPageWidth => selected_page_element is not null;
     public bool CanEditSelectedPageHeight => selected_page_element is { HasFixedHeight: false };
     public bool CanEditSelectedPagePlotMode => selected_page_element?.ElementKind == PageElementKind.FlowPlot;
+    public bool IsSelectedPagePlotElement => selected_page_element is not null and not PageAnnotationElement;
+    public bool IsSelectedPageAnnotation => selected_page_element is PageAnnotationElement;
+    public bool IsSelectedPageLineAnnotation => selected_page_element is PageLineElement;
+    public bool IsSelectedPageTextAnnotation => selected_page_element is PageTextElement;
+
+    public Color SelectedPageAnnotationColor
+    {
+        get => (selected_page_element as PageAnnotationElement)?.Color ?? Colors.Black;
+        set
+        {
+            if (selected_page_element is not PageAnnotationElement annotation || annotation.Color == value)
+                return;
+            annotation.Color = value;
+            OnPropertyChanged();
+        }
+    }
 
     public double ExportBitmapDpi
     {
@@ -3819,6 +3893,9 @@ public sealed partial class MainWindowViewModel : NotifyBase
         }
 
         IsPythonScriptEditorMode = false;
+        if (ViewState is MainWindowViewState.WorkspaceOverview or MainWindowViewState.PlatformOverview &&
+            node.Kind is not ProjectNodeKind.Workspace and not ProjectNodeKind.PlatformFolder)
+            set_view_state(MainWindowViewState.Analysis, "Analysis view");
         bool passive_control_selection = node.Kind is ProjectNodeKind.ControlFolder or ProjectNodeKind.ControlSample;
         bool analysis_node_selection = node.Kind is ProjectNodeKind.GateFolder
             or ProjectNodeKind.Gate
@@ -3844,13 +3921,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         {
             case ProjectNodeKind.Workspace:
                 SelectedPlatform = null;
-                IsWorkspaceMetadataMode = false;
-                SelectedGroup = Workspace.Groups.FirstOrDefault();
-                SelectedSample = selected_group?.Samples.FirstOrDefault();
-                SelectedPopulation = null;
-                SelectedGate = null;
-                SelectedCompensation = null;
-                needs_statistics_refresh = true;
+                set_view_state(MainWindowViewState.WorkspaceOverview, "Workspace overview");
                 break;
             case ProjectNodeKind.Metadata:
                 IsPageEditorMode = false;
@@ -3877,12 +3948,8 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 break;
             case ProjectNodeKind.PlatformFolder:
                 IsPageEditorMode = false;
-                SelectedPlatform = Workspace.Platforms.FirstOrDefault();
-                SelectedGroup = Workspace.Groups.FirstOrDefault();
-                SelectedSample = selected_group?.Samples.FirstOrDefault();
-                SelectedPopulation = null;
-                SelectedGate = null;
-                SelectedCompensation = null;
+                SelectedPlatform = null;
+                set_view_state(MainWindowViewState.PlatformOverview, "Create or select a platform");
                 break;
             case ProjectNodeKind.Platform:
             case ProjectNodeKind.PlatformOutput:
@@ -6137,7 +6204,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         }
     }
 
-    private void add_page_element(PageDropRequest? request)
+    private void add_page_element(PageDropRequest? request, bool refresh_tree = true)
     {
         ensure_default_layout();
         if (request?.Node is not { } node)
@@ -6201,8 +6268,56 @@ public sealed partial class MainWindowViewModel : NotifyBase
         };
         PageElements.Add(element);
         SelectedPageElement = element;
-        refresh_project_tree();
+        if (refresh_tree)
+            refresh_project_tree();
         StatusText = $"Added page plot: {element.Title}";
+    }
+
+    private void add_page_annotation(PageAnnotationRequest request)
+    {
+        ensure_default_layout();
+        var first = request.Start;
+        var second = request.End;
+        double left = Math.Max(0, Math.Min(first.X, second.X));
+        double top = Math.Max(0, Math.Min(first.Y, second.Y));
+        double requested_width = Math.Abs(second.X - first.X);
+        double requested_height = Math.Abs(second.Y - first.Y);
+
+        PagePlotElement element;
+        if (request.Kind == PageElementKind.LineAnnotation)
+        {
+            var line = new PageLineElement
+            {
+                X = left,
+                Y = top,
+                Width = Math.Max(8, requested_width),
+                Height = Math.Max(8, requested_height),
+                StartAtMinimumX = first.X <= second.X,
+                StartAtMinimumY = first.Y <= second.Y
+            };
+            element = line;
+            StatusText = "Added line annotation";
+        }
+        else if (request.Kind == PageElementKind.TextAnnotation)
+        {
+            element = new PageTextElement
+            {
+                X = left,
+                Y = top,
+                Width = requested_width >= 24 ? requested_width : 220,
+                Height = requested_height >= 16 ? requested_height : 48
+            };
+            StatusText = "Added text annotation";
+        }
+        else
+        {
+            return;
+        }
+
+        PageElements.Add(element);
+        SelectedPageElement = element;
+        ActivePageTool = PageEditorTool.Select;
+        refresh_project_tree();
     }
 
     private static PopulationRegion layout_population_region_for_node(ProjectNode node, GateDefinition gate) =>
@@ -6372,6 +6487,46 @@ public sealed partial class MainWindowViewModel : NotifyBase
         SelectedPageLayout = layout;
         add_page_element(new PageDropRequest(node, next_layout_insertion_point(layout)));
         SelectedPageLayout = layout;
+    }
+
+    public bool CanAddSamplePopulationsToLayout(ProjectNode? node) =>
+        node is { Kind: ProjectNodeKind.Gate or ProjectNodeKind.GatePopulationSlot, Group: not null, Gate: not null } &&
+        node.Group.Samples.Any(sample => find_population(sample.Populations, node.Gate, layout_population_region_for_node(node, node.Gate)) is not null);
+
+    public void AddSamplePopulationsToLayout(ProjectNode node, PageLayout layout)
+    {
+        if (!CanAddSamplePopulationsToLayout(node) || !Workspace.PageLayouts.Contains(layout) || node.Group is null || node.Gate is null)
+            return;
+
+        SelectedPageLayout = layout;
+        var insertion = next_layout_insertion_point(layout);
+        var region = layout_population_region_for_node(node, node.Gate);
+        int added = 0;
+        foreach (var sample in node.Group.Samples)
+        {
+            var population = find_population(sample.Populations, node.Gate, region);
+            if (population is null)
+                continue;
+
+            var population_node = new ProjectNode(
+                ProjectNodeKind.Population,
+                population.DisplayName,
+                $"layout:{layout.Id}:sample:{sample.Id}:population:{node.Gate.Id}:{region}",
+                group: node.Group,
+                sample: sample,
+                gate: node.Gate,
+                population: population,
+                population_region: population.Region);
+            var offset = new Vector(added * 18, added * 18);
+            add_page_element(new PageDropRequest(population_node, insertion + offset), refresh_tree: false);
+            added++;
+        }
+
+        if (added == 0)
+            return;
+        SelectedPageLayout = layout;
+        refresh_project_tree();
+        StatusText = $"Added {added} sample populations to {layout.Name}";
     }
 
     private static Point next_layout_insertion_point(PageLayout layout)
@@ -6809,6 +6964,8 @@ public sealed partial class MainWindowViewModel : NotifyBase
             refresh_selected_page_menu_state();
         if (e.PropertyName == nameof(PagePlotElement.DensityPalette))
             OnPropertyChanged(nameof(SelectedPageDensityColorMap));
+        if (sender is PageAnnotationElement && e.PropertyName == nameof(PageAnnotationElement.Color))
+            OnPropertyChanged(nameof(SelectedPageAnnotationColor));
     }
 
     private void selected_page_menu_axis_changed(object? sender, PropertyChangedEventArgs e)
@@ -8129,6 +8286,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
 }
 
 public sealed record PageDropRequest(ProjectNode Node, Point PagePoint);
+public sealed record PageAnnotationRequest(PageElementKind Kind, Point Start, Point End);
 
 public sealed record ProjectNodeDropRequest(ProjectNode Source, ProjectNode Target);
 

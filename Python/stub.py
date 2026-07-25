@@ -330,24 +330,28 @@ class Platform:
         '''Writes a named table result that can be rendered in layouts.'''
         ...
 
-    def set_plot_series(self, key: str, title: str, x: np.ndarray, y: np.ndarray, x_label: str = "", y_label: str = "", source_id: int = -1, role: str = "observed"):
-        '''Writes a named x/y result. role is observed, fit, or component.'''
+    def add_component_gamma(self, key: str, alpha: float, beta: float, amplitude: float, source_id: int = -1, title: str = "", normalizer: float = 1.0, x_label: str = "", y_label: str = ""):
+        '''Adds a gamma-distribution component. Components must be added before a combined fit.'''
         ...
 
-    def set_fit_curve(self, key: str, title: str, kind: str, source_id: int, parameters: list[float], normalizer: float = 1.0, x_label: str = "", y_label: str = "", role: str = "fit"):
-        '''Writes a parameterized fitted curve. kind is Gaussian, GaussianSum, CellCycleSum, Linear, or Exponential; role is fit or component.'''
+    def add_component_normal(self, key: str, mu: float, sigma: float, amplitude: float, source_id: int = -1, title: str = "", normalizer: float = 1.0, x_label: str = "", y_label: str = ""):
+        '''Adds a normal-distribution component. Components must be added before a combined fit.'''
         ...
 
-    def add_component_gamma(self, key: str, alpha: float, beta: float, amplitude: float):
+    def add_component_exponential(self, key: str, slope: float, exponent: float, intercept: float, source_id: int = -1, title: str = "", normalizer: float = 1.0, x_label: str = "", y_label: str = ""):
+        '''Adds intercept + exp(slope * x + exponent) as a component.'''
         ...
 
-    def add_component_normal(self, key: str, mu: float, sigma: float, amplitude: float):
+    def add_component_linear(self, key: str, slope: float, intercept: float, source_id: int = -1, title: str = "", normalizer: float = 1.0, x_label: str = "", y_label: str = ""):
+        '''Adds slope * x + intercept as a component.'''
         ...
 
-    def add_component_exponential(self, key: str, slope: float, expn: float, intercept: float):
+    def add_component_polynomial(self, key: str, coefficients: list[float], minimum: float, maximum: float, source_id: int = -1, title: str = "", normalizer: float = 1.0, x_label: str = "", y_label: str = ""):
+        '''Adds a non-negative polynomial component on [minimum, maximum], with coefficients in ascending order.'''
         ...
 
-    def set_fit_addition(self, key: str, models: list[str], weights: list[float], intercept: float = 0):
+    def set_fit_addition(self, key: str, models: list[str], weights: list[float], intercept: float = 0, source_id: int = -1, title: str = "", normalizer: float = 1.0, x_label: str = "", y_label: str = ""):
+        '''Creates a fitted curve as intercept plus the weighted sum of previously added components.'''
         ...
 
     def set_statistic(self, name: str, value):

@@ -288,94 +288,112 @@ public class Platform
         }
     }
 
-    public void set_plot_series(string key, string title, PyObject x, PyObject y, string x_label = "", string y_label = "", int source_id = -1, string role = "observed")
+    public void add_component_normal(
+        string key,
+        double mu,
+        double sigma,
+        double amplitude,
+        int source_id = -1,
+        string title = "",
+        double normalizer = 1.0,
+        string x_label = "",
+        string y_label = "") =>
+        add_component(key, title, PlatformFitCurveKind.Normal, source_id, [amplitude, mu, sigma], normalizer, x_label, y_label);
+
+    public void add_component_gamma(
+        string key,
+        double alpha,
+        double beta,
+        double amplitude,
+        int source_id = -1,
+        string title = "",
+        double normalizer = 1.0,
+        string x_label = "",
+        string y_label = "") =>
+        add_component(key, title, PlatformFitCurveKind.Gamma, source_id, [alpha, beta, amplitude], normalizer, x_label, y_label);
+
+    public void add_component_exponential(
+        string key,
+        double slope,
+        double exponent,
+        double intercept,
+        int source_id = -1,
+        string title = "",
+        double normalizer = 1.0,
+        string x_label = "",
+        string y_label = "") =>
+        add_component(key, title, PlatformFitCurveKind.Exponential, source_id, [slope, exponent, intercept], normalizer, x_label, y_label);
+
+    public void add_component_linear(
+        string key,
+        double slope,
+        double intercept,
+        int source_id = -1,
+        string title = "",
+        double normalizer = 1.0,
+        string x_label = "",
+        string y_label = "") =>
+        add_component(key, title, PlatformFitCurveKind.Linear, source_id, [slope, intercept], normalizer, x_label, y_label);
+
+    public void add_component_polynomial(
+        string key,
+        PyObject coefficients,
+        double minimum,
+        double maximum,
+        int source_id = -1,
+        string title = "",
+        double normalizer = 1.0,
+        string x_label = "",
+        string y_label = "")
     {
         using (Py.GIL())
         {
-            if (!Enum.TryParse(role, ignoreCase: true, out PlatformSeriesRole series_role))
-                throw new ArgumentException($"Unknown platform series role '{role}'. Expected observed, fit, or component.", nameof(role));
-            var series = new PlatformPlotSeries
-            {
-                Key = string.IsNullOrWhiteSpace(key) ? "plot" : key,
-                Title = string.IsNullOrWhiteSpace(title) ? "Plot" : title,
-                XLabel = x_label ?? "",
-                YLabel = y_label ?? "",
-                SourceId = source_id,
-                Role = series_role,
-                X = PlatformPythonHelpers.DoubleArray(x),
-                Y = PlatformPythonHelpers.DoubleArray(y)
-            };
-    
-            var existing = Model.PlotSeries.FirstOrDefault(item => item.Key == series.Key);
-            if (existing is not null)
-                Model.PlotSeries.Remove(existing);
-            Model.PlotSeries.Add(series);
-            Model.Series[series.Key] = series;
+            double[] values = PlatformPythonHelpers.DoubleArray(coefficients);
+            add_component(key, title, PlatformFitCurveKind.Polynomial, source_id, [minimum, maximum, .. values], normalizer, x_label, y_label);
         }
     }
 
-    public void set_fit_curve(string key, string title, string kind, int source_id, PyObject parameters, double normalizer = 1.0, string x_label = "", string y_label = "", string role = "fit")
-    {
-        using (Py.GIL())
-        {
-            if (!Enum.TryParse(kind, ignoreCase: true, out PlatformFitCurveKind curve_kind))
-                throw new ArgumentException($"Unknown fit curve kind '{kind}'.", nameof(kind));
-            if (!Enum.TryParse(role, ignoreCase: true, out PlatformSeriesRole curve_role) || curve_role == PlatformSeriesRole.Observed)
-                throw new ArgumentException($"Unknown fitted-curve role '{role}'. Expected fit or component.", nameof(role));
-
-            var curve = new PlatformFitCurve
-            {
-                Key = string.IsNullOrWhiteSpace(key) ? "fit" : key,
-                Title = string.IsNullOrWhiteSpace(title) ? "Fit" : title,
-                Kind = curve_kind,
-                SourceId = source_id,
-                Role = curve_role,
-                Parameters = PlatformPythonHelpers.DoubleArray(parameters),
-                Normalizer = double.IsFinite(normalizer) && normalizer > 0 ? normalizer : 1.0,
-                XLabel = x_label ?? "",
-                YLabel = y_label ?? "",
-                FitTransformation = Model.Axis.Transform,
-                FitLogicle = Model.Axis.Logicle
-            };
-
-            var existing = Model.FitCurves.FirstOrDefault(item => item.Key == curve.Key);
-            if (existing is not null)
-                Model.FitCurves.Remove(existing);
-            Model.FitCurves.Add(curve);
-            Model.Models[curve.Key] = curve;
-            if (curve.Role == PlatformSeriesRole.Component)
-                Model.Components[curve.Key] = [curve];
-        }
-    }
-
-    public void add_component_normal(string key, double mu, double sigma, double amplitude)
-    {
-        var curve = create_curve(key, key, PlatformFitCurveKind.Gaussian, -1, [amplitude, mu, sigma], role: PlatformSeriesRole.Component);
-        add_component_curve(key, curve);
-    }
-
-    public void add_component_gamma(string key, double alpha, double beta, double amplitude)
-    {
-        var curve = create_curve(key, key, PlatformFitCurveKind.Gamma, -1, [alpha, beta, amplitude], role: PlatformSeriesRole.Component);
-        add_component_curve(key, curve);
-    }
-
-    public void add_component_exponential(string key, double slope, double expn, double intercept)
-    {
-        var curve = create_curve(key, key, PlatformFitCurveKind.Exponential, -1, [slope, expn, intercept], role: PlatformSeriesRole.Component);
-        add_component_curve(key, curve);
-    }
-
-    public void set_fit_addition(string key, PyObject models, PyObject weights, double intercept = 0)
+    public void set_fit_addition(
+        string key,
+        PyObject models,
+        PyObject weights,
+        double intercept = 0,
+        int source_id = -1,
+        string title = "",
+        double normalizer = 1.0,
+        string x_label = "",
+        string y_label = "")
     {
         using (Py.GIL())
         {
             string[] model_keys = PlatformPythonHelpers.StringArray(models);
             double[] weight_values = PlatformPythonHelpers.DoubleArray(weights);
+            if (model_keys.Length == 0)
+                throw new ArgumentException("At least one component model is required.", nameof(models));
             if (model_keys.Length != weight_values.Length)
                 throw new ArgumentException("models and weights must have the same length.");
-            var curve = create_curve(key, key, PlatformFitCurveKind.Addition, -1, [], model_keys: model_keys, weights: weight_values, intercept: intercept);
-            set_model_curve(key, curve);
+            string[] missing = model_keys
+                .Where(model_key => !Model.Components.ContainsKey(model_key))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            if (missing.Length > 0)
+                throw new ArgumentException($"Component models must be added before the fit: {string.Join(", ", missing)}.", nameof(models));
+            string fit_key = string.IsNullOrWhiteSpace(key) ? "addition" : key;
+            if (Model.Components.ContainsKey(fit_key))
+                throw new ArgumentException($"Fit key '{fit_key}' is already used by a component.", nameof(key));
+            var curve = create_curve(
+                fit_key,
+                title,
+                PlatformFitCurveKind.Addition,
+                source_id,
+                [],
+                normalizer: normalizer,
+                x_label: x_label,
+                y_label: y_label,
+                model_keys: model_keys,
+                weights: weight_values,
+                intercept: intercept);
+            set_model_curve(curve.Key, curve);
         }
     }
 
@@ -391,6 +409,29 @@ public class Platform
                 Model.PlatformStatistics.Remove(existing);
             Model.PlatformStatistics.Add(new PlatformStatisticResult { Name = name, Value = value?.ToString() ?? "" });
         }
+    }
+
+    private void add_component(
+        string key,
+        string title,
+        PlatformFitCurveKind kind,
+        int source_id,
+        double[] parameters,
+        double normalizer,
+        string x_label,
+        string y_label)
+    {
+        var curve = create_curve(
+            key,
+            title,
+            kind,
+            source_id,
+            parameters,
+            role: PlatformSeriesRole.Component,
+            normalizer: normalizer,
+            x_label: x_label,
+            y_label: y_label);
+        add_component_curve(curve.Key, curve);
     }
 
     private PlatformFitCurve create_curve(
@@ -426,31 +467,24 @@ public class Platform
 
     private void add_component_curve(string key, PlatformFitCurve curve)
     {
-        if (!Model.Components.TryGetValue(key, out var curves))
-        {
-            curves = new List<PlatformFitCurve>();
-            Model.Components[key] = curves;
-        }
-        curves.Add(curve);
-        var existing = Model.FitCurves.FirstOrDefault(item => item.Key == curve.Key);
-        if (existing is not null)
-            Model.FitCurves.Remove(existing);
-        Model.FitCurves.Add(curve);
+        Model.Models.Remove(key);
+        Model.Components[key] = [curve];
+        replace_fit_curve(curve);
     }
 
     private void set_model_curve(string key, PlatformFitCurve curve)
     {
+        Model.Components.Remove(key);
         Model.Models[key] = curve;
-        upsert_fit_curve(curve);
+        replace_fit_curve(curve);
     }
 
-    private void upsert_fit_curve(PlatformFitCurve curve)
+    private void replace_fit_curve(PlatformFitCurve curve)
     {
         var existing = Model.FitCurves.FirstOrDefault(item => item.Key == curve.Key);
         if (existing is not null)
             Model.FitCurves.Remove(existing);
         Model.FitCurves.Add(curve);
-        Model.Models[curve.Key] = curve;
     }
 
     public string sample_metadata(string sample_name, string column_name)

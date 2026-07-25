@@ -25,10 +25,11 @@ using gated.ViewModels;
 using TextMateSharp.Grammars;
 using Avalonia.Svg.Skia;
 using Avalonia.Platform;
+using gated.Shared;
 
 namespace gated.Controls;
 
-public sealed class PythonScriptEditorView : UserControl
+public sealed class PythonScriptEditorView : UserControl, IThemeResourceAware
 {
     private const double TooltipApproachTolerance = 60;
     private readonly TextEditor editor;
@@ -45,10 +46,17 @@ public sealed class PythonScriptEditorView : UserControl
     private readonly Button close_button;
     private readonly Canvas overlay_layer;
     private readonly Border completion_popup;
+    private readonly Popup completion_popup_host;
     private readonly ListBox completion_list;
     private readonly Border completion_detail;
     private readonly Border hover_popup;
     private readonly TextMate.Installation textmate;
+    private readonly RegistryOptions registry_options;
+    private readonly SolidColorBrush completion_hover_brush;
+    private readonly SolidColorBrush completion_selected_brush;
+    private Border editor_border = null!;
+    private Border log_panel = null!;
+    private Border log_header = null!;
     private MainWindowViewModel? view_model;
     private bool syncing_text;
     private int completion_request_id;
@@ -75,9 +83,10 @@ public sealed class PythonScriptEditorView : UserControl
         };
         editor.Bind(TextBox.FontFamilyProperty, new DynamicResourceExtension("SemiFontFamilyFixed"));
         editor.TextArea.SelectionCornerRadius = 0;
+        editor.TextArea.SelectionForeground = Brushes.White;
         editor.LineNumbersMargin = new Thickness(12, 0, 12, 0);
 
-        var registry_options = new RegistryOptions(ThemeName.DarkPlus);
+        registry_options = new RegistryOptions(ThemeName.DarkPlus);
         textmate = editor.InstallTextMate(registry_options);
         textmate.SetGrammar(registry_options.GetScopeByLanguageId("python"));
 
@@ -109,6 +118,8 @@ public sealed class PythonScriptEditorView : UserControl
         warning_toggle = log_level_toggle("Warning logs", "avares://gated/Resources/warning.svg");
         error_toggle = log_level_toggle("Error logs", "avares://gated/Resources/error.svg");
         fatal_toggle = log_level_toggle("Fatal logs", "avares://gated/Resources/fail.svg");
+        completion_hover_brush = new SolidColorBrush();
+        completion_selected_brush = new SolidColorBrush();
 
         Image run_icon = new gated.Shared.ThemeIcon
         {
@@ -159,14 +170,15 @@ public sealed class PythonScriptEditorView : UserControl
         {
             Setters =
             {
-                new Setter(BackgroundProperty, new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Background5")))
+                new Setter(BackgroundProperty, completion_hover_brush)
             }
         });
         completion_list.Styles.Add(new Style(x => x.OfType<ListBoxItem>().Class(":selected"))
         {
             Setters =
             {
-                new Setter(BackgroundProperty, new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Theme2")))
+                new Setter(BackgroundProperty, completion_selected_brush),
+                new Setter(ForegroundProperty, Brushes.White)
             }
         });
         completion_detail = new Border
@@ -181,11 +193,12 @@ public sealed class PythonScriptEditorView : UserControl
         };
         completion_popup = new Border
         {
-            IsVisible = false,
+            Margin = new Thickness(4),
             Background = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Background3")),
             BorderBrush = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Border3")),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(6),
+            UseLayoutRounding = false,
             Padding = new Thickness(6),
             Child = new Grid
             {
@@ -202,7 +215,18 @@ public sealed class PythonScriptEditorView : UserControl
                 }
             }
         };
+        completion_popup.Bind(Border.CornerRadiusProperty, new DynamicResourceExtension("MenuFlyoutCornerRadius"));
+        completion_popup.Bind(Border.BoxShadowProperty, new DynamicResourceExtension("SemiShadowElevated"));
         Grid.SetColumn(completion_detail, 1);
+        completion_popup_host = new Popup
+        {
+            Child = completion_popup,
+            PlacementTarget = editor,
+            PlacementConstraintAdjustment = Avalonia.Controls.Primitives.PopupPositioning.PopupPositionerConstraintAdjustment.All,
+            ShouldUseOverlayLayer = false,
+            Topmost = true,
+            WindowManagerAddShadowHint = false
+        };
 
         hover_popup = new Border
         {
@@ -221,12 +245,12 @@ public sealed class PythonScriptEditorView : UserControl
             IsHitTestVisible = false,
             Children =
             {
-                hover_popup,
-                completion_popup
+                hover_popup
             }
         };
 
         Content = build_layout();
+        RefreshThemeResources();
 
         editor.TextChanged += editor_text_changed;
         editor.AddHandler(KeyDownEvent, editor_key_down, Avalonia.Interactivity.RoutingStrategies.Tunnel);
@@ -256,6 +280,7 @@ public sealed class PythonScriptEditorView : UserControl
         DataContextChanged += (_, _) => bind_view_model(DataContext as MainWindowViewModel);
         AttachedToVisualTree += (_, _) =>
         {
+            RefreshThemeResources();
             if (view_model is not null)
                 sync_from_view_model(view_model);
             editor.Focus();
@@ -298,6 +323,50 @@ public sealed class PythonScriptEditorView : UserControl
         textmate.Dispose();
     }
 
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property.Name == nameof(ActualThemeVariant) && textmate is not null)
+            RefreshThemeResources();
+    }
+
+    public void RefreshThemeResources()
+    {
+        var editor_theme = ActualThemeVariant == ThemeVariant.Dark
+            ? ThemeName.DarkPlus
+            : ThemeName.LightPlus;
+        textmate.SetTheme(registry_options.LoadTheme(editor_theme));
+        editor.TextArea.SelectionForeground = Brushes.White;
+
+        editor_border.BorderBrush = app_brush("Border2");
+        log_panel.BorderBrush = app_brush("Border2");
+        log_panel.Background = app_brush("Background3");
+        log_header.BorderBrush = app_brush("Border2");
+        completion_list.Background = app_brush("Background3");
+        completion_list.Foreground = app_brush("Text2");
+        completion_detail.BorderBrush = app_brush("Border2");
+        completion_popup.Background = app_brush("Background3");
+        completion_popup.BorderBrush = app_brush("Border3");
+        hover_popup.Background = app_brush("Background3");
+        hover_popup.BorderBrush = app_brush("Border3");
+        completion_hover_brush.Color = ThemeResources.AppColor(this, "Background5");
+        completion_selected_brush.Color = ThemeResources.AppColor(this, "Theme2");
+
+        close_completion_popup();
+        close_hover_popup();
+        if (view_model is not null)
+        {
+            update_log_view(view_model);
+            update_output_theme(view_model);
+        }
+
+        editor.InvalidateVisual();
+        InvalidateVisual();
+    }
+
+    private SolidColorBrush app_brush(string semantic_name) =>
+        new(ThemeResources.AppColor(this, semantic_name));
+
     private Control build_layout()
     {
         var header = new Grid
@@ -330,23 +399,31 @@ public sealed class PythonScriptEditorView : UserControl
         Grid.SetColumn(command_panel, 2);
         header.Children.Add(command_panel);
 
+        editor_border = new Border
+        {
+            BorderBrush = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Border2")),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(6),
+            Child = editor
+        };
         var editor_host = new Grid
         {
             ClipToBounds = true,
             Children =
             {
-                new Border
-                {
-                    BorderBrush = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Border2")),
-                    BorderThickness = new Thickness(1),
-                    CornerRadius = new CornerRadius(6),
-                    Child = editor
-                },
-                overlay_layer
+                editor_border,
+                overlay_layer,
+                completion_popup_host
             }
         };
 
-        var log_panel = new Border
+        log_header = new Border
+        {
+            BorderBrush = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Border2")),
+            BorderThickness = new Thickness(0, 0, 0, 1),
+            Child = header
+        };
+        log_panel = new Border
         {
             BorderBrush = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Border2")),
             BorderThickness = new Thickness(1),
@@ -362,12 +439,7 @@ public sealed class PythonScriptEditorView : UserControl
                 },
                 Children =
                 {
-                    new Border
-                    {
-                        BorderBrush = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Border2")),
-                        BorderThickness = new Thickness(0, 0, 0, 1),
-                        Child = header
-                    },
+                    log_header,
                     log_scroll
                 }
             }
@@ -419,7 +491,6 @@ public sealed class PythonScriptEditorView : UserControl
             grid.Children.Add(new TextBlock
             {
                 Text = item?.Text ?? "",
-                Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text2")),
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 Margin = new Thickness(0, 0, 0, 0)
             });
@@ -427,7 +498,6 @@ public sealed class PythonScriptEditorView : UserControl
             var type = new TextBlock
             {
                 Text = item?.Type ?? "",
-                Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text4")),
                 FontSize = 12,
                 HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
                 TextAlignment = TextAlignment.Right,
@@ -494,13 +564,18 @@ public sealed class PythonScriptEditorView : UserControl
         sync_log_controls(model);
         update_log_view(model);
         output.Text = model.PythonScriptOutput;
-        output.Foreground = model.PythonScriptOutput.StartsWith("Completed", StringComparison.OrdinalIgnoreCase)
-            ? new SolidColorBrush(gated.Shared.ThemeResources.AppColor("SuccessText"))
-            : model.PythonScriptOutput.StartsWith("Running", StringComparison.OrdinalIgnoreCase)
-                ? new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text4"))
-                : Brushes.IndianRed;
+        update_output_theme(model);
         run_button.IsEnabled = !model.IsPythonScriptRunning;
         save_button.IsEnabled = model.CanSavePythonScript;
+    }
+
+    private void update_output_theme(MainWindowViewModel model)
+    {
+        output.Foreground = model.PythonScriptOutput.StartsWith("Completed", StringComparison.OrdinalIgnoreCase)
+            ? app_brush("SuccessText")
+            : model.PythonScriptOutput.StartsWith("Running", StringComparison.OrdinalIgnoreCase)
+                ? app_brush("Text4")
+                : Brushes.IndianRed;
     }
 
     private void sync_log_controls(MainWindowViewModel model)
@@ -791,7 +866,7 @@ public sealed class PythonScriptEditorView : UserControl
             }
 
             string request_key = $"{offset}:{code.GetHashCode(StringComparison.Ordinal)}";
-            if (completion_popup.IsVisible && request_key == completion_request_key)
+            if (completion_popup_host.IsOpen && request_key == completion_request_key)
                 return;
 
             completion_request_key = request_key;
@@ -820,7 +895,7 @@ public sealed class PythonScriptEditorView : UserControl
                 completion_list.SelectedIndex = 0;
                 update_completion_detail();
                 position_completion_popup(offset);
-                completion_popup.IsVisible = true;
+                completion_popup_host.IsOpen = true;
                 completion_list.InvalidateMeasure();
                 completion_list.InvalidateArrange();
                 completion_list.ScrollIntoView(items[0]);
@@ -877,7 +952,7 @@ public sealed class PythonScriptEditorView : UserControl
     {
         run_completion_ui_action(() =>
         {
-            if (!completion_popup.IsVisible || completion_list.SelectedItem is not PythonCompletionData item)
+            if (!completion_popup_host.IsOpen || completion_list.SelectedItem is not PythonCompletionData item)
                 return;
 
             int offset = editor.TextArea.Caret.Offset;
@@ -892,7 +967,7 @@ public sealed class PythonScriptEditorView : UserControl
     {
         try
         {
-            if (!completion_popup.IsVisible || completion_list.SelectedItem is not PythonCompletionData item)
+            if (!completion_popup_host.IsOpen || completion_list.SelectedItem is not PythonCompletionData item)
                 return false;
             int offset = editor.TextArea.Caret.Offset;
             int length = Math.Max(0, offset - completion_start_offset);
@@ -927,7 +1002,7 @@ public sealed class PythonScriptEditorView : UserControl
         if (invalidate_request)
             completion_request_id++;
         completion_request_key = "";
-        completion_popup.IsVisible = false;
+        completion_popup_host.IsOpen = false;
         reset_completion_list();
         completion_detail.Child = null;
         completion_detail.IsVisible = false;
@@ -944,7 +1019,7 @@ public sealed class PythonScriptEditorView : UserControl
     }
 
     private bool has_real_completion_items() =>
-        completion_popup.IsVisible && completion_list.ItemsSource is not null && completion_list.ItemCount > 0;
+        completion_popup_host.IsOpen && completion_list.ItemsSource is not null && completion_list.ItemCount > 0;
 
     private void run_completion_ui_action(Action action)
     {
@@ -986,7 +1061,20 @@ public sealed class PythonScriptEditorView : UserControl
     private void position_completion_popup(int offset)
     {
         var point = caret_point(offset);
-        place_overlay_near_point(completion_popup, point, prefer_below: true);
+        double line_height = Math.Max(16, editor.FontSize * 1.45);
+        bool place_below = true;
+        if (TopLevel.GetTopLevel(editor) is { } top_level &&
+            editor.TranslatePoint(point, top_level) is { } top_level_point)
+        {
+            double space_above = Math.Max(0, top_level_point.Y);
+            double space_below = Math.Max(0, top_level.Bounds.Height - top_level_point.Y - line_height);
+            place_below = space_below >= space_above;
+        }
+
+        completion_popup_host.PlacementRect = new Rect(point.X, point.Y, 1, line_height);
+        completion_popup_host.Placement = place_below
+            ? PlacementMode.BottomEdgeAlignedLeft
+            : PlacementMode.TopEdgeAlignedLeft;
     }
 
     private void update_completion_detail()
@@ -1074,7 +1162,7 @@ public sealed class PythonScriptEditorView : UserControl
     {
         try
         {
-            if (!completion_popup.IsVisible && !hover_popup.IsVisible)
+            if (!completion_popup_host.IsOpen && !hover_popup.IsVisible)
                 return;
 
             close_tooltip_windows();
@@ -1177,7 +1265,7 @@ public sealed class PythonScriptEditorView : UserControl
             int line = location.Line;
             string code = text_view.Document.Text;
             var hover = await Task.Run(() => PythonExtensionRuntime.GetPythonHoverInfo(code, location.Line, location.Column), token);
-            if (token.IsCancellationRequested || hover_offset != offset || hover_line != line || completion_popup.IsVisible || hover is null || hover.Type is "keyword")
+            if (token.IsCancellationRequested || hover_offset != offset || hover_line != line || completion_popup_host.IsOpen || hover is null || hover.Type is "keyword")
             {
                 await Dispatcher.UIThread.InvokeAsync(close_hover_popup);
                 return;
@@ -1196,7 +1284,7 @@ public sealed class PythonScriptEditorView : UserControl
 
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                if (token.IsCancellationRequested || hover_offset != offset || hover_line != line || completion_popup.IsVisible)
+                if (token.IsCancellationRequested || hover_offset != offset || hover_line != line || completion_popup_host.IsOpen)
                     return;
                 hover_popup.Child = build_documentation_view(hover, hover_popup);
                 place_overlay_near_point(hover_popup, new Point(hover_point.X + 14, hover_point.Y + 8), prefer_below: true);
@@ -1218,7 +1306,7 @@ public sealed class PythonScriptEditorView : UserControl
         hover_popup.Child = null;
         hover_offset = -1;
         hover_line = -1;
-        if (!completion_popup.IsVisible)
+        if (!completion_popup_host.IsOpen)
             overlay_layer.IsHitTestVisible = false;
     }
 
@@ -1252,7 +1340,7 @@ public sealed class PythonScriptEditorView : UserControl
     }
 
     private bool is_point_inside_visible_overlay_child(Point point, double tolerance = 0) =>
-        is_point_inside_overlay_child(point, completion_popup, tolerance) || is_point_inside_overlay_child(point, hover_popup, tolerance);
+        is_point_inside_overlay_child(point, hover_popup, tolerance);
 
     private static bool is_point_inside_overlay_child(Point point, Control child, double tolerance = 0)
     {

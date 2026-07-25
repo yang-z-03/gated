@@ -261,6 +261,7 @@ def _main():
             _fmt(peak_size),
         ])
 
+        component_keys = []
         for generation, (area, fraction, mean) in enumerate(zip(areas, fractions, means)):
             if fraction < _MIN_GENERATION_FRACTION:
                 continue
@@ -274,25 +275,17 @@ def _main():
                 _fmt_generation(area / (2.0 ** generation)),
             ])
             amplitude = float(np.max(components[generation])) if len(components[generation]) else 0.0
-            platform.set_fit_curve(
-                f"generation_{generation}_{source_id}",
-                f"{label} generation {generation}",
-                "Gaussian",
-                source_id,
-                [amplitude, float(mean), float(peak_size)],
-                1.0,
-                major,
-                "Normalized frequency",
-                "component",
+            component_key = f"generation_{generation}_{source_id}"
+            platform.add_component_normal(
+                component_key, float(mean), float(peak_size), amplitude, source_id,
+                f"{label} generation {generation}", 1.0, major, "Normalized frequency"
             )
-        fit_parameters = []
-        for component, mean in zip(components, means):
-            amplitude = float(np.max(component)) if len(component) else 0.0
-            fit_parameters.extend([amplitude, float(mean), float(peak_size)])
-        platform.set_fit_curve(
-            f"fit_{source_id}", f"{label} fit", "GaussianSum", source_id,
-            fit_parameters, 1.0, major, "Normalized frequency", "fit"
-        )
+            component_keys.append(component_key)
+        if component_keys:
+            platform.set_fit_addition(
+                f"fit_{source_id}", component_keys, [1.0] * len(component_keys), 0.0,
+                source_id, f"{label} fit", 1.0, major, "Normalized frequency"
+            )
 
     platform.set_result_table(
         "proliferation",

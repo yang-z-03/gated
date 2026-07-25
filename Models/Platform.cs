@@ -43,13 +43,12 @@ public enum CellCycleModelKind
 
 public enum PlatformFitCurveKind
 {
-    Gaussian,
-    GaussianSum,
-    CellCycleSum,
-    Linear,
-    Exponential,
-    Gamma,
-    Addition
+    Normal = 0,
+    Linear = 3,
+    Exponential = 4,
+    Gamma = 5,
+    Addition = 6,
+    Polynomial = 7
 }
 
 public static class PlatformParameterKeys

@@ -189,7 +189,7 @@ def _phase_percentages(g1, s, g2):
     return tuple(float(v / total * 100.0) for v in values)
 
 
-def _cell_cycle_curve_parameters(x, fit, g1_amp, g1_mu, g1_sigma, g2_amp, g2_mu, g2_sigma):
+def _s_polynomial_parameters(x, fit, g1_mu, g2_mu):
     minimum = float(min(g1_mu, g2_mu))
     maximum = float(max(g1_mu, g2_mu))
     if maximum <= minimum:
@@ -201,12 +201,7 @@ def _cell_cycle_curve_parameters(x, fit, g1_amp, g1_mu, g1_sigma, g2_amp, g2_mu,
         t = (x[mask] - minimum) / (maximum - minimum)
         degree = min(8, int(np.count_nonzero(mask)) - 1)
         coefficients = np.polynomial.polynomial.polyfit(t, fit["s"][mask], degree)
-    return [
-        float(g1_amp), float(g1_mu), float(g1_sigma),
-        float(g2_amp), float(g2_mu), float(g2_sigma),
-        minimum, maximum,
-        *[float(value) for value in coefficients],
-    ]
+    return minimum, maximum, [float(value) for value in coefficients]
 
 
 def _main():
@@ -264,27 +259,25 @@ def _main():
             _fmt(g2_mu / max(g1_mu, 1e-9)),
         ])
         label = _source_label(first)
-        cell_cycle_parameters = _cell_cycle_curve_parameters(
-            x, fit, g1_amp, g1_mu, g1_sigma, g2_amp, g2_mu, g2_sigma
+        s_minimum, s_maximum, s_coefficients = _s_polynomial_parameters(x, fit, g1_mu, g2_mu)
+        g1_key = f"component_g1_{source_id}"
+        s_key = f"component_s_{source_id}"
+        g2m_key = f"component_g2m_{source_id}"
+        platform.add_component_normal(
+            g1_key, float(g1_mu), float(g1_sigma), float(g1_amp), source_id,
+            f"{label} G1", 1.0, major, "Normalized frequency"
         )
-        s_parameters = list(cell_cycle_parameters)
-        s_parameters[0] = 0.0
-        s_parameters[3] = 0.0
-        platform.set_fit_curve(
-            f"fit_{source_id}", f"{label} fit", "CellCycleSum", source_id,
-            cell_cycle_parameters, 1.0, major, "Normalized frequency", "fit"
+        platform.add_component_polynomial(
+            s_key, s_coefficients, s_minimum, s_maximum, source_id,
+            f"{label} S", 1.0, major, "Normalized frequency"
         )
-        platform.set_fit_curve(
-            f"component_g1_{source_id}", f"{label} G1", "Gaussian", source_id,
-            [g1_amp, g1_mu, g1_sigma], 1.0, major, "Normalized frequency", "component"
+        platform.add_component_normal(
+            g2m_key, float(g2_mu), float(g2_sigma), float(g2_amp), source_id,
+            f"{label} G2/M", 1.0, major, "Normalized frequency"
         )
-        platform.set_fit_curve(
-            f"component_s_{source_id}", f"{label} S", "CellCycleSum", source_id,
-            s_parameters, 1.0, major, "Normalized frequency", "component"
-        )
-        platform.set_fit_curve(
-            f"component_g2m_{source_id}", f"{label} G2/M", "Gaussian", source_id,
-            [g2_amp, g2_mu, g2_sigma], 1.0, major, "Normalized frequency", "component"
+        platform.set_fit_addition(
+            f"fit_{source_id}", [g1_key, s_key, g2m_key], [1.0, 1.0, 1.0], 0.0,
+            source_id, f"{label} fit", 1.0, major, "Normalized frequency"
         )
 
     columns = ["Sample", "Population", "Events", "G1 %", "S %", "G2/M %", "G1 mean", "G1 CV %", "G2/M mean", "G2/M CV %", "G2/G1 ratio"]

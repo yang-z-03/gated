@@ -553,6 +553,48 @@
                           Background="{DynamicResource SemiColorSplits}"
                           ResizeDirection="Columns" />
 
+            <Grid Grid.Column="2"
+                  IsVisible="{Binding IsWorkspaceOverviewMode}"
+                  Background="{DynamicResource AppBrushBackground1}">
+                <Border MaxWidth="620"
+                        Margin="48"
+                        Padding="44"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        BorderBrush="{DynamicResource AppBrushBorder3}"
+                        BorderThickness="1"
+                        CornerRadius="12"
+                        Background="{DynamicResource AppBrushBackground3}">
+                    <StackPanel Spacing="14">
+                        <TextBlock HorizontalAlignment="Center"
+                                   FontSize="28"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource SemiColorText0}"
+                                   Text="Welcome to Gated" />
+                        <TextBlock MaxWidth="500"
+                                   HorizontalAlignment="Center"
+                                   TextAlignment="Center"
+                                   TextWrapping="Wrap"
+                                   Foreground="{DynamicResource SemiColorText2}"
+                                   Text="Select a grouping, sample, or population from the workspace tree to continue your analysis." />
+                        <Border Margin="0,10,0,0"
+                                Padding="10,7"
+                                HorizontalAlignment="Center"
+                                CornerRadius="6"
+                                Background="{DynamicResource AppBrushBackground4}">
+                            <TextBlock Foreground="{DynamicResource SemiColorText2}"
+                                       Text="{Binding WorkspaceFileVersionText}" />
+                        </Border>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <Grid Grid.Column="2"
+                  IsVisible="{Binding IsPlatformOverviewMode}"
+                  Background="{DynamicResource AppBrushBackground1}">
+                <!-- Top level platform overview -->
+            </Grid>
+
             <Grid x:Name="analysis_mode_grid"
                   Grid.Column="2"
                   IsVisible="{Binding IsDefaultAnalysisMode}"
@@ -1119,8 +1161,37 @@
                                          VerticalAlignment="Stretch"
                                          Elements="{Binding PageElements}"
                                          SelectedElement="{Binding SelectedPageElement, Mode=TwoWay}"
+                                         ActiveTool="{Binding ActivePageTool, Mode=TwoWay}"
                                          RefreshRevision="{Binding LayoutRefreshRevision}"
                                          AddElementCommand="{Binding AddPageElementCommand}" />
+
+                <Border Grid.Column="0"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Bottom"
+                        Margin="0,0,0,32"
+                        Padding="10"
+                        CornerRadius="8"
+                        BorderBrush="{DynamicResource AppBrushBackground4}"
+                        BorderThickness="1"
+                        Background="{DynamicResource AppBrushBackground2}">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <RadioButton GroupName="LayoutTools" Classes="GateToolButton"
+                                     IsChecked="{Binding IsLayoutSelectTool, Mode=TwoWay}"
+                                     ToolTip.Tip="Select and modify layout elements">
+                            <shared:ThemeIcon Width="28" Height="28" Icon="pointer.svg" />
+                        </RadioButton>
+                        <RadioButton GroupName="LayoutTools" Classes="GateToolButton"
+                                     IsChecked="{Binding IsLayoutLineTool, Mode=TwoWay}"
+                                     ToolTip.Tip="Draw line annotation">
+                            <shared:ThemeIcon Width="28" Height="28" Icon="line.svg" />
+                        </RadioButton>
+                        <RadioButton GroupName="LayoutTools" Classes="GateToolButton"
+                                     IsChecked="{Binding IsLayoutTextTool, Mode=TwoWay}"
+                                     ToolTip.Tip="Draw text annotation">
+                            <shared:ThemeIcon Width="28" Height="28" Icon="text.svg" />
+                        </RadioButton>
+                    </StackPanel>
+                </Border>
 
                 <Border x:Name="layout_properties_panel"
                         Grid.Column="1"
@@ -1172,9 +1243,9 @@
                                                Value="{Binding ExportBitmapDpi}" />
                             </Grid>
 
-                            <Expander Header="Selected plot" Margin="0 8 0 0" IsExpanded="True">
+                            <Expander Header="Selected element" Margin="0 8 0 0" IsExpanded="True">
                                 <StackPanel Spacing="8" Margin="0,8,0,16" IsEnabled="{Binding HasSelectedPageElement}">
-                                    <StackPanel>
+                                    <StackPanel IsVisible="{Binding CanEditSelectedPageTitle}">
                                         <TextBlock Margin="0,4" Foreground="{DynamicResource SemiColorText2}" Text="Title" />
                                         <TextBox IsEnabled="{Binding CanEditSelectedPageTitle}"
                                                  Text="{Binding SelectedPageElement.Title, UpdateSourceTrigger=PropertyChanged}" />
@@ -1200,29 +1271,31 @@
                                         </StackPanel>
                                     </Grid>
 
-                                    <StackPanel>
-                                    <TextBlock Margin="0,4" Foreground="{DynamicResource SemiColorText2}" Text="Plot mode" />
-                                    <ComboBox Classes="Small" Margin="0 0 0 4"
-                                              IsEnabled="{Binding CanEditSelectedPagePlotMode}"
-                                              ItemsSource="{Binding PlotModeChoices}"
-                                              SelectedItem="{Binding SelectedPageElement.PlotMode}" />
+                                    <StackPanel IsVisible="{Binding CanEditSelectedPagePlotMode}">
+                                        <TextBlock Margin="0,4" Foreground="{DynamicResource SemiColorText2}" Text="Plot mode" />
+                                        <ComboBox Classes="Small" Margin="0 0 0 4"
+                                                  IsEnabled="{Binding CanEditSelectedPagePlotMode}"
+                                                  ItemsSource="{Binding PlotModeChoices}"
+                                                  SelectedItem="{Binding SelectedPageElement.PlotMode}" />
                                     </StackPanel>
 
-                                    <CheckBox Content="Show gridlines"
-                                              IsEnabled="{Binding CanEditSelectedPageGridTickOptions}"
-                                              IsChecked="{Binding SelectedPageElement.ShowGridlines}" />
-                                    <CheckBox Content="Show tick labels"
-                                              IsEnabled="{Binding CanEditSelectedPageGridTickOptions}"
-                                              IsChecked="{Binding SelectedPageElement.ShowTickLabels}" />
-                                    <CheckBox Content="Show gates"
-                                              IsEnabled="{Binding CanEditSelectedPageFlowOptions}"
-                                              IsChecked="{Binding SelectedPageElement.ShowGates}" />
-                                    <CheckBox Content="Show gate annotations"
-                                              IsEnabled="{Binding CanEditSelectedPageFlowOptions}"
-                                              IsChecked="{Binding SelectedPageElement.ShowGateAnnotations}" />
-                                    <CheckBox Content="Show annotation names"
-                                              IsEnabled="{Binding CanEditSelectedPageFlowOptions}"
-                                              IsChecked="{Binding SelectedPageElement.ShowGateAnnotationNames}" />
+                                    <StackPanel Orientation="Vertical" Margin="0 8 0 0" Spacing="8">
+                                        <CheckBox Content="Show gridlines" IsVisible="{Binding CanEditSelectedPageGridTickOptions}"
+                                                  IsEnabled="{Binding CanEditSelectedPageGridTickOptions}"
+                                                  IsChecked="{Binding SelectedPageElement.ShowGridlines}" />
+                                        <CheckBox Content="Show tick labels" IsVisible="{Binding CanEditSelectedPageGridTickOptions}"
+                                                  IsEnabled="{Binding CanEditSelectedPageGridTickOptions}"
+                                                  IsChecked="{Binding SelectedPageElement.ShowTickLabels}" />
+                                        <CheckBox Content="Show gates" IsVisible="{Binding CanEditSelectedPageFlowOptions}"
+                                                  IsEnabled="{Binding CanEditSelectedPageFlowOptions}"
+                                                  IsChecked="{Binding SelectedPageElement.ShowGates}" />
+                                        <CheckBox Content="Show gate annotations" IsVisible="{Binding CanEditSelectedPageFlowOptions}"
+                                                  IsEnabled="{Binding CanEditSelectedPageFlowOptions}"
+                                                  IsChecked="{Binding SelectedPageElement.ShowGateAnnotations}" />
+                                        <CheckBox Content="Show annotation names" IsVisible="{Binding CanEditSelectedPageFlowOptions}"
+                                                  IsEnabled="{Binding CanEditSelectedPageFlowOptions}"
+                                                  IsChecked="{Binding SelectedPageElement.ShowGateAnnotationNames}" />
+                                    </StackPanel>
 
                                     <StackPanel Spacing="8" IsVisible="{Binding ShowSelectedPageDensityStyleOptions}">
                                         <TextBlock Margin="0,4,0,-4" Foreground="{DynamicResource SemiColorText2}" Text="Density palette" />
@@ -1321,7 +1394,92 @@
                                 </StackPanel>
                             </Expander>
 
-                            <Expander Header="X axis" IsExpanded="False">
+                            <Expander Header="Annotation"
+                                      IsVisible="{Binding IsSelectedPageAnnotation}"
+                                      IsExpanded="True">
+                                <StackPanel Spacing="8" Margin="0,8,0,16">
+                                    <StackPanel IsVisible="{Binding IsSelectedPageTextAnnotation}">
+                                        <TextBlock Margin="0,4" Foreground="{DynamicResource SemiColorText2}" Text="Text" />
+                                        <TextBox MinHeight="90"
+                                                 MaxHeight="180"
+                                                 AcceptsReturn="True"
+                                                 TextWrapping="Wrap"
+                                                 LineHeight="18"
+                                                 Padding="4"
+                                                 VerticalContentAlignment="Top"
+                                                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                                 Text="{Binding SelectedPageElement.Text, UpdateSourceTrigger=PropertyChanged}" />
+                                    </StackPanel>
+
+                                    <StackPanel IsVisible="{Binding IsSelectedPageLineAnnotation}">
+                                        <TextBlock Margin="0,4" Foreground="{DynamicResource SemiColorText2}" Text="Stroke" />
+                                        <ComboBox Classes="Small" Width="160" HorizontalAlignment="Left"
+                                                  ItemsSource="{Binding PageLineStrokeStyleChoices}"
+                                                  SelectedItem="{Binding SelectedPageElement.StrokeStyle}" />
+                                    </StackPanel>
+                                    <StackPanel IsVisible="{Binding IsSelectedPageLineAnnotation}">
+                                        <TextBlock Margin="0,4" Foreground="{DynamicResource SemiColorText2}" Text="Stroke width" />
+                                        <NumericUpDown Classes="Small" Width="100" HorizontalAlignment="Left"
+                                                       Minimum="0.5" Maximum="32" Increment="0.5"
+                                                       Value="{Binding SelectedPageElement.StrokeWidth}" />
+                                    </StackPanel>
+                                    <Grid ColumnDefinitions="140,140" ColumnSpacing="8"
+                                          IsVisible="{Binding IsSelectedPageLineAnnotation}">
+                                        <StackPanel>
+                                            <TextBlock Margin="0,4" Foreground="{DynamicResource SemiColorText2}" Text="Start marker" />
+                                            <ComboBox Classes="Small" Width="132" HorizontalAlignment="Left"
+                                                      ItemsSource="{Binding PageLineEndStyleChoices}"
+                                                      SelectedItem="{Binding SelectedPageElement.StartEndStyle}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1">
+                                            <TextBlock Margin="0,4" Foreground="{DynamicResource SemiColorText2}" Text="End marker" />
+                                            <ComboBox Classes="Small" Width="132" HorizontalAlignment="Left"
+                                                      ItemsSource="{Binding PageLineEndStyleChoices}"
+                                                      SelectedItem="{Binding SelectedPageElement.EndEndStyle}" />
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <StackPanel IsVisible="{Binding IsSelectedPageTextAnnotation}">
+                                        <TextBlock Margin="0,4" Foreground="{DynamicResource SemiColorText2}" Text="Font family" />
+                                        <ComboBox Classes="Small" Width="210" HorizontalAlignment="Left"
+                                                  IsEditable="True" IsTextSearchEnabled="True"
+                                                  ItemsSource="{Binding PageTextFontFamilyChoices}"
+                                                  Text="{Binding SelectedPageElement.FontFamily, Mode=TwoWay}" />
+                                    </StackPanel>
+                                    <Grid ColumnDefinitions="108,148" ColumnSpacing="8"
+                                          IsVisible="{Binding IsSelectedPageTextAnnotation}">
+                                        <StackPanel>
+                                            <TextBlock Margin="0,4" Foreground="{DynamicResource SemiColorText2}" Text="Font size" />
+                                            <NumericUpDown Classes="Small" Width="100" HorizontalAlignment="Left"
+                                                           Minimum="6" Maximum="144" Increment="1"
+                                                           Value="{Binding SelectedPageElement.FontSize}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1">
+                                            <TextBlock Margin="0,4" Foreground="{DynamicResource SemiColorText2}" Text="Weight" />
+                                            <ComboBox Classes="Small" Width="140" HorizontalAlignment="Left"
+                                                      ItemsSource="{Binding PageTextWeightChoices}"
+                                                      SelectedItem="{Binding SelectedPageElement.FontWeight}" />
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <StackPanel IsVisible="{Binding IsSelectedPageTextAnnotation}">
+                                        <TextBlock Margin="0,4" Foreground="{DynamicResource SemiColorText2}" Text="Line height ratio" />
+                                        <NumericUpDown Classes="Small" Width="100" HorizontalAlignment="Left"
+                                                       Minimum="0.5" Maximum="4" Increment="0.1" FormatString="0.0x"
+                                                       Value="{Binding SelectedPageElement.LineHeightRatio}" />
+                                    </StackPanel>
+
+                                    <StackPanel>
+                                        <TextBlock Margin="0,4" Foreground="{DynamicResource SemiColorText2}" Text="Color" />
+                                        <ColorPicker Width="210" HorizontalAlignment="Left"
+                                                     Color="{Binding SelectedPageAnnotationColor, Mode=TwoWay}"
+                                                     IsAlphaEnabled="True"
+                                                     IsAlphaVisible="True" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Expander>
+
+                            <Expander Header="X axis" IsVisible="{Binding CanEditSelectedPageAxes}" IsExpanded="False">
                                 <StackPanel Spacing="8" Margin="0,8,0,16" IsEnabled="{Binding CanEditSelectedPageAxes}">
                                     <TextBlock Margin="0,4,0,-4" Foreground="{DynamicResource SemiColorText2}" Text="Selected channel" />
                                     <ComboBox Classes="Small"
@@ -1377,7 +1535,7 @@
                                 </StackPanel>
                             </Expander>
 
-                            <Expander Header="Y axis" IsExpanded="False">
+                            <Expander Header="Y axis" IsVisible="{Binding CanEditSelectedPageAxes}" IsExpanded="False">
                                 <StackPanel Spacing="8" Margin="0,8,0,16" IsEnabled="{Binding CanEditSelectedPageAxes}">
                                     <TextBlock Margin="0,4,0,-4" Foreground="{DynamicResource SemiColorText2}" Text="Selected channel" />
                                     <ComboBox Classes="Small"
@@ -2303,8 +2461,10 @@
                                 MaxWidth="750"
                                 MinWidth="750"
                                 HorizontalAlignment="Center">
-                        <StackPanel Margin="0 12 0 0">
-                            <TextBlock Foreground="{DynamicResource SemiColorText1}" Text="Workspace sample metadata" />
+                        <StackPanel Margin="0 12 0 0" Spacing="8">
+                            <TextBlock Foreground="{DynamicResource AppBrushText2}" FontWeight="Bold" Text="Workspace metadata" />
+                            <TextBlock Foreground="{DynamicResource SemiColorText1}"  TextWrapping="Wrap" LineHeight="18"
+                                       Text="Edit sample level metadata table. Such metadata will be accessed by Python engine, and initialize with duplication of input FCS files. Such information will be source of keywords for FCS files written" />
                         </StackPanel>
 
                         <WrapPanel Margin="0,0,0,2">
@@ -2357,9 +2517,11 @@
                             </StackPanel>
                         </Button>
 
-                        <TextBlock Margin="0,12,0,0"
-                                   Foreground="{DynamicResource SemiColorText1}"
-                                   Text="Experiment overview" />
+                        <StackPanel Margin="0 12 0 0" Spacing="8">
+                            <TextBlock Foreground="{DynamicResource AppBrushText2}" FontWeight="Bold" Text="Experiment overview" />
+                            <TextBlock Foreground="{DynamicResource SemiColorText1}"  TextWrapping="Wrap" LineHeight="18"
+                                       Text="Edit overview messages for experiment in complying with MIFlowCyt criteria" />
+                        </StackPanel>
 
                         <StackPanel Spacing="6">
                             <TextBlock Foreground="{DynamicResource SemiColorText2}" Text="Purpose and hypothesis" />
@@ -2422,8 +2584,10 @@
                                 MaxWidth="750"
                                 MinWidth="750"
                                 HorizontalAlignment="Center">
-                        <StackPanel Margin="0 12 0 0">
-                            <TextBlock Foreground="{DynamicResource SemiColorText1}" Text="Grouping channel metadata" />
+                        <StackPanel Margin="0 12 0 0" Spacing="8">
+                            <TextBlock Foreground="{DynamicResource AppBrushText2}" FontWeight="Bold" Text="Grouping channel metadata" />
+                            <TextBlock Foreground="{DynamicResource SemiColorText1}"  TextWrapping="Wrap" LineHeight="18"
+                                       Text="Groups consist of samples with shared channel detectors. You may rename or re-label these channels for human-readable names for ease of analysis." />
                         </StackPanel>
 
                         <Border Height="510"
@@ -2452,7 +2616,7 @@
                                     <DataGridTextColumn Header="Label"
                                                         Width="*"
                                                         FontWeight="Bold"
-                                                        Binding="{Binding Label, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                                        Binding="{Binding Label, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" />
                                     <DataGridTextColumn Header="Maximum"
                                                         Width="120"
                                                         IsReadOnly="True"
@@ -2481,6 +2645,7 @@
             </Grid>
 
             <controls:PythonScriptEditorView Grid.Column="2"
+                                             Background="{DynamicResource AppBrushBackground1}"
                                              IsVisible="{Binding IsPythonScriptEditorMode}" />
         </Grid>
     </DockPanel>

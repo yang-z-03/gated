@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Avalonia;
+using Avalonia.Media;
 using gated.Models;
 using gated.Reduction;
 using gated.ViewModels.Platforms;
@@ -12,9 +13,7 @@ namespace gated.Services;
 public sealed class WorkspaceBinarySerializer
 {
     private const uint magic = 0x44544731;
-    private const int version = 54;
-    private const int minimum_supported_version = 42;
-    [ThreadStatic] private static int reading_version;
+    public const int CurrentVersion = 56;
 
     public void Save(FlowWorkspace workspace, string file_path)
     {
@@ -22,7 +21,7 @@ public sealed class WorkspaceBinarySerializer
         using var stream = new FileStream(file_path, FileMode.Create, FileAccess.Write, FileShare.None);
         using var writer = new BinaryWriter(stream);
         writer.Write(magic);
-        writer.Write(version);
+        writer.Write(CurrentVersion);
         write_string(writer, workspace.Name);
         writer.Write(workspace.Groups.Count);
         foreach (var group in workspace.Groups)
@@ -48,24 +47,19 @@ public sealed class WorkspaceBinarySerializer
             throw new InvalidDataException("The file is not a Gated workspace.");
 
         int file_version = reader.ReadInt32();
-        if (file_version < minimum_supported_version || file_version > version)
-            throw new NotSupportedException($"Unsupported Gated workspace version: {file_version}. Current version is {version}.");
-        reading_version = file_version;
+        if (file_version != CurrentVersion)
+            throw new NotSupportedException($"Unsupported Gated workspace version: {file_version}. Required version is {CurrentVersion}.");
 
         var workspace = new FlowWorkspace { Name = read_string(reader) };
         int group_count = reader.ReadInt32();
         for (int index = 0; index < group_count; index++)
-            workspace.Groups.Add(read_group(reader, file_version));
+            workspace.Groups.Add(read_group(reader));
 
-        if (file_version >= 53)
-            read_platforms(reader, workspace);
-        else
-            skip_legacy_platforms(reader);
-        read_page_layouts(reader, workspace, file_version);
+        read_platforms(reader, workspace);
+        read_page_layouts(reader, workspace);
         read_recent_file_paths(reader, workspace);
         read_metadata_columns(reader, workspace);
-        if (file_version >= 47)
-            read_experiment_overview(reader, workspace);
+        read_experiment_overview(reader, workspace);
 
         return workspace;
     }
@@ -170,15 +164,15 @@ public sealed class WorkspaceBinarySerializer
             writer.Write(group.IndexDemultiplexSourceGroupId.Value.ToByteArray());
     }
 
-    private static FlowGroup read_group(BinaryReader reader, int file_version)
+    private static FlowGroup read_group(BinaryReader reader)
     {
         Guid id = new Guid(reader.ReadBytes(16));
         var group = new FlowGroup { Id = id, Name = read_string(reader) };
         read_statistics(reader, group.Statistics);
-        group.RootViewOptions = read_gate_view_options(reader, file_version);
+        group.RootViewOptions = read_gate_view_options(reader);
         int sample_root_view_count = reader.ReadInt32();
         for (int index = 0; index < sample_root_view_count; index++)
-            group.SampleRootViewOptions[read_string(reader)] = read_gate_view_options(reader, file_version);
+            group.SampleRootViewOptions[read_string(reader)] = read_gate_view_options(reader);
 
         int compensation_count = reader.ReadInt32();
         int applied_index = reader.ReadInt32();
@@ -191,7 +185,7 @@ public sealed class WorkspaceBinarySerializer
 
         int gate_count = reader.ReadInt32();
         for (int index = 0; index < gate_count; index++)
-            group.Gates.Add(read_gate(reader, parent: null, file_version));
+            group.Gates.Add(read_gate(reader, parent: null));
 
         int sample_count = reader.ReadInt32();
         for (int index = 0; index < sample_count; index++)
@@ -200,24 +194,14 @@ public sealed class WorkspaceBinarySerializer
         int control_sample_count = reader.ReadInt32();
         for (int index = 0; index < control_sample_count; index++)
             group.ControlSamples.Add(read_control_sample(reader));
-        read_spillover_state(reader, group.SpilloverCompensation, file_version);
-        if (file_version >= 46)
-        {
-            read_spectral_state(reader, group.SpectralUnmixing);
-            if (reader.ReadBoolean()) group.SpectralSourceGroupId = new Guid(reader.ReadBytes(16));
-        }
-        if (file_version >= 49)
-        {
-            read_mass_normalization_state(reader, group.MassNormalization);
-            if (reader.ReadBoolean()) group.MassNormalizationSourceGroupId = new Guid(reader.ReadBytes(16));
-        }
-        if (file_version >= 50)
-            read_mass_compensation_state(reader, group.MassCompensation, file_version);
-        if (file_version >= 52)
-        {
-            read_index_demultiplex_state(reader, group.IndexDemultiplex);
-            if (reader.ReadBoolean()) group.IndexDemultiplexSourceGroupId = new Guid(reader.ReadBytes(16));
-        }
+        read_spillover_state(reader, group.SpilloverCompensation);
+        read_spectral_state(reader, group.SpectralUnmixing);
+        if (reader.ReadBoolean()) group.SpectralSourceGroupId = new Guid(reader.ReadBytes(16));
+        read_mass_normalization_state(reader, group.MassNormalization);
+        if (reader.ReadBoolean()) group.MassNormalizationSourceGroupId = new Guid(reader.ReadBytes(16));
+        read_mass_compensation_state(reader, group.MassCompensation);
+        read_index_demultiplex_state(reader, group.IndexDemultiplex);
+        if (reader.ReadBoolean()) group.IndexDemultiplexSourceGroupId = new Guid(reader.ReadBytes(16));
 
         return group;
     }
@@ -274,19 +258,11 @@ public sealed class WorkspaceBinarySerializer
         }
     }
 
-    private static void read_spillover_state(BinaryReader reader, SpilloverCompensationState state, int file_version)
+    private static void read_spillover_state(BinaryReader reader, SpilloverCompensationState state)
     {
         state.MatrixName = read_string(reader);
-        if (file_version >= 46)
-        {
-            int preset_count = reader.ReadInt32();
-            for (int index = 0; index < preset_count; index++) state.GatePresets.Add(read_control_gate_preset(reader));
-        }
-        else
-        {
-            int vertex_count = reader.ReadInt32();
-            for (int index = 0; index < vertex_count; index++) state.DefaultGatePreset.Vertices.Add(new Point(reader.ReadDouble(), reader.ReadDouble()));
-        }
+        int preset_count = reader.ReadInt32();
+        for (int index = 0; index < preset_count; index++) state.GatePresets.Add(read_control_gate_preset(reader));
 
         int row_count = reader.ReadInt32();
         for (int index = 0; index < row_count; index++)
@@ -296,7 +272,7 @@ public sealed class WorkspaceBinarySerializer
                 ControlSampleId = new Guid(reader.ReadBytes(16)),
                 ParameterName = read_string(reader)
             };
-            row.GatePresetId = file_version >= 46 ? new Guid(reader.ReadBytes(16)) : state.DefaultGatePreset.Id;
+            row.GatePresetId = new Guid(reader.ReadBytes(16));
             if (reader.ReadBoolean())
                 row.PositiveSelection = new SpilloverRangeSelection(reader.ReadDouble(), reader.ReadDouble());
             state.Rows.Add(row);
@@ -373,22 +349,16 @@ public sealed class WorkspaceBinarySerializer
         int map_count = reader.ReadInt32();
         for (int index = 0; index < map_count; index++) state.GeneratedSampleIds[new Guid(reader.ReadBytes(16))] = new Guid(reader.ReadBytes(16));
         var detector_settings = new List<SpectralDetectorSetting>();
-        if (reading_version >= 48)
-        {
-            int detector_setting_count = reader.ReadInt32();
-            for (int index = 0; index < detector_setting_count; index++)
-                detector_settings.Add(new SpectralDetectorSetting
-                {
-                    ChannelName = read_string(reader),
-                    ExcitationLight = (ExcitationLightKind)reader.ReadInt32(),
-                    PlotOrder = reader.ReadInt32()
-                });
-        }
+        int detector_setting_count = reader.ReadInt32();
+        for (int index = 0; index < detector_setting_count; index++)
+            detector_settings.Add(new SpectralDetectorSetting
+            {
+                ChannelName = read_string(reader),
+                ExcitationLight = (ExcitationLightKind)reader.ReadInt32(),
+                PlotOrder = reader.ReadInt32()
+            });
         state.SetFit(detectors, signatures, spectra, similarity, coefficients);
-        if (reading_version >= 48)
-            state.SetDetectorSettings(detector_settings);
-        else
-            state.DetectorSettings.Clear();
+        state.SetDetectorSettings(detector_settings);
         state.IsStale = stale; state.IsUserModified = modified;
     }
 
@@ -458,7 +428,7 @@ public sealed class WorkspaceBinarySerializer
         }
     }
 
-    private static void read_mass_compensation_state(BinaryReader reader, MassCompensationState state, int file_version)
+    private static void read_mass_compensation_state(BinaryReader reader, MassCompensationState state)
     {
         state.MatrixName = read_string(reader);
         int count = reader.ReadInt32();
@@ -469,7 +439,7 @@ public sealed class WorkspaceBinarySerializer
                 SourceChannelName = read_string(reader)
             });
 
-        if (file_version < 51 || !reader.ReadBoolean())
+        if (!reader.ReadBoolean())
             return;
 
         state.CalculatedMatrix = read_compensation(reader);
@@ -922,7 +892,7 @@ public sealed class WorkspaceBinarySerializer
             write_gate(writer, child);
     }
 
-    private static GateDefinition read_gate(BinaryReader reader, GateDefinition? parent, int file_version)
+    private static GateDefinition read_gate(BinaryReader reader, GateDefinition? parent)
     {
         Guid id = new Guid(reader.ReadBytes(16));
         var gate = new GateDefinition
@@ -964,12 +934,11 @@ public sealed class WorkspaceBinarySerializer
             value => gate.PreferredContourLevelCount = value,
             value => gate.PreferredDensitySmoothing = value,
             value => gate.PreferredDensityPalette = value,
-            value => gate.PreferredDotColor = value,
-            file_version);
+            value => gate.PreferredDotColor = value);
 
         int sample_view_count = reader.ReadInt32();
         for (int index = 0; index < sample_view_count; index++)
-            gate.SamplePreferredViews[read_string(reader)] = read_gate_view_options(reader, file_version);
+            gate.SamplePreferredViews[read_string(reader)] = read_gate_view_options(reader);
 
         int population_name_count = reader.ReadInt32();
         for (int index = 0; index < population_name_count; index++)
@@ -982,7 +951,7 @@ public sealed class WorkspaceBinarySerializer
         for (int index = 0; index < population_view_count; index++)
         {
             var region = (PopulationRegion)reader.ReadInt32();
-            gate.PopulationPreferredViews[region] = read_gate_view_options(reader, file_version);
+            gate.PopulationPreferredViews[region] = read_gate_view_options(reader);
         }
 
         int vertex_count = reader.ReadInt32();
@@ -1000,7 +969,7 @@ public sealed class WorkspaceBinarySerializer
 
         int child_count = reader.ReadInt32();
         for (int index = 0; index < child_count; index++)
-            gate.Children.Add(read_gate(reader, gate, file_version));
+            gate.Children.Add(read_gate(reader, gate));
 
         return gate;
     }
@@ -1031,7 +1000,7 @@ public sealed class WorkspaceBinarySerializer
             view.DotColor);
     }
 
-    private static GateViewOptions read_gate_view_options(BinaryReader reader, int file_version)
+    private static GateViewOptions read_gate_view_options(BinaryReader reader)
     {
         var view = new GateViewOptions
         {
@@ -1056,8 +1025,7 @@ public sealed class WorkspaceBinarySerializer
             value => view.ContourLevelCount = value,
             value => view.DensitySmoothing = value,
             value => view.DensityPalette = value,
-            value => view.DotColor = value,
-            file_version);
+            value => view.DotColor = value);
         return view;
     }
 
@@ -1097,8 +1065,7 @@ public sealed class WorkspaceBinarySerializer
         Action<int> set_contour_level_count,
         Action<int> set_density_smoothing,
         Action<PlotColorPalette> set_density_palette,
-        Action<DotColorSettings> set_dot_color,
-        int file_version)
+        Action<DotColorSettings> set_dot_color)
     {
         set_plot_mode((PlotMode)reader.ReadInt32());
         set_show_outlier_points(reader.ReadBoolean());
@@ -1108,9 +1075,8 @@ public sealed class WorkspaceBinarySerializer
         set_show_gate_annotation_names(reader.ReadBoolean());
         set_contour_level_count(reader.ReadInt32());
         set_density_smoothing(reader.ReadInt32());
-        set_density_palette(file_version >= 45 ? (PlotColorPalette)reader.ReadInt32() : PlotColorPalette.Turbo);
-        if (file_version >= 44)
-            set_dot_color(read_dot_color_settings(reader));
+        set_density_palette((PlotColorPalette)reader.ReadInt32());
+        set_dot_color(read_dot_color_settings(reader));
     }
 
     private static void write_dot_color_settings(BinaryWriter writer, DotColorSettings settings)
@@ -1197,13 +1163,13 @@ public sealed class WorkspaceBinarySerializer
         }
     }
 
-    private static void read_page_layouts(BinaryReader reader, FlowWorkspace workspace, int file_version)
+    private static void read_page_layouts(BinaryReader reader, FlowWorkspace workspace)
     {
         int layout_count = reader.ReadInt32();
         for (int index = 0; index < layout_count; index++)
         {
             var layout = new PageLayout { Name = read_string(reader) };
-            read_page_elements(reader, workspace, layout, file_version);
+            read_page_elements(reader, workspace, layout);
         }
     }
 
@@ -1403,161 +1369,6 @@ public sealed class WorkspaceBinarySerializer
             read_platform_results(reader, job);
             PlatformInitializer.RefreshTransformations(workspace, job);
             workspace.Platforms.Add(job);
-        }
-    }
-
-    private static void skip_legacy_platforms(BinaryReader reader)
-    {
-        int platform_count = reader.ReadInt32();
-        if (platform_count < 0)
-            throw new InvalidDataException("Invalid legacy platform count.");
-        for (int index = 0; index < platform_count; index++)
-        {
-            _ = reader.ReadBytes(16);
-            _ = reader.ReadInt32();
-            _ = read_string(reader);
-            _ = reader.ReadInt32();
-            _ = read_string(reader);
-            _ = reader.ReadInt32();
-            _ = read_logicle_parameters(reader);
-            _ = read_cytonorm_options(reader);
-            _ = read_string(reader);
-            skip_legacy_platform_options(reader);
-
-            int population_count = reader.ReadInt32();
-            for (int item = 0; item < population_count; item++)
-            {
-                _ = reader.ReadBytes(16);
-                if (reader.ReadBoolean()) _ = reader.ReadBytes(16);
-                _ = reader.ReadBytes(16);
-                _ = reader.ReadBytes(16);
-                _ = reader.ReadBytes(16);
-                _ = reader.ReadInt32();
-                _ = read_string(reader);
-                _ = read_string(reader);
-                _ = read_string(reader);
-                _ = reader.ReadBoolean();
-                _ = reader.ReadBoolean();
-                _ = reader.ReadBoolean();
-                _ = reader.ReadInt32();
-                _ = reader.ReadBoolean();
-                _ = reader.ReadBoolean();
-                _ = reader.ReadBoolean();
-                _ = reader.ReadBoolean();
-            }
-
-            int feature_count = reader.ReadInt32();
-            for (int item = 0; item < feature_count; item++)
-            {
-                _ = reader.ReadBytes(16);
-                if (reader.ReadBoolean()) _ = reader.ReadBytes(16);
-                _ = read_string(reader);
-                _ = read_string(reader);
-                _ = reader.ReadBoolean();
-                _ = reader.ReadBoolean();
-                _ = reader.ReadBoolean();
-                _ = reader.ReadBoolean();
-                _ = read_string(reader);
-                _ = reader.ReadInt32();
-                _ = reader.ReadBoolean();
-                _ = reader.ReadBoolean();
-            }
-
-            int source_count = reader.ReadInt32();
-            for (int item = 0; item < source_count; item++)
-            {
-                _ = reader.ReadBytes(16);
-                _ = reader.ReadBytes(16);
-                _ = reader.ReadBytes(16);
-                _ = reader.ReadInt32();
-            }
-            _ = read_int_array(reader);
-            _ = read_int_array(reader);
-            _ = read_float_matrix(reader);
-            _ = read_float_matrix(reader);
-            _ = read_int_array(reader);
-            _ = read_float_matrix(reader);
-            _ = read_float_matrix(reader);
-            _ = read_float_matrix(reader);
-            _ = read_string(reader);
-            skip_legacy_platform_results(reader);
-        }
-    }
-
-    private static void skip_legacy_platform_options(BinaryReader reader)
-    {
-        _ = reader.ReadInt32();
-        _ = reader.ReadInt32();
-        _ = reader.ReadBoolean();
-        _ = reader.ReadBoolean();
-        _ = reader.ReadBoolean();
-        _ = reader.ReadInt32();
-        _ = reader.ReadBoolean();
-        _ = reader.ReadBoolean();
-        _ = reader.ReadBoolean();
-        _ = reader.ReadInt32();
-        _ = reader.ReadDouble();
-        _ = reader.ReadInt32();
-        _ = reader.ReadInt32();
-        _ = reader.ReadDouble();
-        _ = reader.ReadInt32();
-        _ = read_string(reader);
-        _ = reader.ReadDouble();
-        _ = reader.ReadDouble();
-        int parameter_count = reader.ReadInt32();
-        for (int item = 0; item < parameter_count; item++)
-        {
-            _ = read_string(reader);
-            _ = read_string(reader);
-        }
-    }
-
-    private static void skip_legacy_platform_results(BinaryReader reader)
-    {
-        int table_count = reader.ReadInt32();
-        for (int table = 0; table < table_count; table++)
-        {
-            _ = read_string(reader);
-            _ = read_string(reader);
-            _ = read_string_array(reader);
-            int row_count = reader.ReadInt32();
-            for (int row = 0; row < row_count; row++) _ = read_string_array(reader);
-        }
-
-        int series_count = reader.ReadInt32();
-        for (int series = 0; series < series_count; series++)
-        {
-            _ = read_string(reader);
-            _ = read_string(reader);
-            _ = read_string(reader);
-            _ = read_string(reader);
-            _ = read_double_array(reader);
-            _ = read_double_array(reader);
-        }
-
-        int curve_count = reader.ReadInt32();
-        for (int curve = 0; curve < curve_count; curve++)
-        {
-            _ = read_string(reader);
-            _ = read_string(reader);
-            _ = read_string(reader);
-            _ = read_string(reader);
-            _ = reader.ReadInt32();
-            _ = reader.ReadInt32();
-            _ = reader.ReadInt32();
-            _ = read_logicle_parameters(reader);
-            _ = reader.ReadDouble();
-            _ = read_double_array(reader);
-            _ = read_string_array(reader);
-            _ = read_double_array(reader);
-            _ = reader.ReadDouble();
-        }
-
-        int statistic_count = reader.ReadInt32();
-        for (int statistic = 0; statistic < statistic_count; statistic++)
-        {
-            _ = read_string(reader);
-            _ = read_string(reader);
         }
     }
 
@@ -1768,14 +1579,33 @@ public sealed class WorkspaceBinarySerializer
             writer.Write(element.DotColor.AvailableMaximum);
             writer.Write(element.DotColor.RangeMinimum);
             writer.Write(element.DotColor.RangeMaximum);
-            if (element is StatisticTableElement statistic_table)
+            if (element is PageAnnotationElement annotation)
+                writer.Write(annotation.Color.ToUInt32());
+            if (element is PageLineElement line)
+            {
+                writer.Write(line.StrokeWidth);
+                writer.Write((int)line.StrokeStyle);
+                writer.Write((int)line.StartEndStyle);
+                writer.Write((int)line.EndEndStyle);
+                writer.Write(line.StartAtMinimumX);
+                writer.Write(line.StartAtMinimumY);
+            }
+            else if (element is PageTextElement text)
+            {
+                write_string(writer, text.Text);
+                writer.Write(text.FontSize);
+                write_string(writer, text.FontFamily);
+                writer.Write((int)text.FontWeight);
+                writer.Write(text.LineHeightRatio);
+            }
+            else if (element is StatisticTableElement statistic_table)
                 write_statistic_table_columns(writer, workspace, statistic_table);
             else if (element is PlatformStatisticTableElement platform_table)
                 write_platform_table_column_layouts(writer, platform_table);
         }
     }
 
-    private static void read_page_elements(BinaryReader reader, FlowWorkspace workspace, PageLayout layout, int file_version)
+    private static void read_page_elements(BinaryReader reader, FlowWorkspace workspace, PageLayout layout)
     {
         int count = reader.ReadInt32();
         for (int index = 0; index < count; index++)
@@ -1791,7 +1621,6 @@ public sealed class WorkspaceBinarySerializer
             int[] gate_path = [];
             bool has_population = false;
             var population_region = PopulationRegion.Primary;
-            int platform_index_value = -1;
             Guid platform_id = Guid.Empty;
             string platform_plot_key = "";
             if (element_kind == PageElementKind.FlowPlot)
@@ -1807,10 +1636,7 @@ public sealed class WorkspaceBinarySerializer
             }
             else if (element_kind is PageElementKind.PlatformPlot or PageElementKind.PlatformStatisticTable)
             {
-                if (file_version >= 53)
-                    platform_id = new Guid(reader.ReadBytes(16));
-                else
-                    platform_index_value = reader.ReadInt32();
+                platform_id = new Guid(reader.ReadBytes(16));
                 platform_plot_key = read_string(reader);
             }
             else
@@ -1835,25 +1661,16 @@ public sealed class WorkspaceBinarySerializer
             bool show_gate_annotation_names = reader.ReadBoolean();
             int contour_level_count = reader.ReadInt32();
             int density_smoothing = reader.ReadInt32();
-            var density_palette = file_version >= 45
-                ? (PlotColorPalette)reader.ReadInt32()
-                : PlotColorPalette.Turbo;
+            var density_palette = (PlotColorPalette)reader.ReadInt32();
             var x_axis = read_axis_settings(reader);
             var y_axis = read_axis_settings(reader);
             string dot_color_channel = read_string(reader);
             var dot_color_palette = (PlotColorPalette)reader.ReadInt32();
             bool dot_color_use_log_scale = reader.ReadBoolean();
-            double dot_color_available_minimum = 0;
-            double dot_color_available_maximum = 1;
-            double dot_color_range_minimum = 0;
-            double dot_color_range_maximum = 1;
-            if (file_version >= 43)
-            {
-                dot_color_available_minimum = reader.ReadDouble();
-                dot_color_available_maximum = reader.ReadDouble();
-                dot_color_range_minimum = reader.ReadDouble();
-                dot_color_range_maximum = reader.ReadDouble();
-            }
+            double dot_color_available_minimum = reader.ReadDouble();
+            double dot_color_available_maximum = reader.ReadDouble();
+            double dot_color_range_minimum = reader.ReadDouble();
+            double dot_color_range_maximum = reader.ReadDouble();
 
             PagePlotElement element;
             if (element_kind == PageElementKind.FlowPlot)
@@ -1888,9 +1705,7 @@ public sealed class WorkspaceBinarySerializer
             }
             else if (element_kind == PageElementKind.PlatformPlot)
             {
-                var platform = file_version >= 53
-                    ? workspace.Platforms.FirstOrDefault(item => item.Id == platform_id)
-                    : platform_index_value >= 0 && platform_index_value < workspace.Platforms.Count ? workspace.Platforms[platform_index_value] : null;
+                var platform = workspace.Platforms.FirstOrDefault(item => item.Id == platform_id);
                 if (platform is null)
                     continue;
                 element = new PlatformPlotElement
@@ -1906,9 +1721,7 @@ public sealed class WorkspaceBinarySerializer
             }
             else if (element_kind == PageElementKind.PlatformStatisticTable)
             {
-                var platform = file_version >= 53
-                    ? workspace.Platforms.FirstOrDefault(item => item.Id == platform_id)
-                    : platform_index_value >= 0 && platform_index_value < workspace.Platforms.Count ? workspace.Platforms[platform_index_value] : null;
+                var platform = workspace.Platforms.FirstOrDefault(item => item.Id == platform_id);
                 if (platform is null)
                     continue;
                 element = new PlatformStatisticTableElement
@@ -1917,6 +1730,28 @@ public sealed class WorkspaceBinarySerializer
                     ParentElementId = parent_element_id,
                     Platform = platform,
                     OutputKey = platform_plot_key,
+                    XAxis = x_axis,
+                    YAxis = y_axis,
+                    DotColor = create_dot_color_settings(dot_color_channel, dot_color_palette, dot_color_use_log_scale, dot_color_available_minimum, dot_color_available_maximum, dot_color_range_minimum, dot_color_range_maximum)
+                };
+            }
+            else if (element_kind == PageElementKind.LineAnnotation)
+            {
+                element = new PageLineElement
+                {
+                    Id = element_id,
+                    ParentElementId = parent_element_id,
+                    XAxis = x_axis,
+                    YAxis = y_axis,
+                    DotColor = create_dot_color_settings(dot_color_channel, dot_color_palette, dot_color_use_log_scale, dot_color_available_minimum, dot_color_available_maximum, dot_color_range_minimum, dot_color_range_maximum)
+                };
+            }
+            else if (element_kind == PageElementKind.TextAnnotation)
+            {
+                element = new PageTextElement
+                {
+                    Id = element_id,
+                    ParentElementId = parent_element_id,
                     XAxis = x_axis,
                     YAxis = y_axis,
                     DotColor = create_dot_color_settings(dot_color_channel, dot_color_palette, dot_color_use_log_scale, dot_color_available_minimum, dot_color_available_maximum, dot_color_range_minimum, dot_color_range_maximum)
@@ -1937,8 +1772,6 @@ public sealed class WorkspaceBinarySerializer
             element.X = x;
             element.Y = y;
             element.Size = size;
-            element.Width = width;
-            element.Height = height;
             element.Title = title;
             element.PlotMode = plot_mode;
             element.ShowGridlines = show_gridlines;
@@ -1952,11 +1785,35 @@ public sealed class WorkspaceBinarySerializer
             element.ContourLevelCount = contour_level_count;
             element.DensitySmoothing = density_smoothing;
             element.DensityPalette = density_palette;
-            initialize_dot_color_range(element, reset_selection: file_version < 43);
-            if (element is StatisticTableElement statistic_table)
+            initialize_dot_color_range(element, reset_selection: false);
+            if (element is PageAnnotationElement annotation)
+                annotation.Color = Color.FromUInt32(reader.ReadUInt32());
+            if (element is PageLineElement line)
+            {
+                line.StrokeWidth = reader.ReadDouble();
+                line.StrokeStyle = (PageLineStrokeStyle)reader.ReadInt32();
+                line.StartEndStyle = (PageLineEndStyle)reader.ReadInt32();
+                line.EndEndStyle = (PageLineEndStyle)reader.ReadInt32();
+                line.StartAtMinimumX = reader.ReadBoolean();
+                line.StartAtMinimumY = reader.ReadBoolean();
+            }
+            else if (element is PageTextElement text)
+            {
+                text.Text = read_string(reader);
+                text.FontSize = reader.ReadDouble();
+                text.FontFamily = read_string(reader);
+                text.FontWeight = (PageTextWeight)reader.ReadInt32();
+                text.LineHeightRatio = reader.ReadDouble();
+            }
+            else if (element is StatisticTableElement statistic_table)
                 read_statistic_table_columns(reader, workspace, statistic_table);
-            else if (element is PlatformStatisticTableElement platform_table && file_version >= 54)
+            else if (element is PlatformStatisticTableElement platform_table)
                 read_platform_table_column_layouts(reader, platform_table);
+            // Table width is constrained by its visible column layout. Restore that
+            // layout before applying the persisted dimensions so hidden columns do
+            // not force the element back to its full default width.
+            element.Width = width;
+            element.Height = height;
             layout.Elements.Add(element);
         }
         workspace.PageLayouts.Add(layout);
@@ -2315,8 +2172,7 @@ public sealed class WorkspaceBinarySerializer
                 reader.ReadDouble(),
                 reader.ReadDouble())
         };
-        if (reading_version >= 46)
-            scale.ArcsinhCofactor = reader.ReadDouble();
+        scale.ArcsinhCofactor = reader.ReadDouble();
         return scale;
     }
 

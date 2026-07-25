@@ -17,6 +17,14 @@
     <StaticResource x:Key="ButtonDefaultPressedBorderBrush" ResourceKey="AppBrushTheme5" />
     <StaticResource x:Key="ButtonDefaultFocusBorderBrush" ResourceKey="AppBrushTheme4" />
     <StaticResource x:Key="ButtonDefaultDisabledBorderBrush" ResourceKey="SemiColorDisabledBorder" />
+    <StaticResource x:Key="ButtonDangerBackground" ResourceKey="SemiColorDangerLight" />
+    <StaticResource x:Key="ButtonDangerPointeroverBackground" ResourceKey="SemiColorDangerLightPointerover" />
+    <StaticResource x:Key="ButtonDangerPressedBackground" ResourceKey="SemiColorDangerLightActive" />
+    <StaticResource x:Key="ButtonDangerFocusBackground" ResourceKey="SemiColorDangerLightPointerover" />
+    <StaticResource x:Key="ButtonDangerBorderBrush" ResourceKey="SemiColorDanger" />
+    <StaticResource x:Key="ButtonDangerPointeroverBorderBrush" ResourceKey="SemiColorDangerPointerover" />
+    <StaticResource x:Key="ButtonDangerPressedBorderBrush" ResourceKey="SemiColorDangerActive" />
+    <StaticResource x:Key="ButtonDangerFocusBorderBrush" ResourceKey="SemiColorDanger" />
     <!--  end Light  -->
     <!--  Solid  -->
     <StaticResource x:Key="ButtonSolidForeground" ResourceKey="SemiColorWhite" />

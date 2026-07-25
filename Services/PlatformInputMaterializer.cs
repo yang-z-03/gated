@@ -345,7 +345,12 @@ public sealed class PlatformInputMaterializer
         foreach (var series in job.PlotSeries)
             job.Series[series.Key] = series;
         foreach (var curve in job.FitCurves)
-            job.Models[curve.Key] = curve;
+        {
+            if (curve.Role == PlatformSeriesRole.Component)
+                job.Components[curve.Key] = [curve];
+            else
+                job.Models[curve.Key] = curve;
+        }
     }
 
     private static float[,]? transformed_matrix(Platform job)

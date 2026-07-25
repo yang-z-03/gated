@@ -17,6 +17,7 @@ using Avalonia.Controls.Documents;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using Avalonia.Media.TextFormatting;
 using Avalonia.Platform;
 using Avalonia.Threading;
 using gated.Models;
@@ -47,6 +48,9 @@ public sealed class PageEditorView : Control
     public static readonly StyledProperty<ICommand?> AddElementCommandProperty =
         AvaloniaProperty.Register<PageEditorView, ICommand?>(nameof(AddElementCommand));
 
+    public static readonly StyledProperty<PageEditorTool> ActiveToolProperty =
+        AvaloniaProperty.Register<PageEditorView, PageEditorTool>(nameof(ActiveTool), PageEditorTool.Select);
+
     public static readonly StyledProperty<Size> ViewportSizeProperty =
         AvaloniaProperty.Register<PageEditorView, Size>(nameof(ViewportSize));
 
@@ -72,9 +76,14 @@ public sealed class PageEditorView : Control
     private const double a4_height = 1122.5;
     private const double table_row_height = 20;
     private const double table_column_resize_tolerance = 4;
+    private const double text_annotation_padding = 8;
     private static readonly Cursor table_column_resize_cursor = new(StandardCursorType.SizeWestEast);
     private static readonly Cursor default_cursor = new(StandardCursorType.Arrow);
+    private static readonly Cursor annotation_cursor = new(StandardCursorType.Cross);
     private PagePlotElement? captured_element;
+    private bool drawing_annotation;
+    private Point annotation_start_page;
+    private Point annotation_end_page;
     private PlatformStatisticTableElement? resized_table_element;
     private int resized_table_source_index = -1;
     private double resized_table_start_width;
@@ -139,6 +148,12 @@ public sealed class PageEditorView : Control
         set => SetValue(AddElementCommandProperty, value);
     }
 
+    public PageEditorTool ActiveTool
+    {
+        get => GetValue(ActiveToolProperty);
+        set => SetValue(ActiveToolProperty, value);
+    }
+
     public Size ViewportSize
     {
         get => GetValue(ViewportSizeProperty);
@@ -164,12 +179,15 @@ public sealed class PageEditorView : Control
         {
             foreach (var element in PageElements)
                 draw_page_element(context, element);
+            if (drawing_annotation)
+                draw_annotation_preview(context);
             draw_snap_guides(context, new Rect(scroll_offset.X, scroll_offset.Y, bounds.Width, bounds.Height));
-            if (SelectedElement is not null)
-                draw_selection_border(context, SelectedElement);
             draw_a4_grid(context, workspace_size());
             if (SelectedElement is not null)
+            {
+                draw_selection_border(context, SelectedElement);
                 draw_resize_grips(context, SelectedElement);
+            }
         }
         draw_manual_scrollbars(context, bounds);
     }
@@ -265,6 +283,17 @@ public sealed class PageEditorView : Control
             update_workspace_size();
         if (change.Property == RefreshRevisionProperty)
             clear_render_caches();
+        if (change.Property == ActiveToolProperty)
+        {
+            if (drawing_annotation)
+            {
+                drawing_annotation = false;
+                InvalidateVisual();
+            }
+            Cursor = ActiveTool is PageEditorTool.Line or PageEditorTool.Text
+                ? annotation_cursor
+                : default_cursor;
+        }
     }
 
     protected override void OnAttachedToVisualTree(Avalonia.VisualTreeAttachmentEventArgs e)
@@ -282,10 +311,30 @@ public sealed class PageEditorView : Control
             return;
 
         var point = to_page_point(viewport_point);
-        var element = PageElements.LastOrDefault(item => item.Bounds.Contains(point));
+        if (ActiveTool is PageEditorTool.Line or PageEditorTool.Text &&
+            e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+        {
+            drawing_annotation = true;
+            annotation_start_page = point;
+            annotation_end_page = point;
+            SelectedElement = null;
+            e.Pointer.Capture(this);
+            e.Handled = true;
+            InvalidateVisual();
+            return;
+        }
+
+        var element = SelectedElement is not null && resize_corner_at(SelectedElement, point) != ResizeCorner.None
+            ? SelectedElement
+            : PageElements.LastOrDefault(item => hit_test_element(item, point));
         SelectedElement = element;
         if (element is null)
         {
+            ContextMenu = null;
+            if (e.GetCurrentPoint(this).Properties.IsRightButtonPressed)
+            {
+                e.Handled = true;
+            }
             InvalidateVisual();
             return;
         }
@@ -339,6 +388,13 @@ public sealed class PageEditorView : Control
 
         var viewport_point = e.GetPosition(this);
         var point = to_page_point(viewport_point);
+        if (drawing_annotation)
+        {
+            annotation_end_page = point;
+            InvalidateVisual();
+            e.Handled = true;
+            return;
+        }
         if (resized_table_element is not null)
         {
             double requested_width = resized_table_start_width + point.X - drag_start_page.X;
@@ -352,7 +408,9 @@ public sealed class PageEditorView : Control
 
         if (captured_element is null)
         {
-            Cursor = table_column_boundary_at(point) ? table_column_resize_cursor : default_cursor;
+            Cursor = ActiveTool is PageEditorTool.Line or PageEditorTool.Text
+                ? annotation_cursor
+                : table_column_boundary_at(point) ? table_column_resize_cursor : default_cursor;
             return;
         }
 
@@ -387,6 +445,22 @@ public sealed class PageEditorView : Control
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
         base.OnPointerReleased(e);
+        if (drawing_annotation)
+        {
+            drawing_annotation = false;
+            annotation_end_page = to_page_point(e.GetPosition(this));
+            var kind = ActiveTool == PageEditorTool.Line
+                ? PageElementKind.LineAnnotation
+                : PageElementKind.TextAnnotation;
+            var request = new PageAnnotationRequest(kind, annotation_start_page, annotation_end_page);
+            if (AddElementCommand?.CanExecute(request) == true)
+                AddElementCommand.Execute(request);
+            e.Pointer.Capture(null);
+            e.Handled = true;
+            update_content_extent();
+            InvalidateVisual();
+            return;
+        }
         captured_element = null;
         resized_table_element = null;
         resized_table_source_index = -1;
@@ -405,7 +479,7 @@ public sealed class PageEditorView : Control
     {
         base.OnPointerExited(e);
         if (captured_element is null && resized_table_element is null && scroll_drag_kind == ScrollDragKind.None)
-            Cursor = default_cursor;
+            Cursor = ActiveTool is PageEditorTool.Line or PageEditorTool.Text ? annotation_cursor : default_cursor;
     }
 
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
@@ -445,6 +519,18 @@ public sealed class PageEditorView : Control
         foreach (var element in PageElements)
         {
             svg.AppendLine($"""<g transform="translate({element.X.ToString(CultureInfo.InvariantCulture)} {element.Y.ToString(CultureInfo.InvariantCulture)})">""");
+            if (element is PageLineElement line_annotation)
+            {
+                append_svg_line_annotation(svg, line_annotation);
+                svg.AppendLine("</g>");
+                continue;
+            }
+            if (element is PageTextElement text_annotation)
+            {
+                append_svg_text_annotation(svg, text_annotation);
+                svg.AppendLine("</g>");
+                continue;
+            }
             svg.AppendLine($"""<rect width="{element.Width.ToString(CultureInfo.InvariantCulture)}" height="{element.Height.ToString(CultureInfo.InvariantCulture)}" fill="white"/>""");
             if (element.ElementKind == PageElementKind.FlowPlot)
             {
@@ -466,25 +552,316 @@ public sealed class PageEditorView : Control
         System.IO.File.WriteAllText(file_path, svg.ToString());
     }
 
+    private static void append_svg_line_annotation(StringBuilder svg, PageLineElement element)
+    {
+        var (absolute_start, absolute_end) = line_endpoints(element);
+        var start = absolute_start - new Vector(element.X, element.Y);
+        var end = absolute_end - new Vector(element.X, element.Y);
+        string color = svg_color(element.Color);
+        string dash = element.StrokeStyle switch
+        {
+            PageLineStrokeStyle.Dash => " stroke-dasharray=\"8 5\"",
+            PageLineStrokeStyle.Dot => " stroke-dasharray=\"2 4\"",
+            PageLineStrokeStyle.DashDot => " stroke-dasharray=\"8 4 2 4\"",
+            _ => ""
+        };
+        if (try_line_shaft(start, end, element.StartEndStyle, element.EndEndStyle, element.StrokeWidth, out var shaft_start, out var shaft_end))
+            svg.AppendLine($"""<line x1="{svg_number(shaft_start.X)}" y1="{svg_number(shaft_start.Y)}" x2="{svg_number(shaft_end.X)}" y2="{svg_number(shaft_end.Y)}" stroke="{color}" stroke-opacity="{svg_opacity(element.Color)}" stroke-width="{svg_number(element.StrokeWidth)}" stroke-linecap="round"{dash}/>""");
+        append_svg_line_end(svg, start, end, element.StartEndStyle, element.StrokeWidth, element.Color);
+        append_svg_line_end(svg, end, start, element.EndEndStyle, element.StrokeWidth, element.Color);
+    }
+
+    private static void append_svg_line_end(StringBuilder svg, Point tip, Point other, PageLineEndStyle style, double stroke_width, Color color)
+    {
+        if (style == PageLineEndStyle.None)
+            return;
+
+        var direction = tip - other;
+        double length = Math.Sqrt(direction.X * direction.X + direction.Y * direction.Y);
+        if (length < 0.01)
+            return;
+        var unit = direction / length;
+        var normal = new Vector(-unit.Y, unit.X);
+        double size = line_end_size(stroke_width);
+        string fill = $"fill=\"{svg_color(color)}\" fill-opacity=\"{svg_opacity(color)}\"";
+        if (style == PageLineEndStyle.Circle)
+        {
+            svg.AppendLine($"<circle cx=\"{svg_number(tip.X)}\" cy=\"{svg_number(tip.Y)}\" r=\"{svg_number(size * 0.42)}\" {fill}/>");
+            return;
+        }
+
+        Point[] points = line_end_polygon(tip, unit, normal, style, stroke_width, size);
+        string point_text = string.Join(" ", points.Select(point => $"{svg_number(point.X)},{svg_number(point.Y)}"));
+        svg.AppendLine($"<polygon points=\"{point_text}\" {fill}/>");
+    }
+
+    private static void append_svg_text_annotation(StringBuilder svg, PageTextElement element)
+    {
+        string id = $"clip-{element.Id:N}";
+        string weight = element.FontWeight switch
+        {
+            PageTextWeight.Light => "300",
+            PageTextWeight.Medium => "500",
+            PageTextWeight.SemiBold => "600",
+            PageTextWeight.Bold => "700",
+            PageTextWeight.Black => "900",
+            _ => "400"
+        };
+        svg.AppendLine($"""<defs><clipPath id="{id}"><rect width="{svg_number(element.Width)}" height="{svg_number(element.Height)}"/></clipPath></defs>""");
+        svg.AppendLine($"""<text clip-path="url(#{id})" xml:space="preserve" font-family="{escape_xml(element.FontFamily)}" font-size="{svg_number(element.FontSize)}" font-weight="{weight}" fill="{svg_color(element.Color)}" fill-opacity="{svg_opacity(element.Color)}">""");
+        var content_bounds = text_annotation_bounds(new Rect(0, 0, element.Width, element.Height));
+        using var text_layout = text_layout_annotation(element, content_bounds);
+        double line_top = content_bounds.Top;
+        foreach (var line in text_layout.TextLines)
+        {
+            int start = Math.Clamp(line.FirstTextSourceIndex, 0, element.Text.Length);
+            int length = Math.Clamp(line.Length - line.NewLineLength, 0, element.Text.Length - start);
+            string text = element.Text.Substring(start, length);
+            if (line.HasCollapsed && !text.EndsWith('…'))
+                text = text.TrimEnd() + "…";
+            svg.AppendLine($"<tspan x=\"{svg_number(content_bounds.Left)}\" y=\"{svg_number(line_top + line.Baseline)}\">{escape_xml(text)}</tspan>");
+            line_top += line.Height;
+        }
+        svg.AppendLine("</text>");
+    }
+
+    private static string svg_color(Color color) => $"#{color.R:X2}{color.G:X2}{color.B:X2}";
+    private static string svg_opacity(Color color) => (color.A / 255.0).ToString("0.###", CultureInfo.InvariantCulture);
+    private static string svg_number(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
+
     private void draw_page_element(DrawingContext context, PagePlotElement element)
     {
+        if (element is PageLineElement line)
+        {
+            draw_line_annotation(context, line);
+            return;
+        }
+        if (element is PageTextElement text)
+        {
+            draw_text_annotation(context, text);
+            return;
+        }
+
         var bounds = element.Bounds;
         var bitmap = get_element_bitmap(element);
         context.DrawImage(bitmap, sourceRect: new(0, 0, bitmap.PixelSize.Width, bitmap.PixelSize.Height), destRect: bounds);
     }
 
-    private static void draw_selection_border(DrawingContext context, PagePlotElement element)
+    private void draw_annotation_preview(DrawingContext context)
+    {
+        if (ActiveTool == PageEditorTool.Line)
+        {
+            var pen = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("PlotTheme4")), 2, DashStyle.Dash);
+            context.DrawLine(pen, annotation_start_page, annotation_end_page);
+            return;
+        }
+
+        if (ActiveTool == PageEditorTool.Text)
+        {
+            var preview = make_rect(annotation_start_page, annotation_end_page);
+            if (preview.Width < 24 || preview.Height < 16)
+                preview = new Rect(annotation_start_page, new Size(220, 48));
+            var pen = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("PlotTheme4")), 1, DashStyle.Dash);
+            context.DrawRectangle(null, pen, preview);
+        }
+    }
+
+    private static void draw_line_annotation(DrawingContext context, PageLineElement element)
+    {
+        var (start, end) = line_endpoints(element);
+        var brush = new SolidColorBrush(element.Color);
+        var pen = new Pen(brush, element.StrokeWidth, line_dash_style(element.StrokeStyle), lineCap: PenLineCap.Round);
+        if (try_line_shaft(start, end, element.StartEndStyle, element.EndEndStyle, element.StrokeWidth, out var shaft_start, out var shaft_end))
+            context.DrawLine(pen, shaft_start, shaft_end);
+        draw_line_end(context, start, end, element.StartEndStyle, element.StrokeWidth, brush);
+        draw_line_end(context, end, start, element.EndEndStyle, element.StrokeWidth, brush);
+    }
+
+    private static void draw_text_annotation(DrawingContext context, PageTextElement element)
     {
         var bounds = element.Bounds;
-        var selection_pen = new Pen(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("PlotTheme4")), 1.5);
-        context.DrawRectangle(null, selection_pen, bounds);
+        var content_bounds = text_annotation_bounds(bounds);
+        using var text_layout = text_layout_annotation(element, content_bounds);
+        using (context.PushClip(bounds))
+            text_layout.Draw(context, content_bounds.TopLeft);
+    }
+
+    private static Rect text_annotation_bounds(Rect bounds) =>
+        new(
+            bounds.X + text_annotation_padding,
+            bounds.Y + text_annotation_padding,
+            Math.Max(1, bounds.Width - text_annotation_padding * 2),
+            Math.Max(1, bounds.Height - text_annotation_padding * 2));
+
+    private static TextLayout text_layout_annotation(PageTextElement element, Rect bounds) =>
+        new(
+            element.Text,
+            new Typeface(annotation_font_family(element.FontFamily), FontStyle.Normal, annotation_font_weight(element.FontWeight)),
+            element.FontSize,
+            new SolidColorBrush(element.Color),
+            textWrapping: TextWrapping.Wrap,
+            textTrimming: TextTrimming.CharacterEllipsis,
+            maxWidth: Math.Max(1, bounds.Width),
+            maxHeight: Math.Max(1, bounds.Height),
+            lineHeight: element.FontSize * element.LineHeightRatio);
+
+    private static (Point Start, Point End) line_endpoints(PageLineElement element)
+    {
+        var bounds = element.Bounds;
+        bool horizontal = bounds.Height <= 8.1;
+        bool vertical = bounds.Width <= 8.1;
+        double start_x = vertical ? bounds.Center.X : element.StartAtMinimumX ? bounds.Left : bounds.Right;
+        double end_x = vertical ? bounds.Center.X : element.StartAtMinimumX ? bounds.Right : bounds.Left;
+        double start_y = horizontal ? bounds.Center.Y : element.StartAtMinimumY ? bounds.Top : bounds.Bottom;
+        double end_y = horizontal ? bounds.Center.Y : element.StartAtMinimumY ? bounds.Bottom : bounds.Top;
+        return (new Point(start_x, start_y), new Point(end_x, end_y));
+    }
+
+    private static IDashStyle? line_dash_style(PageLineStrokeStyle style) => style switch
+    {
+        PageLineStrokeStyle.Dash => DashStyle.Dash,
+        PageLineStrokeStyle.Dot => DashStyle.Dot,
+        PageLineStrokeStyle.DashDot => DashStyle.DashDot,
+        _ => null
+    };
+
+    private static bool try_line_shaft(
+        Point start,
+        Point end,
+        PageLineEndStyle start_style,
+        PageLineEndStyle end_style,
+        double stroke_width,
+        out Point shaft_start,
+        out Point shaft_end)
+    {
+        var direction = end - start;
+        double length = Math.Sqrt(direction.X * direction.X + direction.Y * direction.Y);
+        if (length < 0.01)
+        {
+            shaft_start = start;
+            shaft_end = end;
+            return false;
+        }
+
+        var unit = direction / length;
+        double start_inset = line_end_inset(start_style, stroke_width);
+        double end_inset = line_end_inset(end_style, stroke_width);
+        if (start_inset + end_inset >= length)
+        {
+            shaft_start = start + unit * (length / 2);
+            shaft_end = shaft_start;
+            return false;
+        }
+
+        shaft_start = start + unit * start_inset;
+        shaft_end = end - unit * end_inset;
+        return true;
+    }
+
+    private static double line_end_inset(PageLineEndStyle style, double stroke_width)
+    {
+        if (style == PageLineEndStyle.None)
+            return 0;
+        double marker_depth = style switch
+        {
+            PageLineEndStyle.Circle => line_end_size(stroke_width) * 0.42,
+            PageLineEndStyle.Arrow => line_end_size(stroke_width) + arrow_connector_length(stroke_width),
+            _ => line_end_size(stroke_width)
+        };
+        // The arrow owns a shaft-width connector. Center the round line cap on
+        // its outer edge so antialiasing cannot leave a pinched, one-pixel neck.
+        return style == PageLineEndStyle.Arrow ? marker_depth : marker_depth + stroke_width / 2;
+    }
+
+    private static double line_end_size(double stroke_width) => Math.Max(7, stroke_width * 3.5);
+    private static double arrow_connector_length(double stroke_width) => Math.Max(3, stroke_width * 1.25);
+
+    private static Point[] line_end_polygon(
+        Point tip,
+        Vector unit,
+        Vector normal,
+        PageLineEndStyle style,
+        double stroke_width,
+        double size)
+    {
+        if (style == PageLineEndStyle.Diamond)
+            return [tip, tip - unit * size * 0.5 + normal * size * 0.38, tip - unit * size, tip - unit * size * 0.5 - normal * size * 0.38];
+
+        var arrow_base = tip - unit * size;
+        var connector_end = arrow_base - unit * arrow_connector_length(stroke_width);
+        var shaft_half_width = normal * (stroke_width / 2);
+        return
+        [
+            tip,
+            arrow_base + normal * size * 0.48,
+            arrow_base + shaft_half_width,
+            connector_end + shaft_half_width,
+            connector_end - shaft_half_width,
+            arrow_base - shaft_half_width,
+            arrow_base - normal * size * 0.48
+        ];
+    }
+
+    private static void draw_line_end(DrawingContext context, Point tip, Point other, PageLineEndStyle style, double stroke_width, IBrush brush)
+    {
+        if (style == PageLineEndStyle.None)
+            return;
+        var direction = tip - other;
+        double length = Math.Sqrt(direction.X * direction.X + direction.Y * direction.Y);
+        if (length < 0.01)
+            return;
+        var unit = direction / length;
+        var normal = new Vector(-unit.Y, unit.X);
+        double size = line_end_size(stroke_width);
+        if (style == PageLineEndStyle.Circle)
+        {
+            context.DrawEllipse(brush, null, tip, size * 0.42, size * 0.42);
+            return;
+        }
+
+        var geometry = new StreamGeometry();
+        using var path = geometry.Open();
+        var points = line_end_polygon(tip, unit, normal, style, stroke_width, size);
+        path.BeginFigure(points[0], true);
+        foreach (var point in points.Skip(1))
+            path.LineTo(point);
+        path.EndFigure(true);
+        context.DrawGeometry(brush, null, geometry);
+    }
+
+    private static FontFamily annotation_font_family(string value)
+    {
+        try
+        {
+            return FontFamily.Parse(value);
+        }
+        catch
+        {
+            return FontFamily.Default;
+        }
+    }
+
+    private static FontWeight annotation_font_weight(PageTextWeight value) => value switch
+    {
+        PageTextWeight.Light => FontWeight.Light,
+        PageTextWeight.Medium => FontWeight.Medium,
+        PageTextWeight.SemiBold => FontWeight.SemiBold,
+        PageTextWeight.Bold => FontWeight.Bold,
+        PageTextWeight.Black => FontWeight.Black,
+        _ => FontWeight.Normal
+    };
+
+    private static void draw_selection_border(DrawingContext context, PagePlotElement element)
+    {
+        var selection_pen = new Pen(Brushes.Black, 1, DashStyle.Dot, PenLineCap.Round);
+        context.DrawRectangle(null, selection_pen, element.Bounds);
     }
 
     private static void draw_resize_grips(DrawingContext context, PagePlotElement element)
     {
-        var grip_brush = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("PlotTheme4"));
+        var grip_pen = new Pen(Brushes.Black, 1);
         foreach (var handle in resize_handle_rects(element))
-            context.FillRectangle(grip_brush, handle);
+            context.DrawRectangle(Brushes.White, grip_pen, handle);
     }
 
     private void draw_page_element_content(DrawingContext context, PagePlotElement element, Rect bounds)
@@ -1755,27 +2132,49 @@ public sealed class PageEditorView : Control
         active_vertical_snap_guide = null;
         active_horizontal_snap_guide = null;
         double size = Math.Max(Math.Max(element.MinimumWidth, element.MinimumHeight), requested);
+        double best_distance = 6.01;
         foreach (var other in PageElements.Where(item => !ReferenceEquals(item, element)))
         {
-            if (Math.Abs(element.X + size - other.X) <= 6)
+            foreach (double guide in new[] { other.X, other.X + other.Width })
             {
-                size = other.X - element.X;
-                active_vertical_snap_guide = other.X;
+                double moving_edge = moves_left(resize_corner)
+                    ? drag_start_x + drag_start_size - size
+                    : drag_start_x + size;
+                double distance = Math.Abs(moving_edge - guide);
+                if ((moves_left(resize_corner) || moves_right(resize_corner)) && distance < best_distance)
+                {
+                    double candidate = moves_left(resize_corner)
+                        ? drag_start_x + drag_start_size - guide
+                        : guide - drag_start_x;
+                    if (candidate >= Math.Max(element.MinimumWidth, element.MinimumHeight))
+                    {
+                        size = candidate;
+                        best_distance = distance;
+                        active_vertical_snap_guide = guide;
+                        active_horizontal_snap_guide = null;
+                    }
+                }
             }
-            if (Math.Abs(element.Y + size - other.Y) <= 6)
+
+            foreach (double guide in new[] { other.Y, other.Y + other.Height })
             {
-                size = other.Y - element.Y;
-                active_horizontal_snap_guide = other.Y;
-            }
-            if (Math.Abs(element.X + size - (other.X + other.Width)) <= 6)
-            {
-                size = other.X + other.Width - element.X;
-                active_vertical_snap_guide = other.X + other.Width;
-            }
-            if (Math.Abs(element.Y + size - (other.Y + other.Height)) <= 6)
-            {
-                size = other.Y + other.Height - element.Y;
-                active_horizontal_snap_guide = other.Y + other.Height;
+                double moving_edge = moves_top(resize_corner)
+                    ? drag_start_y + drag_start_size - size
+                    : drag_start_y + size;
+                double distance = Math.Abs(moving_edge - guide);
+                if ((moves_top(resize_corner) || moves_bottom(resize_corner)) && distance < best_distance)
+                {
+                    double candidate = moves_top(resize_corner)
+                        ? drag_start_y + drag_start_size - guide
+                        : guide - drag_start_y;
+                    if (candidate >= Math.Max(element.MinimumWidth, element.MinimumHeight))
+                    {
+                        size = candidate;
+                        best_distance = distance;
+                        active_horizontal_snap_guide = guide;
+                        active_vertical_snap_guide = null;
+                    }
+                }
             }
         }
         return size;
@@ -1789,25 +2188,32 @@ public sealed class PageEditorView : Control
         double height = Math.Max(element.MinimumHeight, requested.Height);
         foreach (var other in PageElements.Where(item => !ReferenceEquals(item, element)))
         {
-            if (Math.Abs(element.X + width - other.X) <= 6)
+            foreach (double guide in new[] { other.X, other.X + other.Width })
             {
-                width = other.X - element.X;
-                active_vertical_snap_guide = other.X;
+                double moving_edge = moves_left(resize_corner)
+                    ? drag_start_x + drag_start_width - width
+                    : drag_start_x + width;
+                if ((moves_left(resize_corner) || moves_right(resize_corner)) && Math.Abs(moving_edge - guide) <= 6)
+                {
+                    width = moves_left(resize_corner)
+                        ? drag_start_x + drag_start_width - guide
+                        : guide - drag_start_x;
+                    active_vertical_snap_guide = guide;
+                }
             }
-            if (Math.Abs(element.X + width - (other.X + other.Width)) <= 6)
+
+            foreach (double guide in new[] { other.Y, other.Y + other.Height })
             {
-                width = other.X + other.Width - element.X;
-                active_vertical_snap_guide = other.X + other.Width;
-            }
-            if (Math.Abs(element.Y + height - other.Y) <= 6)
-            {
-                height = other.Y - element.Y;
-                active_horizontal_snap_guide = other.Y;
-            }
-            if (Math.Abs(element.Y + height - (other.Y + other.Height)) <= 6)
-            {
-                height = other.Y + other.Height - element.Y;
-                active_horizontal_snap_guide = other.Y + other.Height;
+                double moving_edge = moves_top(resize_corner)
+                    ? drag_start_y + drag_start_height - height
+                    : drag_start_y + height;
+                if ((moves_top(resize_corner) || moves_bottom(resize_corner)) && Math.Abs(moving_edge - guide) <= 6)
+                {
+                    height = moves_top(resize_corner)
+                        ? drag_start_y + drag_start_height - guide
+                        : guide - drag_start_y;
+                    active_horizontal_snap_guide = guide;
+                }
             }
         }
 
@@ -1818,12 +2224,16 @@ public sealed class PageEditorView : Control
     {
         double dx = point.X - drag_start_page.X;
         double dy = point.Y - drag_start_page.Y;
-        double width = resize_corner is ResizeCorner.TopLeft or ResizeCorner.BottomLeft
+        double width = moves_left(resize_corner)
             ? drag_start_width - dx
-            : drag_start_width + dx;
-        double height = resize_corner is ResizeCorner.TopLeft or ResizeCorner.TopRight
+            : moves_right(resize_corner) ? drag_start_width + dx : drag_start_width;
+        double height = moves_top(resize_corner)
             ? drag_start_height - dy
-            : drag_start_height + dy;
+            : moves_bottom(resize_corner) ? drag_start_height + dy : drag_start_height;
+        if (moves_left(resize_corner))
+            width = Math.Min(width, drag_start_x + drag_start_width);
+        if (moves_top(resize_corner))
+            height = Math.Min(height, drag_start_y + drag_start_height);
         return new Size(Math.Max(element.MinimumWidth, width), Math.Max(element.MinimumHeight, height));
     }
 
@@ -1831,33 +2241,72 @@ public sealed class PageEditorView : Control
     {
         double dx = point.X - drag_start_page.X;
         double dy = point.Y - drag_start_page.Y;
-        double width = resize_corner is ResizeCorner.TopLeft or ResizeCorner.BottomLeft
+        double width = moves_left(resize_corner)
             ? drag_start_size - dx
-            : drag_start_size + dx;
-        double height = resize_corner is ResizeCorner.TopLeft or ResizeCorner.TopRight
+            : moves_right(resize_corner) ? drag_start_size + dx : double.NegativeInfinity;
+        double height = moves_top(resize_corner)
             ? drag_start_size - dy
-            : drag_start_size + dy;
-        return Math.Max(width, height);
+            : moves_bottom(resize_corner) ? drag_start_size + dy : double.NegativeInfinity;
+        double requested = Math.Max(width, height);
+        if (moves_left(resize_corner))
+            requested = Math.Min(requested, drag_start_x + drag_start_size);
+        if (moves_top(resize_corner))
+            requested = Math.Min(requested, drag_start_y + drag_start_size);
+        return requested;
     }
 
     private void apply_resized_rect(PagePlotElement element, Size size)
     {
-        if (resize_corner is ResizeCorner.TopLeft or ResizeCorner.BottomLeft)
+        if (moves_left(resize_corner))
             element.X = Math.Max(0, drag_start_x + drag_start_width - size.Width);
-        if (resize_corner is ResizeCorner.TopLeft or ResizeCorner.TopRight)
+        if (moves_top(resize_corner))
             element.Y = Math.Max(0, drag_start_y + drag_start_height - size.Height);
     }
 
     private void apply_resized_square(PagePlotElement element)
     {
-        if (resize_corner is ResizeCorner.TopLeft or ResizeCorner.BottomLeft)
+        if (moves_left(resize_corner))
             element.X = Math.Max(0, drag_start_x + drag_start_size - element.Size);
-        if (resize_corner is ResizeCorner.TopLeft or ResizeCorner.TopRight)
+        if (moves_top(resize_corner))
             element.Y = Math.Max(0, drag_start_y + drag_start_size - element.Size);
     }
 
+    private static bool moves_left(ResizeCorner handle) =>
+        handle is ResizeCorner.TopLeft or ResizeCorner.Left or ResizeCorner.BottomLeft;
+
+    private static bool moves_right(ResizeCorner handle) =>
+        handle is ResizeCorner.TopRight or ResizeCorner.Right or ResizeCorner.BottomRight;
+
+    private static bool moves_top(ResizeCorner handle) =>
+        handle is ResizeCorner.TopLeft or ResizeCorner.Top or ResizeCorner.TopRight;
+
+    private static bool moves_bottom(ResizeCorner handle) =>
+        handle is ResizeCorner.BottomLeft or ResizeCorner.Bottom or ResizeCorner.BottomRight;
+
     private static bool is_free_aspect_element(PagePlotElement element) =>
-        element.ElementKind is PageElementKind.PlatformPlot or PageElementKind.StatisticTable or PageElementKind.PlatformStatisticTable;
+        element.ElementKind is PageElementKind.PlatformPlot
+            or PageElementKind.StatisticTable
+            or PageElementKind.PlatformStatisticTable
+            or PageElementKind.LineAnnotation
+            or PageElementKind.TextAnnotation;
+
+    private static bool hit_test_element(PagePlotElement element, Point point)
+    {
+        if (element is not PageLineElement line)
+            return element.Bounds.Contains(point);
+        var (start, end) = line_endpoints(line);
+        var segment = end - start;
+        double length_squared = segment.X * segment.X + segment.Y * segment.Y;
+        if (length_squared < 0.01)
+            return point_distance(point, start) <= Math.Max(6, line.StrokeWidth + 3);
+        var from_start = point - start;
+        double t = Math.Clamp((from_start.X * segment.X + from_start.Y * segment.Y) / length_squared, 0, 1);
+        var nearest = start + segment * t;
+        return point_distance(point, nearest) <= Math.Max(6, line.StrokeWidth + 3);
+    }
+
+    private static double point_distance(Point first, Point second) =>
+        Math.Sqrt((first.X - second.X) * (first.X - second.X) + (first.Y - second.Y) * (first.Y - second.Y));
 
     private static void snap_axis(IEnumerable<double> guides, double value, Action<double> apply)
     {
@@ -1905,24 +2354,36 @@ public sealed class PageEditorView : Control
             Math.Max(40, bounds.Height - title_space - bottom_axis_label_space - (show_tick_labels ? bottom_tick_label_space : 0)));
 
     private static IReadOnlyList<Rect> resize_handle_rects(PagePlotElement element) =>
-    [
-        resize_handle_rect(element, ResizeCorner.TopLeft),
-        resize_handle_rect(element, ResizeCorner.TopRight),
-        resize_handle_rect(element, ResizeCorner.BottomLeft),
-        resize_handle_rect(element, ResizeCorner.BottomRight)
-    ];
+        [
+            resize_handle_rect(element, ResizeCorner.TopLeft),
+            resize_handle_rect(element, ResizeCorner.Top),
+            resize_handle_rect(element, ResizeCorner.TopRight),
+            resize_handle_rect(element, ResizeCorner.Right),
+            resize_handle_rect(element, ResizeCorner.BottomRight),
+            resize_handle_rect(element, ResizeCorner.Bottom),
+            resize_handle_rect(element, ResizeCorner.BottomLeft),
+            resize_handle_rect(element, ResizeCorner.Left)
+        ];
 
     private static Rect resize_handle_rect(PagePlotElement element, ResizeCorner corner)
     {
-        const double size = 11;
-        double x = corner is ResizeCorner.TopLeft or ResizeCorner.BottomLeft ? element.X : element.X + element.Width - size;
-        double y = corner is ResizeCorner.TopLeft or ResizeCorner.TopRight ? element.Y : element.Y + element.Height - size;
-        return new Rect(x, y, size, size);
+        const double size = 7;
+        double x = moves_left(corner)
+            ? element.X
+            : moves_right(corner) ? element.X + element.Width : element.X + element.Width / 2;
+        double y = moves_top(corner)
+            ? element.Y
+            : moves_bottom(corner) ? element.Y + element.Height : element.Y + element.Height / 2;
+        return new Rect(x - size / 2, y - size / 2, size, size);
     }
 
     private static ResizeCorner resize_corner_at(PagePlotElement element, Point point)
     {
-        foreach (var corner in new[] { ResizeCorner.TopLeft, ResizeCorner.TopRight, ResizeCorner.BottomLeft, ResizeCorner.BottomRight })
+        foreach (var corner in new[]
+                 {
+                     ResizeCorner.TopLeft, ResizeCorner.Top, ResizeCorner.TopRight, ResizeCorner.Right,
+                     ResizeCorner.BottomRight, ResizeCorner.Bottom, ResizeCorner.BottomLeft, ResizeCorner.Left
+                 })
             if (resize_handle_rect(element, corner).Contains(point))
                 return corner;
         return ResizeCorner.None;
@@ -2951,8 +3412,12 @@ public sealed class PageEditorView : Control
     {
         None,
         TopLeft,
+        Top,
         TopRight,
+        Right,
+        BottomRight,
+        Bottom,
         BottomLeft,
-        BottomRight
+        Left
     }
 }

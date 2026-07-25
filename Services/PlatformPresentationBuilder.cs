@@ -378,46 +378,34 @@ public static class PlatformPresentationBuilder
         var parameters = curve.Parameters;
         return curve.Kind switch
         {
-            PlatformFitCurveKind.Gaussian when parameters.Length >= 3 =>
-                gaussian(x, parameters[0], parameters[1], parameters[2]),
-            PlatformFitCurveKind.GaussianSum => gaussian_sum(x, parameters),
-            PlatformFitCurveKind.CellCycleSum => cell_cycle_sum(x, parameters),
+            PlatformFitCurveKind.Normal when parameters.Length >= 3 =>
+                normal(x, parameters[0], parameters[1], parameters[2]),
             PlatformFitCurveKind.Linear when parameters.Length >= 2 => parameters[0] * x + parameters[1],
             PlatformFitCurveKind.Exponential when parameters.Length >= 3 =>
                 parameters[2] + Math.Exp(Math.Clamp(parameters[0] * x + parameters[1], -700, 700)),
             PlatformFitCurveKind.Gamma when parameters.Length >= 3 =>
                 parameters[2] * gamma_density(x, parameters[0], parameters[1]),
+            PlatformFitCurveKind.Polynomial when parameters.Length >= 3 =>
+                polynomial(x, parameters),
             PlatformFitCurveKind.Addition => addition(platform, curve, x, path),
             _ => double.NaN
         };
     }
 
-    private static double gaussian_sum(double x, IReadOnlyList<double> parameters)
+    private static double polynomial(double x, IReadOnlyList<double> parameters)
     {
-        double result = 0;
-        for (int index = 0; index + 2 < parameters.Count; index += 3)
-            result += gaussian(x, parameters[index], parameters[index + 1], parameters[index + 2]);
-        return result;
-    }
-
-    private static double cell_cycle_sum(double x, IReadOnlyList<double> parameters)
-    {
-        if (parameters.Count < 9)
-            return double.NaN;
-        double result = gaussian(x, parameters[0], parameters[1], parameters[2]) +
-                        gaussian(x, parameters[3], parameters[4], parameters[5]);
-        double minimum = parameters[6];
-        double maximum = parameters[7];
+        double minimum = parameters[0];
+        double maximum = parameters[1];
         if (x < minimum || x > maximum || maximum <= minimum)
-            return result;
+            return 0;
         double t = (x - minimum) / (maximum - minimum);
-        double polynomial = 0;
-        for (int index = parameters.Count - 1; index >= 8; index--)
-            polynomial = polynomial * t + parameters[index];
-        return result + Math.Max(0, polynomial);
+        double result = 0;
+        for (int index = parameters.Count - 1; index >= 2; index--)
+            result = result * t + parameters[index];
+        return Math.Max(0, result);
     }
 
-    private static double gaussian(double x, double amplitude, double mean, double sigma)
+    private static double normal(double x, double amplitude, double mean, double sigma)
     {
         sigma = Math.Max(Math.Abs(sigma), 1e-12);
         double z = (x - mean) / sigma;
