@@ -34,6 +34,8 @@ public partial class PreferencesWindow : Window
         refresh_bead_types();
         isotopeElementList.ItemsSource = isotope_rows;
         set_theme_selection(original_theme_name);
+        systemWindowChromeRow.IsVisible = OperatingSystem.IsWindows();
+        useSystemWindowChromeSwitch.IsChecked = Configuration.Preferences.UseSystemWindowChrome;
 
         addCytometerButton.Click += (_, _) => add_cytometer();
         addChannelButton.Click += (_, _) => add_channel();
@@ -76,6 +78,7 @@ public partial class PreferencesWindow : Window
             foreach (var element in snapshot_isotopes(isotope_rows)) Configuration.Preferences.Isotopes.Add(element);
             Configuration.Preferences.IsotopesInitialized = true;
             Configuration.Preferences.ThemeName = selected_theme_name();
+            Configuration.Preferences.UseSystemWindowChrome = useSystemWindowChromeSwitch.IsChecked == true;
             App.ApplyThemePreference(Configuration.Preferences.ThemeName);
             Configuration.SavePreferences();
             Close(true);

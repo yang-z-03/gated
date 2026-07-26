@@ -138,6 +138,8 @@ public sealed class CytometerPreferenceStore
 {
     public string SelectedCytometerName { get; set; } = Configuration.DefaultCytometerName;
     public string ThemeName { get; set; } = "Light";
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool UseSystemWindowChrome { get; set; }
     public ObservableCollection<CytometerPreference> Cytometers { get; set; } = new();
     public bool ElementBeadsInitialized { get; set; }
     public ObservableCollection<ElementBeadTypePreference> ElementBeads { get; set; } = new();

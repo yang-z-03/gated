@@ -269,7 +269,7 @@
                 <TextBlock Foreground="{DynamicResource SemiColorText0}" TextWrapping="Wrap" LineHeight="18"
                            Text="Global appearance of the application. Some settings requires restarting the application" />
 
-                <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto" ColumnSpacing="18" RowSpacing="8">
+                <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="18" RowSpacing="8">
                     <TextBlock Grid.Row="0"
                                Grid.Column="0"
                                Foreground="{DynamicResource SemiColorText0}"
@@ -285,11 +285,26 @@
                                      GroupName="ApplicationTheme"
                                      Content="Dark" />
                     </StackPanel>
-                    <TextBlock Grid.Row="1"
-                               Grid.Column="1"
-                               Foreground="{DynamicResource SemiColorText2}"
-                               TextWrapping="Wrap"
-                               Text="Requires restart" />
+                    <Grid x:Name="systemWindowChromeRow"
+                          Grid.Row="2"
+                          Grid.ColumnSpan="2"
+                          Margin="0,10,0,0"
+                          ColumnDefinitions="150,*"
+                          ColumnSpacing="18">
+                        <StackPanel Grid.Column="1" Spacing="4">
+                            <ToggleSwitch x:Name="useSystemWindowChromeSwitch"
+                                          HorizontalAlignment="Left"
+                                          Content="Use system window chrome" />
+                            <TextBlock Foreground="{DynamicResource SemiColorText2}"
+                                       TextWrapping="Wrap"
+                                       Text="Use the complete native Windows title bar and window controls." />
+                            <TextBlock Grid.Row="1"
+                                       Grid.Column="1"
+                                       Foreground="{DynamicResource SemiColorText2}"
+                                       TextWrapping="Wrap"
+                                       Text="Requires restart" />
+                        </StackPanel>
+                    </Grid>
                 </Grid>
             </StackPanel>
         </Grid>

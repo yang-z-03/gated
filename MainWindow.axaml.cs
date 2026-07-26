@@ -165,12 +165,20 @@ public partial class MainWindow : Window
 
     private void configure_platform_window_chrome()
     {
-        WindowDecorations = OperatingSystem.IsWindows()
-            ? Avalonia.Controls.WindowDecorations.BorderOnly
-            : Avalonia.Controls.WindowDecorations.Full;
         ExtendClientAreaTitleBarHeightHint = 0;
-        ExtendClientAreaToDecorationsHint = true;
 
+        if (OperatingSystem.IsWindows())
+        {
+            bool use_system_chrome = Configuration.Preferences.UseSystemWindowChrome;
+            WindowDecorations = use_system_chrome
+                ? Avalonia.Controls.WindowDecorations.Full
+                : Avalonia.Controls.WindowDecorations.BorderOnly;
+            ExtendClientAreaToDecorationsHint = !use_system_chrome;
+            titleBar.IsVisible = !use_system_chrome;
+            return;
+        }
+
+        WindowDecorations = Avalonia.Controls.WindowDecorations.Full;
         if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
         {
             ExtendClientAreaToDecorationsHint = false;
@@ -773,6 +781,7 @@ public partial class MainWindow : Window
         bool saved = await new PreferencesWindow().ShowDialog<bool>(this);
         if (saved)
         {
+            configure_platform_window_chrome();
             view_model.RefreshConfigurationAssumptions();
             view_model.StatusText = "Preferences updated";
         }
