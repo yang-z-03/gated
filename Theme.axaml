@@ -1,7 +1,6 @@
 <Styles x:Class="gated.Theme"
         xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:semi="https://irihi.tech/semi">
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <Styles.Resources>
         <ResourceDictionary>
 
@@ -39,6 +38,12 @@
                 <ResourceInclude Source="avares://gated/Styles/NumericUpDown.axaml" />
                 <ResourceInclude Source="avares://gated/Styles/ContextMenu.axaml" />
                 <ResourceInclude Source="avares://gated/Styles/Listbox.axaml" />
+                <ResourceInclude Source="avares://gated/Styles/Converters.axaml" />
+                <ResourceInclude Source="avares://gated/Styles/ColorPicker.axaml" />
+                <ResourceInclude Source="avares://gated/Styles/ColorPreviewer.axaml" />
+                <ResourceInclude Source="avares://gated/Styles/ColorSlider.axaml" />
+                <ResourceInclude Source="avares://gated/Styles/ColorSpectrum.axaml" />
+                <ResourceInclude Source="avares://gated/Styles/ColorView.axaml" />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Styles.Resources>

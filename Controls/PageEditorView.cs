@@ -495,32 +495,43 @@ public sealed class PageEditorView : Control
 
     public void SaveBitmap(string file_path, bool transparent_background, double dpi, bool apply_rasterization_resolution)
     {
-        var export_size = export_size_for(PageElements);
         dpi = double.IsFinite(dpi) ? Math.Clamp(dpi, 72, 1200) : 300;
         double scale = dpi / 96.0;
-        var bitmap = new RenderTargetBitmap(
-            new PixelSize(
-                Math.Max(1, (int)Math.Ceiling(export_size.Width * scale)),
-                Math.Max(1, (int)Math.Ceiling(export_size.Height * scale))),
-            new Vector(dpi, dpi));
-        var visual = new ExportPageVisual(PageElements, transparent_background, export_size, this, scale, apply_rasterization_resolution);
-        visual.Measure(export_size);
-        visual.Arrange(new Rect(export_size));
-        bitmap.Render(visual);
-        BitmapEncoderOptions encoder = Path.GetExtension(file_path).Equals(".jpg", StringComparison.OrdinalIgnoreCase) ||
-                                       Path.GetExtension(file_path).Equals(".jpeg", StringComparison.OrdinalIgnoreCase)
-            ? JpegBitmapEncoderOptions.Default
-            : PngBitmapEncoderOptions.Default;
-        bitmap.Save(file_path, encoder);
+        var elements = PageElements;
+        var renderer = new PageEditorView
+        {
+            Elements = elements,
+            render_scale = scale,
+            use_visual_root_render_scale = false,
+            apply_rasterization_resolution = apply_rasterization_resolution
+        };
+        copy_text_properties(this, renderer);
+        string svg_text = renderer.build_svg(elements, include_background: !transparent_background);
+        using var svg = new Svg.Skia.SKSvg();
+        if (svg.FromSvg(svg_text) is null)
+            throw new InvalidDataException("The layout could not be prepared for bitmap export.");
+
+        bool jpeg = Path.GetExtension(file_path).Equals(".jpg", StringComparison.OrdinalIgnoreCase) ||
+                    Path.GetExtension(file_path).Equals(".jpeg", StringComparison.OrdinalIgnoreCase);
+        var format = jpeg ? SkiaSharp.SKEncodedImageFormat.Jpeg : SkiaSharp.SKEncodedImageFormat.Png;
+        var background = transparent_background && !jpeg ? SkiaSharp.SKColors.Transparent : SkiaSharp.SKColors.White;
+        if (!svg.Save(file_path, background, format, jpeg ? 92 : 100, (float)scale, (float)scale))
+            throw new IOException("The layout bitmap could not be written.");
     }
 
     public void SaveSvg(string file_path)
     {
+        System.IO.File.WriteAllText(file_path, build_svg(PageElements, include_background: true));
+    }
+
+    private string build_svg(IReadOnlyList<PagePlotElement> elements, bool include_background)
+    {
         var svg = new StringBuilder();
-        var export_size = export_size_for(PageElements);
+        var export_size = export_size_for(elements);
         svg.AppendLine($"""<svg xmlns="http://www.w3.org/2000/svg" width="{export_size.Width.ToString(CultureInfo.InvariantCulture)}" height="{export_size.Height.ToString(CultureInfo.InvariantCulture)}" viewBox="0 0 {export_size.Width.ToString(CultureInfo.InvariantCulture)} {export_size.Height.ToString(CultureInfo.InvariantCulture)}">""");
-        svg.AppendLine("""<rect width="100%" height="100%" fill="white"/>""");
-        foreach (var element in PageElements)
+        if (include_background)
+            svg.AppendLine("""<rect width="100%" height="100%" fill="white"/>""");
+        foreach (var element in elements)
         {
             svg.AppendLine($"""<g transform="translate({element.X.ToString(CultureInfo.InvariantCulture)} {element.Y.ToString(CultureInfo.InvariantCulture)})">""");
             if (element is PageLineElement line_annotation)
@@ -546,6 +557,18 @@ public sealed class PageEditorView : Control
                 if (element.ShowGates)
                     append_svg_gates(svg, element);
             }
+            else if (element is PlatformPlotElement platform_plot)
+            {
+                append_svg_platform_plot(svg, platform_plot);
+            }
+            else if (element is PlatformStatisticTableElement platform_table)
+            {
+                append_svg_platform_statistic_table(svg, platform_table);
+            }
+            else if (element is StatisticTableElement statistic_table)
+            {
+                append_svg_statistic_table(svg, statistic_table);
+            }
             else
             {
                 append_svg_element_bitmap(svg, element);
@@ -553,7 +576,7 @@ public sealed class PageEditorView : Control
             svg.AppendLine("</g>");
         }
         svg.AppendLine("</svg>");
-        System.IO.File.WriteAllText(file_path, svg.ToString());
+        return svg.ToString();
     }
 
     private static void append_svg_line_annotation(StringBuilder svg, PageLineElement element)
@@ -1958,7 +1981,7 @@ public sealed class PageEditorView : Control
 
         var anchor = data_to_screen(gate.Vertices[0], element, plot_rect);
         double x = anchor.X + 6;
-        double y = anchor.Y - 36;
+        double y = anchor.Y;
 
         if (gate.Kind is GateKind.Quadrant or GateKind.CurlyQuadrant or GateKind.OffsetQuadrant)
         {
@@ -3282,8 +3305,8 @@ public sealed class PageEditorView : Control
         var origin = gate_annotation_origin(element, gate, region, plot, text_width + 6, text_height);
 
         bool top_left_origin = gate.Kind is GateKind.Polygon or GateKind.Rectangle;
-        double rect_y = top_left_origin ? origin.Y : origin.Y - 10;
-        double text_y = top_left_origin ? origin.Y + 10 : origin.Y;
+        double rect_y = origin.Y - 2;
+        double text_y = origin.Y + 8;
         svg.AppendLine($"""<rect x="{(origin.X - 3).ToString(CultureInfo.InvariantCulture)}" y="{rect_y.ToString(CultureInfo.InvariantCulture)}" width="{(text_width + 6).ToString(CultureInfo.InvariantCulture)}" height="{text_height.ToString(CultureInfo.InvariantCulture)}" fill="white" fill-opacity="0.86"/>""");
         if (element.ShowGateAnnotationNames)
         {
@@ -3295,6 +3318,293 @@ public sealed class PageEditorView : Control
             svg.AppendLine($"""<text x="{origin.X.ToString(CultureInfo.InvariantCulture)}" y="{text_y.ToString(CultureInfo.InvariantCulture)}" font-family="Arial" font-size="10" fill="black">{escape_xml(count_line)}</text>""");
         }
     }
+
+    private void append_svg_platform_plot(StringBuilder svg, PlatformPlotElement element)
+    {
+        var bounds = new Rect(0, 0, element.Width, element.Height);
+        append_svg_centered_text(svg, element.Title, new Rect(0, 0, element.Width, title_space), 13, Colors.Black, bolded: true);
+        var plot_rect = plot_rect_for(bounds, element.ShowTickLabels);
+        var presentation = element.Platform is null
+            ? PlatformPresentation.Empty
+            : PlatformCatalog.Get(element.Platform.Kind).CreatePresentation(element.Platform);
+        var document = !string.IsNullOrWhiteSpace(element.OutputKey)
+            ? presentation.Plot(element.OutputKey)
+            : presentation.Plots.FirstOrDefault();
+        if (document is null || !document.Series.Any(item => item.X.Length > 0 && item.Y.Length > 0))
+        {
+            append_svg_centered_text(svg, "No platform plot data", plot_rect, 12, Colors.Gray);
+            return;
+        }
+
+        var points = document.Series
+            .SelectMany(item => item.X.Zip(item.Y).Where(pair => double.IsFinite(pair.First) && double.IsFinite(pair.Second)))
+            .ToArray();
+        double transformed_min_x = document.XScale.Transform(document.Minimum);
+        double transformed_max_x = document.XScale.Transform(document.Maximum);
+        if (points.Length == 0 ||
+            !double.IsFinite(transformed_min_x) ||
+            !double.IsFinite(transformed_max_x) ||
+            transformed_max_x <= transformed_min_x)
+        {
+            append_svg_centered_text(svg, "No platform plot data", plot_rect, 12, Colors.Gray);
+            return;
+        }
+
+        double min_y = Math.Min(0, points.Min(item => item.Second));
+        double max_y = points.Max(item => item.Second);
+        if (max_y <= min_y)
+            max_y = min_y + 1;
+        max_y *= 1.08;
+
+        append_svg_platform_axes_and_grid(
+            svg,
+            element,
+            document,
+            bounds,
+            plot_rect,
+            transformed_min_x,
+            transformed_max_x,
+            min_y,
+            max_y);
+
+        string clip_id = $"platform-plot-{element.Id:N}";
+        svg.AppendLine($"<defs><clipPath id=\"{clip_id}\"><rect x=\"{svg_number(plot_rect.X)}\" y=\"{svg_number(plot_rect.Y)}\" width=\"{svg_number(plot_rect.Width)}\" height=\"{svg_number(plot_rect.Height)}\"/></clipPath></defs>");
+        svg.AppendLine($"<g clip-path=\"url(#{clip_id})\">");
+        foreach (var series in document.Series)
+        {
+            int count = Math.Min(series.X.Length, series.Y.Length);
+            var curve_points = new List<Point>(count);
+            for (int index = 0; index < count; index++)
+            {
+                if (!double.IsFinite(series.X[index]) || !double.IsFinite(series.Y[index]))
+                    continue;
+                double transformed_x = document.XScale.Transform(series.X[index]);
+                if (!double.IsFinite(transformed_x))
+                    continue;
+                double x = plot_rect.Left + (transformed_x - transformed_min_x) / (transformed_max_x - transformed_min_x) * plot_rect.Width;
+                double y = plot_rect.Bottom - (Math.Max(0, series.Y[index]) - min_y) / (max_y - min_y) * plot_rect.Height;
+                curve_points.Add(new Point(x, y));
+            }
+            if (curve_points.Count < 2)
+                continue;
+
+            Color color = platform_plot_color(series);
+            string point_text = string.Join(" ", curve_points.Select(point => $"{svg_number(point.X)},{svg_number(point.Y)}"));
+            if (series.Role == PlatformSeriesRole.Component && element.Platform is not null && platform_fill_components(element.Platform))
+            {
+                string path_points = string.Join(" ", curve_points.Select(point => $"{svg_number(point.X)} {svg_number(point.Y)}"));
+                string path = $"M {svg_number(curve_points[0].X)} {svg_number(plot_rect.Bottom)} L {path_points} L {svg_number(curve_points[^1].X)} {svg_number(plot_rect.Bottom)} Z";
+                svg.AppendLine($"<path d=\"{path}\" fill=\"{svg_color(color)}\" fill-opacity=\"0.118\" stroke=\"none\"/>");
+            }
+
+            double stroke_width = series.Role == PlatformSeriesRole.Observed ? 2.4 : 1.1;
+            svg.AppendLine($"<polyline points=\"{point_text}\" fill=\"none\" stroke=\"{svg_color(color)}\" stroke-opacity=\"{svg_opacity(color)}\" stroke-width=\"{svg_number(stroke_width)}\" stroke-linejoin=\"round\" stroke-linecap=\"round\"/>");
+        }
+        svg.AppendLine("</g>");
+    }
+
+    private static void append_svg_platform_axes_and_grid(
+        StringBuilder svg,
+        PlatformPlotElement element,
+        PlatformPlotDocument document,
+        Rect bounds,
+        Rect plot_rect,
+        double transformed_min_x,
+        double transformed_max_x,
+        double min_y,
+        double max_y)
+    {
+        string minor_color = svg_color(gated.Shared.ThemeResources.AppColor("PlotBorder3"));
+        string major_grid_color = svg_color(gated.Shared.ThemeResources.AppColor("PlotText3"));
+        string minor_grid_color = svg_color(gated.Shared.ThemeResources.AppColor("PlotText1"));
+        var minor_y_ticks = platform_y_ticks(min_y, max_y, major: false).ToArray();
+        var major_y_ticks = platform_y_ticks(min_y, max_y, major: true).ToArray();
+        double y_tick_interval = tick_interval(major_y_ticks, max_y - min_y);
+
+        foreach (double tick in minor_y_ticks)
+        {
+            double y = plot_rect.Bottom - (tick - min_y) / (max_y - min_y) * plot_rect.Height;
+            if (element.ShowGridlines)
+                append_svg_line(svg, plot_rect.Left, y, plot_rect.Right, y, minor_grid_color, 0.6);
+            append_svg_line(svg, plot_rect.Left - 3, y, plot_rect.Left, y, minor_color, 0.8);
+            append_svg_line(svg, plot_rect.Right, y, plot_rect.Right + 3, y, minor_color, 0.8);
+        }
+        foreach (double tick in major_y_ticks)
+        {
+            double y = plot_rect.Bottom - (tick - min_y) / (max_y - min_y) * plot_rect.Height;
+            if (element.ShowGridlines)
+                append_svg_line(svg, plot_rect.Left, y, plot_rect.Right, y, major_grid_color, 0.8);
+            append_svg_line(svg, plot_rect.Left - 5, y, plot_rect.Left, y, "black", 1);
+            append_svg_line(svg, plot_rect.Right, y, plot_rect.Right + 5, y, "black", 1);
+            if (element.ShowTickLabels)
+                svg.AppendLine($"<text x=\"{svg_number(plot_rect.Left - 7)}\" y=\"{svg_number(y + 3)}\" text-anchor=\"end\" font-family=\"Arial\" font-size=\"9\" fill=\"black\">{escape_xml(Configuration.FormatAxisValue(tick, y_tick_interval))}</text>");
+        }
+
+        foreach (var tick in platform_x_ticks(document, major: false))
+        {
+            double x = plot_rect.Left + (tick.Position - transformed_min_x) / (transformed_max_x - transformed_min_x) * plot_rect.Width;
+            if (element.ShowGridlines)
+                append_svg_line(svg, x, plot_rect.Top, x, plot_rect.Bottom, minor_grid_color, 0.6);
+            append_svg_line(svg, x, plot_rect.Bottom, x, plot_rect.Bottom + 3, minor_color, 0.8);
+            append_svg_line(svg, x, plot_rect.Top, x, plot_rect.Top - 3, minor_color, 0.8);
+        }
+        foreach (var tick in platform_x_ticks(document, major: true))
+        {
+            double x = plot_rect.Left + (tick.Position - transformed_min_x) / (transformed_max_x - transformed_min_x) * plot_rect.Width;
+            if (element.ShowGridlines)
+                append_svg_line(svg, x, plot_rect.Top, x, plot_rect.Bottom, major_grid_color, 0.8);
+            append_svg_line(svg, x, plot_rect.Bottom, x, plot_rect.Bottom + 5, "black", 1);
+            append_svg_line(svg, x, plot_rect.Top, x, plot_rect.Top - 5, "black", 1);
+            if (element.ShowTickLabels)
+                svg.AppendLine($"<text x=\"{svg_number(x)}\" y=\"{svg_number(plot_rect.Bottom + 16)}\" text-anchor=\"middle\" font-family=\"Arial\" font-size=\"9\" fill=\"black\">{escape_xml(tick.Label)}</text>");
+        }
+
+        svg.AppendLine($"<rect x=\"{svg_number(plot_rect.X)}\" y=\"{svg_number(plot_rect.Y)}\" width=\"{svg_number(plot_rect.Width)}\" height=\"{svg_number(plot_rect.Height)}\" fill=\"none\" stroke=\"black\" stroke-width=\"1\"/>");
+        svg.AppendLine($"<text x=\"{svg_number(plot_rect.Center.X)}\" y=\"{svg_number(bounds.Bottom - bottom_axis_label_space / 2 + 4)}\" text-anchor=\"middle\" font-family=\"Arial\" font-size=\"11\" fill=\"black\">{escape_xml(document.XLabel)}</text>");
+        double y_label_x = bounds.Left + left_axis_label_space / 2;
+        double y_label_y = plot_rect.Center.Y;
+        svg.AppendLine($"<text x=\"{svg_number(y_label_x)}\" y=\"{svg_number(y_label_y)}\" transform=\"rotate(-90 {svg_number(y_label_x)} {svg_number(y_label_y)})\" text-anchor=\"middle\" dominant-baseline=\"central\" font-family=\"Arial\" font-size=\"11\" fill=\"black\">{escape_xml(document.YLabel)}</text>");
+    }
+
+    private void append_svg_platform_statistic_table(StringBuilder svg, PlatformStatisticTableElement element)
+    {
+        var bounds = new Rect(0, 0, element.Width, element.Height);
+        var (columns, rows, colors) = platform_statistic_table_data(element.Platform, element.OutputKey);
+        var table = table_rect_for(bounds);
+        var defaults = table_column_widths(columns, rows, table.Width);
+        var visible_layouts = element.EnsureColumnLayouts(columns, defaults)
+            .Where(layout => layout.IsVisible && layout.SourceIndex >= 0 && layout.SourceIndex < columns.Length)
+            .OrderBy(layout => layout.SourceIndex)
+            .ToArray();
+        if (visible_layouts.Length == 0)
+            return;
+
+        var visible_columns = visible_layouts.Select(layout => columns[layout.SourceIndex]).ToArray();
+        var visible_rows = rows
+            .Select(row => visible_layouts.Select(layout => layout.SourceIndex < row.Length ? row[layout.SourceIndex] : "").ToArray())
+            .ToArray();
+        int color_marker_column = Array.FindIndex(visible_layouts, layout => layout.SourceIndex == 0);
+        append_svg_table(
+            svg,
+            element.Id,
+            bounds,
+            element.Title,
+            visible_columns,
+            visible_rows,
+            colors,
+            visible_layouts.Select(layout => layout.Width).ToArray(),
+            color_marker_column);
+    }
+
+    private void append_svg_statistic_table(StringBuilder svg, StatisticTableElement element)
+    {
+        var columns = new[] { "Sample" }.Concat(element.Columns.Select(column => column.Title)).ToArray();
+        var group = element.Group ?? element.Columns.Select(column => column.Group).FirstOrDefault(item => item is not null);
+        var rows = group is null
+            ? Array.Empty<string[]>()
+            : group.Samples.Select(sample => statistic_table_row(sample, element.Columns)).ToArray();
+        append_svg_table(svg, element.Id, new Rect(0, 0, element.Width, element.Height), element.Title, columns, rows, null);
+    }
+
+    private void append_svg_table(
+        StringBuilder svg,
+        Guid element_id,
+        Rect bounds,
+        string title,
+        IReadOnlyList<string> columns,
+        IReadOnlyList<string[]> rows,
+        IReadOnlyList<Color?>? row_colors,
+        IReadOnlyList<double>? requested_column_widths = null,
+        int color_marker_column = -1)
+    {
+        append_svg_centered_text(svg, title, new Rect(bounds.Left, bounds.Top, bounds.Width, title_space), 13, Colors.Black, bolded: true);
+        var table = table_rect_for(bounds);
+        int column_count = Math.Max(1, columns.Count);
+        var column_widths = requested_column_widths is not null && requested_column_widths.Count == column_count
+            ? requested_column_widths.Select(width => Math.Clamp(width, 36, 600)).ToArray()
+            : table_column_widths(columns, rows, table.Width);
+        Color border_color = gated.Shared.ThemeResources.AppColor("PlotText4");
+        Color header_color = gated.Shared.ThemeResources.AppColor("PlotText2");
+        Color alternate_color = gated.Shared.ThemeResources.AppColor("PlotText1");
+        double table_width = column_widths.Sum();
+        double rendered_height = Math.Min(table.Height, table_row_height * (rows.Count + 1));
+        string table_clip_id = $"platform-table-{element_id:N}";
+        svg.AppendLine($"<defs><clipPath id=\"{table_clip_id}\"><rect x=\"{svg_number(table.X)}\" y=\"{svg_number(table.Y)}\" width=\"{svg_number(table.Width)}\" height=\"{svg_number(table.Height)}\"/></clipPath></defs>");
+        svg.AppendLine($"<g clip-path=\"url(#{table_clip_id})\">");
+        svg.AppendLine($"<rect x=\"{svg_number(table.Left)}\" y=\"{svg_number(table.Top)}\" width=\"{svg_number(table_width)}\" height=\"{svg_number(rendered_height)}\" fill=\"none\" stroke=\"{svg_color(border_color)}\" stroke-opacity=\"{svg_opacity(border_color)}\" stroke-width=\"0.8\"/>");
+
+        double left = table.Left;
+        for (int column = 0; column < column_count; column++)
+        {
+            var cell = new Rect(left, table.Top, column_widths[column], table_row_height);
+            append_svg_table_cell(svg, element_id, -1, column, columns[column], cell, 5, border_color, header_color, bolded: true);
+            left += column_widths[column];
+        }
+
+        int visible_rows = Math.Min(rows.Count, Math.Max(0, (int)((table.Height - table_row_height) / table_row_height)));
+        for (int row = 0; row < visible_rows; row++)
+        {
+            left = table.Left;
+            for (int column = 0; column < column_count; column++)
+            {
+                var cell = new Rect(left, table.Top + (row + 1) * table_row_height, column_widths[column], table_row_height);
+                string value = column < rows[row].Length ? rows[row][column] : "";
+                bool has_marker = column == color_marker_column &&
+                                  row_colors is not null &&
+                                  row < row_colors.Count &&
+                                  row_colors[row].HasValue;
+                append_svg_table_cell(
+                    svg,
+                    element_id,
+                    row,
+                    column,
+                    value,
+                    cell,
+                    has_marker ? 24 : 5,
+                    border_color,
+                    row % 2 == 1 ? alternate_color : null,
+                    bolded: false);
+                if (has_marker && row_colors![row] is { } marker_color)
+                    svg.AppendLine($"<rect x=\"{svg_number(cell.Left + 6)}\" y=\"{svg_number(cell.Top + 5)}\" width=\"12\" height=\"10\" rx=\"2\" fill=\"{svg_color(marker_color)}\" fill-opacity=\"{svg_opacity(marker_color)}\"/>");
+                left += column_widths[column];
+            }
+        }
+        svg.AppendLine("</g>");
+    }
+
+    private static void append_svg_table_cell(
+        StringBuilder svg,
+        Guid element_id,
+        int row,
+        int column,
+        string text,
+        Rect cell,
+        double left_padding,
+        Color border_color,
+        Color? fill_color,
+        bool bolded)
+    {
+        string fill_attributes = fill_color is { } color
+            ? $"fill=\"{svg_color(color)}\" fill-opacity=\"{svg_opacity(color)}\""
+            : "fill=\"none\"";
+        svg.AppendLine($"<rect x=\"{svg_number(cell.X)}\" y=\"{svg_number(cell.Y)}\" width=\"{svg_number(cell.Width)}\" height=\"{svg_number(cell.Height)}\" {fill_attributes} stroke=\"{svg_color(border_color)}\" stroke-opacity=\"{svg_opacity(border_color)}\" stroke-width=\"0.8\"/>");
+        double available_width = cell.Width - left_padding - 5;
+        if (available_width <= 1 || string.IsNullOrEmpty(text))
+            return;
+
+        string clip_id = $"table-cell-{element_id:N}-{row + 1}-{column}";
+        svg.AppendLine($"<defs><clipPath id=\"{clip_id}\"><rect x=\"{svg_number(cell.Left + left_padding)}\" y=\"{svg_number(cell.Top)}\" width=\"{svg_number(available_width)}\" height=\"{svg_number(cell.Height)}\"/></clipPath></defs>");
+        svg.AppendLine($"<text x=\"{svg_number(cell.Left + left_padding)}\" y=\"{svg_number(cell.Top + 14)}\" clip-path=\"url(#{clip_id})\" font-family=\"Arial\" font-size=\"11\" font-weight=\"{(bolded ? "700" : "400")}\" fill=\"black\">{escape_xml(text)}</text>");
+    }
+
+    private static void append_svg_centered_text(StringBuilder svg, string text, Rect band, double size, Color color, bool bolded = false)
+    {
+        double baseline = band.Center.Y + size * 0.36;
+        svg.AppendLine($"<text x=\"{svg_number(band.Center.X)}\" y=\"{svg_number(baseline)}\" text-anchor=\"middle\" font-family=\"Arial\" font-size=\"{svg_number(size)}\" font-weight=\"{(bolded ? "700" : "400")}\" fill=\"{svg_color(color)}\" fill-opacity=\"{svg_opacity(color)}\">{escape_xml(text)}</text>");
+    }
+
+    private static void append_svg_line(StringBuilder svg, double x1, double y1, double x2, double y2, string color, double width) =>
+        svg.AppendLine($"<line x1=\"{svg_number(x1)}\" y1=\"{svg_number(y1)}\" x2=\"{svg_number(x2)}\" y2=\"{svg_number(y2)}\" stroke=\"{color}\" stroke-width=\"{svg_number(width)}\"/>");
 
     private void append_svg_plot_image(StringBuilder svg, PagePlotElement element)
     {
@@ -3316,51 +3626,6 @@ public sealed class PageEditorView : Control
         bitmap.Save(stream, PngBitmapEncoderOptions.Default);
         string encoded = Convert.ToBase64String(stream.ToArray());
         svg.AppendLine($"""<image x="0" y="0" width="{element.Width.ToString(CultureInfo.InvariantCulture)}" height="{element.Height.ToString(CultureInfo.InvariantCulture)}" href="data:image/png;base64,{encoded}" preserveAspectRatio="none"/>""");
-    }
-
-    private sealed class ExportPageVisual : Control
-    {
-        private readonly IReadOnlyList<PagePlotElement> elements;
-        private readonly bool transparent_background;
-        private readonly Size export_size;
-        private readonly PageEditorView source;
-        private readonly double scale;
-        private readonly bool apply_rasterization_resolution;
-
-        public ExportPageVisual(
-            IReadOnlyList<PagePlotElement> elements,
-            bool transparent_background,
-            Size export_size,
-            PageEditorView source,
-            double scale,
-            bool apply_rasterization_resolution)
-        {
-            this.elements = elements;
-            this.transparent_background = transparent_background;
-            this.export_size = export_size;
-            this.source = source;
-            this.scale = scale;
-            this.apply_rasterization_resolution = apply_rasterization_resolution;
-            copy_text_properties(source, this);
-        }
-
-        public override void Render(DrawingContext context)
-        {
-            if (!transparent_background)
-                context.FillRectangle(Brushes.White, new Rect(export_size));
-            var renderer = new PageEditorView
-            {
-                Elements = elements,
-                render_scale = scale,
-                use_visual_root_render_scale = false,
-                apply_rasterization_resolution = apply_rasterization_resolution
-            };
-            copy_text_properties(source, renderer);
-            renderer.Measure(export_size);
-            renderer.Arrange(new Rect(export_size));
-            foreach (var element in elements)
-                renderer.draw_page_element(context, element);
-        }
     }
 
     private sealed class ElementContentVisual : Control

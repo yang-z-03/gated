@@ -19,5 +19,6 @@
         <ResourceInclude Source="avares://gated/Styles/Themes/Shared/NumericUpDown.axaml" />
         <ResourceInclude Source="avares://gated/Styles/Themes/Shared/ButtonSpinner.axaml" />
         <ResourceInclude Source="avares://gated/Styles/Themes/Shared/Listbox.axaml" />
+        <ResourceInclude Source="avares://gated/Styles/Themes/Shared/ColorPicker.axaml" />
     </ResourceDictionary.MergedDictionaries>
 </ResourceDictionary>

@@ -19,5 +19,6 @@
         <ResourceInclude Source="avares://gated/Styles/Themes/Light/ProgressBar.axaml" />
         <ResourceInclude Source="avares://gated/Styles/Themes/Light/ButtonSpinner.axaml" />
         <ResourceInclude Source="avares://gated/Styles/Themes/Light/Listbox.axaml" />
+        <ResourceInclude Source="avares://gated/Styles/Themes/Light/ColorPicker.axaml" />
     </ResourceDictionary.MergedDictionaries>
 </ResourceDictionary>

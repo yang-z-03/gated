@@ -8,10 +8,7 @@
         Width="1500" Height="850"
         MinWidth="1275" MinHeight="700"
         Title="Gated"
-
-        WindowDecorations="BorderOnly"
-        ExtendClientAreaToDecorationsHint="True"
-        ExtendClientAreaTitleBarHeightHint="0"
+        
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource SemiColorBackground0}">
 
@@ -1509,7 +1506,7 @@
 
                                     <StackPanel>
                                         <TextBlock Margin="0,4" Foreground="{DynamicResource SemiColorText2}" Text="Color" />
-                                        <ColorPicker Width="210" HorizontalAlignment="Left"
+                                        <ColorPicker Classes="Small" Width="100" MaxWidth="100" HorizontalAlignment="Left"
                                                      Color="{Binding SelectedPageAnnotationColor, Mode=TwoWay}"
                                                      IsAlphaEnabled="True"
                                                      IsAlphaVisible="True" />

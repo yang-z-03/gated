@@ -113,16 +113,9 @@ public partial class MainWindow : Window
         register_control_table_drop_target(demultiplex_sample_drop_target, demultiplex_sample_table,
             demultiplex_sample_table_drag_over, demultiplex_sample_table_drop);
 
-        this.PropertyChanged += (s, e) => {
-            if (e.Property == Window.WindowStateProperty)
-            {
-                update_window_margin_for_state();
-            }
-        };
         WindowPlacementStore.Restore(this);
         restore_panel_layout(WindowPlacementStore.Load());
         configure_platform_window_chrome();
-        update_window_margin_for_state();
         update_main_mode_switch();
         update_application_title();
     }
@@ -170,25 +163,13 @@ public partial class MainWindow : Window
         mainModeCodeText.Foreground = view_model.ViewState == MainWindowViewState.Code ? active : inactive;
     }
 
-    private void update_window_margin_for_state()
-    {
-        if (!OperatingSystem.IsWindows())
-        {
-            window.Margin = new Thickness(0);
-            return;
-        }
-
-        if (WindowState == WindowState.Maximized)
-            window.Margin = new Thickness(8);
-        else window.Margin = new Thickness(0);
-    }
-
     private void configure_platform_window_chrome()
     {
         WindowDecorations = OperatingSystem.IsWindows()
             ? Avalonia.Controls.WindowDecorations.BorderOnly
             : Avalonia.Controls.WindowDecorations.Full;
         ExtendClientAreaTitleBarHeightHint = 0;
+        ExtendClientAreaToDecorationsHint = true;
 
         if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
         {
