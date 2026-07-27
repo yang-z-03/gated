@@ -100,15 +100,19 @@
             <Template>
                 <Panel>
                     <Border
-                        Margin="1,1,0,1"
+                        Margin="2"
                         MinWidth="{Binding $self.Bounds.Height}"
                         Background="{DynamicResource ColorControlCheckeredBackgroundBrush}"
-                        CornerRadius="{TemplateBinding CornerRadius}" />
+                        CornerRadius="{TemplateBinding CornerRadius}" 
+                        BorderBrush="{DynamicResource AppBrushBorder2}"
+                        BorderThickness="1"/>
                     <Border
-                        Margin="1,1,0,1"
+                        Margin="2"
                         MinWidth="{Binding $self.Bounds.Height}"
                         Background="{TemplateBinding HsvColor, Converter={StaticResource ToBrushConverter}}"
-                        CornerRadius="{TemplateBinding CornerRadius}" />
+                        CornerRadius="{TemplateBinding CornerRadius}" 
+                        BorderBrush="{DynamicResource AppBrushBorder2}"
+                        BorderThickness="1"/>
                 </Panel>
             </Template>
         </Setter>
