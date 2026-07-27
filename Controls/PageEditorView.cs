@@ -1149,12 +1149,42 @@ public sealed class PageEditorView : Control
         double available_width = cell.Width - left_padding - 5;
         if (available_width <= 1)
             return;
-        var formatted = create_formatted_text(text, 11, Colors.Black, bolded);
-        formatted.MaxTextWidth = available_width;
-        formatted.MaxLineCount = 1;
-        formatted.Trimming = TextTrimming.CharacterEllipsis;
-        using (context.PushClip(new Rect(cell.Left + left_padding, cell.Top, available_width, cell.Height)))
-            context.DrawText(formatted, new Point(cell.Left + left_padding, cell.Top + 3));
+
+        var formatted = create_table_cell_text(text, available_width, bolded);
+        double top = cell.Top + (cell.Height - formatted.Height) / 2;
+        context.DrawText(formatted, new Point(cell.Left + left_padding, top));
+    }
+
+    private FormattedText create_table_cell_text(string text, double available_width, bool bolded)
+    {
+        const double font_size = 11;
+        string single_line_text = text.ReplaceLineEndings(" ");
+        var formatted = create_formatted_text(single_line_text, font_size, Colors.Black, bolded);
+        if (formatted.Width <= available_width)
+            return formatted;
+
+        const string ellipsis = "…";
+        int[] text_element_starts = StringInfo.ParseCombiningCharacters(single_line_text);
+        int minimum_count = 0;
+        int maximum_count = text_element_starts.Length;
+        while (minimum_count < maximum_count)
+        {
+            int candidate_count = (minimum_count + maximum_count + 1) / 2;
+            int candidate_length = candidate_count < text_element_starts.Length
+                ? text_element_starts[candidate_count]
+                : single_line_text.Length;
+            string candidate = single_line_text[..candidate_length].TrimEnd() + ellipsis;
+            if (text_width(candidate, font_size, bolded) <= available_width)
+                minimum_count = candidate_count;
+            else
+                maximum_count = candidate_count - 1;
+        }
+
+        int fitted_length = minimum_count < text_element_starts.Length
+            ? text_element_starts[minimum_count]
+            : single_line_text.Length;
+        string fitted_text = single_line_text[..fitted_length].TrimEnd() + ellipsis;
+        return create_formatted_text(fitted_text, font_size, Colors.Black, bolded);
     }
 
     private static Rect table_rect_for(Rect bounds) =>
