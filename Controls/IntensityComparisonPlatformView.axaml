@@ -8,7 +8,7 @@
     <StackPanel Margin="24" Spacing="14" MaxWidth="750" Width="750" HorizontalAlignment="Center">
       <StackPanel Margin="0,12" Spacing="8">
         <TextBlock Foreground="{DynamicResource AppBrushText2}" FontWeight="Bold" Text="{Binding KindName}" />
-        <TextBlock Foreground="{DynamicResource SemiColorText1}" TextWrapping="Wrap" LineHeight="18" Text="{Binding KindDescription}" />
+        <TextBlock Foreground="{DynamicResource SemiColorText1}" TextWrapping="Wrap" LineHeight="19" Text="{Binding KindDescription}" />
       </StackPanel>
       <Border IsVisible="{Binding HasWarning}" BorderBrush="{DynamicResource AppBrushWarningBorder}" BorderThickness="1" CornerRadius="6" Padding="10" Background="{DynamicResource AppBrushWarningBackground}"><TextBlock Foreground="{DynamicResource AppBrushWarningText}" TextWrapping="Wrap" Text="{Binding Platform.WarningText}" /></Border>
       <Border Height="230" ClipToBounds="True">

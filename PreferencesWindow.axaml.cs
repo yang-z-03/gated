@@ -461,7 +461,7 @@ public partial class PreferencesWindow : Window
                 {
                     Text = message,
                     TextWrapping = TextWrapping.Wrap,
-                    LineHeight = 18,
+                    LineHeight = 19,
                     Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text3"))
                 },
                 ok
@@ -489,7 +489,7 @@ public partial class PreferencesWindow : Window
                 {
                     Text = message,
                     TextWrapping = TextWrapping.Wrap,
-                    LineHeight = 18,
+                    LineHeight = 19,
                     Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text3"))
                 },
                 buttons

@@ -44,7 +44,7 @@
         <Grid Grid.Column="1">
             <Grid x:Name="cytometryPage" RowDefinitions="Auto,*" RowSpacing="10" IsVisible="False">
 
-                <TextBlock Foreground="{DynamicResource SemiColorText0}" TextWrapping="Wrap" LineHeight="18"
+                <TextBlock Foreground="{DynamicResource SemiColorText0}" TextWrapping="Wrap" LineHeight="19"
                            Text="Define and modify channel default dimension setups for indicated cytometer platforms. Cytometer settings are automatically matched from FCS files experienced." />
 
                 <Grid Grid.Row="1" RowDefinitions="Auto,*" RowSpacing="10">
@@ -131,7 +131,7 @@
             </Grid>
 
             <Grid x:Name="elementBeadsPage" RowDefinitions="Auto,Auto,Auto,*" RowSpacing="10" IsVisible="False">
-                <TextBlock Foreground="{DynamicResource SemiColorText0}" TextWrapping="Wrap" LineHeight="18"
+                <TextBlock Foreground="{DynamicResource SemiColorText0}" TextWrapping="Wrap" LineHeight="19"
                            Text="Define element bead isotope sets and manufacturer lot reference intensities used by mass normalization." />
 
                 <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="8">
@@ -192,7 +192,7 @@
             </Grid>
 
             <Grid x:Name="isotopesPage" RowDefinitions="Auto,Auto,*" RowSpacing="10" IsVisible="False">
-                <TextBlock Foreground="{DynamicResource SemiColorText0}" TextWrapping="Wrap" LineHeight="18"
+                <TextBlock Foreground="{DynamicResource SemiColorText0}" TextWrapping="Wrap" LineHeight="19"
                            Text="Define elements and isotope masses that may cross-talk through isotopic impurity. Adjacent-mass and oxide interactions are inferred independently." />
                 <Grid Grid.Row="1" ColumnDefinitions="*,Auto">
                     <TextBlock Foreground="{DynamicResource SemiColorText2}" VerticalAlignment="Center"
@@ -266,7 +266,7 @@
 
             <StackPanel x:Name="appearancePage"
                         Spacing="18">
-                <TextBlock Foreground="{DynamicResource SemiColorText0}" TextWrapping="Wrap" LineHeight="18"
+                <TextBlock Foreground="{DynamicResource SemiColorText0}" TextWrapping="Wrap" LineHeight="19"
                            Text="Global appearance of the application. Some settings requires restarting the application" />
 
                 <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="18" RowSpacing="8">

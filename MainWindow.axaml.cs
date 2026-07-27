@@ -1304,7 +1304,7 @@ public partial class MainWindow : Window
                     Text = build_update_status_text(status),
                     TextWrapping = TextWrapping.Wrap,
                     FontSize = 12,
-                    LineHeight = 18,
+                    LineHeight = 19,
                     Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text4"))
                 },
                 new TextBlock
@@ -1426,7 +1426,7 @@ public partial class MainWindow : Window
                     {
                         Text = message,
                         TextWrapping = TextWrapping.Wrap,
-                        LineHeight = 18,
+                        LineHeight = 19,
                         Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text3"))
                     },
                     new StackPanel
@@ -1475,7 +1475,7 @@ public partial class MainWindow : Window
                     {
                         Text = message,
                         TextWrapping = TextWrapping.Wrap,
-                        LineHeight = 18,
+                        LineHeight = 19,
                         Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text3"))
                     },
                     new StackPanel
@@ -1483,6 +1483,7 @@ public partial class MainWindow : Window
                         Orientation = Avalonia.Layout.Orientation.Horizontal,
                         HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
                         Spacing = 8,
+                        Margin = new Thickness(0, 5, 0, 0),
                         Children =
                         {
                             new Button { Content = "Cancel", MinWidth = 80, IsCancel = true },
@@ -1532,7 +1533,7 @@ public partial class MainWindow : Window
                     {
                         Text = message,
                         TextWrapping = TextWrapping.Wrap,
-                        LineHeight = 18,
+                        LineHeight = 19,
                         Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text3"))
                     },
                     new StackPanel
@@ -3377,7 +3378,7 @@ public partial class MainWindow : Window
                     {
                         Text = message,
                         TextWrapping = TextWrapping.Wrap,
-                        LineHeight = 18,
+                        LineHeight = 19,
                         Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text3"))
                     },
                     new StackPanel
@@ -3430,7 +3431,7 @@ public partial class MainWindow : Window
                     {
                         Text = message,
                         TextWrapping = TextWrapping.Wrap,
-                        LineHeight = 18,
+                        LineHeight = 19,
                         Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text3"))
                     },
                     new StackPanel

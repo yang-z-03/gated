@@ -321,7 +321,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         RefreshSelectedLayoutCommand = new RelayCommand(_ => RefreshLayoutCanvas(), _ => selected_page_layout is not null);
         ExpandProjectTreeCommand = new RelayCommand(_ => set_project_tree_expanded(true));
         CollapseProjectTreeCommand = new RelayCommand(_ => set_project_tree_expanded(false));
-        DeleteSelectedCommand = new RelayCommand(_ => delete_selected(), _ => can_delete_selected_node());
+        DeleteSelectedCommand = new RelayCommand(_ => _ = delete_selected_async(), _ => can_delete_selected_node());
         CloseWorkspaceCommand = new RelayCommand(_ => CloseWorkspace());
         AddPolygonGateCommand = new RelayCommand(_ => _ = add_gate_async(GateKind.Polygon), _ => can_create_gate_kind(GateKind.Polygon));
         AddRectangleGateCommand = new RelayCommand(_ => _ = add_gate_async(GateKind.Rectangle), _ => can_create_gate_kind(GateKind.Rectangle));
@@ -2621,7 +2621,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         raise_command_states();
     }
 
-    private void delete_selected()
+    private async Task delete_selected_async()
     {
         var replacement_key = selected_node is null ? null : replacement_key_after_deleted_node(selected_node);
         var group_to_recalculate = selected_group;
@@ -2649,10 +2649,13 @@ public sealed partial class MainWindowViewModel : NotifyBase
             refresh_spillover_workspace();
             if (IsMassCompensationMode) MassCompensationPanel.SetGroup(selected_group);
         }
-        else if (selected_node?.Kind is ProjectNodeKind.Gate or ProjectNodeKind.GatePopulationSlot && selected_group is not null && selected_gate is not null)
-            remove_gate(selected_group, selected_gate);
-        else if (selected_node?.Kind == ProjectNodeKind.Population && selected_group is not null && selected_gate is not null)
-            remove_gate(selected_group, selected_gate);
+        else if (selected_node?.Kind is ProjectNodeKind.Gate or ProjectNodeKind.GatePopulationSlot or ProjectNodeKind.Population &&
+                 selected_group is not null && selected_gate is not null)
+        {
+            if (!await delete_gate_strategy_async(selected_group, selected_gate))
+                return;
+            group_to_recalculate = null;
+        }
         else if (selected_node?.Kind == ProjectNodeKind.Group && selected_group is not null)
         {
             Guid removed_group_id = selected_group.Id;
@@ -2733,6 +2736,152 @@ public sealed partial class MainWindowViewModel : NotifyBase
         refresh_plot_gates();
         refresh_selected_statistics();
         if (IsIndexDemultiplexMode) DemultiplexPanel.SetGroup(selected_group);
+    }
+
+    private async Task<bool> delete_gate_strategy_async(FlowGroup group, GateDefinition selected)
+    {
+        var (removed_gate_ids, dependent_logical_gates) = gate_deletion_closure(group, selected);
+        if (dependent_logical_gates.Count > 0)
+        {
+            string listed_gates = string.Join(Environment.NewLine,
+                dependent_logical_gates.Take(12).Select(gate => $"- {gate.Name}"));
+            if (dependent_logical_gates.Count > 12)
+                listed_gates += $"{Environment.NewLine}- and {dependent_logical_gates.Count - 12} more";
+
+            string message =
+                $"The following logical gates depend on “{selected.Name}” or one of its descendants and must also be deleted:{Environment.NewLine}{Environment.NewLine}" +
+                listed_gates +
+                $"{Environment.NewLine}{Environment.NewLine}Their definitions, population results, and linked layout plots will be removed. Continue?";
+            bool proceed = RequestConfirmationAsync is not null &&
+                           await RequestConfirmationAsync("Delete dependent gates", message);
+            if (!proceed)
+                return false;
+        }
+
+        int removed_population_count = 0;
+        foreach (var sample in group.Samples)
+            removed_population_count += remove_population_results(sample.Populations, removed_gate_ids);
+
+        int removed_plot_count = remove_gate_linked_layout_elements(group, removed_gate_ids);
+        remove_gate_definitions(group.Gates, removed_gate_ids);
+
+        StatusText =
+            $"Deleted “{selected.Name}”: {removed_gate_ids.Count} gate definition{(removed_gate_ids.Count == 1 ? "" : "s")}, " +
+            $"{removed_population_count} population result{(removed_population_count == 1 ? "" : "s")}, and " +
+            $"{removed_plot_count} linked layout element{(removed_plot_count == 1 ? "" : "s")}";
+        return true;
+    }
+
+    private static (HashSet<Guid> RemovedGateIds, IReadOnlyList<GateDefinition> DependentLogicalGates) gate_deletion_closure(
+        FlowGroup group,
+        GateDefinition selected)
+    {
+        var all = all_gates(group.Gates).ToArray();
+        var removed_gate_ids = all_gates([selected]).Select(gate => gate.Id).ToHashSet();
+        var dependent_logical_gates = new List<GateDefinition>();
+
+        bool added;
+        do
+        {
+            added = false;
+            foreach (var gate in all)
+            {
+                if (removed_gate_ids.Contains(gate.Id) || !gate.IsBooleanCombination)
+                    continue;
+                if (!(gate.BooleanFirstGateId is Guid first_id && removed_gate_ids.Contains(first_id)) &&
+                    !(gate.BooleanSecondGateId is Guid second_id && removed_gate_ids.Contains(second_id)))
+                    continue;
+
+                dependent_logical_gates.Add(gate);
+                foreach (var dependent_subtree_gate in all_gates([gate]))
+                    added |= removed_gate_ids.Add(dependent_subtree_gate.Id);
+            }
+        }
+        while (added);
+
+        return (removed_gate_ids, dependent_logical_gates);
+    }
+
+    private static int remove_population_results(IList<PopulationResult> populations, IReadOnlySet<Guid> removed_gate_ids)
+    {
+        int removed = 0;
+        for (int index = populations.Count - 1; index >= 0; index--)
+        {
+            var population = populations[index];
+            if (removed_gate_ids.Contains(population.Gate.Id))
+            {
+                removed += 1 + count_population_descendants(population.Children);
+                populations.RemoveAt(index);
+                continue;
+            }
+
+            removed += remove_population_results(population.Children, removed_gate_ids);
+        }
+        return removed;
+    }
+
+    private static int count_population_descendants(IEnumerable<PopulationResult> populations)
+    {
+        int count = 0;
+        foreach (var population in populations)
+            count += 1 + count_population_descendants(population.Children);
+        return count;
+    }
+
+    private int remove_gate_linked_layout_elements(FlowGroup group, IReadOnlySet<Guid> removed_gate_ids)
+    {
+        int removed = 0;
+        bool selected_element_removed = false;
+        foreach (var layout in Workspace.PageLayouts)
+        {
+            var removed_element_ids = layout.Elements
+                .Where(element => ReferenceEquals(element.Group, group) &&
+                    (element.Gate is { } gate && removed_gate_ids.Contains(gate.Id) ||
+                     element.Population is { } population && removed_gate_ids.Contains(population.Gate.Id) ||
+                     element is StatisticTableElement table && table.Columns.Any(column =>
+                         ReferenceEquals(column.Group, group) && column.Gate is { } column_gate && removed_gate_ids.Contains(column_gate.Id))))
+                .Select(element => element.Id)
+                .ToHashSet();
+
+            bool added;
+            do
+            {
+                added = false;
+                foreach (var element in layout.Elements)
+                    if (element.ParentElementId is Guid parent_id && removed_element_ids.Contains(parent_id))
+                        added |= removed_element_ids.Add(element.Id);
+            }
+            while (added);
+
+            for (int index = layout.Elements.Count - 1; index >= 0; index--)
+            {
+                var element = layout.Elements[index];
+                if (!removed_element_ids.Contains(element.Id))
+                    continue;
+
+                selected_element_removed |= ReferenceEquals(element, selected_page_element);
+                layout.Elements.RemoveAt(index);
+                removed++;
+            }
+        }
+
+        if (selected_element_removed)
+            SelectedPageElement = selected_page_layout?.Elements.LastOrDefault();
+        return removed;
+    }
+
+    private static void remove_gate_definitions(IList<GateDefinition> gates, IReadOnlySet<Guid> removed_gate_ids)
+    {
+        for (int index = gates.Count - 1; index >= 0; index--)
+        {
+            var gate = gates[index];
+            if (removed_gate_ids.Contains(gate.Id))
+            {
+                gates.RemoveAt(index);
+                continue;
+            }
+            remove_gate_definitions(gate.Children, removed_gate_ids);
+        }
     }
 
     private bool can_delete_selected_node() =>
@@ -3120,17 +3269,6 @@ public sealed partial class MainWindowViewModel : NotifyBase
                     StatusText = completion_status;
             });
         }
-    }
-
-    private static void remove_gate(FlowGroup group, GateDefinition gate)
-    {
-        if (gate.Parent is not null)
-        {
-            gate.Parent.Children.Remove(gate);
-            return;
-        }
-
-        group.Gates.Remove(gate);
     }
 
     private static void remove_sample_preferred_views(FlowGroup group, string sample_name)

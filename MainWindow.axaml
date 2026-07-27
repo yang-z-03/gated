@@ -1439,7 +1439,7 @@
                                                  MaxHeight="180"
                                                  AcceptsReturn="True"
                                                  TextWrapping="Wrap"
-                                                 LineHeight="18"
+                                                 LineHeight="19"
                                                  Padding="4"
                                                  VerticalContentAlignment="Top"
                                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
@@ -1644,7 +1644,7 @@
 
                         <StackPanel Margin="0 12 0 12" Spacing="8">
                             <TextBlock Foreground="{DynamicResource AppBrushText2}" FontWeight="Bold" Text="Conventional Spillover Compensation" />
-                            <TextBlock Foreground="{DynamicResource SemiColorText1}"  TextWrapping="Wrap" LineHeight="18"
+                            <TextBlock Foreground="{DynamicResource SemiColorText1}"  TextWrapping="Wrap" LineHeight="19"
                                        Text="Spillover occurs when fluorophores emit light that bleeds into adjacent detection channels. Compensation mathematically corrects this by subtracting the spillover signal from each channel based on single stained control measurements." />
                         </StackPanel>
 
@@ -1758,7 +1758,7 @@
                         </Border>
 
                         <StackPanel Margin="0 12 0 4" IsVisible="{Binding HasSpilloverControls}">
-                            <TextBlock Foreground="{DynamicResource SemiColorText1}" TextWrapping="Wrap" LineHeight="18"
+                            <TextBlock Foreground="{DynamicResource SemiColorText1}" TextWrapping="Wrap" LineHeight="19"
                                        Text="Calculate auto-compensation will overwrite matrix. You may calculate once and manually edit the table before applying it to the group. Once generated, the preview matrix plot will update real-time as you edit." />
                         </StackPanel>
 
@@ -1953,7 +1953,7 @@
                     <StackPanel Margin="24" Spacing="14" MaxWidth="750" MinWidth="750" HorizontalAlignment="Center">
                         <StackPanel Margin="0 12" Spacing="8">
                             <TextBlock Foreground="{DynamicResource AppBrushText2}" FontWeight="Bold" Text="Mass Cytometry Compensation" />
-                            <TextBlock Foreground="{DynamicResource SemiColorText1}" TextWrapping="Wrap" LineHeight="18"
+                            <TextBlock Foreground="{DynamicResource SemiColorText1}" TextWrapping="Wrap" LineHeight="19"
                                        Text="Mass compensation estimates isotopic impurity, adjacent-mass abundance sensitivity, and oxide spillover from ungated single-staining control tubes." />
                         </StackPanel>
 
@@ -2066,7 +2066,7 @@
 
                         <StackPanel Margin="0 12 0 12" Spacing="8">
                             <TextBlock Foreground="{DynamicResource AppBrushText2}" FontWeight="Bold" Text="Spectral Unmixing" />
-                            <TextBlock Foreground="{DynamicResource SemiColorText1}" TextWrapping="Wrap" LineHeight="18"
+                            <TextBlock Foreground="{DynamicResource SemiColorText1}" TextWrapping="Wrap" LineHeight="19"
                                        Text="Spectral unmixing derives fluroscence signature for each stained flurochrome, and then decomposite the spectral measurement of samples into fractions for real staining channels." />
                         </StackPanel>
 
@@ -2244,7 +2244,7 @@
                     <StackPanel Margin="24" Spacing="14" MaxWidth="750" MinWidth="750" HorizontalAlignment="Center">
                         <StackPanel Margin="0 12" Spacing="8">
                             <TextBlock Foreground="{DynamicResource AppBrushText2}" FontWeight="Bold" Text="Mass normalization" />
-                            <TextBlock Foreground="{DynamicResource SemiColorText1}" TextWrapping="Wrap" LineHeight="18"
+                            <TextBlock Foreground="{DynamicResource SemiColorText1}" TextWrapping="Wrap" LineHeight="19"
                                        Text="Element bead signals provide a time-dependent reference for correcting acquisition drift in mass-cytometry channels. Add samples, verify the automatically detected bead gates, and write normalized copies to a separate grouping." />
                         </StackPanel>
 
@@ -2318,7 +2318,7 @@
                             <TextBlock Grid.Column="1" MinWidth="250" TextAlignment="Right" Foreground="{DynamicResource SemiColorText1}" Text="{Binding MassPanel.ApplyProgressText}" />
                         </Grid>
                         <Border IsVisible="{Binding MassPanel.HasWarning}" BorderBrush="{DynamicResource AppBrushWarningBorder}" BorderThickness="1" CornerRadius="6" Padding="10" Background="{DynamicResource AppBrushWarningBackground}">
-                            <TextBlock Foreground="{DynamicResource AppBrushWarningText}" TextWrapping="Wrap" Text="{Binding MassPanel.WarningText}" LineHeight="18"/>
+                            <TextBlock Foreground="{DynamicResource AppBrushWarningText}" TextWrapping="Wrap" Text="{Binding MassPanel.WarningText}" LineHeight="19"/>
                         </Border>
                     </StackPanel>
                 </ScrollViewer>
@@ -2331,7 +2331,7 @@
                     <StackPanel Margin="24" Spacing="14" MaxWidth="750" MinWidth="750" HorizontalAlignment="Center">
                         <StackPanel Margin="0 12" Spacing="8">
                             <TextBlock Foreground="{DynamicResource AppBrushText2}" FontWeight="Bold" Text="Index Demultiplex" />
-                            <TextBlock Foreground="{DynamicResource SemiColorText1}" TextWrapping="Wrap" LineHeight="18"
+                            <TextBlock Foreground="{DynamicResource SemiColorText1}" TextWrapping="Wrap" LineHeight="19"
                                        Text="Select index channels, review the automatically fitted raw-signal cutoffs, choose the desired positive/negative subsets, and split copies into a separate grouping." />
                         </StackPanel>
 
@@ -2498,7 +2498,7 @@
                                 HorizontalAlignment="Center">
                         <StackPanel Margin="0 12 0 0" Spacing="8">
                             <TextBlock Foreground="{DynamicResource AppBrushText2}" FontWeight="Bold" Text="Workspace metadata" />
-                            <TextBlock Foreground="{DynamicResource SemiColorText1}"  TextWrapping="Wrap" LineHeight="18"
+                            <TextBlock Foreground="{DynamicResource SemiColorText1}"  TextWrapping="Wrap" LineHeight="19"
                                        Text="Edit sample level metadata table. Such metadata will be accessed by Python engine, and initialize with duplication of input FCS files. Such information will be source of keywords for FCS files written" />
                         </StackPanel>
 
@@ -2553,7 +2553,7 @@
 
                         <StackPanel Margin="0 12 0 0" Spacing="8">
                             <TextBlock Foreground="{DynamicResource AppBrushText2}" FontWeight="Bold" Text="Experiment overview" />
-                            <TextBlock Foreground="{DynamicResource SemiColorText1}"  TextWrapping="Wrap" LineHeight="18"
+                            <TextBlock Foreground="{DynamicResource SemiColorText1}"  TextWrapping="Wrap" LineHeight="19"
                                        Text="Edit overview messages for experiment in complying with MIFlowCyt criteria" />
                         </StackPanel>
 
@@ -2620,7 +2620,7 @@
                                 HorizontalAlignment="Center">
                         <StackPanel Margin="0 12 0 0" Spacing="8">
                             <TextBlock Foreground="{DynamicResource AppBrushText2}" FontWeight="Bold" Text="Grouping channel metadata" />
-                            <TextBlock Foreground="{DynamicResource SemiColorText1}"  TextWrapping="Wrap" LineHeight="18"
+                            <TextBlock Foreground="{DynamicResource SemiColorText1}"  TextWrapping="Wrap" LineHeight="19"
                                        Text="Groups consist of samples with shared channel detectors. You may rename or re-label these channels for human-readable names for ease of analysis." />
                         </StackPanel>
 

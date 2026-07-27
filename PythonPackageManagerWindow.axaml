@@ -61,7 +61,7 @@
                 <TextBlock FontSize="13"
                            Foreground="{DynamicResource SemiColorText2}"
                            TextWrapping="Wrap"
-                           LineHeight="18"
+                           LineHeight="19"
                            Text="View and modify Python packages installed in the managed environment platform. You are able to use these packages when writing macros, scripts and statittic definitions by importing. This is a separate environment owned by Gated, not related to the system installation of Python."/>
             </StackPanel>
             <Button x:Name="refreshButton" Classes="Small" Grid.Column="1">

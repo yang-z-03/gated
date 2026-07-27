@@ -1386,7 +1386,7 @@ public sealed class PythonScriptEditorView : UserControl, IThemeResourceAware
             panel.Children.Add(new TextBlock
             {
                 Text = title,
-                LineHeight = 18,
+                LineHeight = 19,
                 FontFamily = string.IsNullOrWhiteSpace(item.Signature) ?
                     current_typeface(parent).FontFamily :
                     FontFamily.Parse("avares://gated/Fonts#IBM Plex Mono"),
@@ -1417,7 +1417,7 @@ public sealed class PythonScriptEditorView : UserControl, IThemeResourceAware
             FontWeight = FontWeight.SemiBold,
             Foreground = new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Text2")),
             TextWrapping = TextWrapping.Wrap,
-            LineHeight = 18
+            LineHeight = 19
         });
 
         string documentation = string.IsNullOrWhiteSpace(item.Documentation)
