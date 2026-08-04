@@ -84,4 +84,7 @@
   <version major="6" minor="0" patch="0" platform="windows" minimal="7" arch="x64">
     <archive href="https://github.com/yang-z-03/gated/releases/download/0-32/updater-6-0-0-win-x64.zip" extract="."/>
   </version>
+  <version major="6" minor="0" patch="0" platform="posix" minimal="-" arch="x64">
+    <archive href="https://github.com/yang-z-03/gated/releases/download/0-32-10/updater-6-0-0-posix-x64.zip" extract="."/>
+  </version>
 </repository>
