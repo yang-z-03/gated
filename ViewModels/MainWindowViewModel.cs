@@ -8050,7 +8050,10 @@ public sealed partial class MainWindowViewModel : NotifyBase
 
     private void spillover_preview_matrix_cell_changed(object? sender, PropertyChangedEventArgs e)
     {
-        // Text edits validate the table only. Preview plots use the static auto-calculation data.
+        if (e.PropertyName != nameof(SpilloverPreviewMatrixCell.Text))
+            return;
+
+        refresh_spillover_preview_plots_from_table();
     }
 
     private void refresh_spillover_preview_plots_from_table()
@@ -8081,6 +8084,11 @@ public sealed partial class MainWindowViewModel : NotifyBase
         if (selected_group is null)
             yield break;
 
+        double[,]? inverse = try_build_spillover_preview_inverse(out var current_inverse)
+            ? current_inverse
+            : null;
+        var tube_data = new Dictionary<int, SpilloverTubePreviewData?>();
+
         for (int detector = 0; detector < matrix.ChannelNames.Count; detector++)
         for (int primary = 0; primary < matrix.ChannelNames.Count; primary++)
         {
@@ -8093,9 +8101,18 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 !row.IsBlank &&
                 row.PositiveSelection is not null &&
                 string.Equals(row.ParameterName, primary_channel, StringComparison.Ordinal));
-            var points = source_row is null ? [] : regression_points(source_row, primary_channel, detector_channel);
-            var regression_fit = fit_line(points);
-            var display_fit = fit_line_from_table(detector, primary, regression_fit);
+            if (!tube_data.TryGetValue(primary, out var preview_data))
+            {
+                preview_data = source_row is null
+                    ? null
+                    : build_spillover_tube_preview_data(source_row, matrix.ChannelNames, inverse);
+                tube_data[primary] = preview_data;
+            }
+
+            IReadOnlyList<Point> points = preview_data?.RawPoints[detector] ??
+                (source_row is null ? [] : regression_points(source_row, primary_channel, detector_channel));
+            IReadOnlyList<Point> compensated_points = preview_data?.CompensatedPoints[detector] ?? [];
+            var display_fit = fit_line_from_table(detector, primary);
 
             var x_axis = preview_axis_settings(primary_channel);
             var y_axis = preview_axis_settings(detector_channel);
@@ -8103,6 +8120,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
                 primary_channel,
                 detector_channel,
                 points,
+                compensated_points,
                 x_axis.Minimum,
                 x_axis.Maximum,
                 x_axis.Scale.Clone(),
@@ -8113,17 +8131,160 @@ public sealed partial class MainWindowViewModel : NotifyBase
         }
     }
 
-    private SpilloverFitLine? fit_line_from_table(int detector_index, int primary_index, SpilloverFitLine? fallback)
+    private SpilloverFitLine? fit_line_from_table(int detector_index, int primary_index)
     {
         if (detector_index >= SpilloverPreviewMatrixRows.Count ||
             primary_index >= SpilloverPreviewMatrixRows[detector_index].Values.Count)
-            return fallback;
+            return null;
 
         var cell = SpilloverPreviewMatrixRows[detector_index].Values[primary_index];
         if (!cell.TryGetFraction(out double fraction))
-            return fallback;
+            return null;
 
-        return new SpilloverFitLine(fraction, fallback?.Intercept ?? 0.0);
+        return new SpilloverFitLine(fraction, 0.0);
+    }
+
+    private SpilloverTubePreviewData? build_spillover_tube_preview_data(
+        SpilloverControlRowViewModel row,
+        IReadOnlyList<string> channels,
+        double[,]? inverse)
+    {
+        int[] mapped_channels = channels.Select(row.Sample.GetChannelIndex).ToArray();
+        if (mapped_channels.Any(index => index < 0))
+            return null;
+
+        var raw_points = Enumerable.Range(0, channels.Count).Select(_ => new List<Point>()).ToArray();
+        var compensated_points = Enumerable.Range(0, channels.Count).Select(_ => new List<Point>()).ToArray();
+        var indices = positive_indices(row);
+        int step = Math.Max(1, indices.Length / 2500);
+        var raw = new double[channels.Count];
+        var compensated = new double[channels.Count];
+        int primary = index_of_channel(channels, row.ParameterName);
+        if (primary < 0)
+            return null;
+
+        for (int selected_index = 0; selected_index < indices.Length; selected_index += step)
+        {
+            int event_index = indices[selected_index];
+            if (event_index < 0 || event_index >= row.Sample.EventCount)
+                continue;
+
+            bool all_finite = true;
+            for (int channel = 0; channel < channels.Count; channel++)
+            {
+                raw[channel] = row.Sample.RawEvents[event_index, mapped_channels[channel]];
+                all_finite &= double.IsFinite(raw[channel]);
+            }
+
+            if (double.IsFinite(raw[primary]))
+                for (int detector = 0; detector < channels.Count; detector++)
+                    if (double.IsFinite(raw[detector]))
+                        raw_points[detector].Add(new Point(raw[primary], raw[detector]));
+
+            if (inverse is null || !all_finite)
+                continue;
+
+            for (int target = 0; target < channels.Count; target++)
+            {
+                double value = 0;
+                for (int source = 0; source < channels.Count; source++)
+                    value += raw[source] * inverse[source, target];
+                compensated[target] = value;
+            }
+
+            if (!double.IsFinite(compensated[primary]))
+                continue;
+            for (int detector = 0; detector < channels.Count; detector++)
+                if (double.IsFinite(compensated[detector]))
+                    compensated_points[detector].Add(new Point(compensated[primary], compensated[detector]));
+        }
+
+        return new SpilloverTubePreviewData(raw_points, compensated_points);
+    }
+
+    private bool try_build_spillover_preview_inverse(out double[,] inverse)
+    {
+        int size = SpilloverPreviewChannels.Count;
+        var matrix = new float[size, size];
+        inverse = new double[size, size];
+        if (SpilloverPreviewMatrixRows.Count != size)
+            return false;
+
+        for (int display_row = 0; display_row < size; display_row++)
+        {
+            if (SpilloverPreviewMatrixRows[display_row].Values.Count != size)
+                return false;
+            for (int display_column = 0; display_column < size; display_column++)
+            {
+                if (!SpilloverPreviewMatrixRows[display_row].Values[display_column].TryGetFraction(out double fraction) ||
+                    !double.IsFinite(fraction))
+                    return false;
+                matrix[display_column, display_row] = Convert.ToSingle(fraction);
+            }
+        }
+
+        return try_invert_spillover_preview_matrix(matrix, out inverse);
+    }
+
+    private static bool try_invert_spillover_preview_matrix(float[,] matrix, out double[,] inverse)
+    {
+        int size = matrix.GetLength(0);
+        inverse = new double[size, size];
+        if (matrix.GetLength(1) != size)
+            return false;
+
+        var augmented = new double[size, size * 2];
+        for (int row = 0; row < size; row++)
+        {
+            for (int column = 0; column < size; column++)
+                augmented[row, column] = matrix[row, column];
+            augmented[row, size + row] = 1.0;
+        }
+
+        for (int pivot = 0; pivot < size; pivot++)
+        {
+            int best_row = pivot;
+            double best_value = Math.Abs(augmented[pivot, pivot]);
+            for (int row = pivot + 1; row < size; row++)
+            {
+                double value = Math.Abs(augmented[row, pivot]);
+                if (value <= best_value)
+                    continue;
+                best_value = value;
+                best_row = row;
+            }
+
+            if (!double.IsFinite(best_value) || best_value < 1e-12)
+                return false;
+
+            if (best_row != pivot)
+                for (int column = 0; column < size * 2; column++)
+                    (augmented[pivot, column], augmented[best_row, column]) =
+                        (augmented[best_row, column], augmented[pivot, column]);
+
+            double divisor = augmented[pivot, pivot];
+            for (int column = 0; column < size * 2; column++)
+                augmented[pivot, column] /= divisor;
+
+            for (int row = 0; row < size; row++)
+            {
+                if (row == pivot)
+                    continue;
+                double factor = augmented[row, pivot];
+                for (int column = 0; column < size * 2; column++)
+                    augmented[row, column] -= factor * augmented[pivot, column];
+            }
+        }
+
+        for (int row = 0; row < size; row++)
+        for (int column = 0; column < size; column++)
+        {
+            double value = augmented[row, size + column];
+            if (!double.IsFinite(value))
+                return false;
+            inverse[row, column] = value;
+        }
+        return true;
     }
 
     private static int index_of_channel(IReadOnlyList<string> channels, string channel_name)
@@ -8452,7 +8613,7 @@ public sealed class SpilloverPreviewMatrixCell : NotifyBase
         get => text;
         set
         {
-            if (!SetField(ref text, value ?? ""))
+            if (!SetField(ref text, value ?? "", nameof(Text)))
                 return;
             validate();
         }
@@ -8463,7 +8624,7 @@ public sealed class SpilloverPreviewMatrixCell : NotifyBase
     public bool IsInvalid
     {
         get => is_invalid;
-        set => SetField(ref is_invalid, value);
+        set => SetField(ref is_invalid, value, nameof(IsInvalid));
     }
 
     public bool TryGetFraction(out double fraction)
@@ -8504,10 +8665,15 @@ public sealed record SpilloverPreviewPlotRow(string YChannel, ObservableCollecti
 
 public sealed record SpilloverFitLine(double Slope, double Intercept);
 
+internal sealed record SpilloverTubePreviewData(
+    IReadOnlyList<Point>[] RawPoints,
+    IReadOnlyList<Point>[] CompensatedPoints);
+
 public sealed record SpilloverPreviewCell(
     string XChannel,
     string YChannel,
     IReadOnlyList<Point> Points,
+    IReadOnlyList<Point> CompensatedPoints,
     double XMinimum,
     double XMaximum,
     AxisScale XScale,

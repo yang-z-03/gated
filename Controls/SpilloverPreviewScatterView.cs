@@ -65,6 +65,7 @@ public sealed class SpilloverPreviewScatterView : Control
         context.FillRectangle(new SolidColorBrush(gated.Shared.ThemeResources.AppColor("Border2")), plot_rect);
         draw_grid(context, cell);
         draw_points(context, cell);
+        draw_compensated_points(context, cell);
         draw_fit(context, cell);
         draw_axes(context, cell);
     }
@@ -107,6 +108,21 @@ public sealed class SpilloverPreviewScatterView : Control
             var point = data_to_screen(cell, cell.Points[index].X, cell.Points[index].Y);
             if (plot_rect.Contains(point))
                 context.FillRectangle(brush, new Rect(point.X, point.Y, 1.1, 1.1));
+        }
+    }
+
+    private void draw_compensated_points(DrawingContext context, SpilloverPreviewCell cell)
+    {
+        if (cell.CompensatedPoints.Count == 0)
+            return;
+
+        int step = Math.Max(1, cell.CompensatedPoints.Count / 2200);
+        var brush = new SolidColorBrush(gated.Shared.ThemeResources.AppColor(this, "OverlayDangerMuted"));
+        for (int index = 0; index < cell.CompensatedPoints.Count; index += step)
+        {
+            var point = data_to_screen(cell, cell.CompensatedPoints[index].X, cell.CompensatedPoints[index].Y);
+            if (plot_rect.Contains(point))
+                context.FillRectangle(brush, new Rect(point.X - 0.15, point.Y - 0.15, 1.4, 1.4));
         }
     }
 

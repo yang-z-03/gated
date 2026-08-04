@@ -540,6 +540,7 @@
     <Color x:Key="AppColorOverlayDensityMedium">#A50046DC</Color>
     <Color x:Key="AppColorOverlayDensityHigh">#BE19D2D7</Color>
     <Color x:Key="AppColorOverlayDanger">#BEFF0000</Color>
+    <Color x:Key="AppColorOverlayDangerMuted">#A8FF6A6A</Color>
     <Color x:Key="AppColorOverlayHighlight">#46B4B4B4</Color>
     <Color x:Key="AppColorOverlayStrong">#69FAFAFA</Color>
     <Color x:Key="AppColorOverlayLabelBackground">#DCFFFFFF</Color>
