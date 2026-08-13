@@ -8,9 +8,9 @@
         Width="1500" Height="850"
         MinWidth="1275" MinHeight="700"
         Title="Gated"
-        
         WindowStartupLocation="CenterScreen"
-        Background="{DynamicResource SemiColorBackground0}">
+        Background="{DynamicResource AppBrushBackground4}"
+        TransparencyLevelHint="Transparent">
 
     <Window.Resources>
         <shared:CoordinateScaleIconConverter x:Key="CoordinateScaleIconConverter" />
@@ -198,13 +198,12 @@
         </Style>
     </Window.Styles>
 
-    <DockPanel x:Name="window">
-        <Border x:Name="titleBar" DockPanel.Dock="Top" Background="{DynamicResource AppBrushBackground4}" BorderThickness="0,0,0,0" BorderBrush="{DynamicResource AppBrushBorder3}">
+    <DockPanel x:Name="window" Background="Transparent">
+        <Border x:Name="titleBar" DockPanel.Dock="Top" Background="Transparent" 
+                BorderThickness="0,0,0,0" BorderBrush="{DynamicResource AppBrushBorder3}">
           <Grid Height="40">
-            <Rectangle Fill="{DynamicResource AppBrushBackground4}" PointerPressed="title_bar_pressed"/>
+            <Rectangle Fill="Transparent" PointerPressed="title_bar_pressed"/>
             <DockPanel>
-              <Border BorderBrush="{DynamicResource AppBrushBackground4}" BorderThickness="0 0 0 0"/>
-
               <!-- Page mode switch -->
               <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                 <Border x:Name="mainModeSwitch"
@@ -318,7 +317,7 @@
           </Grid>
         </Border>
 
-        <Menu x:Name="main_menu" DockPanel.Dock="Top" Background="{DynamicResource AppBrushBackground4}">
+        <Menu x:Name="main_menu" DockPanel.Dock="Top" Background="Transparent">
             <MenuItem Header="_File">
                 <MenuItem Header="Open workspace ..." InputGesture="Ctrl + Shift + O" Click="open_workspace_menu_item_click" />
                 <MenuItem Header="Open FCS ..." InputGesture="Ctrl + O" Click="open_fcs_menu_item_click" />

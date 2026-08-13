@@ -482,6 +482,7 @@
     <Color x:Key="AppColorBackground2">#151515</Color>
     <Color x:Key="AppColorBackground3">#1E1E1E</Color>
     <Color x:Key="AppColorBackground4">#252525</Color>
+    <Color x:Key="AppColorAcrylicBackground">#C0252525</Color>
     <Color x:Key="AppColorBackground5">#303030</Color>
     <Color x:Key="AppColorBackground6">#404040</Color>
     <Color x:Key="AppColorWindowBackground">#252525</Color>
@@ -574,6 +575,7 @@
     <SolidColorBrush x:Key="AppBrushBackground5" Color="{StaticResource AppColorBackground5}" />
     <SolidColorBrush x:Key="AppBrushBackground6" Color="{StaticResource AppColorBackground6}" />
     <SolidColorBrush x:Key="AppBrushWindowBackground" Color="{StaticResource AppColorWindowBackground}" />
+    <SolidColorBrush x:Key="AppBrushAcrylicBackground" Color="{StaticResource AppColorAcrylicBackground}" />
 
     <SolidColorBrush x:Key="AppBrushBorder1" Color="{StaticResource AppColorBorder1}" />
     <SolidColorBrush x:Key="AppBrushBorder2" Color="{StaticResource AppColorBorder2}" />

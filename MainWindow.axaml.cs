@@ -118,6 +118,27 @@ public partial class MainWindow : Window
         configure_platform_window_chrome();
         update_main_mode_switch();
         update_application_title();
+
+        // this.LostFocus += (_, _) => disable_acrylic();
+        // this.GotFocus += (_, _) => enable_acrylic();
+
+        enable_acrylic();
+    }
+
+    private void disable_acrylic()
+    {
+        ThemeResources.BindAppBrush(this, BackgroundProperty, "Background4");
+        TransparencyLevelHint = [WindowTransparencyLevel.Transparent];
+    }
+
+    private void enable_acrylic()
+    {
+        if (OperatingSystem.IsWindows() &&
+            OperatingSystem.IsWindowsVersionAtLeast(10, 0, 18100))
+        {
+            ThemeResources.BindAppBrush(this, BackgroundProperty, "AcrylicBackground");
+            TransparencyLevelHint = [WindowTransparencyLevel.AcrylicBlur];
+        }
     }
 
     private async void analysis_mode_tab_pressed(object? sender, PointerPressedEventArgs e)

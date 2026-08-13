@@ -104,7 +104,7 @@
 
         <Style Selector="^.Title /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Foreground" Value="{DynamicResource AppBrushText4}" />
-            <Setter Property="Background" Value="{DynamicResource AppBrushBackground4}" />
+            <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderBrush" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Padding" Value="0" />
@@ -118,18 +118,18 @@
 
         <Style Selector="^.Title:pointerover /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Foreground" Value="{DynamicResource AppBrushText1}" />
-            <Setter Property="Background" Value="{DynamicResource AppBrushBackground6}" />
+            <Setter Property="Background" Value="#50d0d0d0" />
             <Setter Property="BorderBrush" Value="Transparent" />
         </Style>
         <Style Selector="^.Title:pressed /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Foreground" Value="{DynamicResource AppBrushText1}" />
-            <Setter Property="Background" Value="{DynamicResource AppBrushBackground5}" />
+            <Setter Property="Background" Value="#50d0d0d0" />
             <Setter Property="BorderBrush" Value="Transparent" />
         </Style>
 
         <Style Selector="^.Close /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Foreground" Value="{DynamicResource AppBrushText4}" />
-            <Setter Property="Background" Value="{DynamicResource AppBrushBackground4}" />
+            <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderBrush" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Padding" Value="0" />
