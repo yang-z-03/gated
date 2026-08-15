@@ -119,16 +119,14 @@ public partial class MainWindow : Window
         update_main_mode_switch();
         update_application_title();
 
-        // this.LostFocus += (_, _) => disable_acrylic();
-        // this.GotFocus += (_, _) => enable_acrylic();
+        this.Activated += (_, _) => enable_acrylic();
+        this.Deactivated += (_, _) => disable_acrylic();
 
         enable_acrylic();
     }
-
     private void disable_acrylic()
     {
         ThemeResources.BindAppBrush(this, BackgroundProperty, "Background4");
-        TransparencyLevelHint = [WindowTransparencyLevel.Transparent];
     }
 
     private void enable_acrylic()
@@ -137,7 +135,6 @@ public partial class MainWindow : Window
             OperatingSystem.IsWindowsVersionAtLeast(10, 0, 18100))
         {
             ThemeResources.BindAppBrush(this, BackgroundProperty, "AcrylicBackground");
-            TransparencyLevelHint = [WindowTransparencyLevel.AcrylicBlur];
         }
     }
 

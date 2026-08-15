@@ -595,7 +595,7 @@
     <Color x:Key="AppColorBackground5">#CFCFCF</Color>
     <Color x:Key="AppColorBackground6">#BFBFBF</Color>
     <Color x:Key="AppColorWindowBackground">#F6F6F6</Color>
-    <Color x:Key="AppColorAcrylicBackground">#C0DADADA</Color>
+    <Color x:Key="AppColorAcrylicBackground">#D3DADADA</Color>
 
     <Color x:Key="AppColorBorder1">#EFEFEF</Color>
     <Color x:Key="AppColorBorder2">#CDCDCD</Color>

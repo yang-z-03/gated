@@ -10,7 +10,7 @@
         Title="Gated"
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource AppBrushBackground4}"
-        TransparencyLevelHint="Transparent">
+        TransparencyLevelHint="AcrylicBlur, Transparent">
 
     <Window.Resources>
         <shared:CoordinateScaleIconConverter x:Key="CoordinateScaleIconConverter" />
@@ -197,6 +197,12 @@
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
     </Window.Styles>
+
+    <Window.Transitions>
+        <Transitions>
+        <BrushTransition Property="Background" Duration="0:0:0.2" />
+        </Transitions>
+    </Window.Transitions>
 
     <DockPanel x:Name="window" Background="Transparent">
         <Border x:Name="titleBar" DockPanel.Dock="Top" Background="Transparent" 

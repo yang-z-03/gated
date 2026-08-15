@@ -482,7 +482,7 @@
     <Color x:Key="AppColorBackground2">#151515</Color>
     <Color x:Key="AppColorBackground3">#1E1E1E</Color>
     <Color x:Key="AppColorBackground4">#252525</Color>
-    <Color x:Key="AppColorAcrylicBackground">#C0252525</Color>
+    <Color x:Key="AppColorAcrylicBackground">#D3252525</Color>
     <Color x:Key="AppColorBackground5">#303030</Color>
     <Color x:Key="AppColorBackground6">#404040</Color>
     <Color x:Key="AppColorWindowBackground">#252525</Color>
