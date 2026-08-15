@@ -24,6 +24,18 @@
     </Window.Resources>
 
     <Window.Styles>
+        <Style Selector="WindowDrawnDecorations /template/ Button#PART_MinimizeButton">
+            <Setter Property="IsVisible" Value="False"/>
+        </Style>
+        <Style Selector="WindowDrawnDecorations /template/ Button#PART_MaximizeButton">
+            <Setter Property="IsVisible" Value="False"/>
+        </Style>
+        <Style Selector="WindowDrawnDecorations /template/ Button#PART_FullScreenButton">
+            <Setter Property="IsVisible" Value="False"/>
+        </Style>
+        <Style Selector="WindowDrawnDecorations /template/ Button#PART_CloseButton">
+            <Setter Property="IsVisible" Value="False"/>
+        </Style>
         <Style Selector="Button.WorkspaceStartAction">
             <Setter Property="Width" Value="80" />
             <Setter Property="Height" Value="92" />
@@ -499,7 +511,7 @@
                 Height="28"
                 BorderBrush="{DynamicResource AppBrushBorder3}"
                 BorderThickness="0,1,0,0"
-                Background="{DynamicResource AppBrushBackground4}">
+                Background="Transparent">
             <Grid ColumnDefinitions="*,Auto"
                   Margin="10,0,10,2">
                 <TextBlock Grid.Column="0"

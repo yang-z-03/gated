@@ -184,19 +184,16 @@ public partial class MainWindow : Window
     private void configure_platform_window_chrome()
     {
         ExtendClientAreaTitleBarHeightHint = 0;
+        WindowDecorations = Avalonia.Controls.WindowDecorations.Full;
 
         if (OperatingSystem.IsWindows())
         {
             bool use_system_chrome = Configuration.Preferences.UseSystemWindowChrome;
-            WindowDecorations = use_system_chrome
-                ? Avalonia.Controls.WindowDecorations.Full
-                : Avalonia.Controls.WindowDecorations.BorderOnly;
             ExtendClientAreaToDecorationsHint = !use_system_chrome;
             titleBar.IsVisible = !use_system_chrome;
             return;
         }
 
-        WindowDecorations = Avalonia.Controls.WindowDecorations.Full;
         if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
         {
             ExtendClientAreaToDecorationsHint = false;
