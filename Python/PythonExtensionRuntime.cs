@@ -408,6 +408,7 @@ public static class PythonExtensionRuntime
             {
                 using var globals = jedi_globals(code, line, column);
                 dynamic builtins = Py.Import("builtins");
+                builtins.exec(new StreamReader(AssetLoader.Open(new Uri("avares://gated/Python/intellisense.py"))).ReadToEnd(), globals, globals);
                 builtins.exec(new StreamReader(AssetLoader.Open(new Uri("avares://gated/Python/completion.py"))).ReadToEnd(), globals, globals);
                 using PyObject result = globals.GetItem("_result_json");
                 var items = JsonSerializer.Deserialize<List<Dictionary<string, string>>>(result.As<string>()) ?? [];
@@ -438,6 +439,7 @@ public static class PythonExtensionRuntime
             {
                 using var globals = jedi_globals(code, line, column);
                 dynamic builtins = Py.Import("builtins");
+                builtins.exec(new StreamReader(AssetLoader.Open(new Uri("avares://gated/Python/intellisense.py"))).ReadToEnd(), globals, globals);
                 builtins.exec(new StreamReader(AssetLoader.Open(new Uri("avares://gated/Python/hover.py"))).ReadToEnd(), globals, globals);
                 using PyObject result = globals.GetItem("_result_json");
                 string json = result.As<string>();
@@ -747,6 +749,7 @@ public static class PythonExtensionRuntime
         globals.SetItem("jedi", (jedi_module ?? Py.Import("jedi")));
         globals.SetItem("np", (numpy_module ?? Py.Import("numpy")));
         globals.SetItem("pd", (pandas_module ?? Py.Import("pandas")));
+        globals.SetItem("__stub_code", prelude.ToPython());
         globals.SetItem("__code", $"{prelude}\n{code}".ToPython());
         globals.SetItem("__line", (line + prelude_lines + 1).ToPython());
         globals.SetItem("__column", column.ToPython());
@@ -1055,6 +1058,8 @@ public sealed class PythonApplicationErrorException : Exception
 
 public sealed class PythonApplication
 {
+    public override string ToString() => "Application { }";
+
     public void log(object? content) => PythonExtensionRuntime.Log(content);
 
     public void warning(object? content)

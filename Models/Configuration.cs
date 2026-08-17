@@ -138,6 +138,8 @@ public sealed class CytometerPreferenceStore
 {
     public string SelectedCytometerName { get; set; } = Configuration.DefaultCytometerName;
     public string ThemeName { get; set; } = "Light";
+    public bool UseEmbeddedUiFont { get; set; } = true;
+    public string CustomUiFontFamily { get; set; } = "";
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool UseSystemWindowChrome { get; set; }
     public ObservableCollection<CytometerPreference> Cytometers { get; set; } = new();
@@ -523,6 +525,7 @@ public static class Configuration
         if (string.IsNullOrWhiteSpace(loaded.SelectedCytometerName))
             loaded.SelectedCytometerName = DefaultCytometerName;
         loaded.ThemeName = string.Equals(loaded.ThemeName, "Dark", StringComparison.OrdinalIgnoreCase) ? "Dark" : "Light";
+        loaded.CustomUiFontFamily = loaded.CustomUiFontFamily?.Trim() ?? "";
         return loaded;
     }
 

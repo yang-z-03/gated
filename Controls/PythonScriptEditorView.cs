@@ -682,6 +682,7 @@ public sealed class PythonScriptEditorView : UserControl, IThemeResourceAware
         {
             FontFamily = FontFamily.Parse("avares://gated/Fonts#IBM Plex Mono"),
             FontSize = 12,
+            LineHeight = 18,
             Foreground = new SolidColorBrush(color),
             TextWrapping = TextWrapping.Wrap
         };

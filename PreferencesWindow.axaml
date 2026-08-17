@@ -269,7 +269,7 @@
                 <TextBlock Foreground="{DynamicResource SemiColorText0}" TextWrapping="Wrap" LineHeight="19"
                            Text="Global appearance of the application. Some settings requires restarting the application" />
 
-                <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="18" RowSpacing="8">
+                <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="18" RowSpacing="14">
                     <TextBlock Grid.Row="0"
                                Grid.Column="0"
                                Foreground="{DynamicResource SemiColorText0}"
@@ -284,6 +284,25 @@
                         <RadioButton x:Name="darkThemeRadio"
                                      GroupName="ApplicationTheme"
                                      Content="Dark" />
+                    </StackPanel>
+                    <TextBlock Grid.Row="1"
+                               Grid.Column="0"
+                               Foreground="{DynamicResource SemiColorText0}"
+                               Text="UI font" />
+                    <StackPanel Grid.Row="1"
+                                Grid.Column="1"
+                                Spacing="8">
+                        <RadioButton x:Name="embeddedUiFontRadio"
+                                     GroupName="ApplicationUiFont"
+                                     Content="Use embedded default" />
+                        <RadioButton x:Name="customUiFontRadio"
+                                     GroupName="ApplicationUiFont"
+                                     Content="Custom" />
+                        <ComboBox x:Name="uiFontFamilyCombo"
+                                  Classes="Small"
+                                  Width="300"
+                                  HorizontalAlignment="Left"
+                                  PlaceholderText="Select a system font" />
                     </StackPanel>
                     <Grid x:Name="systemWindowChromeRow"
                           Grid.Row="2"

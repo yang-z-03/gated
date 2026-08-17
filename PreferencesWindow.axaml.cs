@@ -15,14 +15,20 @@ namespace gated;
 public partial class PreferencesWindow : Window
 {
     private readonly string original_theme_name;
+    private readonly bool original_use_embedded_ui_font;
+    private readonly string original_custom_ui_font_family;
     private ObservableCollection<ElementBeadTypePreference> bead_types;
     private ObservableCollection<IsotopePreferenceRow> isotope_rows;
     private bool binding_beads;
+    private bool binding_ui_font;
+    private bool preferences_saved;
 
     public PreferencesWindow()
     {
         InitializeComponent();
         original_theme_name = App.NormalizeThemeName(Configuration.Preferences.ThemeName);
+        original_use_embedded_ui_font = Configuration.Preferences.UseEmbeddedUiFont;
+        original_custom_ui_font_family = Configuration.Preferences.CustomUiFontFamily;
         bead_types = clone_bead_types(Configuration.Preferences.ElementBeads);
         isotope_rows = clone_isotope_rows(Configuration.Preferences.Isotopes);
         Tag = new PreferenceChoices();
@@ -34,6 +40,7 @@ public partial class PreferencesWindow : Window
         refresh_bead_types();
         isotopeElementList.ItemsSource = isotope_rows;
         set_theme_selection(original_theme_name);
+        bind_ui_font_preferences();
         systemWindowChromeRow.IsVisible = OperatingSystem.IsWindows();
         useSystemWindowChromeSwitch.IsChecked = Configuration.Preferences.UseSystemWindowChrome;
 
@@ -52,9 +59,21 @@ public partial class PreferencesWindow : Window
         removeLotButton.Click += async (_, _) => await remove_lot();
         lightThemeRadio.IsCheckedChanged += (_, _) => preview_selected_theme();
         darkThemeRadio.IsCheckedChanged += (_, _) => preview_selected_theme();
+        embeddedUiFontRadio.IsCheckedChanged += (_, _) => ui_font_selection_changed();
+        customUiFontRadio.IsCheckedChanged += (_, _) => ui_font_selection_changed();
+        uiFontFamilyCombo.SelectionChanged += (_, _) => preview_selected_ui_font();
+        Closed += (_, _) =>
+        {
+            if (!preferences_saved)
+            {
+                App.ApplyThemePreference(original_theme_name);
+                App.ApplyUiFontPreference(original_use_embedded_ui_font, original_custom_ui_font_family);
+            }
+        };
         cancelButton.Click += (_, _) =>
         {
             App.ApplyThemePreference(original_theme_name);
+            App.ApplyUiFontPreference(original_use_embedded_ui_font, original_custom_ui_font_family);
             Close(false);
         };
         saveButton.Click += async (_, _) =>
@@ -78,9 +97,15 @@ public partial class PreferencesWindow : Window
             foreach (var element in snapshot_isotopes(isotope_rows)) Configuration.Preferences.Isotopes.Add(element);
             Configuration.Preferences.IsotopesInitialized = true;
             Configuration.Preferences.ThemeName = selected_theme_name();
+            Configuration.Preferences.UseEmbeddedUiFont = embeddedUiFontRadio.IsChecked == true;
+            Configuration.Preferences.CustomUiFontFamily = selected_ui_font_family();
             Configuration.Preferences.UseSystemWindowChrome = useSystemWindowChromeSwitch.IsChecked == true;
             App.ApplyThemePreference(Configuration.Preferences.ThemeName);
+            App.ApplyUiFontPreference(
+                Configuration.Preferences.UseEmbeddedUiFont,
+                Configuration.Preferences.CustomUiFontFamily);
             Configuration.SavePreferences();
+            preferences_saved = true;
             Close(true);
         };
     }
@@ -134,6 +159,40 @@ public partial class PreferencesWindow : Window
     private void preview_selected_theme() =>
         App.ApplyThemePreference(selected_theme_name());
 
+    private void bind_ui_font_preferences()
+    {
+        binding_ui_font = true;
+        var font_names = App.SystemFontFamilyNames();
+        uiFontFamilyCombo.ItemsSource = font_names;
+        uiFontFamilyCombo.SelectedItem = font_names.FirstOrDefault(name =>
+            string.Equals(name, original_custom_ui_font_family, StringComparison.CurrentCultureIgnoreCase))
+            ?? font_names.FirstOrDefault();
+        bool use_embedded = original_use_embedded_ui_font || font_names.Count == 0;
+        embeddedUiFontRadio.IsChecked = use_embedded;
+        customUiFontRadio.IsChecked = !use_embedded;
+        customUiFontRadio.IsEnabled = font_names.Count > 0;
+        uiFontFamilyCombo.IsVisible = !use_embedded;
+        binding_ui_font = false;
+    }
+
+    private void ui_font_selection_changed()
+    {
+        uiFontFamilyCombo.IsVisible = customUiFontRadio.IsChecked == true;
+        preview_selected_ui_font();
+    }
+
+    private string selected_ui_font_family() =>
+        uiFontFamilyCombo.SelectedItem as string ?? "";
+
+    private void preview_selected_ui_font()
+    {
+        if (binding_ui_font)
+            return;
+        App.ApplyUiFontPreference(
+            embeddedUiFontRadio.IsChecked == true,
+            selected_ui_font_family());
+    }
+
     private void add_cytometer()
     {
         int index = Configuration.Preferences.Cytometers.Count + 1;
@@ -171,8 +230,12 @@ public partial class PreferencesWindow : Window
     private void reset_defaults()
     {
         string theme_name = Configuration.Preferences.ThemeName;
+        bool use_embedded_ui_font = Configuration.Preferences.UseEmbeddedUiFont;
+        string custom_ui_font_family = Configuration.Preferences.CustomUiFontFamily;
         Configuration.ResetPreferences();
         Configuration.Preferences.ThemeName = theme_name;
+        Configuration.Preferences.UseEmbeddedUiFont = use_embedded_ui_font;
+        Configuration.Preferences.CustomUiFontFamily = custom_ui_font_family;
         refresh_cytometer_combo();
         bead_types = clone_bead_types(Configuration.Preferences.ElementBeads);
         isotope_rows = clone_isotope_rows(Configuration.Preferences.Isotopes);

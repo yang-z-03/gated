@@ -1,0 +1,28 @@
+Version 0.32.0
+
+- Migration to Avalonia 12
+- Restructured platform API, platform layout implemented
+- Lines and text annotations in layout controls
+- Full support of cytometer preference, mass cytometry and spectral cytometry
+- Normalization of time and batches by multi-element beads
+- Index demultiplexer
+- Various convenience functions
+
+Patch 7
+
+- Deleting gates no longer request recalculation
+- Fix DPI-awareness of table rendering error
+
+Patch 10
+
+- Enable refresh of the compensation preview
+
+Patch 11
+
+- Acrylic head bars in supported systems
+
+Patch 14
+
+- Refined lost of activation transition and system animations on window borders
+- Provides more sensible intellisense in code editor
+- Minor adjustments for consistancy in API for Python

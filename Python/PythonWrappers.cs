@@ -74,6 +74,9 @@ public sealed class Workspace
 
     public Grouping this[string grouping] => __getitem__(grouping);
 
+    public override string ToString() =>
+        $"Workspace {{ name: {PythonDisplay.Inline(Model.Name)}, groupings: {Model.Groups.Count}, platforms: {Model.Platforms.Count} }}";
+
     public void apply_metadata(PyObject dataframe)
     {
         using (Py.GIL())
@@ -254,13 +257,15 @@ public class Platform
     public PyObject matrix => PythonArrayConverter.ToNumpy(Model.Matrix ?? new float[0, 0]);
     public PyObject compensated => PythonArrayConverter.ToNumpy(Model.Compensated ?? new float[0, 0]);
     public PyObject transformed => PythonArrayConverter.ToNumpy(Model.Transformed ?? new float[0, 0]);
-    public PyObject series => PythonObjects.Dict(Model.Series);
     public PyObject models => PythonObjects.Dict(Model.Models);
     public PyObject components => PythonObjects.Dict(Model.Components);
     public PyObject result => result_tables();
     public bool has_graphics => Model.HasGraphics;
     public bool has_data_table => Model.HasDataTable;
     public PyObject row_map => build_row_map();
+
+    public override string ToString() =>
+        $"Platform {{ name: {PythonDisplay.Inline(Model.Name)}, kind: {Model.Kind}, channels: {Model.SelectedFeatureNames.Length}, populations: {Model.Populations.Count} }}";
 
     public void clear_results()
     {
@@ -661,6 +666,9 @@ public sealed class UnivariatePlatform : Platform
     public PyObject smoothed => PythonArrayConverter.ToNumpy(model.Smoothed);
     public int smoothing_window => model.SmoothingWindow;
     public bool enable_smoothing => model.EnableSmoothing;
+
+    public override string ToString() =>
+        $"UnivariatePlatform {{ name: {PythonDisplay.Inline(Model.Name)}, major: {PythonDisplay.Inline(model.Major)}, populations: {Model.Populations.Count} }}";
 }
 
 public sealed class MultivariatePlatform : Platform
@@ -673,6 +681,9 @@ public sealed class MultivariatePlatform : Platform
     }
 
     public PyObject normalized => PythonArrayConverter.ToNumpy(model.Normalized ?? new float[0, 0]);
+
+    public override string ToString() =>
+        $"MultivariatePlatform {{ name: {PythonDisplay.Inline(Model.Name)}, channels: {Model.SelectedFeatureNames.Length}, populations: {Model.Populations.Count} }}";
 }
 
 public sealed class ViewOptions
@@ -707,6 +718,9 @@ public sealed class ViewOptions
         _ => "linear"
     };
 
+    public override string ToString() => FormattableString.Invariant(
+        $"ViewOptions {{ normalization: {normalization}, min: {min:G6}, max: {max:G6} }}");
+
     private double transform(double value) => (options?.Kind ?? platform?.Axis.Transform ?? PlatformTransformationKind.Linear) switch
     {
         PlatformTransformationKind.Logicle => new LogicleTransform(options?.Logicle ?? platform?.Axis.Logicle ?? new LogicleParameters()).Transform(value),
@@ -734,6 +748,9 @@ public sealed class PlatformPopulation
     public string gate_id => model.GateId.ToString();
     public string region => model.Region.ToString();
     public bool selected => model.IsSelected;
+
+    public override string ToString() =>
+        $"PlatformPopulation {{ group: {PythonDisplay.Inline(group)}, sample: {PythonDisplay.Inline(sample)}, population: {PythonDisplay.Inline(population)}, selected: {selected.ToString().ToLowerInvariant()} }}";
 }
 
 internal static class PlatformPythonHelpers
@@ -742,9 +759,9 @@ internal static class PlatformPythonHelpers
     {
         using (Py.GIL())
         {
-        dynamic json = Py.Import("json");
-        using PyObject text = json.dumps(value);
-        return JsonSerializer.Deserialize<string[]>(text.As<string>()) ?? [];
+            dynamic json = Py.Import("json");
+            using PyObject text = json.dumps(value);
+            return JsonSerializer.Deserialize<string[]>(text.As<string>()) ?? [];
         }
     }
 
@@ -752,9 +769,9 @@ internal static class PlatformPythonHelpers
     {
         using (Py.GIL())
         {
-        dynamic json = Py.Import("json");
-        using PyObject text = json.dumps(value);
-        return JsonSerializer.Deserialize<double[]>(text.As<string>()) ?? [];
+            dynamic json = Py.Import("json");
+            using PyObject text = json.dumps(value);
+            return JsonSerializer.Deserialize<double[]>(text.As<string>()) ?? [];
         }
     }
 
@@ -762,9 +779,9 @@ internal static class PlatformPythonHelpers
     {
         using (Py.GIL())
         {
-        dynamic json = Py.Import("json");
-        using PyObject text = json.dumps(value);
-        return JsonSerializer.Deserialize<List<string[]>>(text.As<string>()) ?? [];
+            dynamic json = Py.Import("json");
+            using PyObject text = json.dumps(value);
+            return JsonSerializer.Deserialize<List<string[]>>(text.As<string>()) ?? [];
         }
     }
 
@@ -816,8 +833,8 @@ public sealed class Grouping
     }
 
     public string name => Model.Name;
-    public PyObject samples => PythonObjects.List(Model.Samples.Select(sample => new Sample(Model, sample)));
-    public Strategy strategies => new(Model, null);
+    public PyObject samples => PythonObjects.Dict(Model.Samples.Select(sample => KeyValuePair.Create(sample.Name, new Sample(Model, sample))));
+    public Strategy strategy => new(Model, null);
     public PyObject compensations => PythonObjects.Dict(Model.CompensationCandidates.Select(item => KeyValuePair.Create(item.Name, new Compensation(item))));
     public string current_compensation => Model.AppliedCompensation?.Name ?? "";
     public PyObject channels => PythonObjects.List(Model.Channels.Select(channel => channel.Name));
@@ -827,6 +844,7 @@ public sealed class Grouping
         var sample = new FcsReader().Read(filename);
         if (!Model.CanAccept(sample))
             throw new InvalidOperationException($"FCS file '{filename}' is not compatible with grouping '{Model.Name}'.");
+        sample.Name = Workspace.unique_name(sample.Name, Model.Samples.Select(item => item.Name), "Sample");
         Model.AddSample(sample);
         return new Sample(Model, sample);
     }
@@ -849,20 +867,20 @@ public sealed class Grouping
     {
         using (Py.GIL())
         {
-        PythonExtensionRuntime.EnsureInitialized();
-        return PythonExtensionRuntime.WithGil(() =>
-        {
-            using (Py.GIL())
+            PythonExtensionRuntime.EnsureInitialized();
+            return PythonExtensionRuntime.WithGil(() =>
             {
-            var channel_names = PythonArrayConverter.To<string>(new PyList(channels));
-            var values = PythonArrayConverter.ToFloatMatrix(matrix);
-            if (values.GetLength(0) != channel_names.Count || values.GetLength(1) != channel_names.Count)
-                throw new ArgumentException("Compensation matrix dimensions must match the channel list.");
+                using (Py.GIL())
+                {
+                    var channel_names = PythonArrayConverter.To<string>(new PyList(channels));
+                    var values = PythonArrayConverter.ToFloatMatrix(matrix);
+                    if (values.GetLength(0) != channel_names.Count || values.GetLength(1) != channel_names.Count)
+                        throw new ArgumentException("Compensation matrix dimensions must match the channel list.");
 
-            var compensation = CompensationMatrix.Create(key, channel_names, values);
-            return new Compensation(Model.RegisterCompensation(compensation, make_applied_if_first: false));
-            }
-        });
+                    var compensation = CompensationMatrix.Create(key, channel_names, values);
+                    return new Compensation(Model.RegisterCompensation(compensation, make_applied_if_first: false));
+                }
+            });
         }
     }
 
@@ -873,38 +891,62 @@ public sealed class Grouping
         ?? throw new KeyNotFoundException($"Sample '{sample}' was not found.");
 
     public Sample this[string sample] => __getitem__(sample);
+
+    public override string ToString() =>
+        $"Grouping {{ name: {PythonDisplay.Inline(Model.Name)}, samples: {Model.Samples.Count}, channels: {Model.Channels.Count} }}";
 }
 
 public sealed class Strategy
 {
     private readonly FlowGroup group;
     private readonly GateDefinition? gate;
+    private readonly PopulationRegion? selected_population_region;
 
-    internal Strategy(FlowGroup group, GateDefinition? gate)
+    internal Strategy(FlowGroup group, GateDefinition? gate, PopulationRegion? selected_population_region = null)
     {
         this.group = group;
         this.gate = gate;
+        this.selected_population_region = selected_population_region;
     }
 
     public string name => gate?.Name ?? group.Name;
-    public PyObject statistics => PythonObjects.List(definitions().Select(definition => new StatisticDefinition(group, definition)));
-    public PyObject population_keys => PythonObjects.List(source_gates().SelectMany(item => Population.KeysForGate(item)));
+    public PyObject statistics => PythonObjects.Dict(statistic_items());
+    public PyObject population_keys => PythonObjects.List(
+        gate?.PopulationRegions.Select(region => gate.PopulationKey(region)) ?? ["primary"]);
     public bool has_multiple_populations => gate?.PopulationRegions.Count > 1;
+
+    public override string ToString() =>
+        $"Strategy {{ name: {PythonDisplay.Inline(name)}, statistics: {definitions().Count}, populations: {source_gates().Count()} }}";
 
     public PyObject children(string population_key = "default")
     {
-        var region = gate is null ? PopulationRegion.Primary : Population.ResolveRegion(gate, population_key);
-        return PythonObjects.List(source_gates()
-            .Where(child => gate is null || child.ParentPopulationRegion == region)
-            .Select(child => new Strategy(group, child)));
+        var region = resolve_population_region(population_key);
+        return PythonObjects.Dict(unique_items(
+            source_gates()
+                .Where(child => gate is null || child.ParentPopulationRegion == region)
+                .Select(child => KeyValuePair.Create(child.Name, new Strategy(group, child))),
+            "child gate"));
     }
+
+    public Strategy __getitem__(string population_key)
+    {
+        var matches = unique_items(child_population_items(), "child population")
+            .Where(item => item.Key == population_key)
+            .ToArray();
+        return matches.Length == 1
+            ? matches[0].Value
+            : throw new KeyNotFoundException($"Child population '{population_key}' was not found. Available keys: {string.Join(", ", child_population_items().Select(item => item.Key))}.");
+    }
+
+    public Strategy this[string population_key] => __getitem__(population_key);
 
     public Population get_population(Sample sample)
     {
         if (gate is null)
             return new Population(group, sample.Model, null);
-        var population = Population.Find(sample.Model.Populations, gate, PopulationRegion.Primary)
-            ?? throw new KeyNotFoundException($"Population for strategy '{gate.Name}' was not found in sample '{sample.name}'.");
+        var region = resolve_population_region("default");
+        var population = Population.Find(sample.Model.Populations, gate, region)
+            ?? throw new KeyNotFoundException($"Population '{gate.PopulationKey(region)}' for strategy '{gate.Name}' was not found in sample '{sample.name}'.");
         return new Population(group, sample.Model, population);
     }
 
@@ -922,7 +964,8 @@ public sealed class Strategy
             }
             else
             {
-                var population = Population.Find(sample.Model.Populations, gate, PopulationRegion.Primary);
+                var region = resolve_population_region("default");
+                var population = Population.Find(sample.Model.Populations, gate, region);
                 value = population?.Statistics.FirstOrDefault(item => item.Kind == definition.Kind && item.ChannelName == definition.ChannelName)?.Value ?? double.NaN;
             }
             return PythonArrayConverter.ToNumpy([value]);
@@ -939,9 +982,10 @@ public sealed class Strategy
             Kind = statistic_kind,
             ChannelName = string.IsNullOrWhiteSpace(channel) ? default_channel() : channel
         };
+        definition.DisplayName = unique_statistic_name(StatisticDefinition.NameFor(definition));
         definitions().Add(definition);
         group.RecalculateSamples();
-        return new StatisticDefinition(group, definition);
+        return new StatisticDefinition(group, definition, definitions());
     }
 
     public StatisticDefinition define_statistics_python(
@@ -952,12 +996,13 @@ public sealed class Strategy
     {
         using (Py.GIL())
         {
-        PythonExtensionRuntime.ValidateStatisticSource(source, callable_name);
-        var definition = new Models.StatisticDefinition();
-        definition.SetPythonMethod(source, callable_name, display_name, PythonExtensionRuntime.ToJson(parameters));
-        definitions().Add(definition);
-        group.RecalculateSamples();
-        return new StatisticDefinition(group, definition);
+            PythonExtensionRuntime.ValidateStatisticSource(source, callable_name);
+            var definition = new Models.StatisticDefinition();
+            string preferred_name = string.IsNullOrWhiteSpace(display_name) ? callable_name : display_name.Trim();
+            definition.SetPythonMethod(source, callable_name, unique_statistic_name(preferred_name), PythonExtensionRuntime.ToJson(parameters));
+            definitions().Add(definition);
+            group.RecalculateSamples();
+            return new StatisticDefinition(group, definition, definitions());
         }
     }
 
@@ -1014,14 +1059,16 @@ public sealed class Strategy
 
     private Strategy add_gate(string name, GateKind kind, string population_key, string channel1, string? channel2, float[,] positions)
     {
+        validate_gate_positions(kind, positions);
+        var gate_siblings = siblings();
         var child = new GateDefinition
         {
-            Name = Workspace.unique_name(name, all_gates(group.Gates).Select(item => item.Name), "Gate"),
+            Name = GateNameScope.UniqueName(name, GateNameScope.Names(gate_siblings), "Gate"),
             Kind = kind,
             XChannel = channel1,
             YChannel = kind is GateKind.Threshold or GateKind.Range ? null : channel2,
             Parent = gate,
-            ParentPopulationRegion = gate is null ? PopulationRegion.Primary : Population.ResolveRegion(gate, population_key)
+            ParentPopulationRegion = resolve_population_region(population_key)
         };
 
         for (int row = 0; row < positions.GetLength(0); row++)
@@ -1031,9 +1078,10 @@ public sealed class Strategy
             child.Vertices.Add(new Point(x, y));
         }
 
+        GateNameScope.EnsureUniquePopulationNames(child, gate_siblings);
         child.Statistics.Add(new Models.StatisticDefinition { Kind = StatisticKind.NumberOfEvents, ChannelName = channel1 });
         child.Statistics.Add(new Models.StatisticDefinition { Kind = StatisticKind.FrequencyOfParent, ChannelName = channel1 });
-        siblings().Add(child);
+        gate_siblings.Add(child);
         group.RecalculateSamples();
         return new Strategy(group, child);
     }
@@ -1042,24 +1090,32 @@ public sealed class Strategy
     {
         if (gate is null)
             throw new InvalidOperationException("Boolean gates must be defined from an existing strategy.");
-        var other = all_gates(group.Gates).FirstOrDefault(item => item.Name == gate2)
-            ?? throw new KeyNotFoundException($"Strategy '{gate2}' was not found.");
+        var same_scope = (gate.Parent?.Children ?? group.Gates).Where(item => item.Name == gate2).ToArray();
+        var all_matches = all_gates(group.Gates).Where(item => item.Name == gate2).ToArray();
+        var other = same_scope.Length == 1
+            ? same_scope[0]
+            : all_matches.Length == 1
+                ? all_matches[0]
+                : all_matches.Length == 0
+                    ? throw new KeyNotFoundException($"Strategy '{gate2}' was not found.")
+                    : throw new ArgumentException($"Strategy name '{gate2}' is ambiguous; use a name that is unique in the workspace for a boolean operand.", nameof(gate2));
+        var gate_siblings = siblings();
         var child = new GateDefinition
         {
-            Name = Workspace.unique_name(name, all_gates(group.Gates).Select(item => item.Name), kind.ToString()),
+            Name = GateNameScope.UniqueName(name, GateNameScope.Names(gate_siblings), kind.ToString()),
             Kind = kind,
             XChannel = gate.XChannel,
             YChannel = gate.YChannel,
             Parent = gate,
-            ParentPopulationRegion = Population.ResolveRegion(gate, population_key),
+            ParentPopulationRegion = resolve_population_region(population_key),
             BooleanFirstGateId = gate.Id,
-            BooleanFirstRegion = Population.ResolveRegion(gate, population_key),
+            BooleanFirstRegion = resolve_population_region(population_key),
             BooleanSecondGateId = other.Id,
             BooleanSecondRegion = Population.ResolveRegion(other, population2)
         };
         child.Statistics.Add(new Models.StatisticDefinition { Kind = StatisticKind.NumberOfEvents, ChannelName = child.XChannel });
         child.Statistics.Add(new Models.StatisticDefinition { Kind = StatisticKind.FrequencyOfParent, ChannelName = child.XChannel });
-        gate.Children.Add(child);
+        gate_siblings.Add(child);
         group.RecalculateSamples();
         return new Strategy(group, child);
     }
@@ -1068,6 +1124,93 @@ public sealed class Strategy
     private IEnumerable<GateDefinition> source_gates() => gate?.Children ?? group.Gates;
     private IList<GateDefinition> siblings() => gate?.Children ?? group.Gates;
     private string default_channel() => gate?.XChannel ?? group.Channels.FirstOrDefault()?.Name ?? "";
+
+    private PopulationRegion resolve_population_region(string population_key)
+    {
+        if (gate is null)
+        {
+            if (population_key is "default" or "primary")
+                return PopulationRegion.Primary;
+            throw new KeyNotFoundException($"Root strategies only expose the 'primary' population, not '{population_key}'.");
+        }
+
+        if (population_key == "default")
+        {
+            if (selected_population_region is PopulationRegion selected)
+                return selected;
+            if (gate.PopulationRegions.Count == 1)
+                return gate.PopulationRegions[0];
+            throw new InvalidOperationException($"Strategy '{gate.Name}' has multiple populations. Select one of: {string.Join(", ", gate.PopulationRegions.Select(gate.PopulationKey))}.");
+        }
+
+        return Population.ResolveRegion(gate, population_key);
+    }
+
+    private IEnumerable<KeyValuePair<string, Strategy>> child_population_items()
+    {
+        var region = resolve_population_region("default");
+        foreach (var child in source_gates().Where(child => gate is null || child.ParentPopulationRegion == region))
+        foreach (var child_region in child.PopulationRegions)
+        {
+            string key = child_region == PopulationRegion.Primary ? child.Name : child.PopulationKey(child_region);
+            yield return KeyValuePair.Create(key, new Strategy(group, child, child_region));
+        }
+    }
+
+    private IEnumerable<KeyValuePair<string, StatisticDefinition>> statistic_items()
+    {
+        var used = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var definition in definitions())
+        {
+            string preferred = StatisticDefinition.NameFor(definition);
+            string key = Workspace.unique_name(preferred, used, "Statistic");
+            used.Add(key);
+            yield return KeyValuePair.Create(key, new StatisticDefinition(group, definition, definitions()));
+        }
+    }
+
+    private string unique_statistic_name(string preferred) =>
+        Workspace.unique_name(preferred, definitions().Select(StatisticDefinition.NameFor), "Statistic");
+
+    private static IEnumerable<KeyValuePair<string, T>> unique_items<T>(
+        IEnumerable<KeyValuePair<string, T>> items,
+        string description)
+    {
+        var used = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var item in items)
+        {
+            if (!used.Add(item.Key))
+                throw new InvalidOperationException($"Duplicate {description} key '{item.Key}' was found.");
+            yield return item;
+        }
+    }
+
+    private static void validate_gate_positions(GateKind kind, float[,] positions)
+    {
+        int rows = positions.GetLength(0);
+        int columns = positions.GetLength(1);
+        bool valid = kind switch
+        {
+            GateKind.Polygon => rows >= 3 && columns == 2,
+            GateKind.Rectangle => rows == 2 && columns == 2,
+            GateKind.Quadrant or GateKind.CurlyQuadrant => rows == 1 && columns == 2,
+            GateKind.OffsetQuadrant => rows == 3 && columns == 2,
+            GateKind.Threshold => rows == 1 && columns is 1 or 2,
+            GateKind.Range => rows == 2 && columns is 1 or 2,
+            _ => true
+        };
+        if (!valid)
+            throw new ArgumentException(kind switch
+            {
+                GateKind.Polygon => "Polygon vertices must be an N x 2 matrix with at least three [x, y] rows.",
+                GateKind.Rectangle => "Rectangle coordinates must be a 2 x 2 matrix containing two opposite [x, y] corners.",
+                GateKind.Quadrant or GateKind.CurlyQuadrant => "Quadrant coordinates must be a 1 x 2 matrix containing one [x, y] center.",
+                GateKind.OffsetQuadrant => "Offset-quadrant coordinates must be a 3 x 2 matrix containing center, upper X-boundary, and lower X-boundary rows.",
+                GateKind.Threshold => "Threshold coordinates must contain one row whose first value is the X cutoff.",
+                GateKind.Range => "Range coordinates must contain two rows whose first values are the lower and upper X bounds.",
+                _ => "Invalid gate coordinates."
+            }, nameof(positions));
+    }
 
     private static IEnumerable<GateDefinition> all_gates(IEnumerable<GateDefinition> gates)
     {
@@ -1107,6 +1250,9 @@ public sealed class Sample
             : throw new KeyNotFoundException($"Population '{population_key}' was not found.");
 
     public Population this[string population_key] => __getitem__(population_key);
+
+    public override string ToString() =>
+        $"Sample {{ name: {PythonDisplay.Inline(Model.Name)}, events: {Model.EventCount}, channels: {Model.Channels.Count}, embeddings: {Model.Embeddings.Count} }}";
 
     private float[,] build_embedding_matrix()
     {
@@ -1155,7 +1301,7 @@ public sealed class Population
     }
 
     public PyObject populations => PythonObjects.Dict(population_items());
-    public Strategy strategy => new(resolve_group(), model?.Gate);
+    public Strategy strategy => new(resolve_group(), model?.Gate, model?.Region);
     public PyObject population_keys => PythonObjects.List(population_items().Select(item => item.Key));
     public PyObject compensated_matrix => PythonArrayConverter.ToNumpy(PythonArrayConverter.SelectRows(sample.CompensatedEvents, indices()));
 
@@ -1252,6 +1398,9 @@ public sealed class Population
 
     public Population this[string population_key] => __getitem__(population_key);
 
+    public override string ToString() =>
+        $"Population {{ sample: {PythonDisplay.Inline(sample.Name)}, population: {PythonDisplay.Inline(model is null ? "All events" : KeyFor(model))}, events: {model?.EventIndices.Length ?? sample.EventCount} }}";
+
     internal static PopulationResult? Find(IEnumerable<PopulationResult> populations, GateDefinition gate, PopulationRegion region)
     {
         foreach (var population in populations)
@@ -1280,10 +1429,22 @@ public sealed class Population
 
     internal static PopulationRegion ResolveRegion(GateDefinition gate, string population_key)
     {
-        if (string.IsNullOrWhiteSpace(population_key) || population_key is "default" || population_key == gate.Name)
-            return PopulationRegion.Primary;
+        if (string.IsNullOrWhiteSpace(population_key) || population_key is "default" or "primary" || population_key == gate.Name)
+        {
+            if (gate.PopulationRegions.Contains(PopulationRegion.Primary))
+                return PopulationRegion.Primary;
+            if (population_key == "default")
+                throw new InvalidOperationException($"Gate '{gate.Name}' has multiple populations and requires an explicit population key.");
+        }
+
         string region_name = population_key.Contains(':') ? population_key.Split(':').Last() : population_key;
-        return Enum.TryParse(region_name, ignoreCase: true, out PopulationRegion region) ? region : PopulationRegion.Primary;
+        foreach (var region in gate.PopulationRegions)
+            if (string.Equals(gate.PopulationKey(region), region_name, StringComparison.Ordinal) ||
+                string.Equals(gate.PopulationName(region), region_name, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(region.ToString(), region_name, StringComparison.OrdinalIgnoreCase))
+                return region;
+
+        throw new KeyNotFoundException($"Population '{population_key}' was not found for gate '{gate.Name}'. Available keys: {string.Join(", ", gate.PopulationRegions.Select(gate.PopulationKey))}.");
     }
 
     private static string KeyFor(PopulationResult population) =>
@@ -1305,12 +1466,17 @@ public sealed class Population
 public sealed class StatisticDefinition
 {
     private readonly FlowGroup group;
+    private readonly IList<Models.StatisticDefinition> siblings;
     internal readonly Models.StatisticDefinition Model;
 
-    internal StatisticDefinition(FlowGroup group, Models.StatisticDefinition model)
+    internal StatisticDefinition(
+        FlowGroup group,
+        Models.StatisticDefinition model,
+        IList<Models.StatisticDefinition> siblings)
     {
         this.group = group;
         Model = model;
+        this.siblings = siblings;
     }
 
     public string kind => Model.Kind.ToString();
@@ -1328,10 +1494,43 @@ public sealed class StatisticDefinition
             PythonExtensionRuntime.WithGil(() =>
             {
                 using (Py.GIL())
-                    Model.SetPythonMethod(source, callable_name, display_name, PythonExtensionRuntime.ToJson(parameters));
+                {
+                    string preferred_name = string.IsNullOrWhiteSpace(display_name) ? callable_name : display_name.Trim();
+                    string unique_name = Workspace.unique_name(
+                        preferred_name,
+                        siblings.Where(item => !ReferenceEquals(item, Model)).Select(NameFor),
+                        callable_name);
+                    Model.SetPythonMethod(source, callable_name, unique_name, PythonExtensionRuntime.ToJson(parameters));
+                }
             });
             group.RecalculateSamples();
         }
+    }
+
+    internal static string NameFor(Models.StatisticDefinition statistic)
+    {
+        if (!string.IsNullOrWhiteSpace(statistic.DisplayName))
+            return statistic.DisplayName;
+        return statistic.Kind switch
+        {
+            StatisticKind.Mean => $"Mean of {statistic.ChannelName}",
+            StatisticKind.Median => $"Median of {statistic.ChannelName}",
+            StatisticKind.GeometricMean => $"Geometric Mean of {statistic.ChannelName}",
+            StatisticKind.StandardDeviation => $"Standard Deviation of {statistic.ChannelName}",
+            StatisticKind.CoefficientOfVariation => $"Coefficient of Variation of {statistic.ChannelName}",
+            StatisticKind.NumberOfEvents => "Number of Events",
+            StatisticKind.FrequencyOfParent => "Frequency of Parent (%)",
+            StatisticKind.FrequencyOfAll => "Frequency of All (%)",
+            StatisticKind.Python => string.IsNullOrWhiteSpace(statistic.PythonDisplayName)
+                ? statistic.PythonCallableName
+                : statistic.PythonDisplayName,
+            _ => statistic.Kind.ToString()
+        };
+    }
+
+    public override string ToString()
+    {
+        return $"StatisticDefinition {{ kind: {Model.Kind}, channel: {PythonDisplay.Inline(Model.ChannelName)}, display_name: {PythonDisplay.Inline(NameFor(Model))} }}";
     }
 }
 
@@ -1347,6 +1546,15 @@ public sealed class Compensation
     public string name => Model.Name;
     public PyObject channels => PythonObjects.List(Model.ChannelNames);
     public PyObject matrix => PythonArrayConverter.ToNumpy(Model.Values);
+
+    public override string ToString() =>
+        $"Compensation {{ name: {PythonDisplay.Inline(Model.Name)}, channels: {Model.ChannelNames.Count} }}";
+}
+
+internal static class PythonDisplay
+{
+    public static string Inline(string? value) =>
+        (value ?? "").Replace('\r', ' ').Replace('\n', ' ').Trim();
 }
 
 internal static class PythonObjects

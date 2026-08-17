@@ -8,7 +8,7 @@
         <Setter Property="Foreground" Value="{DynamicResource WindowDefaultForeground}" />
         <Setter Property="FontSize" Value="{DynamicResource DefaultFontSize}" />
         <Setter Property="FontWeight" Value="{DynamicResource DefaultFontWeight}" />
-        <Setter Property="FontFamily" Value="{DynamicResource DefaultFontFamily}" />
+        <Setter Property="FontFamily" Value="{DynamicResource SemiFontFamilyRegular}" />
         <Setter Property="Template">
             <ControlTemplate TargetType="Window">
                 <Panel>

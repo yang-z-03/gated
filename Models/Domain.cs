@@ -765,6 +765,62 @@ public sealed class GateDefinition : NotifyBase
             _ => "Population"
         };
     }
+
+    public string PopulationKey(PopulationRegion region)
+    {
+        if (region == PopulationRegion.Primary)
+            return "primary";
+        if (PopulationNames.TryGetValue(region, out string? name) && !string.IsNullOrWhiteSpace(name))
+            return name;
+        return PopulationName(region).ToLowerInvariant();
+    }
+}
+
+public static class GateNameScope
+{
+    public static IEnumerable<string> Names(
+        IEnumerable<GateDefinition> gates,
+        GateDefinition? excluded_gate = null,
+        PopulationRegion? excluded_region = null)
+    {
+        foreach (var gate in gates)
+        {
+            if (!ReferenceEquals(gate, excluded_gate) || excluded_region is not null)
+                yield return gate.Name;
+            foreach (var region in gate.PopulationRegions.Where(region => region != PopulationRegion.Primary))
+            {
+                if (ReferenceEquals(gate, excluded_gate) && region == excluded_region)
+                    continue;
+                yield return gate.PopulationKey(region);
+            }
+        }
+    }
+
+    public static string UniqueName(string? preferred, IEnumerable<string> existing, string fallback)
+    {
+        string base_name = string.IsNullOrWhiteSpace(preferred) ? fallback : preferred.Trim();
+        var names = existing.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (!names.Contains(base_name))
+            return base_name;
+
+        int index = 2;
+        while (names.Contains($"{base_name} {index}"))
+            index++;
+        return $"{base_name} {index}";
+    }
+
+    public static void EnsureUniquePopulationNames(GateDefinition gate, IEnumerable<GateDefinition> siblings)
+    {
+        var used = Names(siblings).Append(gate.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var region in gate.PopulationRegions.Where(region => region != PopulationRegion.Primary))
+        {
+            string preferred = gate.PopulationKey(region);
+            string unique = UniqueName(preferred, used, preferred);
+            if (!string.Equals(unique, preferred, StringComparison.Ordinal))
+                gate.PopulationNames[region] = unique;
+            used.Add(unique);
+        }
+    }
 }
 
 public sealed class StatisticDefinition
@@ -790,6 +846,7 @@ public sealed class StatisticDefinition
             throw new ArgumentException("Python callable name cannot be empty.", nameof(callable_name));
 
         Kind = StatisticKind.Python;
+        DisplayName = "";
         ChannelName = "";
         PythonSource = source;
         PythonCallableName = callable_name;
@@ -2162,6 +2219,7 @@ public sealed class FlowGroup : NotifyBase
 
     public void AddSample(FlowSample sample, bool recalculate = true)
     {
+        sample.Name = GateNameScope.UniqueName(sample.Name, Samples.Select(item => item.Name), "Sample");
         if (Samples.Count == 0)
         {
             ChannelProfile = sample.ChannelProfile;

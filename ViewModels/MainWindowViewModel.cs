@@ -164,19 +164,11 @@ public sealed partial class MainWindowViewModel : NotifyBase
 
     private static IEnumerable<string> system_font_family_choices()
     {
-        try
-        {
-            return new[] { "Roboto" }
-                .Concat(FontManager.Current.SystemFonts.Select(font => font.Name))
-                .Where(name => !string.IsNullOrWhiteSpace(name))
-                .Distinct(StringComparer.CurrentCultureIgnoreCase)
-                .OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase)
-                .ToArray();
-        }
-        catch
-        {
-            return ["Roboto", "Arial", "Segoe UI"];
-        }
+        return new[] { "Roboto" }
+            .Concat(App.SystemFontFamilyNames())
+            .Distinct(StringComparer.CurrentCultureIgnoreCase)
+            .OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase)
+            .ToArray();
     }
 
     public DataView StatisticTableView => statistic_table.DefaultView;
@@ -2079,8 +2071,9 @@ public sealed partial class MainWindowViewModel : NotifyBase
 
         Python.PythonExtensionRuntime.ValidateStatisticSource(script.Source, "entry");
         var definition = new StatisticDefinition();
-        definition.SetPythonMethod(script.Source, "entry", script.Name, parameters_json);
         var definitions = selected_gate?.Statistics ?? selected_group.Statistics;
+        string display_name = unique_column_name(script.Name, definitions.Select(statistic_name).ToArray());
+        definition.SetPythonMethod(script.Source, "entry", display_name, parameters_json);
         definitions.Add(definition);
         selected_group.RecalculateSamples();
         refresh_selected_population_reference();
@@ -2331,7 +2324,11 @@ public sealed partial class MainWindowViewModel : NotifyBase
         if (string.IsNullOrWhiteSpace(name))
             return;
 
-        selected_gate.Name = name.Trim();
+        var siblings = selected_gate.Parent?.Children ?? selected_group?.Gates;
+        selected_gate.Name = GateNameScope.UniqueName(
+            name,
+            GateNameScope.Names(siblings ?? [], selected_gate),
+            "Gate");
         if (selected_group is not null)
             refresh_population_embeddings(selected_group);
         refresh_project_tree();
@@ -2450,7 +2447,10 @@ public sealed partial class MainWindowViewModel : NotifyBase
         if (string.IsNullOrWhiteSpace(name))
             return;
 
-        statistic.DisplayName = name.Trim();
+        var siblings = selected_gate?.Statistics ?? selected_group?.Statistics;
+        statistic.DisplayName = unique_column_name(
+            name.Trim(),
+            (siblings ?? []).Where(item => !ReferenceEquals(item, statistic)).Select(statistic_name).ToArray());
         refresh_project_tree();
         refresh_selected_statistics();
     }
@@ -2528,7 +2528,10 @@ public sealed partial class MainWindowViewModel : NotifyBase
             return;
 
         string old_name = selected_sample.Name;
-        selected_sample.Name = name.Trim();
+        selected_sample.Name = GateNameScope.UniqueName(
+            name,
+            selected_group?.Samples.Where(item => !ReferenceEquals(item, selected_sample)).Select(item => item.Name) ?? [],
+            "Sample");
         if (selected_group is not null)
             rename_sample_preferred_views(selected_group, old_name, selected_sample.Name);
         sync_identity_metadata();
@@ -2553,7 +2556,11 @@ public sealed partial class MainWindowViewModel : NotifyBase
         if (string.IsNullOrWhiteSpace(name))
             return;
 
-        selected_gate.PopulationNames[region] = name.Trim();
+        var siblings = selected_gate.Parent?.Children ?? selected_group?.Gates;
+        selected_gate.PopulationNames[region] = GateNameScope.UniqueName(
+            name,
+            GateNameScope.Names(siblings ?? [], selected_gate, region),
+            selected_gate.PopulationKey(region));
         if (selected_group is not null)
             refresh_population_embeddings(selected_group);
         refresh_project_tree();
@@ -3764,13 +3771,10 @@ public sealed partial class MainWindowViewModel : NotifyBase
         }
 
         gate.Statistics.Add(new StatisticDefinition { Kind = StatisticKind.NumberOfEvents, ChannelName = gate.XChannel });
-        if (selected_gate is null)
-            selected_group.Gates.Add(gate);
-        else
-        {
-            gate.Parent = selected_gate;
-            selected_gate.Children.Add(gate);
-        }
+        var siblings = selected_gate is null ? selected_group.Gates : selected_gate.Children;
+        gate.Parent = selected_gate;
+        GateNameScope.EnsureUniquePopulationNames(gate, siblings);
+        siblings.Add(gate);
         SelectedGate = gate;
         recalculate_new_gate(gate);
         refresh_project_tree();
@@ -3814,6 +3818,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
 
         var siblings = selected_gate is null ? selected_group.Gates : selected_gate.Children;
         gate.Parent = selected_gate;
+        GateNameScope.EnsureUniquePopulationNames(gate, siblings);
         siblings.Add(gate);
         SelectedGate = gate;
         recalculate_new_gate(gate);
@@ -3877,7 +3882,9 @@ public sealed partial class MainWindowViewModel : NotifyBase
             return;
 
         var definitions = selected_gate?.Statistics ?? selected_group.Statistics;
-        definitions.Add(new StatisticDefinition { Kind = kind, ChannelName = dimension_name });
+        var definition = new StatisticDefinition { Kind = kind, ChannelName = dimension_name };
+        definition.DisplayName = unique_column_name(statistic_name(definition), definitions.Select(statistic_name).ToArray());
+        definitions.Add(definition);
         selected_group.RecalculateSamples();
         refresh_project_tree();
         refresh_selected_statistics();
@@ -3981,6 +3988,7 @@ public sealed partial class MainWindowViewModel : NotifyBase
         gate.Statistics.Add(new StatisticDefinition { Kind = StatisticKind.NumberOfEvents, ChannelName = gate.XChannel });
         gate.Statistics.Add(new StatisticDefinition { Kind = StatisticKind.FrequencyOfParent, ChannelName = gate.XChannel });
         gate.Parent = selected_gate;
+        GateNameScope.EnsureUniquePopulationNames(gate, siblings);
         siblings.Add(gate);
         recalculate_new_gate(gate);
         refresh_project_tree();
@@ -4011,11 +4019,11 @@ public sealed partial class MainWindowViewModel : NotifyBase
     private async Task<string> request_gate_name_async()
     {
         string default_name = $"Gate {next_gate_number++}";
-        if (RequestTextInputAsync is null)
-            return default_name;
-
-        string? name = await RequestTextInputAsync("Name gate", default_name);
-        return string.IsNullOrWhiteSpace(name) ? default_name : name.Trim();
+        string? name = RequestTextInputAsync is null
+            ? default_name
+            : await RequestTextInputAsync("Name gate", default_name);
+        var siblings = selected_gate is null ? selected_group?.Gates : selected_gate.Children;
+        return GateNameScope.UniqueName(name, GateNameScope.Names(siblings ?? []), default_name);
     }
 
     private void apply_node_selection(ProjectNode? node)
